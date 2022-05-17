@@ -8,12 +8,22 @@
 Infrastructure for Modern JavaScript Framework.
 
 ```ts
-import { App } from 'cordis'
+import { Context } from 'cordis'
 
-const app = new App()
+const ctx = new Context()
 
-app.plugin(plugin)      // use plugins
-app.on(event, callback) // listen to events
+ctx.plugin(plugin)          // use plugins
+ctx.on(event, callback)     // listen to events
 
-app.start()             // start app
+ctx.hooks.start()           // start app
 ```
+
+## Concepts
+
+### Context
+
+### Plugin
+
+### Service
+
+### Events
