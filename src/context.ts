@@ -1,3 +1,4 @@
+import { defineProperty } from 'cosmokit'
 import Logger from 'reggol'
 import { Services, Session } from '.'
 import { Lifecycle } from './lifecycle'
@@ -70,4 +71,50 @@ export class Context {
 
 export namespace Context {
   export interface Config extends Lifecycle.Config, Registry.Config {}
+
+  export interface ServiceOptions {
+    deprecated?: boolean
+    methods?: string[]
+  }
+
+  const warnings = new Set<string>()
+
+  export function service(name: keyof any, options: ServiceOptions = {}) {
+    if (Object.prototype.hasOwnProperty.call(Context.prototype, name)) return
+    Object.defineProperty(Context.prototype, name, {
+      get(this: Context) {
+        const value = this.services[name]
+        if (!value) return
+        if (options.deprecated && typeof name === 'string' && !warnings.has(name)) {
+          warnings.add(name)
+          this.logger('service').warn(`${name} is deprecated`)
+        }
+        defineProperty(value, Context.current, this)
+        return value
+      },
+      set(this: Context, value) {
+        const oldValue = this.services[name]
+        if (oldValue === value) return
+        this.services[name] = value
+        if (typeof name !== 'string') return
+        this.emit('service', name)
+        const action = value ? oldValue ? 'changed' : 'enabled' : 'disabled'
+        this.logger('service').debug(name, action)
+      },
+    })
+
+    for (const method of options.methods || []) {
+      defineProperty(Context.prototype, method, function (this: Context, ...args: any[]) {
+        return this[name][method](...args)
+      })
+    }
+  }
+
+  service('registry', {
+    methods: ['plugin', 'dispose'],
+  })
+
+  service('lifecycle', {
+    methods: ['on', 'once', 'off', 'before', 'after', 'parallel', 'emit', 'serial', 'bail', 'waterfall', 'chain'],
+  })
 }

@@ -13,9 +13,9 @@ import { Context } from 'cordis'
 const ctx = new Context()
 
 ctx.plugin(plugin)              // use plugins
-ctx.events.on(event, callback)  // listen to events
+ctx.on(event, callback)         // listen to events
 
-ctx.events.start()               // start app
+ctx.lifecycle.start()           // start app
 ```
 
 ## Concepts
