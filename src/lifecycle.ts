@@ -1,8 +1,8 @@
-import { Awaitable, Promisify, remove } from 'cosmokit'
+import { Promisify, remove } from 'cosmokit'
 import Logger from 'reggol'
 import { Events, Session } from '.'
 import { Context } from './context'
-import { Disposable, Plugin } from './plugin'
+import { Disposable } from './plugin'
 
 const logger = new Logger('app')
 
@@ -33,6 +33,25 @@ export namespace Lifecycle {
   export interface Config {
     maxListeners?: number
   }
+
+  export interface Delegates {
+    parallel<K extends EventName>(name: K, ...args: Parameters<Events[K]>): Promise<void>
+    parallel<K extends EventName>(session: Session, name: K, ...args: Parameters<Events[K]>): Promise<void>
+    emit<K extends EventName>(name: K, ...args: Parameters<Events[K]>): void
+    emit<K extends EventName>(session: Session, name: K, ...args: Parameters<Events[K]>): void
+    waterfall<K extends EventName>(name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
+    waterfall<K extends EventName>(session: Session, name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
+    chain<K extends EventName>(name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
+    chain<K extends EventName>(session: Session, name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
+    serial<K extends EventName>(name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
+    serial<K extends EventName>(session: Session, name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
+    bail<K extends EventName>(name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
+    bail<K extends EventName>(session: Session, name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
+    on<K extends EventName>(name: K, listener: Events[K], prepend?: boolean): () => boolean
+    once<K extends EventName>(name: K, listener: Events[K], prepend?: boolean): () => boolean
+    before<K extends BeforeEventName>(name: K, listener: BeforeEventMap[K], append?: boolean): () => boolean
+    off<K extends EventName>(name: K, listener: Events[K]): boolean
+  }
 }
 
 export class Lifecycle {
@@ -40,7 +59,7 @@ export class Lifecycle {
   _tasks = new TaskQueue()
   _hooks: Record<keyof any, [Context, (...args: any[]) => any][]> = {}
 
-  constructor(private ctx: Context, protected config: Lifecycle.Config) {}
+  constructor(private ctx: Context, private config: Lifecycle.Config) {}
 
   protected get caller(): Context {
     return this[Context.current] || this.ctx
@@ -54,8 +73,6 @@ export class Lifecycle {
     }
   }
 
-  async parallel<K extends EventName>(name: K, ...args: Parameters<Events[K]>): Promise<void>
-  async parallel<K extends EventName>(session: Session, name: K, ...args: Parameters<Events[K]>): Promise<void>
   async parallel(...args: any[]) {
     const tasks: Promise<any>[] = []
     const session = typeof args[0] === 'object' ? args.shift() : null
@@ -68,14 +85,10 @@ export class Lifecycle {
     await Promise.all(tasks)
   }
 
-  emit<K extends EventName>(name: K, ...args: Parameters<Events[K]>): void
-  emit<K extends EventName>(session: Session, name: K, ...args: Parameters<Events[K]>): void
   emit(...args: [any, ...any[]]) {
     this.parallel(...args)
   }
 
-  waterfall<K extends EventName>(name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
-  waterfall<K extends EventName>(session: Session, name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
   async waterfall(...args: [any, ...any[]]) {
     const session = typeof args[0] === 'object' ? args.shift() : null
     const name = args.shift()
@@ -86,8 +99,6 @@ export class Lifecycle {
     return args[0]
   }
 
-  chain<K extends EventName>(name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
-  chain<K extends EventName>(session: Session, name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
   chain(...args: [any, ...any[]]) {
     const session = typeof args[0] === 'object' ? args.shift() : null
     const name = args.shift()
@@ -98,8 +109,6 @@ export class Lifecycle {
     return args[0]
   }
 
-  serial<K extends EventName>(name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
-  serial<K extends EventName>(session: Session, name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
   async serial(...args: any[]) {
     const session = typeof args[0] === 'object' ? args.shift() : null
     const name = args.shift()
@@ -109,8 +118,6 @@ export class Lifecycle {
     }
   }
 
-  bail<K extends EventName>(name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
-  bail<K extends EventName>(session: Session, name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
   bail(...args: any[]) {
     const session = typeof args[0] === 'object' ? args.shift() : null
     const name = args.shift()
@@ -120,7 +127,6 @@ export class Lifecycle {
     }
   }
 
-  on<K extends EventName>(name: K, listener: Events[K], prepend?: boolean): () => boolean
   on(name: EventName, listener: Disposable, prepend = false) {
     const method = prepend ? 'unshift' : 'push'
 
@@ -150,19 +156,18 @@ export class Lifecycle {
     return dispose
   }
 
-  before<K extends BeforeEventName>(name: K, listener: BeforeEventMap[K], append = false) {
-    const seg = (name as string).split('/')
-    seg[seg.length - 1] = 'before-' + seg[seg.length - 1]
-    return this.on(seg.join('/') as EventName, listener, !append)
-  }
-
-  once<K extends EventName>(name: K, listener: Events[K], prepend?: boolean): () => boolean
   once(name: EventName, listener: Disposable, prepend = false) {
     const dispose = this.on(name, function (...args: any[]) {
       dispose()
       return listener.apply(this, args)
     }, prepend)
     return dispose
+  }
+
+  before<K extends BeforeEventName>(name: K, listener: BeforeEventMap[K], append = false) {
+    const seg = (name as string).split('/')
+    seg[seg.length - 1] = 'before-' + seg[seg.length - 1]
+    return this.on(seg.join('/') as EventName, listener, !append)
   }
 
   off<K extends EventName>(name: K, listener: Events[K]) {
@@ -197,13 +202,3 @@ type OmitSubstring<S extends string, T extends string> = S extends `${infer L}${
 type BeforeEventName = OmitSubstring<EventName & string, 'before-'>
 
 export type BeforeEventMap = { [E in EventName & string as OmitSubstring<E, 'before-'>]: Events[E] }
-
-declare module '.' {
-  interface Events {
-    'plugin-added'(state: Plugin.State): void
-    'plugin-removed'(state: Plugin.State): void
-    'ready'(): Awaitable<void>
-    'dispose'(): Awaitable<void>
-    'service'(name: string): void
-  }
-}

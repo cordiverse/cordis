@@ -1,5 +1,17 @@
+import { remove } from 'cosmokit'
 import { Context } from './context'
-import Schema from 'schemastery'
+
+function isConstructor(func: Function) {
+  // async function or arrow function
+  if (!func.prototype) return false
+  // generator function or malformed definition
+  if (func.prototype.constructor !== func) return false
+  return true
+}
+
+function isApplicable(object: Plugin) {
+  return object && typeof object === 'object' && typeof object.apply === 'function'
+}
 
 export type Disposable = () => void
 
@@ -12,21 +24,14 @@ export namespace Plugin {
   export interface Object<T = any> {
     name?: string
     apply: Function<T>
-    Config?: Schema
-    using?: readonly string[]
-  }
-
-  export interface ObjectWithSchema<T = any> {
-    name?: string
-    apply: Function
-    schema?: Schema<T, any>
+    Config?: (config: T) => any
+    schema?: (config: T) => any
     using?: readonly string[]
   }
 
   export type Config<T extends Plugin> =
     | T extends Constructor<infer U> ? U
     : T extends Function<infer U> ? U
-    : T extends ObjectWithSchema<infer U> ? U
     : T extends Object<infer U> ? U
     : never
 
@@ -36,15 +41,24 @@ export namespace Plugin {
     context?: Context
     config?: any
     using: readonly string[]
-    schema?: Schema
+    schema?: any
     plugin?: Plugin
     children: Plugin[]
     disposables: Disposable[]
   }
 }
 
+export namespace Registry {
+  export interface Config {}
+
+  export interface Delegates {
+    plugin<T extends Plugin>(plugin: T, config?: boolean | Plugin.Config<T>): this
+    dispose(): void
+  }
+}
+
 export class Registry extends Map<Plugin, Plugin.State> {
-  constructor() {
+  constructor(private ctx: Context, private config: Registry.Config) {
     super()
     this.set(null, {
       id: '',
@@ -53,6 +67,10 @@ export class Registry extends Map<Plugin, Plugin.State> {
       children: [],
       disposables: [],
     })
+  }
+
+  protected get caller(): Context {
+    return this[Context.current] || this.ctx
   }
 
   private resolve(plugin: Plugin) {
@@ -73,5 +91,93 @@ export class Registry extends Map<Plugin, Plugin.State> {
 
   delete(plugin: Plugin) {
     return super.delete(this.resolve(plugin))
+  }
+
+  using(using: readonly string[], callback: Plugin.Function<void>) {
+    return this.plugin({ using, apply: callback, name: callback.name })
+  }
+
+  validate<T extends Plugin>(plugin: T, config: any) {
+    if (config === false) return
+    if (config === true) config = undefined
+    config ??= {}
+
+    const schema = plugin['Config'] || plugin['schema']
+    if (schema) config = schema(config)
+    return config
+  }
+
+  plugin(plugin: Plugin, config?: any) {
+    // check duplication
+    if (this.has(plugin)) {
+      this.caller.logger('app').warn(`duplicate plugin detected: ${plugin.name}`)
+      return this
+    }
+
+    // check if it's a valid plugin
+    if (typeof plugin !== 'function' && !isApplicable(plugin)) {
+      throw new Error('invalid plugin, expect function or object with an "apply" method')
+    }
+
+    // validate plugin config
+    config = this.validate(plugin, config)
+    if (!config) return this
+
+    const context = this.caller.fork(this.caller.filter, plugin)
+    const schema = plugin['Config'] || plugin['schema']
+    const using = plugin['using'] || []
+
+    this.caller.logger('app').debug('plugin:', plugin.name)
+    this.set(plugin, {
+      plugin,
+      schema,
+      using,
+      context,
+      id: Math.random().toString(36).slice(2, 10),
+      parent: this.caller,
+      config: config,
+      children: [],
+      disposables: [],
+    })
+
+    this.caller.state.children.push(plugin)
+    this.caller.emit('plugin-added', this.get(plugin))
+
+    if (using.length) {
+      context.on('service', (name) => {
+        if (!using.includes(name)) return
+        context.state.children.slice().map(plugin => this.dispose(plugin))
+        context.state.disposables.slice(1).map(dispose => dispose())
+        callback()
+      })
+    }
+
+    const callback = () => {
+      if (using.some(name => !this[name])) return
+      if (typeof plugin !== 'function') {
+        plugin.apply(context, config)
+      } else if (isConstructor(plugin)) {
+        // eslint-disable-next-line new-cap
+        new plugin(context, config)
+      } else {
+        plugin(context, config)
+      }
+    }
+
+    callback()
+    return this
+  }
+
+  dispose(plugin = this.caller._plugin) {
+    if (!plugin) throw new Error('root level context cannot be disposed')
+    const state = this.get(plugin)
+    if (!state) return
+    this.caller.logger('app').debug('dispose:', plugin.name)
+    state.children.slice().map(plugin => this.dispose(plugin))
+    state.disposables.slice().map(dispose => dispose())
+    this.delete(plugin)
+    remove(state.parent.state.children, plugin)
+    this.caller.emit('plugin-removed', state)
+    return state
   }
 }

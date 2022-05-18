@@ -6,18 +6,18 @@ declare module '../src' {
   }
 }
 
-const ctx = Context.create()
+const ctx = new Context()
 
 function plugin(ctx: Context, { text }: { text: string }) {
-  ctx.lifecycle.on('foo', () => {
+  ctx.on('foo', () => {
     console.log(text)
   })
 }
 
-ctx.intersect(() => false).lifecycle.on('foo', () => {
+ctx.intersect(() => false).on('foo', () => {
   console.log('foo')
 })
 
 ctx.plugin(plugin, { text: 'bar' })
 
-ctx.lifecycle.emit({}, 'foo')
+ctx.emit({}, 'foo')
