@@ -12,15 +12,21 @@ import { Context } from 'cordis'
 
 const ctx = new Context()
 
-ctx.plugin(plugin)          // use plugins
-ctx.on(event, callback)     // listen to events
+ctx.plugin(plugin)              // use plugins
+ctx.events.on(event, callback)  // listen to events
 
-ctx.hooks.start()           // start app
+ctx.events.start()               // start app
 ```
 
 ## Concepts
 
 ### Context
+
+Contexts provide three kinds of functionality:
+
+- allowing access to services (service container)
+- managing states of plugins (plugin context)
+- filtering sessions before events (session context)
 
 ### Plugin
 

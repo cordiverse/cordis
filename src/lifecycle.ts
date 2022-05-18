@@ -1,5 +1,6 @@
 import { Awaitable, Promisify, remove } from 'cosmokit'
 import Logger from 'reggol'
+import { Events, Session } from '.'
 import { Context } from './context'
 import { Disposable, Plugin } from './plugin'
 
@@ -28,24 +29,24 @@ class TaskQueue {
   }
 }
 
-export namespace Hooks {
+export namespace Lifecycle {
   export interface Config {
     maxListeners?: number
   }
 }
 
-export class Hooks<S = never> {
+export class Lifecycle {
   isActive = false
   _tasks = new TaskQueue()
-  _hooks: Record<keyof any, [Context<S>, (...args: any[]) => any][]> = {}
+  _hooks: Record<keyof any, [Context, (...args: any[]) => any][]> = {}
 
-  constructor(private app: Context, protected config: Hooks.Config) {}
+  constructor(private ctx: Context, protected config: Lifecycle.Config) {}
 
   protected get caller(): Context {
-    return this[Context.current] || this.app
+    return this[Context.current] || this.ctx
   }
 
-  protected* getHooks(name: EventName, session?: S) {
+  protected* getHooks(name: EventName, session?: Session) {
     const hooks = this._hooks[name] || []
     for (const [context, callback] of hooks.slice()) {
       if (!context.match(session)) continue
@@ -53,8 +54,8 @@ export class Hooks<S = never> {
     }
   }
 
-  async parallel<K extends EventName>(name: K, ...args: Parameters<EventMap[K]>): Promise<void>
-  async parallel<K extends EventName>(session: S, name: K, ...args: Parameters<EventMap[K]>): Promise<void>
+  async parallel<K extends EventName>(name: K, ...args: Parameters<Events[K]>): Promise<void>
+  async parallel<K extends EventName>(session: Session, name: K, ...args: Parameters<Events[K]>): Promise<void>
   async parallel(...args: any[]) {
     const tasks: Promise<any>[] = []
     const session = typeof args[0] === 'object' ? args.shift() : null
@@ -67,14 +68,14 @@ export class Hooks<S = never> {
     await Promise.all(tasks)
   }
 
-  emit<K extends EventName>(name: K, ...args: Parameters<EventMap[K]>): void
-  emit<K extends EventName>(session: S, name: K, ...args: Parameters<EventMap[K]>): void
+  emit<K extends EventName>(name: K, ...args: Parameters<Events[K]>): void
+  emit<K extends EventName>(session: Session, name: K, ...args: Parameters<Events[K]>): void
   emit(...args: [any, ...any[]]) {
     this.parallel(...args)
   }
 
-  waterfall<K extends EventName>(name: K, ...args: Parameters<EventMap[K]>): Promisify<ReturnType<EventMap[K]>>
-  waterfall<K extends EventName>(session: S, name: K, ...args: Parameters<EventMap[K]>): Promisify<ReturnType<EventMap[K]>>
+  waterfall<K extends EventName>(name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
+  waterfall<K extends EventName>(session: Session, name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
   async waterfall(...args: [any, ...any[]]) {
     const session = typeof args[0] === 'object' ? args.shift() : null
     const name = args.shift()
@@ -85,8 +86,8 @@ export class Hooks<S = never> {
     return args[0]
   }
 
-  chain<K extends EventName>(name: K, ...args: Parameters<EventMap[K]>): ReturnType<EventMap[K]>
-  chain<K extends EventName>(session: S, name: K, ...args: Parameters<EventMap[K]>): ReturnType<EventMap[K]>
+  chain<K extends EventName>(name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
+  chain<K extends EventName>(session: Session, name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
   chain(...args: [any, ...any[]]) {
     const session = typeof args[0] === 'object' ? args.shift() : null
     const name = args.shift()
@@ -97,8 +98,8 @@ export class Hooks<S = never> {
     return args[0]
   }
 
-  serial<K extends EventName>(name: K, ...args: Parameters<EventMap[K]>): Promisify<ReturnType<EventMap[K]>>
-  serial<K extends EventName>(session: S, name: K, ...args: Parameters<EventMap[K]>): Promisify<ReturnType<EventMap[K]>>
+  serial<K extends EventName>(name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
+  serial<K extends EventName>(session: Session, name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
   async serial(...args: any[]) {
     const session = typeof args[0] === 'object' ? args.shift() : null
     const name = args.shift()
@@ -108,8 +109,8 @@ export class Hooks<S = never> {
     }
   }
 
-  bail<K extends EventName>(name: K, ...args: Parameters<EventMap[K]>): ReturnType<EventMap[K]>
-  bail<K extends EventName>(session: S, name: K, ...args: Parameters<EventMap[K]>): ReturnType<EventMap[K]>
+  bail<K extends EventName>(name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
+  bail<K extends EventName>(session: Session, name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
   bail(...args: any[]) {
     const session = typeof args[0] === 'object' ? args.shift() : null
     const name = args.shift()
@@ -119,7 +120,7 @@ export class Hooks<S = never> {
     }
   }
 
-  on<K extends EventName>(name: K, listener: EventMap[K], prepend?: boolean): () => boolean
+  on<K extends EventName>(name: K, listener: Events[K], prepend?: boolean): () => boolean
   on(name: EventName, listener: Disposable, prepend = false) {
     const method = prepend ? 'unshift' : 'push'
 
@@ -155,7 +156,7 @@ export class Hooks<S = never> {
     return this.on(seg.join('/') as EventName, listener, !append)
   }
 
-  once<K extends EventName>(name: K, listener: EventMap[K], prepend?: boolean): () => boolean
+  once<K extends EventName>(name: K, listener: Events[K], prepend?: boolean): () => boolean
   once(name: EventName, listener: Disposable, prepend = false) {
     const dispose = this.on(name, function (...args: any[]) {
       dispose()
@@ -164,7 +165,7 @@ export class Hooks<S = never> {
     return dispose
   }
 
-  off<K extends EventName>(name: K, listener: EventMap[K]) {
+  off<K extends EventName>(name: K, listener: Events[K]) {
     const index = (this._hooks[name] || [])
       .findIndex(([context, callback]) => context === this.caller && callback === listener)
     if (index >= 0) {
@@ -187,20 +188,22 @@ export class Hooks<S = never> {
     this.isActive = false
     logger.debug('stopped')
     // `dispose` event is handled by ctx.disposables
-    await Promise.all(this.app.state.disposables.map(dispose => dispose()))
+    await Promise.all(this.ctx.state.disposables.map(dispose => dispose()))
   }
 }
 
-type EventName = keyof EventMap
+type EventName = keyof Events
 type OmitSubstring<S extends string, T extends string> = S extends `${infer L}${T}${infer R}` ? `${L}${R}` : never
 type BeforeEventName = OmitSubstring<EventName & string, 'before-'>
 
-export type BeforeEventMap = { [E in EventName & string as OmitSubstring<E, 'before-'>]: EventMap[E] }
+export type BeforeEventMap = { [E in EventName & string as OmitSubstring<E, 'before-'>]: Events[E] }
 
-export interface EventMap {
-  'plugin-added'(state: Plugin.State): void
-  'plugin-removed'(state: Plugin.State): void
-  'ready'(): Awaitable<void>
-  'dispose'(): Awaitable<void>
-  'service'(name: keyof Context.Services): void
+declare module '.' {
+  interface Events {
+    'plugin-added'(state: Plugin.State): void
+    'plugin-removed'(state: Plugin.State): void
+    'ready'(): Awaitable<void>
+    'dispose'(): Awaitable<void>
+    'service'(name: string): void
+  }
 }

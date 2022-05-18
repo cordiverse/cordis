@@ -13,14 +13,14 @@ export namespace Plugin {
     name?: string
     apply: Function<T>
     Config?: Schema
-    using?: readonly (keyof Context.Services)[]
+    using?: readonly string[]
   }
 
   export interface ObjectWithSchema<T = any> {
     name?: string
     apply: Function
     schema?: Schema<T, any>
-    using?: readonly (keyof Context.Services)[]
+    using?: readonly string[]
   }
 
   export type Config<T extends Plugin> =
@@ -35,7 +35,7 @@ export namespace Plugin {
     parent: Context
     context?: Context
     config?: any
-    using: readonly (keyof Context.Services)[]
+    using: readonly string[]
     schema?: Schema
     plugin?: Plugin
     children: Plugin[]
@@ -44,6 +44,17 @@ export namespace Plugin {
 }
 
 export class Registry extends Map<Plugin, Plugin.State> {
+  constructor() {
+    super()
+    this.set(null, {
+      id: '',
+      parent: null,
+      using: [],
+      children: [],
+      disposables: [],
+    })
+  }
+
   private resolve(plugin: Plugin) {
     return plugin && (typeof plugin === 'function' ? plugin : plugin.apply)
   }

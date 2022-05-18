@@ -1,6 +1,7 @@
-import { defineProperty, remove } from 'cosmokit'
+import { remove } from 'cosmokit'
 import Logger from 'reggol'
-import { Hooks } from './hooks'
+import { Session } from '.'
+import { Lifecycle } from './lifecycle'
 import { Plugin, Registry } from './plugin'
 
 function isConstructor(func: Function) {
@@ -15,15 +16,25 @@ function isApplicable(object: Plugin) {
   return object && typeof object === 'object' && typeof object.apply === 'function'
 }
 
-export type Filter<S> = (session: S) => boolean
+export type Filter = (session: Session) => boolean
 
 export interface Context extends Context.Services {}
 
-export class Context<S = never> {
+export class Context {
   static readonly current = Symbol('source')
 
-  protected constructor(public filter: Filter<S> = () => true, public root?: Context<S>, private _plugin: Plugin = null) {
-    if (!root) root = this
+  public filter?: Filter
+  public root?: Context
+  private _plugin: Plugin
+
+  static create(config: Context.Config = {}) {
+    const root = new Context()
+    root.filter = () => true
+    root.root = root
+    root._plugin = null
+    root.lifecycle = new Lifecycle(root, config)
+    root.registry = new Registry()
+    return root
   }
 
   [Symbol.for('nodejs.util.inspect.custom')]() {
@@ -34,30 +45,39 @@ export class Context<S = never> {
     return new Logger(name)
   }
 
+  private fork(filter: Filter, root: Context, _plugin: Plugin) {
+    const prototype = Object.getPrototypeOf(this)
+    const context: Context = Object.create(prototype)
+    context.filter = filter
+    context.root = root
+    context._plugin = _plugin
+    return context
+  }
+
   any() {
-    return new Context<S>(() => true, this.root, this._plugin)
+    return this.fork(() => true, this.root, this._plugin)
   }
 
   never() {
-    return new Context<S>(() => false, this.root, this._plugin)
+    return this.fork(() => false, this.root, this._plugin)
   }
 
-  union(arg: Filter<S> | Context<S>) {
+  union(arg: Filter | Context) {
     const filter = typeof arg === 'function' ? arg : arg.filter
-    return new Context<S>(s => this.filter(s) || filter(s), this.root, this._plugin)
+    return this.fork(s => this.filter(s) || filter(s), this.root, this._plugin)
   }
 
-  intersect(arg: Filter<S> | Context<S>) {
+  intersect(arg: Filter | Context) {
     const filter = typeof arg === 'function' ? arg : arg.filter
-    return new Context<S>(s => this.filter(s) && filter(s), this.root, this._plugin)
+    return this.fork(s => this.filter(s) && filter(s), this.root, this._plugin)
   }
 
-  exclude(arg: Filter<S> | Context<S>) {
+  exclude(arg: Filter | Context) {
     const filter = typeof arg === 'function' ? arg : arg.filter
-    return new Context<S>(s => this.filter(s) && !filter(s), this.root, this._plugin)
+    return this.fork(s => this.filter(s) && !filter(s), this.root, this._plugin)
   }
 
-  match(session?: S) {
+  match(session?: Session) {
     return !session || this.filter(session)
   }
 
@@ -65,7 +85,7 @@ export class Context<S = never> {
     return this.registry.get(this._plugin)
   }
 
-  using(using: readonly (keyof Context.Services)[], callback: Plugin.Function<void>) {
+  using(using: readonly string[], callback: Plugin.Function<void>) {
     return this.plugin({ using, apply: callback, name: callback.name })
   }
 
@@ -96,7 +116,7 @@ export class Context<S = never> {
     config = this.validate(plugin, config)
     if (!config) return this
 
-    const context = new Context(this.filter, this.root, plugin)
+    const context = this.fork(this.filter, this.root, plugin)
     const schema = plugin['Config'] || plugin['schema']
     const using = plugin['using'] || []
 
@@ -114,10 +134,10 @@ export class Context<S = never> {
     })
 
     this.state.children.push(plugin)
-    this.hooks.emit('plugin-added', this.registry.get(plugin))
+    this.lifecycle.emit('plugin-added', this.registry.get(plugin))
 
     if (using.length) {
-      context.hooks.on('service', (name) => {
+      context.lifecycle.on('service', (name) => {
         if (!using.includes(name)) return
         context.state.children.slice().map(plugin => this.dispose(plugin))
         context.state.disposables.slice(1).map(dispose => dispose())
@@ -150,38 +170,18 @@ export class Context<S = never> {
     state.disposables.slice().map(dispose => dispose())
     this.registry.delete(plugin)
     remove(state.parent.state.children, plugin)
-    this.hooks.emit('plugin-removed', state)
+    this.lifecycle.emit('plugin-removed', state)
     return state
   }
 }
 
 export namespace Context {
   export interface Services {
-    hooks: Hooks
+    lifecycle: Lifecycle
     registry: Registry
   }
 
-  export const Services: (keyof Services)[] = []
+  export interface Config extends Lifecycle.Config {}
 
-  export function service(key: keyof Services) {
-    if (Object.prototype.hasOwnProperty.call(Context.prototype, key)) return
-    Services.push(key)
-    const privateKey = Symbol(key)
-    Object.defineProperty(Context.prototype, key, {
-      get(this: Context) {
-        const value = this.root[privateKey]
-        if (!value) return
-        defineProperty(value, Context.current, this)
-        return value
-      },
-      set(this: Context, value) {
-        const oldValue = this.root[privateKey]
-        if (oldValue === value) return
-        this.root[privateKey] = value
-        this.hooks.emit('service', key)
-        const action = value ? oldValue ? 'changed' : 'enabled' : 'disabled'
-        this.logger('service').debug(key, action)
-      },
-    })
-  }
+  // export const Services: (keyof Services)[] = []
 }
