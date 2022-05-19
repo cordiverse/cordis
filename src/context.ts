@@ -1,6 +1,6 @@
 import { defineProperty } from 'cosmokit'
-import Logger from 'reggol'
 import { Services, Session } from '.'
+import { App } from './app'
 import { Lifecycle } from './lifecycle'
 import { Plugin, Registry } from './plugin'
 
@@ -11,30 +11,14 @@ export interface Context extends Services, Lifecycle.Delegates, Registry.Delegat
 export class Context {
   static readonly current = Symbol('source')
 
-  public filter: Filter = () => true
-  public services = {} as Services
-  public _plugin: Plugin = null
-
-  constructor(config: Context.Config = {}) {
-    this.lifecycle = new Lifecycle(this, config)
-    this.registry = new Registry(this, config)
-  }
+  protected constructor(public filter: Filter, public app: App, public _plugin: Plugin) {}
 
   [Symbol.for('nodejs.util.inspect.custom')]() {
     return `Context <${this._plugin ? this._plugin.name : 'root'}>`
   }
 
-  logger(name: string) {
-    return new Logger(name)
-  }
-
   fork(filter: Filter, _plugin: Plugin) {
-    const prototype = Object.getPrototypeOf(this)
-    const context: this = Object.create(prototype)
-    context.services = this.services
-    context.filter = filter
-    context._plugin = _plugin
-    return context
+    return new Context(filter, this.app, _plugin)
   }
 
   any() {
@@ -70,38 +54,41 @@ export class Context {
 }
 
 export namespace Context {
-  export interface Config extends Lifecycle.Config, Registry.Config {}
-
   export interface ServiceOptions {
-    deprecated?: boolean
+    constructor?: any
     methods?: string[]
   }
 
-  const warnings = new Set<string>()
+  /** @deprecated for backward compatibility */
+  export interface Services {}
+
+  export const internal = {}
 
   export function service(name: keyof any, options: ServiceOptions = {}) {
     if (Object.prototype.hasOwnProperty.call(Context.prototype, name)) return
+    const privateKey = typeof name === 'symbol' ? name : Symbol(name)
+
     Object.defineProperty(Context.prototype, name, {
       get(this: Context) {
-        const value = this.services[name]
+        const value = this.app[privateKey]
         if (!value) return
-        if (options.deprecated && typeof name === 'string' && !warnings.has(name)) {
-          warnings.add(name)
-          this.logger('service').warn(`${name} is deprecated`)
-        }
         defineProperty(value, Context.current, this)
         return value
       },
       set(this: Context, value) {
-        const oldValue = this.services[name]
+        const oldValue = this.app[privateKey]
         if (oldValue === value) return
-        this.services[name] = value
+        this.app[privateKey] = value
         if (typeof name !== 'string') return
-        this.emit('service', name)
+        this.emit('service', name, oldValue)
         const action = value ? oldValue ? 'changed' : 'enabled' : 'disabled'
-        this.logger('service').debug(name, action)
+        this.emit('logger/debug', 'service', name, action)
       },
     })
+
+    if (options.constructor) {
+      internal[privateKey] = options.constructor
+    }
 
     for (const method of options.methods || []) {
       defineProperty(Context.prototype, method, function (this: Context, ...args: any[]) {
@@ -111,10 +98,12 @@ export namespace Context {
   }
 
   service('registry', {
+    constructor: Registry,
     methods: ['plugin', 'dispose'],
   })
 
   service('lifecycle', {
+    constructor: Lifecycle,
     methods: ['on', 'once', 'off', 'before', 'after', 'parallel', 'emit', 'serial', 'bail', 'waterfall', 'chain'],
   })
 }
