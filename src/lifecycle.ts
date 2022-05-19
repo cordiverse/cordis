@@ -1,33 +1,13 @@
 import { Promisify, remove } from 'cosmokit'
-import Logger from 'reggol'
 import { Events, Session } from '.'
 import { Context } from './context'
 import { Disposable } from './plugin'
-
-const logger = new Logger('app')
 
 function isBailed(value: any) {
   return value !== null && value !== false && value !== undefined
 }
 
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
-
-class TaskQueue {
-  #internal = new Set<Promise<void>>()
-
-  queue(value: any) {
-    const task = Promise.resolve(value)
-      .catch(err => logger.warn(err))
-      .then(() => this.#internal.delete(task))
-    this.#internal.add(task)
-  }
-
-  async flush() {
-    while (this.#internal.size) {
-      await Promise.all(Array.from(this.#internal))
-    }
-  }
-}
+const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
 export namespace Lifecycle {
   export interface Config {
@@ -56,7 +36,7 @@ export namespace Lifecycle {
 
 export class Lifecycle {
   isActive = false
-  _tasks = new TaskQueue()
+  #tasks = new Set<Promise<void>>()
   _hooks: Record<keyof any, [Context, (...args: any[]) => any][]> = {}
 
   constructor(private ctx: Context, private config: Lifecycle.Config) {}
@@ -65,7 +45,20 @@ export class Lifecycle {
     return this[Context.current] || this.ctx
   }
 
-  protected* getHooks(name: EventName, session?: Session) {
+  queue(value: any) {
+    const task = Promise.resolve(value)
+      .catch(err => this.emit('logger/warn', 'app', err))
+      .then(() => this.#tasks.delete(task))
+    this.#tasks.add(task)
+  }
+
+  async flush() {
+    while (this.#tasks.size) {
+      await Promise.all(Array.from(this.#tasks))
+    }
+  }
+
+  * getHooks(name: EventName, session?: Session) {
     const hooks = this._hooks[name] || []
     for (const [context, callback] of hooks.slice()) {
       if (!context.match(session)) continue
@@ -79,7 +72,7 @@ export class Lifecycle {
     const name = args.shift()
     for (const callback of this.getHooks(name, session)) {
       tasks.push(Promise.resolve(callback.apply(session, args)).catch((error) => {
-        logger.warn(error)
+        this.emit('logger/warn', 'app', error)
       }))
     }
     await Promise.all(tasks)
@@ -127,12 +120,40 @@ export class Lifecycle {
     }
   }
 
+  checkLength(length: number, label: string, ...param: any[]) {
+    if (length >= this.config.maxListeners) {
+      this.emit('logger/warn', 'app',
+        `max listener count (%d) for ${label} exceeded, which may be caused by a memory leak`,
+        this.config.maxListeners, ...param,
+      )
+    }
+  }
+
+  register(hooks: [Context, any][], listener: any, prepend?: boolean) {
+    const method = prepend ? 'unshift' : 'push'
+    hooks[method]([this.caller, listener])
+    const dispose = () => {
+      remove(this.caller.state.disposables, dispose)
+      return this.unregister(hooks, listener)
+    }
+    this.caller.state.disposables.push(dispose)
+    return dispose
+  }
+
+  unregister(hooks: [Context, any][], listener: any) {
+    const index = hooks.findIndex(([context, callback]) => context === this.caller && callback === listener)
+    if (index >= 0) {
+      hooks.splice(index, 1)
+      return true
+    }
+  }
+
   on(name: EventName, listener: Disposable, prepend = false) {
     const method = prepend ? 'unshift' : 'push'
 
     // handle special events
     if (name === 'ready' && this.isActive) {
-      this._tasks.queue(sleep(0).then(() => listener()))
+      this.queue(sleep(0).then(() => listener()))
       return () => false
     } else if (name === 'dispose') {
       this.caller.state.disposables[method](listener)
@@ -140,20 +161,8 @@ export class Lifecycle {
     }
 
     const hooks = this._hooks[name] ||= []
-    if (hooks.length >= this.config.maxListeners) {
-      logger.warn(
-        'max listener count (%d) for event "%s" exceeded, which may be caused by a memory leak',
-        this.config.maxListeners, name,
-      )
-    }
-
-    hooks[method]([this.caller, listener])
-    const dispose = () => {
-      remove(this.caller.state.disposables, dispose)
-      return this.off(name, listener)
-    }
-    this.caller.state.disposables.push(dispose)
-    return dispose
+    this.checkLength(hooks.length, 'event "%s"', name)
+    return this.register(hooks, listener, prepend)
   }
 
   once(name: EventName, listener: Disposable, prepend = false) {
@@ -171,27 +180,22 @@ export class Lifecycle {
   }
 
   off<K extends EventName>(name: K, listener: Events[K]) {
-    const index = (this._hooks[name] || [])
-      .findIndex(([context, callback]) => context === this.caller && callback === listener)
-    if (index >= 0) {
-      this._hooks[name].splice(index, 1)
-      return true
-    }
+    return this.unregister(this._hooks[name] || [], listener)
   }
 
   async start() {
     this.isActive = true
-    logger.debug('started')
+    this.emit('logger/debug', 'app', 'started')
     for (const callback of this.getHooks('ready')) {
-      this._tasks.queue(callback())
+      this.queue(callback())
     }
     delete this._hooks.ready
-    await this._tasks.flush()
+    await this.flush()
   }
 
   async stop() {
     this.isActive = false
-    logger.debug('stopped')
+    this.emit('logger/debug', 'app', 'stopped')
     // `dispose` event is handled by ctx.disposables
     await Promise.all(this.ctx.state.disposables.map(dispose => dispose()))
   }

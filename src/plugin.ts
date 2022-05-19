@@ -97,7 +97,7 @@ export class Registry extends Map<Plugin, Plugin.State> {
     return this.plugin({ using, apply: callback, name: callback.name })
   }
 
-  validate<T extends Plugin>(plugin: T, config: any) {
+  static validate(plugin: any, config: any) {
     if (config === false) return
     if (config === true) config = undefined
     config ??= {}
@@ -110,7 +110,7 @@ export class Registry extends Map<Plugin, Plugin.State> {
   plugin(plugin: Plugin, config?: any) {
     // check duplication
     if (this.has(plugin)) {
-      this.caller.logger('app').warn(`duplicate plugin detected: ${plugin.name}`)
+      this.ctx.emit('logger/warn', 'app', `duplicate plugin detected: ${plugin.name}`)
       return this
     }
 
@@ -120,14 +120,14 @@ export class Registry extends Map<Plugin, Plugin.State> {
     }
 
     // validate plugin config
-    config = this.validate(plugin, config)
+    config = Registry.validate(plugin, config)
     if (!config) return this
 
     const context = this.caller.fork(this.caller.filter, plugin)
     const schema = plugin['Config'] || plugin['schema']
     const using = plugin['using'] || []
 
-    this.caller.logger('app').debug('plugin:', plugin.name)
+    this.ctx.emit('logger/debug', 'app', 'plugin:', plugin.name)
     this.set(plugin, {
       plugin,
       schema,
@@ -172,7 +172,7 @@ export class Registry extends Map<Plugin, Plugin.State> {
     if (!plugin) throw new Error('root level context cannot be disposed')
     const state = this.get(plugin)
     if (!state) return
-    this.caller.logger('app').debug('dispose:', plugin.name)
+    this.ctx.emit('logger/debug', 'app', 'dispose:', plugin.name)
     state.children.slice().map(plugin => this.dispose(plugin))
     state.disposables.slice().map(dispose => dispose())
     this.delete(plugin)
