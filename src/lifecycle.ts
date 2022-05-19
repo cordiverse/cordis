@@ -1,5 +1,5 @@
 import { Promisify, remove } from 'cosmokit'
-import { Events, Session } from '.'
+import { Events } from '.'
 import { Context } from './context'
 import { Disposable } from './plugin'
 
@@ -16,17 +16,17 @@ export namespace Lifecycle {
 
   export interface Delegates {
     parallel<K extends EventName>(name: K, ...args: Parameters<Events[K]>): Promise<void>
-    parallel<K extends EventName>(session: Session, name: K, ...args: Parameters<Events[K]>): Promise<void>
+    parallel<K extends EventName>(session: Context.Session, name: K, ...args: Parameters<Events[K]>): Promise<void>
     emit<K extends EventName>(name: K, ...args: Parameters<Events[K]>): void
-    emit<K extends EventName>(session: Session, name: K, ...args: Parameters<Events[K]>): void
+    emit<K extends EventName>(session: Context.Session, name: K, ...args: Parameters<Events[K]>): void
     waterfall<K extends EventName>(name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
-    waterfall<K extends EventName>(session: Session, name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
+    waterfall<K extends EventName>(session: Context.Session, name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
     chain<K extends EventName>(name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
-    chain<K extends EventName>(session: Session, name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
+    chain<K extends EventName>(session: Context.Session, name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
     serial<K extends EventName>(name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
-    serial<K extends EventName>(session: Session, name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
+    serial<K extends EventName>(session: Context.Session, name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
     bail<K extends EventName>(name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
-    bail<K extends EventName>(session: Session, name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
+    bail<K extends EventName>(session: Context.Session, name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
     on<K extends EventName>(name: K, listener: Events[K], prepend?: boolean): () => boolean
     once<K extends EventName>(name: K, listener: Events[K], prepend?: boolean): () => boolean
     before<K extends BeforeEventName>(name: K, listener: BeforeEventMap[K], append?: boolean): () => boolean
@@ -58,7 +58,7 @@ export class Lifecycle {
     }
   }
 
-  * getHooks(name: EventName, session?: Session) {
+  * getHooks(name: EventName, session?: Context.Session) {
     const hooks = this._hooks[name] || []
     for (const [context, callback] of hooks.slice()) {
       if (!context.match(session)) continue

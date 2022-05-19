@@ -1,12 +1,11 @@
 import { defineProperty } from 'cosmokit'
-import { Services, Session } from '.'
 import { App } from './app'
 import { Lifecycle } from './lifecycle'
 import { Plugin, Registry } from './plugin'
 
-export type Filter = (session: Session) => boolean
+export type Filter = (session: Context.Session) => boolean
 
-export interface Context extends Services, Lifecycle.Delegates, Registry.Delegates {}
+export interface Context extends Context.Services, Lifecycle.Delegates, Registry.Delegates {}
 
 export class Context {
   static readonly current = Symbol('source')
@@ -44,7 +43,7 @@ export class Context {
     return this.fork(s => this.filter(s) && !filter(s), this._plugin)
   }
 
-  match(session?: Session) {
+  match(session?: Context.Session) {
     return !session || this.filter(session)
   }
 
@@ -54,13 +53,18 @@ export class Context {
 }
 
 export namespace Context {
+  export interface Services {
+    app: App
+    lifecycle: Lifecycle
+    registry: Registry
+  }
+
+  export interface Session {}
+
   export interface ServiceOptions {
     constructor?: any
     methods?: string[]
   }
-
-  /** @deprecated for backward compatibility */
-  export interface Services {}
 
   export const internal = {}
 

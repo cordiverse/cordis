@@ -1,10 +1,11 @@
 {
   "compilerOptions": {
-    "outDir": "lib",
+    "outFile": "temp/index.d.ts",
     "rootDir": "src",
     "target": "es2019",
     "module": "commonjs",
     "declaration": true,
+    "emitDeclarationOnly": true,
     "composite": true,
     "incremental": true,
     "skipLibCheck": true,

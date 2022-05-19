@@ -1,8 +1,5 @@
 import { Awaitable } from 'cosmokit'
-import { App } from './app'
-import { Context } from './context'
-import { Lifecycle } from './lifecycle'
-import { Plugin, Registry } from './plugin'
+import { Plugin } from './plugin'
 
 export * from './app'
 export * from './context'
@@ -21,11 +18,3 @@ export interface Events {
   'dispose'(): Awaitable<void>
   'service'(name: string, oldValue: any): void
 }
-
-export interface Services extends Context.Services {
-  app: App
-  lifecycle: Lifecycle
-  registry: Registry
-}
-
-export interface Session {}

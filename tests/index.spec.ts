@@ -1,4 +1,4 @@
-import { Context } from '../src'
+import { App, Context } from '../src'
 
 declare module '../src' {
   interface Events {
@@ -6,7 +6,7 @@ declare module '../src' {
   }
 }
 
-const ctx = new Context()
+const ctx = new App()
 
 function plugin(ctx: Context, { text }: { text: string }) {
   ctx.on('foo', () => {
