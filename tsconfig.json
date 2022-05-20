@@ -6,8 +6,6 @@
     "module": "commonjs",
     "declaration": true,
     "emitDeclarationOnly": true,
-    "composite": true,
-    "incremental": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
     "moduleResolution": "node",

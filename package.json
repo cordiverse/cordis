@@ -19,7 +19,6 @@
     "lib"
   ],
   "scripts": {
-    "dtsc": "node -r esbuild-register build/dtsc.ts",
     "compile:cjs": "esbuild src/index.ts --outfile=lib/index.cjs --bundle --sourcemap --platform=node --external:cosmokit --target=es2019",
     "compile:esm": "esbuild src/index.ts --outfile=lib/index.ejs --bundle --sourcemap --platform=neutral --external:cosmokit --target=esnext",
     "build": "yarn compile:cjs && yarn compile:esm && yarn dtsc",
@@ -37,6 +36,7 @@
     "c8": "^7.11.2",
     "chai": "^4.3.6",
     "cross-spawn": "^7.0.3",
+    "dtsc": "^1.0.0",
     "esbuild": "^0.14.38",
     "esbuild-register": "^3.3.2",
     "fs-extra": "^10.1.0",

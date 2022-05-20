@@ -3,7 +3,7 @@ import { App } from './app'
 import { Lifecycle } from './lifecycle'
 import { Plugin, Registry } from './plugin'
 
-export type Filter = (session: Session) => boolean
+export type Filter = (session: Lifecycle.Session) => boolean
 
 export interface Context extends Context.Services, Lifecycle.Delegates, Registry.Delegates {}
 
@@ -43,7 +43,7 @@ export class Context {
     return this.fork(s => this.filter(s) && !filter(s), this._plugin)
   }
 
-  match(session?: Session) {
+  match(session?: Lifecycle.Session) {
     return !session || this.filter(session)
   }
 
@@ -51,8 +51,6 @@ export class Context {
     return this.registry.get(this._plugin)
   }
 }
-
-export interface Session {}
 
 export namespace Context {
   /** @deprecated for backward compatibility */

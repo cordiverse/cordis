@@ -1,5 +1,5 @@
 import { Awaitable, Promisify, remove } from 'cosmokit'
-import { Context, Session } from './context'
+import { Context } from './context'
 import { Disposable, Plugin } from './plugin'
 
 function isBailed(value: any) {
@@ -9,6 +9,8 @@ function isBailed(value: any) {
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
 export namespace Lifecycle {
+  export interface Session {}
+
   export interface Config {
     maxListeners?: number
   }
@@ -57,7 +59,7 @@ export class Lifecycle {
     }
   }
 
-  * getHooks(name: EventName, session?: Session) {
+  * getHooks(name: EventName, session?: Lifecycle.Session) {
     const hooks = this._hooks[name] || []
     for (const [context, callback] of hooks.slice()) {
       if (!context.match(session)) continue
