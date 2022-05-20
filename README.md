@@ -5,20 +5,22 @@
 [![npm](https://img.shields.io/npm/v/cordis?style=flat-square)](https://www.npmjs.com/package/cordis)
 [![GitHub](https://img.shields.io/github/license/shigma/cordis?style=flat-square)](https://github.com/shigma/cordis/blob/master/LICENSE)
 
-Infrastructure for Modern JavaScript Framework.
+Infrastructure for Modern JavaScript Frameworks.
 
 ```ts
-import { Context } from 'cordis'
+import { App } from 'cordis'
 
-const ctx = new Context()
+const app = new App()
 
-ctx.plugin(plugin)              // use plugins
-ctx.on(event, callback)         // listen to events
+app.plugin(plugin)              // use plugins
+app.on(event, callback)         // listen to events
 
-ctx.lifecycle.start()           // start app
+app.start()                     // start app
 ```
 
 ## Concepts
+
+### App
 
 ### Context
 

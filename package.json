@@ -1,7 +1,9 @@
 {
   "name": "cordis",
-  "version": "0.1.0",
-  "main": "lib/index.js",
+  "description": "Infrastructure for Modern JavaScript Frameworks",
+  "version": "1.0.0",
+  "main": "lib/index.cjs",
+  "module": "lib/index.ejs",
   "typings": "lib/index.d.ts",
   "repository": {
     "type": "git",
