@@ -106,12 +106,12 @@ describe('Disposable API', () => {
 
     // 3 handlers now
     expect(callback.mock.calls).to.have.length(0)
-    app.emit('attach', null)
+    app.emit('attach')
     expect(callback.mock.calls).to.have.length(3)
 
     // only 1 handler left
     pluginCtx.dispose()
-    app.emit('attach', null)
+    app.emit('attach')
     expect(callback.mock.calls).to.have.length(4)
   })
 
