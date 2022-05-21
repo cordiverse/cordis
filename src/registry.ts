@@ -21,11 +21,11 @@ export namespace Plugin {
   export type Function<T = any> = (ctx: Context, options: T) => void
   export type Constructor<T = any> = new (ctx: Context, options: T) => void
 
-  export interface Object<T = any> {
+  export interface Object<S = any, T = any> {
     name?: string
     apply: Function<T>
-    Config?: (config: T) => any
-    schema?: (config: T) => any
+    Config?: (config?: S) => T
+    schema?: (config?: S) => T
     using?: readonly string[]
   }
 

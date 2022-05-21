@@ -13,8 +13,6 @@ declare module '../src/lifecycle' {
   }
 }
 
-const app = new App()
-
 describe('Plugin API', () => {
   it('apply functional plugin', () => {
     const app = new App()

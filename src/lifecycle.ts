@@ -6,8 +6,6 @@ function isBailed(value: any) {
   return value !== null && value !== false && value !== undefined
 }
 
-const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
-
 export namespace Lifecycle {
   export interface Session {}
 
@@ -68,18 +66,18 @@ export class Lifecycle {
   }
 
   async parallel(...args: any[]) {
-    const tasks: Promise<any>[] = []
     const session = typeof args[0] === 'object' ? args.shift() : null
     const name = args.shift()
-    for (const callback of this.getHooks(name, session)) {
-      tasks.push(Promise.resolve(callback.apply(session, args)).catch((error) => {
+    await Promise.all([...this.getHooks(name, session)].map(async (callback) => {
+      try {
+        await callback.apply(session, args)
+      } catch (error) {
         this.emit('logger/warn', 'app', error)
-      }))
-    }
-    await Promise.all(tasks)
+      }
+    }))
   }
 
-  emit(...args: [any, ...any[]]) {
+  emit(...args: any[]) {
     this.parallel(...args)
   }
 
@@ -154,7 +152,7 @@ export class Lifecycle {
 
     // handle special events
     if (name === 'ready' && this.isActive) {
-      this.queue(sleep(0).then(() => listener()))
+      this.queue(listener())
       return () => false
     } else if (name === 'dispose') {
       this.caller.state.disposables[method](listener)

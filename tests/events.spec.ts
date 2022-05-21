@@ -1,6 +1,7 @@
 import { App, Filter } from '../src'
 import { expect } from 'chai'
 import * as jest from 'jest-mock'
+import { noop } from 'cosmokit'
 
 declare module '../src/lifecycle' {
   interface Events {
@@ -14,9 +15,35 @@ declare module '../src/lifecycle' {
   }
 }
 
-const app = new App()
+const app = new App({ maxListeners: 64 })
+const warn = jest.fn()
+
+app.on('logger/warn', warn)
 
 const filter: Filter = session => session.flag
+
+export function createArray<T>(length: number, create: (index: number) => T) {
+  return [...new Array(length).keys()].map(create)
+}
+
+describe('Basic Support', () => {
+  const extraCalls = 7
+
+  beforeEach(() => warn.mockClear())
+  afterEach(() => delete app.lifecycle._hooks.attach)
+
+  it('max hooks', async () => {
+    createArray(64 + extraCalls, () => app.on('attach', noop))
+    expect(app.lifecycle._hooks.attach.length).to.equal(64 + extraCalls)
+    expect(warn.mock.calls).to.have.length(extraCalls)
+  })
+
+  it('max prepended hooks', () => {
+    createArray(64 + extraCalls, () => app.on('attach', noop, true))
+    expect(app.lifecycle._hooks.attach.length).to.equal(64 + extraCalls)
+    expect(warn.mock.calls).to.have.length(extraCalls)
+  })
+})
 
 describe('Hook API', () => {
   const event = 'attach'
