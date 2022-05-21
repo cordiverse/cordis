@@ -52,8 +52,9 @@ export namespace Registry {
   export interface Config {}
 
   export interface Delegates {
+    using(using: readonly string[], callback: Plugin.Function<void>): this
     plugin<T extends Plugin>(plugin: T, config?: boolean | Plugin.Config<T>): this
-    dispose(): void
+    dispose(plugin?: Plugin): Plugin.State
   }
 }
 
@@ -153,12 +154,16 @@ export class Registry extends Map<Plugin, Plugin.State> {
     }
 
     const callback = () => {
-      if (using.some(name => !this[name])) return
+      if (using.some(name => !this.caller[name])) return
       if (typeof plugin !== 'function') {
         plugin.apply(context, config)
       } else if (isConstructor(plugin)) {
         // eslint-disable-next-line new-cap
-        new plugin(context, config)
+        const instance = new plugin(context, config)
+        const name = instance[Context.immediate]
+        if (name) {
+          this.caller[name] = instance
+        }
       } else {
         plugin(context, config)
       }

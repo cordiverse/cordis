@@ -1,23 +1,143 @@
 import { App, Context } from '../src'
+import { expect, use } from 'chai'
+import * as jest from 'jest-mock'
+import { inspect } from 'util'
+import { Dict } from 'cosmokit'
+import shape from 'chai-shape'
 
-declare module '../src' {
+use(shape)
+
+declare module '../src/lifecycle' {
   interface Events {
-    'foo'(): void
+    'attach'(): void
+    'before-attach'(): void
   }
 }
 
-const ctx = new App()
+const app = new App()
 
-function plugin(ctx: Context, { text }: { text: string }) {
-  ctx.on('foo', () => {
-    console.log(text)
+describe('Plugin API', () => {
+  it('apply functional plugin', () => {
+    const callback = jest.fn()
+    const options = { foo: 'bar' }
+    app.plugin(callback, options)
+
+    expect(callback.mock.calls).to.have.length(1)
+    expect(callback.mock.calls[0][1]).to.have.shape(options)
   })
-}
 
-ctx.intersect(() => false).on('foo', () => {
-  console.log('foo')
+  it('apply object plugin', () => {
+    const callback = jest.fn()
+    const options = { bar: 'foo' }
+    const plugin = { apply: callback }
+    app.plugin(plugin, options)
+
+    expect(callback.mock.calls).to.have.length(1)
+    expect(callback.mock.calls[0][1]).to.have.shape(options)
+  })
+
+  it('apply functional plugin with false', () => {
+    const callback = jest.fn()
+    app.plugin(callback, false)
+
+    expect(callback.mock.calls).to.have.length(0)
+  })
+
+  it('apply object plugin with true', () => {
+    const callback = jest.fn()
+    const plugin = { apply: callback }
+    app.plugin(plugin, true)
+
+    expect(callback.mock.calls).to.have.length(1)
+    expect(callback.mock.calls[0][1]).to.have.shape({})
+  })
+
+  it('apply invalid plugin', () => {
+    expect(() => app.plugin(undefined)).to.throw()
+    expect(() => app.plugin({} as any)).to.throw()
+    expect(() => app.plugin({ apply: {} } as any)).to.throw()
+  })
+
+  it('context inspect', () => {
+    expect(inspect(app)).to.equal('Context <root>')
+
+    app.plugin(function foo(ctx) {
+      expect(inspect(ctx)).to.equal('Context <foo>')
+    })
+
+    app.plugin({
+      name: 'bar',
+      apply: (ctx) => {
+        expect(inspect(ctx)).to.equal('Context <bar>')
+      },
+    })
+  })
 })
 
-ctx.plugin(plugin, { text: 'bar' })
+describe('Disposable API', () => {
+  it('context.prototype.dispose', () => {
+    const callback = jest.fn()
+    let pluginCtx: Context
+    app.on('attach', callback)
+    app.plugin((ctx) => {
+      pluginCtx = ctx
+      ctx.on('attach', callback)
+      ctx.plugin((ctx) => {
+        ctx.on('attach', callback)
+      })
+    })
 
-ctx.emit({}, 'foo')
+    // 3 handlers now
+    expect(callback.mock.calls).to.have.length(0)
+    app.emit('attach', null)
+    expect(callback.mock.calls).to.have.length(3)
+
+    // only 1 handler left
+    pluginCtx.dispose()
+    app.emit('attach', null)
+    expect(callback.mock.calls).to.have.length(4)
+  })
+
+  it('memory leak test', async () => {
+    function plugin(ctx: Context) {
+      ctx.on('attach', () => {})
+      ctx.before('attach', () => {})
+      ctx.on('dispose', () => {})
+    }
+
+    function getHookSnapshot() {
+      const result: Dict<number> = {}
+      for (const name in app.lifecycle._hooks) {
+        result[name] = app.lifecycle._hooks[name].length
+      }
+      result._ = app.state.disposables.length
+      return result
+    }
+
+    app.plugin(plugin)
+    const shot1 = getHookSnapshot()
+    app.dispose(plugin)
+    app.plugin(plugin)
+    const shot2 = getHookSnapshot()
+    expect(shot1).to.deep.equal(shot2)
+  })
+
+  it('root level dispose', async () => {
+    // create a context without a plugin
+    const ctx = app.intersect(app)
+    expect(() => ctx.dispose()).to.throw
+  })
+
+  it('dispose event', () => {
+    const callback = jest.fn<void, []>()
+    app.plugin(async (ctx) => {
+      ctx.on('dispose', callback)
+      expect(callback.mock.calls).to.have.length(0)
+      ctx.dispose()
+      expect(callback.mock.calls).to.have.length(1)
+      // callback should only be called once
+      ctx.dispose()
+      expect(callback.mock.calls).to.have.length(1)
+    })
+  })
+})

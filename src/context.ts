@@ -9,6 +9,7 @@ export interface Context extends Context.Services, Lifecycle.Delegates, Registry
 
 export class Context {
   static readonly current = Symbol('source')
+  static readonly immediate = Symbol('immediate')
 
   protected constructor(public filter: Filter, public app: App, public _plugin: Plugin) {}
 
@@ -60,6 +61,8 @@ export namespace Context {
     registry: Registry
   }
 
+  export const Services: string[] = []
+
   export interface ServiceOptions {
     constructor?: any
     methods?: string[]
@@ -70,6 +73,7 @@ export namespace Context {
   export function service(name: keyof any, options: ServiceOptions = {}) {
     if (Object.prototype.hasOwnProperty.call(Context.prototype, name)) return
     const privateKey = typeof name === 'symbol' ? name : Symbol(name)
+    if (typeof name === 'string') Services.push(name)
 
     Object.defineProperty(Context.prototype, name, {
       get(this: Context) {
@@ -89,7 +93,7 @@ export namespace Context {
       },
     })
 
-    if (options.constructor) {
+    if (Object.prototype.hasOwnProperty.call(options, 'constructor')) {
       internal[privateKey] = options.constructor
     }
 
@@ -102,7 +106,7 @@ export namespace Context {
 
   service('registry', {
     constructor: Registry,
-    methods: ['plugin', 'dispose'],
+    methods: ['using', 'plugin', 'dispose'],
   })
 
   service('lifecycle', {

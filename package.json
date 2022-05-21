@@ -36,7 +36,7 @@
     "c8": "^7.11.2",
     "chai": "^4.3.6",
     "cross-spawn": "^7.0.3",
-    "dtsc": "^1.0.0",
+    "dtsc": "^1.1.0",
     "esbuild": "^0.14.38",
     "esbuild-register": "^3.3.2",
     "fs-extra": "^10.1.0",
