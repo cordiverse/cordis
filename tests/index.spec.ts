@@ -1,4 +1,4 @@
-import { App, Context } from '../src'
+import { App, Context, Service } from '../src'
 import { expect, use } from 'chai'
 import * as jest from 'jest-mock'
 import { inspect } from 'util'
@@ -18,6 +18,7 @@ const app = new App()
 
 describe('Plugin API', () => {
   it('apply functional plugin', () => {
+    const app = new App()
     const callback = jest.fn()
     const options = { foo: 'bar' }
     app.plugin(callback, options)
@@ -27,6 +28,7 @@ describe('Plugin API', () => {
   })
 
   it('apply object plugin', () => {
+    const app = new App()
     const callback = jest.fn()
     const options = { bar: 'foo' }
     const plugin = { apply: callback }
@@ -37,6 +39,7 @@ describe('Plugin API', () => {
   })
 
   it('apply functional plugin with false', () => {
+    const app = new App()
     const callback = jest.fn()
     app.plugin(callback, false)
 
@@ -44,6 +47,7 @@ describe('Plugin API', () => {
   })
 
   it('apply object plugin with true', () => {
+    const app = new App()
     const callback = jest.fn()
     const plugin = { apply: callback }
     app.plugin(plugin, true)
@@ -53,12 +57,15 @@ describe('Plugin API', () => {
   })
 
   it('apply invalid plugin', () => {
+    const app = new App()
     expect(() => app.plugin(undefined)).to.throw()
     expect(() => app.plugin({} as any)).to.throw()
     expect(() => app.plugin({ apply: {} } as any)).to.throw()
   })
 
   it('context inspect', () => {
+    const app = new App()
+
     expect(inspect(app)).to.equal('Context <root>')
 
     app.plugin(function foo(ctx) {

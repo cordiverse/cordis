@@ -148,7 +148,7 @@ export class Registry extends Map<Plugin, Plugin.State> {
       context.on('service', (name) => {
         if (!using.includes(name)) return
         context.state.children.slice().map(plugin => this.dispose(plugin))
-        context.state.disposables.slice(1).map(dispose => dispose())
+        context.state.disposables.splice(1, Infinity).map(dispose => dispose())
         callback()
       })
     }
