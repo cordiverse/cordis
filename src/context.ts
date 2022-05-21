@@ -1,7 +1,7 @@
 import { defineProperty } from 'cosmokit'
 import { App } from './app'
 import { Lifecycle } from './lifecycle'
-import { Plugin, Registry } from './plugin'
+import { Plugin, Registry } from './registry'
 
 export type Filter = (session: Lifecycle.Session) => boolean
 

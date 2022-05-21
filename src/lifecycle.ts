@@ -1,6 +1,6 @@
 import { Awaitable, Promisify, remove } from 'cosmokit'
 import { Context } from './context'
-import { Disposable, Plugin } from './plugin'
+import { Disposable, Plugin } from './registry'
 
 function isBailed(value: any) {
   return value !== null && value !== false && value !== undefined
@@ -142,7 +142,7 @@ export class Lifecycle {
   }
 
   unregister(hooks: [Context, any][], listener: any) {
-    const index = hooks.findIndex(([context, callback]) => context === this.caller && callback === listener)
+    const index = hooks.findIndex(([context, callback]) => callback === listener)
     if (index >= 0) {
       hooks.splice(index, 1)
       return true

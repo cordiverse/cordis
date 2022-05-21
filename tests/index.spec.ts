@@ -1,4 +1,4 @@
-import { App, Context, Service } from '../src'
+import { App, Context } from '../src'
 import { expect, use } from 'chai'
 import * as jest from 'jest-mock'
 import { inspect } from 'util'
@@ -10,7 +10,6 @@ use(shape)
 declare module '../src/lifecycle' {
   interface Events {
     'attach'(): void
-    'before-attach'(): void
   }
 }
 
@@ -63,6 +62,16 @@ describe('Plugin API', () => {
     expect(() => app.plugin({ apply: {} } as any)).to.throw()
   })
 
+  it('apply duplicate plugin', () => {
+    const app = new App()
+    const callback = jest.fn()
+    const plugin = { apply: callback }
+    app.plugin(plugin)
+    expect(callback.mock.calls).to.have.length(1)
+    app.plugin(plugin)
+    expect(callback.mock.calls).to.have.length(1)
+  })
+
   it('context inspect', () => {
     const app = new App()
 
@@ -83,6 +92,7 @@ describe('Plugin API', () => {
 
 describe('Disposable API', () => {
   it('context.prototype.dispose', () => {
+    const app = new App()
     const callback = jest.fn()
     let pluginCtx: Context
     app.on('attach', callback)
@@ -107,35 +117,38 @@ describe('Disposable API', () => {
 
   it('memory leak test', async () => {
     function plugin(ctx: Context) {
+      ctx.on('ready', () => {})
       ctx.on('attach', () => {})
-      ctx.before('attach', () => {})
       ctx.on('dispose', () => {})
     }
 
     function getHookSnapshot() {
       const result: Dict<number> = {}
-      for (const name in app.lifecycle._hooks) {
-        result[name] = app.lifecycle._hooks[name].length
+      for (const [name, callbacks] of Object.entries(app.lifecycle._hooks)) {
+        if (callbacks.length) result[name] = callbacks.length
       }
-      result._ = app.state.disposables.length
       return result
     }
 
+    const app = new App()
+    const before = getHookSnapshot()
     app.plugin(plugin)
-    const shot1 = getHookSnapshot()
+    const after = getHookSnapshot()
     app.dispose(plugin)
+    expect(before).to.deep.equal(getHookSnapshot())
     app.plugin(plugin)
-    const shot2 = getHookSnapshot()
-    expect(shot1).to.deep.equal(shot2)
+    expect(after).to.deep.equal(getHookSnapshot())
   })
 
   it('root level dispose', async () => {
+    const app = new App()
     // create a context without a plugin
     const ctx = app.intersect(app)
     expect(() => ctx.dispose()).to.throw
   })
 
   it('dispose event', () => {
+    const app = new App()
     const callback = jest.fn<void, []>()
     app.plugin(async (ctx) => {
       ctx.on('dispose', callback)
