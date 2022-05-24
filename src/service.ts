@@ -21,6 +21,11 @@ export class Service {
       ctx[name] = null
       await this.stop()
     })
+
+    // ctx.on('service', async (name, oldValue) => {
+    //   console.log(name, oldValue)
+    //   if (this === oldValue) this.stop()
+    // })
   }
 
   get caller(): Context {

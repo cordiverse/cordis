@@ -1,4 +1,4 @@
-import { Awaitable, Promisify, remove } from 'cosmokit'
+import { Awaitable, defineProperty, Promisify, remove } from 'cosmokit'
 import { Context } from './context'
 import { Disposable, Plugin } from './registry'
 
@@ -119,16 +119,14 @@ export class Lifecycle {
     }
   }
 
-  checkLength(length: number, label: string, ...param: any[]) {
-    if (length >= this.config.maxListeners) {
+  register(label: string, hooks: [Context, any][], listener: any, prepend?: boolean) {
+    if (hooks.length >= this.config.maxListeners) {
       this.emit('logger/warn', 'app',
         `max listener count (%d) for ${label} exceeded, which may be caused by a memory leak`,
-        this.config.maxListeners, ...param,
+        this.config.maxListeners,
       )
     }
-  }
 
-  register(hooks: [Context, any][], listener: any, prepend?: boolean) {
     const method = prepend ? 'unshift' : 'push'
     hooks[method]([this.caller, listener])
     const dispose = () => {
@@ -136,6 +134,7 @@ export class Lifecycle {
       return this.unregister(hooks, listener)
     }
     this.caller.state.disposables.push(dispose)
+    defineProperty(dispose, 'name', label)
     return dispose
   }
 
@@ -157,11 +156,14 @@ export class Lifecycle {
     } else if (name === 'dispose') {
       this.caller.state.disposables[method](listener)
       return () => remove(this.caller.state.disposables, listener)
+    } else if (name === 'fork') {
+      this.caller.state.runtime.forkers[method](listener)
+      return () => remove(this.caller.state.runtime.forkers, listener)
     }
 
     const hooks = this._hooks[name] ||= []
-    this.checkLength(hooks.length, 'event "%s"', name)
-    return this.register(hooks, listener, prepend)
+    const label = typeof name === 'string' ? `event "${name}"` : 'event'
+    return this.register(label, hooks, listener, prepend)
   }
 
   once(name: EventName, listener: Disposable, prepend = false) {
@@ -210,9 +212,10 @@ export interface Events {
   'logger/error'(name: string, format: string, ...param: any[]): void
   'logger/warn'(name: string, format: string, ...param: any[]): void
   'logger/debug'(name: string, format: string, ...param: any[]): void
-  'plugin-added'(state: Plugin.State): void
-  'plugin-removed'(state: Plugin.State): void
+  'plugin-added'(state: Plugin.Runtime): void
+  'plugin-removed'(state: Plugin.Runtime): void
   'ready'(): Awaitable<void>
+  'fork': Plugin.Function
   'dispose'(): Awaitable<void>
   'service'(name: string, oldValue: any): void
 }

@@ -1,4 +1,5 @@
-import { remove } from 'cosmokit'
+import { defineProperty, remove } from 'cosmokit'
+import { App } from './app'
 import { Context } from './context'
 
 function isConstructor(func: Function) {
@@ -36,15 +37,109 @@ export namespace Plugin {
     : never
 
   export interface State {
-    id: string
-    parent: Context
-    context?: Context
-    config?: any
-    using: readonly string[]
-    schema?: any
-    plugin?: Plugin
-    children: Plugin[]
+    runtime: Runtime
+    context: Context
+    config: any
     disposables: Disposable[]
+    dispose: () => void
+  }
+
+  export class Runtime {
+    id = ''
+    runtime = this
+    context: Context
+    schema: any
+    using: readonly string[]
+    disposables: Disposable[] = []
+    forkers: Function[] = []
+    parents: State[] = []
+    isActive = false
+
+    constructor(private registry: Registry, public plugin: Plugin, public config: any) {
+      this.fork(registry.caller, config)
+      this.context = new Context((session) => {
+        return this.parents.some(p => p.context.match(session))
+      }, registry.app, this)
+      registry.set(plugin, this)
+
+      if (plugin) this.start()
+    }
+
+    fork(context: Context, config: any) {
+      const dispose = () => {
+        state.disposables.slice().forEach(dispose => dispose())
+        remove(context.state.disposables, state.dispose)
+        if (remove(this.parents, state) && !this.parents.length) {
+          this.dispose()
+        }
+      }
+      defineProperty(dispose, 'name', `fork <${context.source}>`)
+      const state: State = {
+        runtime: this,
+        config,
+        context,
+        disposables: [],
+        dispose,
+      }
+      this.parents.push(state)
+      this.disposables.push(state.dispose)
+      if (this.isActive) {
+        this.executeFork(state)
+      }
+      return state
+    }
+
+    dispose() {
+      this.disposables.slice().forEach(dispose => dispose())
+      this.registry.delete(this.plugin)
+      this.context.emit('logger/debug', 'app', 'dispose:', this.plugin.name)
+      this.context.emit('plugin-removed', this)
+    }
+
+    start() {
+      this.schema = this.plugin['Config'] || this.plugin['schema']
+      this.using = this.plugin['using'] || []
+      this.id = Math.random().toString(36).slice(2, 10)
+      this.registry.app.emit('plugin-added', this)
+      this.registry.app.emit('logger/debug', 'app', 'plugin:', this.plugin.name)
+
+      if (this.using.length) {
+        this.context.on('service', (name) => {
+          if (!this.using.includes(name)) return
+          this.disposables.splice(2, Infinity).map(dispose => dispose())
+          this.callback()
+        })
+      }
+
+      this.callback()
+    }
+
+    executeFork(state: State) {
+      for (const fork of this.forkers) {
+        fork(state.context, state.config)
+      }
+    }
+
+    callback() {
+      if (this.using.some(name => !this.context[name])) return
+      if (typeof this.plugin !== 'function') {
+        this.plugin.apply(this.context, this.config)
+      } else if (isConstructor(this.plugin)) {
+        // eslint-disable-next-line new-cap
+        const instance = new this.plugin(this.context, this.config)
+        const name = instance[Context.immediate]
+        if (name) {
+          this.context[name] = instance
+        }
+      } else {
+        this.plugin(this.context, this.config)
+      }
+
+      this.isActive = true
+      for (const state of this.parents) {
+        this.executeFork(state)
+      }
+    }
   }
 }
 
@@ -54,24 +149,19 @@ export namespace Registry {
   export interface Delegates {
     using(using: readonly string[], callback: Plugin.Function<void>): this
     plugin<T extends Plugin>(plugin: T, config?: boolean | Plugin.Config<T>): this
-    dispose(plugin?: Plugin): Plugin.State
+    dispose(plugin?: Plugin): Plugin.Runtime
   }
 }
 
-export class Registry extends Map<Plugin, Plugin.State> {
-  constructor(private ctx: Context, private config: Registry.Config) {
-    super()
-    this.set(null, {
-      id: '',
-      parent: null,
-      using: [],
-      children: [],
-      disposables: [],
-    })
+export class Registry {
+  #registry = new Map<Plugin, Plugin.Runtime>()
+
+  constructor(public app: App, private config: Registry.Config) {
+    app.state = new Plugin.Runtime(this, null, null)
   }
 
-  protected get caller(): Context {
-    return this[Context.current] || this.ctx
+  get caller(): Context {
+    return this[Context.current] || this.app
   }
 
   private resolve(plugin: Plugin) {
@@ -79,19 +169,15 @@ export class Registry extends Map<Plugin, Plugin.State> {
   }
 
   get(plugin: Plugin) {
-    return super.get(this.resolve(plugin))
+    return this.#registry.get(this.resolve(plugin))
   }
 
-  set(plugin: Plugin, state: Plugin.State) {
-    return super.set(this.resolve(plugin), state)
-  }
-
-  has(plugin: Plugin) {
-    return super.has(this.resolve(plugin))
+  set(plugin: Plugin, state: Plugin.Runtime) {
+    return this.#registry.set(this.resolve(plugin), state)
   }
 
   delete(plugin: Plugin) {
-    return super.delete(this.resolve(plugin))
+    return this.#registry.delete(this.resolve(plugin))
   }
 
   using(using: readonly string[], callback: Plugin.Function<void>) {
@@ -110,8 +196,12 @@ export class Registry extends Map<Plugin, Plugin.State> {
 
   plugin(plugin: Plugin, config?: any) {
     // check duplication
-    if (this.has(plugin)) {
-      this.ctx.emit('logger/warn', 'app', `duplicate plugin detected: ${plugin.name}`)
+    const duplicate = this.get(plugin)
+    if (duplicate) {
+      duplicate.fork(this.caller, config)
+      if (!duplicate.forkers.length) {
+        this.app.emit('logger/warn', 'app', `duplicate plugin detected: ${plugin.name}`)
+      }
       return this
     }
 
@@ -124,65 +214,11 @@ export class Registry extends Map<Plugin, Plugin.State> {
     config = Registry.validate(plugin, config)
     if (!config) return this
 
-    const context = this.caller.fork(this.caller.filter, plugin)
-    const schema = plugin['Config'] || plugin['schema']
-    const using = plugin['using'] || []
-
-    this.ctx.emit('logger/debug', 'app', 'plugin:', plugin.name)
-    this.set(plugin, {
-      plugin,
-      schema,
-      using,
-      context,
-      id: Math.random().toString(36).slice(2, 10),
-      parent: this.caller,
-      config: config,
-      children: [],
-      disposables: [],
-    })
-
-    this.caller.state.children.push(plugin)
-    this.caller.emit('plugin-added', this.get(plugin))
-
-    if (using.length) {
-      context.on('service', (name) => {
-        if (!using.includes(name)) return
-        context.state.children.slice().map(plugin => this.dispose(plugin))
-        context.state.disposables.splice(1, Infinity).map(dispose => dispose())
-        callback()
-      })
-    }
-
-    const callback = () => {
-      if (using.some(name => !this.caller[name])) return
-      if (typeof plugin !== 'function') {
-        plugin.apply(context, config)
-      } else if (isConstructor(plugin)) {
-        // eslint-disable-next-line new-cap
-        const instance = new plugin(context, config)
-        const name = instance[Context.immediate]
-        if (name) {
-          this.caller[name] = instance
-        }
-      } else {
-        plugin(context, config)
-      }
-    }
-
-    callback()
+    new Plugin.Runtime(this, plugin, config)
     return this
   }
 
-  dispose(plugin = this.caller._plugin) {
-    if (!plugin) throw new Error('root level context cannot be disposed')
-    const state = this.get(plugin)
-    if (!state) return
-    this.ctx.emit('logger/debug', 'app', 'dispose:', plugin.name)
-    state.children.slice().map(plugin => this.dispose(plugin))
-    state.disposables.slice().map(dispose => dispose())
-    this.delete(plugin)
-    remove(state.parent.state.children, plugin)
-    this.caller.emit('plugin-removed', state)
-    return state
+  dispose(plugin: Plugin) {
+    return this.get(plugin).dispose()
   }
 }

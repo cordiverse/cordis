@@ -11,45 +11,45 @@ export class Context {
   static readonly current = Symbol('source')
   static readonly immediate = Symbol('immediate')
 
-  protected constructor(public filter: Filter, public app: App, public _plugin: Plugin) {}
+  constructor(public filter: Filter, public app: App, public state: Plugin.State) {}
 
-  [Symbol.for('nodejs.util.inspect.custom')]() {
-    return `Context <${this._plugin ? this._plugin.name : 'root'}>`
+  get source() {
+    return this.state?.runtime.plugin?.name || 'root'
   }
 
-  fork(filter: Filter, _plugin: Plugin) {
-    return new Context(filter, this.app, _plugin)
+  [Symbol.for('nodejs.util.inspect.custom')]() {
+    return `Context <${this.source}>`
+  }
+
+  private fork(filter: Filter) {
+    return new Context(filter, this.app, this.state)
   }
 
   any() {
-    return this.fork(() => true, this._plugin)
+    return this.fork(() => true)
   }
 
   never() {
-    return this.fork(() => false, this._plugin)
+    return this.fork(() => false)
   }
 
   union(arg: Filter | Context) {
     const filter = typeof arg === 'function' ? arg : arg.filter
-    return this.fork(s => this.filter(s) || filter(s), this._plugin)
+    return this.fork(s => this.filter(s) || filter(s))
   }
 
   intersect(arg: Filter | Context) {
     const filter = typeof arg === 'function' ? arg : arg.filter
-    return this.fork(s => this.filter(s) && filter(s), this._plugin)
+    return this.fork(s => this.filter(s) && filter(s))
   }
 
   exclude(arg: Filter | Context) {
     const filter = typeof arg === 'function' ? arg : arg.filter
-    return this.fork(s => this.filter(s) && !filter(s), this._plugin)
+    return this.fork(s => this.filter(s) && !filter(s))
   }
 
   match(session?: Lifecycle.Session) {
     return !session || this.filter(session)
-  }
-
-  get state() {
-    return this.registry.get(this._plugin)
   }
 }
 

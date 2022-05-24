@@ -92,17 +92,17 @@ describe('Plugin API', () => {
 
 describe('Disposable API', () => {
   it('context.prototype.dispose', () => {
-    const app = new App()
-    const callback = jest.fn()
-    let pluginCtx: Context
-    app.on(event, callback)
-    app.plugin((ctx) => {
-      pluginCtx = ctx
+    const plugin = (ctx: Context) => {
       ctx.on(event, callback)
       ctx.plugin((ctx) => {
         ctx.on(event, callback)
       })
-    })
+    }
+
+    const app = new App()
+    const callback = jest.fn()
+    app.on(event, callback)
+    app.plugin(plugin)
 
     // 3 handlers now
     expect(callback.mock.calls).to.have.length(0)
@@ -110,9 +110,10 @@ describe('Disposable API', () => {
     expect(callback.mock.calls).to.have.length(3)
 
     // only 1 handler left
-    pluginCtx.dispose()
+    callback.mockClear()
+    app.dispose(plugin)
     app.emit(event)
-    expect(callback.mock.calls).to.have.length(4)
+    expect(callback.mock.calls).to.have.length(1)
   })
 
   it('memory leak test', async () => {
