@@ -11,6 +11,7 @@ const event = Symbol('custom-event')
 declare module '../src/lifecycle' {
   interface Events {
     [event](): void
+    'before-custom'(): void
   }
 
   namespace Lifecycle {
@@ -45,13 +46,51 @@ describe('Basic Support', () => {
 
   it('max prepended hooks', () => {
     const { app, warn } = setup()
-    createArray(64 + extraCalls, () => app.on(event, noop, true))
-    expect(app.lifecycle._hooks[event].length).to.equal(64 + extraCalls)
+    createArray(64 + extraCalls, () => app.before('custom', noop))
+    expect(app.lifecycle._hooks['before-custom'].length).to.equal(64 + extraCalls)
     expect(warn.mock.calls).to.have.length(extraCalls)
+  })
+
+  it('context.prototype.on', () => {
+    const { app } = setup()
+    const callback = jest.fn()
+    const dispose = app.on(event, callback)
+    app.emit(event)
+    expect(callback.mock.calls).to.have.length(1)
+    app.emit(event)
+    expect(callback.mock.calls).to.have.length(2)
+    expect(dispose()).to.be.ok
+    app.emit(event)
+    expect(callback.mock.calls).to.have.length(2)
+  })
+
+  it('context.prototype.once', () => {
+    const { app } = setup()
+    const callback = jest.fn()
+    const dispose = app.once(event, callback)
+    app.emit(event)
+    expect(callback.mock.calls).to.have.length(1)
+    app.emit(event)
+    expect(callback.mock.calls).to.have.length(1)
+    expect(dispose()).to.be.not.ok
+    app.emit(event)
+    expect(callback.mock.calls).to.have.length(1)
+  })
+
+  it('context.prototype.off', () => {
+    const { app } = setup()
+    const callback = jest.fn()
+    app.on(event, callback)
+    app.emit(event)
+    expect(callback.mock.calls).to.have.length(1)
+    expect(app.off(event, callback)).to.be.ok
+    app.emit(event)
+    expect(callback.mock.calls).to.have.length(1)
+    expect(app.off(event, callback)).to.be.not.ok
   })
 })
 
-describe('Hook API', () => {
+describe('Events API', () => {
   it('context.prototype.parallel', async () => {
     const { app, warn } = setup()
     await app.parallel(event)
