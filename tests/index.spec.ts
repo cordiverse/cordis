@@ -7,9 +7,11 @@ import shape from 'chai-shape'
 
 use(shape)
 
+const event = Symbol('custom-event')
+
 declare module '../src/lifecycle' {
   interface Events {
-    'attach'(): void
+    [event](): void
   }
 }
 
@@ -93,30 +95,30 @@ describe('Disposable API', () => {
     const app = new App()
     const callback = jest.fn()
     let pluginCtx: Context
-    app.on('attach', callback)
+    app.on(event, callback)
     app.plugin((ctx) => {
       pluginCtx = ctx
-      ctx.on('attach', callback)
+      ctx.on(event, callback)
       ctx.plugin((ctx) => {
-        ctx.on('attach', callback)
+        ctx.on(event, callback)
       })
     })
 
     // 3 handlers now
     expect(callback.mock.calls).to.have.length(0)
-    app.emit('attach')
+    app.emit(event)
     expect(callback.mock.calls).to.have.length(3)
 
     // only 1 handler left
     pluginCtx.dispose()
-    app.emit('attach')
+    app.emit(event)
     expect(callback.mock.calls).to.have.length(4)
   })
 
   it('memory leak test', async () => {
     function plugin(ctx: Context) {
       ctx.on('ready', () => {})
-      ctx.on('attach', () => {})
+      ctx.on(event, () => {})
       ctx.on('dispose', () => {})
     }
 
@@ -147,7 +149,7 @@ describe('Disposable API', () => {
 
   it('dispose event', () => {
     const app = new App()
-    const callback = jest.fn<void, []>()
+    const callback = jest.fn(() => {})
     app.plugin(async (ctx) => {
       ctx.on('dispose', callback)
       expect(callback.mock.calls).to.have.length(0)
