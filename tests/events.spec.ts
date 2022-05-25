@@ -7,6 +7,7 @@ import promised from 'chai-as-promised'
 use(promised)
 
 const event = Symbol('custom-event')
+const filter: Filter = session => session.flag
 
 declare module '../src/lifecycle' {
   interface Events {
@@ -21,8 +22,6 @@ declare module '../src/lifecycle' {
   }
 }
 
-const filter: Filter = session => session.flag
-
 export function createArray<T>(length: number, create: (index: number) => T) {
   return [...new Array(length).keys()].map(create)
 }
@@ -34,7 +33,7 @@ function setup() {
   return { app, warn }
 }
 
-describe('Basic Support', () => {
+describe('Event Listener', () => {
   const extraCalls = 7
 
   it('max appended hooks', async () => {
@@ -90,7 +89,7 @@ describe('Basic Support', () => {
   })
 })
 
-describe('Events API', () => {
+describe('Events Emitter', () => {
   it('context.prototype.parallel', async () => {
     const { app, warn } = setup()
     await app.parallel(event)

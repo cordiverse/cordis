@@ -8,7 +8,7 @@ declare module '../src/context' {
   }
 }
 
-describe('Service API', () => {
+describe('Service', () => {
   it('normal service', async () => {
     class Foo extends Service {
       constructor(ctx: Context) {
