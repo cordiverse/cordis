@@ -45,6 +45,8 @@ export namespace Plugin {
     dispose: () => void
   }
 
+  const prevent = Symbol('prevent')
+
   export class Runtime {
     id = ''
     runtime = this
@@ -69,12 +71,13 @@ export namespace Plugin {
     fork(context: Context, config: any) {
       const dispose = () => {
         state.disposables.splice(0, Infinity).forEach(dispose => dispose())
-        remove(this.disposables, state.dispose)
-        remove(context.state.disposables, state.dispose)
+        remove(this.disposables, dispose)
+        remove(context.state.disposables, dispose)
         if (remove(this.children, state) && !this.children.length) {
           this.dispose()
         }
       }
+      dispose[prevent] = true
       defineProperty(dispose, 'name', `fork <${context.source}>`)
       const state: State = {
         runtime: this,
@@ -85,8 +88,8 @@ export namespace Plugin {
       }
       state.context = new Context(context.filter, context.app, state)
       this.children.push(state)
-      this.disposables.push(state.dispose)
-      context.state?.disposables.push(state.dispose)
+      this.disposables.push(dispose)
+      context.state?.disposables.push(dispose)
       if (this.isActive) {
         this.executeFork(state)
       }
@@ -108,12 +111,20 @@ export namespace Plugin {
       this.registry.app.emit('plugin-added', this)
       this.registry.app.emit('logger/debug', 'app', 'plugin:', this.plugin.name)
 
+      if (this.plugin['reusable']) {
+        this.forkers.push(this.apply)
+      }
+
       if (this.using.length) {
-        this.context.on('service', (name) => {
+        const dispose = this.context.on('service', (name) => {
           if (!this.using.includes(name)) return
-          this.disposables.splice(2, Infinity).map(dispose => dispose())
+          this.disposables = this.disposables.filter(dispose => {
+            if (dispose[prevent]) return true
+            dispose()
+          })
           this.callback()
         })
+        dispose[prevent] = true
       }
 
       this.callback()
@@ -144,9 +155,7 @@ export namespace Plugin {
       if (this.using.some(name => !this.context[name])) return
 
       // execute plugin body
-      if (this.plugin['reusable']) {
-        this.forkers.push(this.apply)
-      } else {
+      if (!this.plugin['reusable']) {
         this.apply(this.context, this.config)
       }
 

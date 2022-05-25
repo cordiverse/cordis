@@ -1,12 +1,7 @@
 import { App, Context, Service } from '../src'
 import { expect } from 'chai'
 import * as jest from 'jest-mock'
-
-declare module '../src/context' {
-  interface Context {
-    foo: any
-  }
-}
+import {} from './shared'
 
 describe('Service', () => {
   it('normal service', async () => {
@@ -40,8 +35,6 @@ describe('Service', () => {
   })
 
   it('dependency update', async () => {
-    Context.service('foo')
-
     const callback = jest.fn()
     const dispose = jest.fn(() => {})
 

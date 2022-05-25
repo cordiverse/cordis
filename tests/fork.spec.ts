@@ -1,24 +1,7 @@
-import { App, Context, Filter } from '../src'
-import { expect, use } from 'chai'
+import { App, Context } from '../src'
+import { expect } from 'chai'
+import { event, filter } from './shared'
 import * as jest from 'jest-mock'
-import shape from 'chai-shape'
-
-use(shape)
-
-const event = Symbol('custom-event')
-const filter: Filter = session => session.flag
-
-declare module '../src/lifecycle' {
-  interface Events {
-    [event](): void
-  }
-
-  namespace Lifecycle {
-    interface Session {
-      flag: boolean
-    }
-  }
-}
 
 describe('Fork', () => {
   it('basic support', () => {
@@ -99,5 +82,26 @@ describe('Fork', () => {
     app.dispose(reusable)
     app.emit(event)
     expect(callback.mock.calls).to.have.length(0)
+  })
+
+  it('deferred execution', () => {
+    const app = new App()
+    const callback = jest.fn()
+    const plugin = {
+      using: ['foo'],
+      reusable: true,
+      apply: callback,
+    }
+
+    app.plugin(plugin)
+    expect(callback.mock.calls).to.have.length(0)
+    app.plugin(plugin)
+    expect(callback.mock.calls).to.have.length(0)
+    app.foo = { bar: 100 }
+    expect(callback.mock.calls).to.have.length(2)
+    app.plugin(plugin)
+    expect(callback.mock.calls).to.have.length(3)
+    app.foo = { bar: 200 }
+    expect(callback.mock.calls).to.have.length(6)
   })
 })
