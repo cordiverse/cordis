@@ -1,6 +1,6 @@
 import { Awaitable, defineProperty, Promisify, remove } from 'cosmokit'
 import { Context } from './context'
-import { Disposable, Plugin } from './registry'
+import { Disposable, Plugin } from './plugin'
 
 function isBailed(value: any) {
   return value !== null && value !== false && value !== undefined
@@ -122,8 +122,7 @@ export class Lifecycle {
   register(label: string, hooks: [Context, any][], listener: any, prepend?: boolean) {
     if (hooks.length >= this.config.maxListeners) {
       this.emit('logger/warn', 'app',
-        `max listener count (%d) for ${label} exceeded, which may be caused by a memory leak`,
-        this.config.maxListeners,
+        `max listener count (${this.config.maxListeners}) for ${label} exceeded, which may be caused by a memory leak`,
       )
     }
 
@@ -162,7 +161,7 @@ export class Lifecycle {
     }
 
     const hooks = this._hooks[name] ||= []
-    const label = typeof name === 'string' ? `event "${name}"` : 'event'
+    const label = typeof name === 'string' ? `event <${name}>` : 'event (Symbol)'
     return this.register(label, hooks, listener, prepend)
   }
 
