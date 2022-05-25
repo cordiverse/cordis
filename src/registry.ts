@@ -25,6 +25,7 @@ export namespace Plugin {
   export interface Object<S = any, T = any> {
     name?: string
     apply: Function<T>
+    reusable?: boolean
     Config?: (config?: S) => T
     schema?: (config?: S) => T
     using?: readonly string[]
@@ -82,6 +83,7 @@ export namespace Plugin {
         disposables: [],
         dispose,
       }
+      state.context = new Context(context.filter, context.app, state)
       this.children.push(state)
       this.disposables.push(state.dispose)
       context.state?.disposables.push(state.dispose)
@@ -117,25 +119,35 @@ export namespace Plugin {
       this.callback()
     }
 
-    executeFork(state: State) {
+    private executeFork(state: State) {
       for (const fork of this.forkers) {
         fork(state.context, state.config)
       }
     }
 
-    callback() {
-      if (this.using.some(name => !this.context[name])) return
+    private apply = (context: Context, config: any) => {
       if (typeof this.plugin !== 'function') {
-        this.plugin.apply(this.context, this.config)
+        this.plugin.apply(context, config)
       } else if (isConstructor(this.plugin)) {
         // eslint-disable-next-line new-cap
-        const instance = new this.plugin(this.context, this.config)
+        const instance = new this.plugin(context, config)
         const name = instance[Context.immediate]
         if (name) {
-          this.context[name] = instance
+          context[name] = instance
         }
       } else {
-        this.plugin(this.context, this.config)
+        this.plugin(context, config)
+      }
+    }
+
+    private callback() {
+      if (this.using.some(name => !this.context[name])) return
+
+      // execute plugin body
+      if (this.plugin['reusable']) {
+        this.forkers.push(this.apply)
+      } else {
+        this.apply(this.context, this.config)
       }
 
       this.isActive = true
