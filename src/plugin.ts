@@ -54,37 +54,42 @@ export namespace Plugin {
     isActive = false
 
     constructor(private registry: Registry, public plugin: Plugin, public config: any) {
-      this.fork(registry.caller, config)
       this.context = new Context((session) => {
         return this.children.some(p => p.context.match(session))
       }, registry.app, this)
       registry.set(plugin, this)
-
       if (plugin) this.start()
     }
 
+    [Symbol.for('nodejs.util.inspect.custom')]() {
+      return `Runtime <${this.context.source}>`
+    }
+
     fork(context: Context, config: any) {
-      const state: State & Disposable = () => {
+      const dispose = () => {
         state.disposables.splice(0, Infinity).forEach(dispose => dispose())
-        remove(this.disposables, state)
-        remove(context.state.disposables, state)
+        remove(this.disposables, dispose)
         if (remove(this.children, state) && !this.children.length) {
           this.dispose()
         }
+        return remove(context.state.disposables, dispose)
       }
-      state[prevent] = true
-      state.runtime = this
-      state.config = config
+      defineProperty(dispose, prevent, true)
+      defineProperty(dispose, 'name', `state <${context.source}>`)
+      const state: State = {
+        runtime: this,
+        config,
+        context: null,
+        disposables: [],
+      }
       state.context = new Context(context.filter, context.app, state)
-      state.disposables = []
-      defineProperty(state, 'name', `state <${context.source}>`)
       this.children.push(state)
-      this.disposables.push(state)
-      context.state?.disposables.push(state)
+      this.disposables.push(dispose)
+      context.state?.disposables.push(dispose)
       if (this.isActive) {
         this.executeFork(state)
       }
-      return state
+      return dispose
     }
 
     dispose() {
@@ -150,11 +155,11 @@ export namespace Plugin {
       if (this.using.some(name => !this.context[name])) return
 
       // execute plugin body
+      this.isActive = true
       if (!this.plugin['reusable']) {
         this.apply(this.context, this.config)
       }
 
-      this.isActive = true
       for (const state of this.children) {
         this.executeFork(state)
       }

@@ -15,7 +15,9 @@ export class Context {
   constructor(public filter: Filter, public app: App, public state: Plugin.State) {}
 
   get source() {
-    return this.state?.runtime.plugin?.name || 'root'
+    const { plugin } = this.state.runtime
+    if (!plugin) return 'root'
+    return plugin?.name || 'anonymous'
   }
 
   [Symbol.for('nodejs.util.inspect.custom')]() {

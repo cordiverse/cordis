@@ -10,8 +10,8 @@ export namespace Registry {
   export interface Config {}
 
   export interface Delegates {
-    using(using: readonly string[], callback: Plugin.Function<void>): this
-    plugin<T extends Plugin>(plugin: T, config?: boolean | Plugin.Config<T>): this
+    using(using: readonly string[], callback: Plugin.Function<void>): () => boolean
+    plugin<T extends Plugin>(plugin: T, config?: boolean | Plugin.Config<T>): () => boolean
     dispose(plugin?: Plugin): Plugin.Runtime
   }
 }
@@ -58,16 +58,6 @@ export class Registry {
   }
 
   plugin(plugin: Plugin, config?: any) {
-    // check duplication
-    const duplicate = this.get(plugin)
-    if (duplicate) {
-      duplicate.fork(this.caller, config)
-      if (!duplicate.forkers.length) {
-        this.app.emit('logger/warn', 'app', `duplicate plugin detected: ${plugin.name}`)
-      }
-      return this
-    }
-
     // check if it's a valid plugin
     if (typeof plugin !== 'function' && !isApplicable(plugin)) {
       throw new Error('invalid plugin, expect function or object with an "apply" method')
@@ -75,10 +65,20 @@ export class Registry {
 
     // validate plugin config
     config = Registry.validate(plugin, config)
-    if (!config) return this
+    if (!config) return () => false
 
-    new Plugin.Runtime(this, plugin, config)
-    return this
+    // check duplication
+    const context = this.caller
+    const duplicate = this.get(plugin)
+    if (duplicate) {
+      if (!duplicate.forkers.length) {
+        this.app.emit('logger/warn', 'app', `duplicate plugin detected: ${plugin.name}`)
+      }
+      return duplicate.fork(context, config)
+    }
+
+    const runtime = new Plugin.Runtime(this, plugin, config)
+    return runtime.fork(context, config)
   }
 
   dispose(plugin: Plugin) {
