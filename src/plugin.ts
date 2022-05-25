@@ -35,16 +35,18 @@ export namespace Plugin {
 
   export interface State {
     runtime: Runtime
+    parent: Context
     context: Context
     config: any
     disposables: Disposable[]
   }
 
-  const prevent = Symbol('prevent')
+  export const kState = Symbol('state')
 
   export class Runtime implements State {
     id = ''
     runtime = this
+    parent: Context
     context: Context
     schema: any
     using: readonly string[]
@@ -54,6 +56,7 @@ export namespace Plugin {
     isActive = false
 
     constructor(private registry: Registry, public plugin: Plugin, public config: any) {
+      this.parent = registry.caller
       this.context = new Context((session) => {
         return this.children.some(p => p.context.match(session))
       }, registry.app, this)
@@ -65,31 +68,29 @@ export namespace Plugin {
       return `Runtime <${this.context.source}>`
     }
 
-    fork(context: Context, config: any) {
-      const dispose = () => {
+    fork(parent: Context, config: any) {
+      const state: State & (() => boolean) = () => {
         state.disposables.splice(0, Infinity).forEach(dispose => dispose())
-        remove(this.disposables, dispose)
+        remove(this.disposables, state)
         if (remove(this.children, state) && !this.children.length) {
           this.dispose()
         }
-        return remove(context.state.disposables, dispose)
+        return remove(parent.state.disposables, state)
       }
-      defineProperty(dispose, prevent, true)
-      defineProperty(dispose, 'name', `state <${context.source}>`)
-      const state: State = {
-        runtime: this,
-        config,
-        context: null,
-        disposables: [],
-      }
-      state.context = new Context(context.filter, context.app, state)
+      state.parent = parent
+      state.runtime = this
+      state.context = new Context(parent.filter, parent.app, state)
+      state.config = config
+      state.disposables = []
+      defineProperty(state, kState, true)
+      defineProperty(state, 'name', `state <${parent.source}>`)
       this.children.push(state)
-      this.disposables.push(dispose)
-      context.state?.disposables.push(dispose)
+      this.disposables.push(state)
+      parent.state?.disposables.push(state)
       if (this.isActive) {
         this.executeFork(state)
       }
-      return dispose
+      return state
     }
 
     dispose() {
@@ -110,15 +111,15 @@ export namespace Plugin {
       }
 
       if (this.using.length) {
-        const dispose = this.context.on('service', (name) => {
+        this.context.on('service', (name) => {
           if (!this.using.includes(name)) return
-          this.disposables = this.disposables.filter(dispose => {
-            if (dispose[prevent]) return true
+          this.disposables = this.disposables.filter((dispose, index) => {
+            // the first element is the "service" event listener
+            if (!index || dispose[kState]) return true
             dispose()
           })
           this.callback()
         })
-        dispose[prevent] = true
       }
 
       this.callback()
