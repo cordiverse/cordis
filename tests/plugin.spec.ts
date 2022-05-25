@@ -1,18 +1,8 @@
 import { App } from '../src'
-import { expect, use } from 'chai'
+import { expect } from 'chai'
 import * as jest from 'jest-mock'
 import { inspect } from 'util'
-import shape from 'chai-shape'
-
-use(shape)
-
-const event = Symbol('custom-event')
-
-declare module '../src/lifecycle' {
-  interface Events {
-    [event](): void
-  }
-}
+import './shared'
 
 describe('Plugin', () => {
   it('apply functional plugin', () => {

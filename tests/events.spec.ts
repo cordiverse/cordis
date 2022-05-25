@@ -1,26 +1,8 @@
-import { App, Filter } from '../src'
-import { expect, use } from 'chai'
+import { App } from '../src'
+import { expect } from 'chai'
 import * as jest from 'jest-mock'
 import { noop } from 'cosmokit'
-import promised from 'chai-as-promised'
-
-use(promised)
-
-const event = Symbol('custom-event')
-const filter: Filter = session => session.flag
-
-declare module '../src/lifecycle' {
-  interface Events {
-    [event](): void
-    'before-custom'(): void
-  }
-
-  namespace Lifecycle {
-    interface Session {
-      flag: boolean
-    }
-  }
-}
+import { event, filter } from './shared'
 
 export function createArray<T>(length: number, create: (index: number) => T) {
   return [...new Array(length).keys()].map(create)

@@ -1,8 +1,10 @@
 import { use } from 'chai'
 import { Context, Filter } from '../src'
 import shape from 'chai-shape'
+import promised from 'chai-as-promised'
 
 use(shape)
+use(promised)
 
 Context.service('foo')
 
@@ -12,6 +14,7 @@ export const filter: Filter = session => session.flag
 declare module '../src/lifecycle' {
   interface Events {
     [event](): void
+    'before-custom'(): void
   }
 
   namespace Lifecycle {

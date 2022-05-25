@@ -1,7 +1,7 @@
 import { App, Context, Service } from '../src'
 import { expect } from 'chai'
 import * as jest from 'jest-mock'
-import {} from './shared'
+import './shared'
 
 describe('Service', () => {
   it('normal service', async () => {

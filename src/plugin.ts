@@ -89,9 +89,7 @@ export namespace Plugin {
 
     dispose() {
       this.disposables.splice(0, Infinity).forEach(dispose => dispose())
-      this.registry.delete(this.plugin)
-      this.context.emit('logger/debug', 'app', 'dispose:', this.plugin.name)
-      this.context.emit('plugin-removed', this)
+      if (this.plugin) this.stop()
       return this
     }
 
@@ -119,6 +117,12 @@ export namespace Plugin {
       }
 
       this.callback()
+    }
+
+    stop() {
+      this.registry.delete(this.plugin)
+      this.context.emit('logger/debug', 'app', 'dispose:', this.plugin.name)
+      this.context.emit('plugin-removed', this)
     }
 
     private executeFork(state: State) {

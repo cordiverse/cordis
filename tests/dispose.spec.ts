@@ -2,16 +2,9 @@ import { App, Context } from '../src'
 import { expect } from 'chai'
 import * as jest from 'jest-mock'
 import { Dict } from 'cosmokit'
+import { event } from './shared'
 
-const event = Symbol('custom-event')
-
-declare module '../src/lifecycle' {
-  interface Events {
-    [event](): void
-  }
-}
-
-describe('Disposable API', () => {
+describe('Disposables', () => {
   it('context.prototype.dispose', () => {
     const plugin = (ctx: Context) => {
       ctx.on(event, callback)
