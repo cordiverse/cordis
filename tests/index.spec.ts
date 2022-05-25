@@ -96,6 +96,9 @@ describe('Disposable API', () => {
       ctx.on(event, callback)
       ctx.plugin((ctx) => {
         ctx.on(event, callback)
+        ctx.plugin((ctx) => {
+          ctx.on(event, callback)
+        })
       })
     }
 
@@ -107,7 +110,7 @@ describe('Disposable API', () => {
     // 3 handlers now
     expect(callback.mock.calls).to.have.length(0)
     app.emit(event)
-    expect(callback.mock.calls).to.have.length(3)
+    expect(callback.mock.calls).to.have.length(4)
 
     // only 1 handler left
     callback.mockClear()
@@ -141,24 +144,19 @@ describe('Disposable API', () => {
     expect(after).to.deep.equal(getHookSnapshot())
   })
 
-  it('root level dispose', async () => {
-    const app = new App()
-    // create a context without a plugin
-    const ctx = app.intersect(app)
-    expect(() => ctx.dispose()).to.throw
-  })
-
   it('dispose event', () => {
     const app = new App()
     const callback = jest.fn(() => {})
-    app.plugin(async (ctx) => {
+    const plugin = (ctx: Context) => {
       ctx.on('dispose', callback)
-      expect(callback.mock.calls).to.have.length(0)
-      ctx.dispose()
-      expect(callback.mock.calls).to.have.length(1)
-      // callback should only be called once
-      ctx.dispose()
-      expect(callback.mock.calls).to.have.length(1)
-    })
+    }
+
+    app.plugin(plugin)
+    expect(callback.mock.calls).to.have.length(0)
+    expect(app.dispose(plugin)).to.be.ok
+    expect(callback.mock.calls).to.have.length(1)
+    // callback should only be called once
+    expect(app.dispose(plugin)).to.be.not.ok
+    expect(callback.mock.calls).to.have.length(1)
   })
 })

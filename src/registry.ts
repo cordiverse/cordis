@@ -52,13 +52,13 @@ export namespace Plugin {
     using: readonly string[]
     disposables: Disposable[] = []
     forkers: Function[] = []
-    parents: State[] = []
+    children: State[] = []
     isActive = false
 
     constructor(private registry: Registry, public plugin: Plugin, public config: any) {
       this.fork(registry.caller, config)
       this.context = new Context((session) => {
-        return this.parents.some(p => p.context.match(session))
+        return this.children.some(p => p.context.match(session))
       }, registry.app, this)
       registry.set(plugin, this)
 
@@ -67,9 +67,10 @@ export namespace Plugin {
 
     fork(context: Context, config: any) {
       const dispose = () => {
-        state.disposables.slice().forEach(dispose => dispose())
+        state.disposables.splice(0, Infinity).forEach(dispose => dispose())
+        remove(this.disposables, state.dispose)
         remove(context.state.disposables, state.dispose)
-        if (remove(this.parents, state) && !this.parents.length) {
+        if (remove(this.children, state) && !this.children.length) {
           this.dispose()
         }
       }
@@ -81,8 +82,9 @@ export namespace Plugin {
         disposables: [],
         dispose,
       }
-      this.parents.push(state)
+      this.children.push(state)
       this.disposables.push(state.dispose)
+      context.state?.disposables.push(state.dispose)
       if (this.isActive) {
         this.executeFork(state)
       }
@@ -90,10 +92,11 @@ export namespace Plugin {
     }
 
     dispose() {
-      this.disposables.slice().forEach(dispose => dispose())
+      this.disposables.splice(0, Infinity).forEach(dispose => dispose())
       this.registry.delete(this.plugin)
       this.context.emit('logger/debug', 'app', 'dispose:', this.plugin.name)
       this.context.emit('plugin-removed', this)
+      return this
     }
 
     start() {
@@ -136,7 +139,7 @@ export namespace Plugin {
       }
 
       this.isActive = true
-      for (const state of this.parents) {
+      for (const state of this.children) {
         this.executeFork(state)
       }
     }
@@ -219,6 +222,6 @@ export class Registry {
   }
 
   dispose(plugin: Plugin) {
-    return this.get(plugin).dispose()
+    return this.get(plugin)?.dispose()
   }
 }
