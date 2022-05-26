@@ -10,8 +10,8 @@ export namespace Registry {
   export interface Config {}
 
   export interface Delegates {
-    using(using: readonly string[], callback: Plugin.Function<void>): () => boolean
-    plugin<T extends Plugin>(plugin: T, config?: boolean | Plugin.Config<T>): () => boolean
+    using(using: readonly string[], callback: Plugin.Function<void>): Plugin.Fork
+    plugin<T extends Plugin>(plugin: T, config?: boolean | Plugin.Config<T>): Plugin.Fork
     dispose(plugin?: Plugin): Plugin.Runtime
   }
 }
@@ -65,7 +65,7 @@ export class Registry {
 
     // validate plugin config
     config = Registry.validate(plugin, config)
-    if (!config) return () => false
+    if (!config) return
 
     // check duplication
     const context = this.caller

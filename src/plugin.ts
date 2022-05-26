@@ -34,6 +34,7 @@ export namespace Plugin {
     : never
 
   export interface State {
+    id: string
     runtime: Runtime
     parent: Context
     context: Context
@@ -41,10 +42,14 @@ export namespace Plugin {
     disposables: Disposable[]
   }
 
+  export interface Fork extends State {
+    (): boolean
+  }
+
   export const kState = Symbol('state')
 
   export class Runtime implements State {
-    id = ''
+    id = Math.random().toString(36).slice(2, 10)
     runtime = this
     parent: Context
     context: Context
@@ -52,7 +57,7 @@ export namespace Plugin {
     using: readonly string[]
     disposables: Disposable[] = []
     forkers: Function[] = []
-    children: State[] = []
+    children: Fork[] = []
     isActive = false
 
     constructor(private registry: Registry, public plugin: Plugin, public config: any) {
@@ -69,7 +74,7 @@ export namespace Plugin {
     }
 
     fork(parent: Context, config: any) {
-      const state: State & (() => boolean) = () => {
+      const state: Fork = () => {
         state.disposables.splice(0, Infinity).forEach(dispose => dispose())
         remove(this.disposables, state)
         if (remove(this.children, state) && !this.children.length) {
@@ -77,6 +82,7 @@ export namespace Plugin {
         }
         return remove(parent.state.disposables, state)
       }
+      state.id = Math.random().toString(36).slice(2, 10)
       state.parent = parent
       state.runtime = this
       state.context = new Context(parent.filter, parent.app, state)
@@ -102,7 +108,6 @@ export namespace Plugin {
     start() {
       this.schema = this.plugin['Config'] || this.plugin['schema']
       this.using = this.plugin['using'] || []
-      this.id = Math.random().toString(36).slice(2, 10)
       this.registry.app.emit('plugin-added', this)
       this.registry.app.emit('logger/debug', 'app', 'plugin:', this.plugin.name)
 

@@ -5,7 +5,7 @@
 [![npm](https://img.shields.io/npm/v/cordis?style=flat-square)](https://www.npmjs.com/package/cordis)
 [![GitHub](https://img.shields.io/github/license/shigma/cordis?style=flat-square)](https://github.com/shigma/cordis/blob/master/LICENSE)
 
-Infrastructure for Modern JavaScript Frameworks.
+AOP Framework for Modern JavaScript Applications.
 
 ```ts
 import { App } from 'cordis'
