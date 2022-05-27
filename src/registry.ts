@@ -16,10 +16,9 @@ export namespace Registry {
   }
 }
 
-export class Registry {
-  #registry = new Map<Plugin, Plugin.Runtime>()
-
+export class Registry extends Map<Plugin, Plugin.Runtime> {
   constructor(public app: App, private config: Registry.Config) {
+    super()
     app.state = new Plugin.Runtime(this, null, null)
   }
 
@@ -32,15 +31,19 @@ export class Registry {
   }
 
   get(plugin: Plugin) {
-    return this.#registry.get(this.resolve(plugin))
+    return super.get(this.resolve(plugin))
+  }
+
+  has(plugin: Plugin) {
+    return super.has(this.resolve(plugin))
   }
 
   set(plugin: Plugin, state: Plugin.Runtime) {
-    return this.#registry.set(this.resolve(plugin), state)
+    return super.set(this.resolve(plugin), state)
   }
 
   delete(plugin: Plugin) {
-    return this.#registry.delete(this.resolve(plugin))
+    return super.delete(this.resolve(plugin))
   }
 
   using(using: readonly string[], callback: Plugin.Function<void>) {

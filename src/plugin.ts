@@ -54,7 +54,7 @@ export namespace Plugin {
     parent: Context
     context: Context
     schema: any
-    using: readonly string[]
+    using: readonly string[] = []
     disposables: Disposable[] = []
     forkers: Function[] = []
     children: Fork[] = []
