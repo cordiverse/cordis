@@ -1,6 +1,6 @@
 import { Awaitable, defineProperty, Promisify, remove } from 'cosmokit'
 import { Context } from './context'
-import { Disposable, Plugin } from './plugin'
+import { Plugin } from './plugin'
 
 function isBailed(value: any) {
   return value !== null && value !== false && value !== undefined
@@ -38,7 +38,21 @@ export class Lifecycle {
   #tasks = new Set<Promise<void>>()
   _hooks: Record<keyof any, [Context, (...args: any[]) => any][]> = {}
 
-  constructor(private ctx: Context, private config: Lifecycle.Config) {}
+  constructor(private ctx: Context, private config: Lifecycle.Config) {
+    (this as Lifecycle.Delegates).on('hook', (name, listener, prepend) => {
+      const method = prepend ? 'unshift' : 'push'
+      if (name === 'ready' && this.isActive) {
+        this.queue(listener())
+        return () => false
+      } else if (name === 'dispose') {
+        this.caller.state.disposables[method](listener as any)
+        return () => remove(this.caller.state.disposables, listener)
+      } else if (name === 'fork') {
+        this.caller.state.runtime.forkers[method](listener as any)
+        return () => remove(this.caller.state.runtime.forkers, listener)
+      }
+    })
+  }
 
   protected get caller(): Context {
     return this[Context.current] || this.ctx
@@ -145,27 +159,17 @@ export class Lifecycle {
     }
   }
 
-  on(name: EventName, listener: Disposable, prepend = false) {
-    const method = prepend ? 'unshift' : 'push'
-
+  on(name: EventName, listener: Function, prepend = false) {
     // handle special events
-    if (name === 'ready' && this.isActive) {
-      this.queue(listener())
-      return () => false
-    } else if (name === 'dispose') {
-      this.caller.state.disposables[method](listener)
-      return () => remove(this.caller.state.disposables, listener)
-    } else if (name === 'fork') {
-      this.caller.state.runtime.forkers[method](listener)
-      return () => remove(this.caller.state.runtime.forkers, listener)
-    }
+    const result = this.bail('hook', name, listener, prepend)
+    if (result) return result
 
     const hooks = this._hooks[name] ||= []
     const label = typeof name === 'string' ? `event <${name}>` : 'event (Symbol)'
     return this.register(label, hooks, listener, prepend)
   }
 
-  once(name: EventName, listener: Disposable, prepend = false) {
+  once(name: EventName, listener: Function, prepend = false) {
     const dispose = this.on(name, function (...args: any[]) {
       dispose()
       return listener.apply(this, args)
@@ -217,4 +221,5 @@ export interface Events {
   'fork': Plugin.Function
   'dispose'(): Awaitable<void>
   'service'(name: string, oldValue: any): void
+  'hook'(name: string, listener: Function, prepend: boolean): () => boolean
 }

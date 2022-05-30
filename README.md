@@ -28,7 +28,7 @@ Contexts provide three kinds of functionality:
 
 - allowing access to services (service container)
 - managing states of plugins (plugin context)
-- filtering sessions before events (session context)
+- filtering sessions for events (session context)
 
 ### Plugin
 
