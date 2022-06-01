@@ -6,13 +6,15 @@ import { Registry } from './registry'
 
 export type Filter = (session: Lifecycle.Session) => boolean
 
-export interface Context extends Context.Services, Lifecycle.Delegates, Registry.Delegates {}
+export interface Context extends Context.Services, Context.Meta, Lifecycle.Delegates, Registry.Delegates {}
 
 export class Context {
   static readonly current = Symbol('source')
   static readonly immediate = Symbol('immediate')
 
-  constructor(public filter: Filter, public app: App, public state: Plugin.State) {}
+  constructor(meta: Context.Meta) {
+    Object.assign(this, meta)
+  }
 
   get source() {
     const { plugin } = this.state.runtime
@@ -24,31 +26,31 @@ export class Context {
     return `Context <${this.source}>`
   }
 
-  private fork(filter: Filter) {
-    return new Context(filter, this.app, this.state)
+  fork(meta: Partial<Context.Meta>) {
+    return new Context({ ...this, ...meta })
   }
 
   any() {
-    return this.fork(() => true)
+    return this.fork({ filter: () => true })
   }
 
   never() {
-    return this.fork(() => false)
+    return this.fork({ filter: () => false })
   }
 
   union(arg: Filter | Context) {
     const filter = typeof arg === 'function' ? arg : arg.filter
-    return this.fork(s => this.filter(s) || filter(s))
+    return this.fork({ filter: s => this.filter(s) || filter(s) })
   }
 
   intersect(arg: Filter | Context) {
     const filter = typeof arg === 'function' ? arg : arg.filter
-    return this.fork(s => this.filter(s) && filter(s))
+    return this.fork({ filter: s => this.filter(s) && filter(s) })
   }
 
   exclude(arg: Filter | Context) {
     const filter = typeof arg === 'function' ? arg : arg.filter
-    return this.fork(s => this.filter(s) && !filter(s))
+    return this.fork({ filter: s => this.filter(s) && !filter(s) })
   }
 
   match(session?: Lifecycle.Session) {
@@ -69,6 +71,12 @@ export namespace Context {
   export interface ServiceOptions {
     constructor?: any
     methods?: string[]
+  }
+
+  export interface Meta {
+    app: App
+    state: Plugin.State
+    filter: Filter
   }
 
   export const internal = {}

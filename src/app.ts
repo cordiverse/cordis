@@ -6,7 +6,7 @@ export class App extends Context {
   options: App.Config
 
   constructor(config?: App.Config) {
-    super(() => true, null, null)
+    super({ filter: () => true } as any)
     this.app = this
     this.options = Registry.validate(App, config)
     for (const key of Object.getOwnPropertySymbols(Context.internal)) {

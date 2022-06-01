@@ -62,15 +62,14 @@ export namespace Plugin {
 
     constructor(private registry: Registry, public plugin: Plugin, public config: any) {
       this.parent = registry.caller
-      this.context = new Context((session) => {
-        return this.children.some(p => p.context.match(session))
-      }, registry.app, this)
+      this.context = this.parent.fork({
+        filter: (session) => {
+          return this.children.some(p => p.context.match(session))
+        },
+        state: this,
+      })
       registry.set(plugin, this)
       if (plugin) this.start()
-    }
-
-    [Symbol.for('nodejs.util.inspect.custom')]() {
-      return `Runtime <${this.context.source}>`
     }
 
     fork(parent: Context, config: any) {
@@ -85,7 +84,7 @@ export namespace Plugin {
       state.id = Math.random().toString(36).slice(2, 10)
       state.parent = parent
       state.runtime = this
-      state.context = new Context(parent.filter, parent.app, state)
+      state.context = parent.fork({ state })
       state.config = config
       state.disposables = []
       defineProperty(state, kState, true)
