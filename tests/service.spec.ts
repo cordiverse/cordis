@@ -61,4 +61,41 @@ describe('Service', () => {
     expect(callback.mock.calls).to.have.length(2)
     expect(dispose.mock.calls).to.have.length(2)
   })
+
+  it('lifecycle methods', async () => {
+    const start = jest.fn<Service['start']>()
+    const stop = jest.fn<Service['stop']>()
+    const fork = jest.fn<Service['fork']>()
+
+    class Foo extends Service {
+      constructor(ctx: Context) {
+        super(ctx, 'foo')
+      }
+
+      start = start
+      stop = stop
+      fork = fork
+    }
+
+    const app = new App()
+    app.plugin(Foo)
+    expect(start.mock.calls).to.have.length(0)
+    expect(stop.mock.calls).to.have.length(0)
+    expect(fork.mock.calls).to.have.length(1)
+
+    await app.start()
+    expect(start.mock.calls).to.have.length(1)
+    expect(stop.mock.calls).to.have.length(0)
+    expect(fork.mock.calls).to.have.length(1)
+
+    app.plugin(Foo)
+    expect(start.mock.calls).to.have.length(1)
+    expect(stop.mock.calls).to.have.length(0)
+    expect(fork.mock.calls).to.have.length(2)
+
+    app.dispose(Foo)
+    expect(start.mock.calls).to.have.length(1)
+    expect(stop.mock.calls).to.have.length(1)
+    expect(fork.mock.calls).to.have.length(2)
+  })
 })
