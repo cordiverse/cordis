@@ -33,17 +33,25 @@ export namespace Plugin {
     : T extends Object<infer U> ? U
     : never
 
-  export class State {
+  export abstract class State {
     id = Math.random().toString(36).slice(2, 10)
     runtime: Runtime
     context: Context
     disposables: Disposable[] = []
 
+    abstract execute(): void
+
     constructor(public parent: Context, public config: any) {
       this.context = parent.fork({ state: this })
     }
 
-    dispose() {
+    update(config: any) {
+      this.reset()
+      this.config = config
+      this.execute()
+    }
+
+    protected reset() {
       this.disposables.splice(0, Infinity).forEach(dispose => dispose())
     }
   }
@@ -54,15 +62,24 @@ export namespace Plugin {
     constructor(parent: Context, config: any, runtime: Runtime) {
       super(parent, config)
       this.runtime = runtime
+      this.dispose = this.dispose.bind(this)
       defineProperty(this.dispose, kState, true)
       defineProperty(this.dispose, 'name', `state <${parent.source}>`)
       runtime.children.push(this)
       runtime.disposables.push(this.dispose)
       parent.state?.disposables.push(this.dispose)
+      this.execute()
     }
 
-    dispose = () => {
-      super.dispose()
+    execute() {
+      if (!this.runtime.isActive) return
+      for (const fork of this.runtime.forkers) {
+        fork(this.context, this.config)
+      }
+    }
+
+    dispose() {
+      this.reset()
       remove(this.runtime.disposables, this.dispose)
       if (remove(this.runtime.children, this) && !this.runtime.children.length) {
         this.runtime.dispose()
@@ -76,7 +93,7 @@ export namespace Plugin {
     schema: any
     using: readonly string[] = []
     forkers: Function[] = []
-    children: State[] = []
+    children: Fork[] = []
     isActive = false
 
     constructor(private registry: Registry, public plugin: Plugin, config: any) {
@@ -85,24 +102,31 @@ export namespace Plugin {
         return this.children.some(p => p.context.match(session))
       }
       registry.set(plugin, this)
-      if (plugin) this.start()
+      if (plugin) this.init()
     }
 
     fork(parent: Context, config: any) {
-      const state = new Fork(parent, config, this)
-      if (this.isActive) {
-        this.executeFork(state)
-      }
-      return state
+      return new Fork(parent, config, this)
     }
 
-    dispose = () => {
-      super.dispose()
-      if (this.plugin) this.stop()
+    dispose() {
+      super.reset()
+      if (this.plugin) {
+        this.registry.delete(this.plugin)
+        this.context.emit('logger/debug', 'app', 'dispose:', this.plugin.name)
+        this.context.emit('plugin-removed', this)
+      }
       return this
     }
 
-    start() {
+    reset() {
+      this.disposables = this.disposables.filter((dispose) => {
+        if (dispose[kState]) return true
+        dispose()
+      })
+    }
+
+    init() {
       this.schema = this.plugin['Config'] || this.plugin['schema']
       this.using = this.plugin['using'] || []
       this.registry.app.emit('plugin-added', this)
@@ -113,30 +137,15 @@ export namespace Plugin {
       }
 
       if (this.using.length) {
-        this.context.on('service', (name) => {
+        const dispose = this.context.on('service', (name) => {
           if (!this.using.includes(name)) return
-          this.disposables = this.disposables.filter((dispose, index) => {
-            // the first element is the "service" event listener
-            if (!index || dispose[kState]) return true
-            dispose()
-          })
-          this.callback()
+          this.reset()
+          this.execute()
         })
+        defineProperty(dispose, kState, true)
       }
 
-      this.callback()
-    }
-
-    stop() {
-      this.registry.delete(this.plugin)
-      this.context.emit('logger/debug', 'app', 'dispose:', this.plugin.name)
-      this.context.emit('plugin-removed', this)
-    }
-
-    private executeFork(state: State) {
-      for (const fork of this.forkers) {
-        fork(state.context, state.config)
-      }
+      this.execute()
     }
 
     private apply = (context: Context, config: any) => {
@@ -154,7 +163,7 @@ export namespace Plugin {
       }
     }
 
-    private callback() {
+    execute() {
       if (this.using.some(name => !this.context[name])) return
 
       // execute plugin body
@@ -164,7 +173,7 @@ export namespace Plugin {
       }
 
       for (const state of this.children) {
-        this.executeFork(state)
+        state.execute()
       }
     }
   }
