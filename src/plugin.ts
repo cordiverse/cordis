@@ -33,73 +33,71 @@ export namespace Plugin {
     : T extends Object<infer U> ? U
     : never
 
-  export interface State {
-    id: string
+  export class State {
+    id = Math.random().toString(36).slice(2, 10)
     runtime: Runtime
-    parent: Context
     context: Context
-    config: any
-    disposables: Disposable[]
-  }
+    disposables: Disposable[] = []
 
-  export interface Fork extends State {
-    (): boolean
+    constructor(public parent: Context, public config: any) {
+      this.context = parent.fork({ state: this })
+    }
+
+    dispose() {
+      this.disposables.splice(0, Infinity).forEach(dispose => dispose())
+    }
   }
 
   export const kState = Symbol('state')
 
-  export class Runtime implements State {
-    id = Math.random().toString(36).slice(2, 10)
+  export class Fork extends State {
+    constructor(parent: Context, config: any, runtime: Runtime) {
+      super(parent, config)
+      this.runtime = runtime
+      defineProperty(this.dispose, kState, true)
+      defineProperty(this.dispose, 'name', `state <${parent.source}>`)
+      runtime.children.push(this)
+      runtime.disposables.push(this.dispose)
+      parent.state?.disposables.push(this.dispose)
+    }
+
+    dispose = () => {
+      super.dispose()
+      remove(this.runtime.disposables, this.dispose)
+      if (remove(this.runtime.children, this) && !this.runtime.children.length) {
+        this.runtime.dispose()
+      }
+      return remove(this.parent.state.disposables, this.dispose)
+    }
+  }
+
+  export class Runtime extends State {
     runtime = this
-    parent: Context
-    context: Context
     schema: any
     using: readonly string[] = []
-    disposables: Disposable[] = []
     forkers: Function[] = []
-    children: Fork[] = []
+    children: State[] = []
     isActive = false
 
-    constructor(private registry: Registry, public plugin: Plugin, public config: any) {
-      this.parent = registry.caller
-      this.context = this.parent.fork({
-        filter: (session) => {
-          return this.children.some(p => p.context.match(session))
-        },
-        state: this,
-      })
+    constructor(private registry: Registry, public plugin: Plugin, config: any) {
+      super(registry.caller, config)
+      this.context.filter = (session) => {
+        return this.children.some(p => p.context.match(session))
+      }
       registry.set(plugin, this)
       if (plugin) this.start()
     }
 
     fork(parent: Context, config: any) {
-      const state: Fork = () => {
-        state.disposables.splice(0, Infinity).forEach(dispose => dispose())
-        remove(this.disposables, state)
-        if (remove(this.children, state) && !this.children.length) {
-          this.dispose()
-        }
-        return remove(parent.state.disposables, state)
-      }
-      state.id = Math.random().toString(36).slice(2, 10)
-      state.parent = parent
-      state.runtime = this
-      state.context = parent.fork({ state })
-      state.config = config
-      state.disposables = []
-      defineProperty(state, kState, true)
-      defineProperty(state, 'name', `state <${parent.source}>`)
-      this.children.push(state)
-      this.disposables.push(state)
-      parent.state?.disposables.push(state)
+      const state = new Fork(parent, config, this)
       if (this.isActive) {
         this.executeFork(state)
       }
       return state
     }
 
-    dispose() {
-      this.disposables.splice(0, Infinity).forEach(dispose => dispose())
+    dispose = () => {
+      super.dispose()
       if (this.plugin) this.stop()
       return this
     }
