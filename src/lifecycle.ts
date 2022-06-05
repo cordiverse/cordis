@@ -47,12 +47,11 @@ export class Lifecycle {
         return () => false
       } else if (name === 'dispose') {
         disposables[method](listener as any)
+        defineProperty(listener, 'name', 'event <dispose>')
         return () => remove(disposables, listener)
       } else if (name === 'fork') {
         runtime.forkers[method](listener as any)
-        const dispose = () => remove(runtime.forkers, listener)
-        disposables.push(dispose)
-        return dispose
+        return this.mark('event <fork>', () => remove(runtime.forkers, listener))
       }
     })
   }
@@ -136,6 +135,17 @@ export class Lifecycle {
     }
   }
 
+  mark(label: string, callback: () => boolean) {
+    const { disposables } = this.caller.state
+    const dispose = () => {
+      remove(disposables, dispose)
+      return callback()
+    }
+    disposables.push(dispose)
+    defineProperty(dispose, 'name', label)
+    return dispose
+  }
+
   register(label: string, hooks: [Context, any][], listener: any, prepend?: boolean) {
     if (hooks.length >= this.config.maxListeners) {
       this.emit('logger/warn', 'app',
@@ -145,13 +155,7 @@ export class Lifecycle {
 
     const method = prepend ? 'unshift' : 'push'
     hooks[method]([this.caller, listener])
-    const dispose = () => {
-      remove(this.caller.state.disposables, dispose)
-      return this.unregister(hooks, listener)
-    }
-    this.caller.state.disposables.push(dispose)
-    defineProperty(dispose, 'name', label)
-    return dispose
+    return this.mark(label, () => this.unregister(hooks, listener))
   }
 
   unregister(hooks: [Context, any][], listener: any) {
