@@ -41,15 +41,18 @@ export class Lifecycle {
   constructor(private ctx: Context, private config: Lifecycle.Config) {
     (this as Lifecycle.Delegates).on('hook', (name, listener, prepend) => {
       const method = prepend ? 'unshift' : 'push'
+      const { runtime, disposables } = this.caller.state
       if (name === 'ready' && this.isActive) {
         this.queue(listener())
         return () => false
       } else if (name === 'dispose') {
-        this.caller.state.disposables[method](listener as any)
-        return () => remove(this.caller.state.disposables, listener)
+        disposables[method](listener as any)
+        return () => remove(disposables, listener)
       } else if (name === 'fork') {
-        this.caller.state.runtime.forkers[method](listener as any)
-        return () => remove(this.caller.state.runtime.forkers, listener)
+        runtime.forkers[method](listener as any)
+        const dispose = () => remove(runtime.forkers, listener)
+        disposables.push(dispose)
+        return dispose
       }
     })
   }
@@ -221,5 +224,6 @@ export interface Events {
   'fork': Plugin.Function
   'dispose'(): Awaitable<void>
   'service'(name: string, oldValue: any): void
+  'config'(state: Plugin.State, resolved: any, original: any): boolean | void
   'hook'(name: string, listener: Function, prepend: boolean): () => boolean
 }

@@ -46,8 +46,9 @@ export namespace Plugin {
     }
 
     update(config: any) {
-      config = Registry.validate(this.runtime.plugin, config)
-      this.config = config
+      const resolved = Registry.validate(this.runtime.plugin, config)
+      if (this.context.bail('config', this, resolved, config)) return
+      this.config = resolved
       this.restart()
     }
 
@@ -169,8 +170,8 @@ export namespace Plugin {
         this.apply(this.context, this.config)
       }
 
-      for (const state of this.children) {
-        state.restart()
+      for (const fork of this.children) {
+        fork.restart()
       }
     }
   }

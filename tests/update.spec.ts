@@ -3,7 +3,7 @@ import { expect } from 'chai'
 import { event } from './shared'
 import * as jest from 'jest-mock'
 
-describe('Config', () => {
+describe('Update', () => {
   it('basic support', () => {
     const app = new App()
     const dispose = jest.fn(() => {})

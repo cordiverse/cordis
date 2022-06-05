@@ -92,8 +92,9 @@ describe('Fork', () => {
     })
     const plugin = {
       using: ['foo'],
-      reusable: true,
-      apply: callback,
+      apply(ctx: Context) {
+        ctx.on('fork', callback)
+      },
     }
 
     app.plugin(plugin)

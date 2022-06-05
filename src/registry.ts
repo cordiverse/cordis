@@ -19,7 +19,7 @@ export namespace Registry {
 export class Registry extends Map<Plugin, Plugin.Runtime> {
   constructor(public app: App, private config: Registry.Config) {
     super()
-    app.state = new Plugin.Runtime(this, null, null)
+    app.state = new Plugin.Runtime(this, null, config)
   }
 
   get caller(): Context {
