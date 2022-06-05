@@ -86,7 +86,10 @@ describe('Fork', () => {
 
   it('deferred execution', () => {
     const app = new App()
-    const callback = jest.fn()
+    const listener = jest.fn()
+    const callback = jest.fn((ctx: Context) => {
+      ctx.on(event, listener)
+    })
     const plugin = {
       using: ['foo'],
       reusable: true,
@@ -97,11 +100,26 @@ describe('Fork', () => {
     expect(callback.mock.calls).to.have.length(0)
     app.plugin(plugin)
     expect(callback.mock.calls).to.have.length(0)
+    app.emit(event)
+    expect(listener.mock.calls).to.have.length(0)
+
     app.foo = { bar: 100 }
     expect(callback.mock.calls).to.have.length(2)
+    app.emit(event)
+    expect(listener.mock.calls).to.have.length(2)
+
+    callback.mockClear()
     app.plugin(plugin)
-    expect(callback.mock.calls).to.have.length(3)
+    expect(callback.mock.calls).to.have.length(1)
+    listener.mockClear()
+    app.emit(event)
+    expect(listener.mock.calls).to.have.length(3)
+
+    callback.mockClear()
     app.foo = { bar: 200 }
-    expect(callback.mock.calls).to.have.length(6)
+    expect(callback.mock.calls).to.have.length(3)
+    listener.mockClear()
+    app.emit(event)
+    expect(listener.mock.calls).to.have.length(3)
   })
 })

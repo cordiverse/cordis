@@ -39,39 +39,43 @@ export namespace Plugin {
     context: Context
     disposables: Disposable[] = []
 
-    abstract execute(): void
+    abstract restart(): void
 
     constructor(public parent: Context, public config: any) {
       this.context = parent.fork({ state: this })
     }
 
     update(config: any) {
-      this.reset()
+      config = Registry.validate(this.runtime.plugin, config)
       this.config = config
-      this.execute()
+      this.restart()
     }
 
-    protected reset() {
-      this.disposables.splice(0, Infinity).forEach(dispose => dispose())
+    protected reset(preserve = false) {
+      this.disposables = this.disposables.splice(0, Infinity).filter((dispose) => {
+        if (preserve && dispose[kPreserve]) return true
+        dispose()
+      })
     }
   }
 
-  export const kState = Symbol('state')
+  export const kPreserve = Symbol('preserve')
 
   export class Fork extends State {
     constructor(parent: Context, config: any, runtime: Runtime) {
       super(parent, config)
       this.runtime = runtime
       this.dispose = this.dispose.bind(this)
-      defineProperty(this.dispose, kState, true)
+      defineProperty(this.dispose, kPreserve, true)
       defineProperty(this.dispose, 'name', `state <${parent.source}>`)
       runtime.children.push(this)
       runtime.disposables.push(this.dispose)
       parent.state?.disposables.push(this.dispose)
-      this.execute()
+      this.restart()
     }
 
-    execute() {
+    restart() {
+      this.reset(true)
       if (!this.runtime.isActive) return
       for (const fork of this.runtime.forkers) {
         fork(this.context, this.config)
@@ -110,20 +114,13 @@ export namespace Plugin {
     }
 
     dispose() {
-      super.reset()
+      this.reset()
       if (this.plugin) {
         this.registry.delete(this.plugin)
         this.context.emit('logger/debug', 'app', 'dispose:', this.plugin.name)
         this.context.emit('plugin-removed', this)
       }
       return this
-    }
-
-    reset() {
-      this.disposables = this.disposables.filter((dispose) => {
-        if (dispose[kState]) return true
-        dispose()
-      })
     }
 
     init() {
@@ -139,13 +136,12 @@ export namespace Plugin {
       if (this.using.length) {
         const dispose = this.context.on('service', (name) => {
           if (!this.using.includes(name)) return
-          this.reset()
-          this.execute()
+          this.restart()
         })
-        defineProperty(dispose, kState, true)
+        defineProperty(dispose, kPreserve, true)
       }
 
-      this.execute()
+      this.restart()
     }
 
     private apply = (context: Context, config: any) => {
@@ -163,7 +159,8 @@ export namespace Plugin {
       }
     }
 
-    execute() {
+    restart() {
+      this.reset(true)
       if (this.using.some(name => !this.context[name])) return
 
       // execute plugin body
@@ -173,7 +170,7 @@ export namespace Plugin {
       }
 
       for (const state of this.children) {
-        state.execute()
+        state.restart()
       }
     }
   }
