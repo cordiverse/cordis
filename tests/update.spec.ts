@@ -4,7 +4,7 @@ import { event } from './shared'
 import * as jest from 'jest-mock'
 
 describe('Update', () => {
-  it('basic support', () => {
+  it('update runtime', () => {
     const app = new App()
     const dispose = jest.fn(() => {})
     const callback = jest.fn<Plugin.Function>((ctx) => {
@@ -12,6 +12,7 @@ describe('Update', () => {
       ctx.on(event, () => {
         ctx.state.update({ value: 2 })
       })
+      ctx.on('fork', () => {})
     })
 
     app.plugin(callback, { value: 1 })
@@ -26,7 +27,24 @@ describe('Update', () => {
     expect(callback.mock.calls[1][1]).to.deep.equal({ value: 2 })
   })
 
-  it('update fork', () => {
+  it('update fork (single)', () => {
+    const app = new App()
+    const callback = jest.fn(config => {})
+    const fork = app.plugin((ctx, config) => {
+      ctx.on(event, () => callback(config))
+    }, { value: 1 })
+
+    app.emit(event)
+    expect(callback.mock.calls).to.have.length(1)
+    expect(callback.mock.calls[0][0]).to.deep.equal({ value: 1 })
+
+    fork.update({ value: 2 })
+    app.emit(event)
+    expect(callback.mock.calls).to.have.length(2)
+    expect(callback.mock.calls[1][0]).to.deep.equal({ value: 2 })
+  })
+
+  it('update fork (multiple)', () => {
     const app = new App()
     const inner = jest.fn<Plugin.Function>()
     const outer = jest.fn<Plugin.Function>((ctx) => {

@@ -50,8 +50,8 @@ export class Lifecycle {
         defineProperty(listener, 'name', 'event <dispose>')
         return () => remove(disposables, listener)
       } else if (name === 'fork') {
-        runtime.forkers[method](listener as any)
-        return this.mark('event <fork>', () => remove(runtime.forkers, listener))
+        runtime.forkables[method](listener as any)
+        return this.mark('event <fork>', () => remove(runtime.forkables, listener))
       }
     })
   }
@@ -228,6 +228,6 @@ export interface Events {
   'fork': Plugin.Function
   'dispose'(): Awaitable<void>
   'service'(name: string, oldValue: any): void
-  'config'(state: Plugin.State, resolved: any, original: any): boolean | void
+  'config'(state: Plugin.Fork, config: any): void
   'hook'(name: string, listener: Function, prepend: boolean): () => boolean
 }

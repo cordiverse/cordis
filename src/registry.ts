@@ -74,7 +74,7 @@ export class Registry extends Map<Plugin, Plugin.Runtime> {
     const context = this.caller
     const duplicate = this.get(plugin)
     if (duplicate) {
-      if (!duplicate.forkers.length) {
+      if (!duplicate.isForkable) {
         this.app.emit('logger/warn', 'app', `duplicate plugin detected: ${plugin.name}`)
       }
       return duplicate.fork(context, config)
@@ -85,6 +85,9 @@ export class Registry extends Map<Plugin, Plugin.Runtime> {
   }
 
   dispose(plugin: Plugin) {
-    return this.get(plugin)?.dispose()
+    const runtime = this.get(plugin)
+    if (!runtime) return
+    runtime.dispose()
+    return runtime
   }
 }

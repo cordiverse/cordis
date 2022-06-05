@@ -39,20 +39,15 @@ export namespace Plugin {
     context: Context
     disposables: Disposable[] = []
 
+    abstract dispose(): boolean
     abstract restart(): void
+    abstract update(config: any): void
 
     constructor(public parent: Context, public config: any) {
       this.context = parent.fork({ state: this })
     }
 
-    update(config: any) {
-      const resolved = Registry.validate(this.runtime.plugin, config)
-      if (this.context.bail('config', this, resolved, config)) return
-      this.config = resolved
-      this.restart()
-    }
-
-    protected reset(preserve = false) {
+    protected clear(preserve = false) {
       this.disposables = this.disposables.splice(0, Infinity).filter((dispose) => {
         if (preserve && dispose[kPreserve]) return true
         dispose()
@@ -76,15 +71,28 @@ export namespace Plugin {
     }
 
     restart() {
-      this.reset(true)
+      this.clear(true)
       if (!this.runtime.isActive) return
-      for (const fork of this.runtime.forkers) {
+      for (const fork of this.runtime.forkables) {
         fork(this.context, this.config)
       }
     }
 
+    update(config: any) {
+      const oldConfig = this.config
+      const resolved = Registry.validate(this.runtime.plugin, config)
+      this.config = resolved
+      this.context.emit('config', this, config)
+      if (this.runtime.isForkable) {
+        this.restart()
+      } else if (this.runtime.config === oldConfig) {
+        this.runtime.config = resolved
+        this.runtime.restart()
+      }
+    }
+
     dispose() {
-      this.reset()
+      this.clear()
       remove(this.runtime.disposables, this.dispose)
       if (remove(this.runtime.children, this) && !this.runtime.children.length) {
         this.runtime.dispose()
@@ -97,7 +105,7 @@ export namespace Plugin {
     runtime = this
     schema: any
     using: readonly string[] = []
-    forkers: Function[] = []
+    forkables: Function[] = []
     children: Fork[] = []
     isActive = false
 
@@ -110,18 +118,22 @@ export namespace Plugin {
       if (plugin) this.init()
     }
 
+    get isForkable() {
+      return this.forkables.length > 0
+    }
+
     fork(parent: Context, config: any) {
       return new Fork(parent, config, this)
     }
 
     dispose() {
-      this.reset()
+      this.clear()
       if (this.plugin) {
-        this.registry.delete(this.plugin)
+        const result = this.registry.delete(this.plugin)
         this.context.emit('logger/debug', 'app', 'dispose:', this.plugin.name)
         this.context.emit('plugin-removed', this)
+        return result
       }
-      return this
     }
 
     init() {
@@ -131,7 +143,7 @@ export namespace Plugin {
       this.registry.app.emit('logger/debug', 'app', 'plugin:', this.plugin.name)
 
       if (this.plugin['reusable']) {
-        this.forkers.push(this.apply)
+        this.forkables.push(this.apply)
       }
 
       if (this.using.length) {
@@ -161,7 +173,7 @@ export namespace Plugin {
     }
 
     restart() {
-      this.reset(true)
+      this.clear(true)
       if (this.using.some(name => !this.context[name])) return
 
       // execute plugin body
@@ -173,6 +185,21 @@ export namespace Plugin {
       for (const fork of this.children) {
         fork.restart()
       }
+    }
+
+    update(config: any) {
+      if (this.isForkable) {
+        this.context.emit('logger/warn', 'app', `attempting to update forkable plugin "${this.plugin.name}", which may lead unexpected behavior`)
+      }
+      const oldConfig = this.config
+      const resolved = Registry.validate(this.runtime.plugin, config)
+      this.config = resolved
+      for (const fork of this.children) {
+        if (fork.config !== oldConfig) continue
+        fork.config = resolved
+        this.context.emit('config', fork, config)
+      }
+      this.restart()
     }
   }
 }
