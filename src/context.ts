@@ -98,7 +98,7 @@ export namespace Context {
         if (oldValue === value) return
         this.app[privateKey] = value
         if (typeof name !== 'string') return
-        this.emit('service', name, oldValue)
+        this.emit('internal/service', name, oldValue)
         const action = value ? oldValue ? 'changed' : 'enabled' : 'disabled'
         this.emit('logger/debug', 'service', name, action)
       },

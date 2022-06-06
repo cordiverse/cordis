@@ -39,7 +39,7 @@ export class Lifecycle {
   _hooks: Record<keyof any, [Context, (...args: any[]) => any][]> = {}
 
   constructor(private ctx: Context, private config: Lifecycle.Config) {
-    (this as Lifecycle.Delegates).on('hook', (name, listener, prepend) => {
+    (this as Lifecycle.Delegates).on('internal/hook', (name, listener, prepend) => {
       const method = prepend ? 'unshift' : 'push'
       const { runtime, disposables } = this.caller.state
       if (name === 'ready' && this.isActive) {
@@ -168,7 +168,7 @@ export class Lifecycle {
 
   on(name: EventName, listener: Function, prepend = false) {
     // handle special events
-    const result = this.bail('hook', name, listener, prepend)
+    const result = this.bail('internal/hook', name, listener, prepend)
     if (result) return result
 
     const hooks = this._hooks[name] ||= []
@@ -227,7 +227,7 @@ export interface Events {
   'ready'(): Awaitable<void>
   'fork': Plugin.Function
   'dispose'(): Awaitable<void>
-  'service'(name: string, oldValue: any): void
-  'config'(state: Plugin.Fork, config: any): void
-  'hook'(name: string, listener: Function, prepend: boolean): () => boolean
+  'internal/service'(name: string, oldValue: any): void
+  'internal/update'(state: Plugin.Fork, config: any): void
+  'internal/hook'(name: string, listener: Function, prepend: boolean): () => boolean
 }

@@ -41,7 +41,7 @@ export namespace Plugin {
 
     abstract dispose(): boolean
     abstract restart(): void
-    abstract update(config: any): void
+    abstract update(config: any, manual: boolean): void
 
     constructor(public parent: Context, public config: any) {
       this.context = parent.fork({ state: this })
@@ -78,11 +78,13 @@ export namespace Plugin {
       }
     }
 
-    update(config: any) {
+    update(config: any, manual = false) {
       const oldConfig = this.config
       const resolved = Registry.validate(this.runtime.plugin, config)
       this.config = resolved
-      this.context.emit('config', this, config)
+      if (!manual) {
+        this.context.emit('internal/update', this, config)
+      }
       if (this.runtime.isForkable) {
         this.restart()
       } else if (this.runtime.config === oldConfig) {
@@ -147,7 +149,7 @@ export namespace Plugin {
       }
 
       if (this.using.length) {
-        const dispose = this.context.on('service', (name) => {
+        const dispose = this.context.on('internal/service', (name) => {
           if (!this.using.includes(name)) return
           this.restart()
         })
@@ -187,7 +189,7 @@ export namespace Plugin {
       }
     }
 
-    update(config: any) {
+    update(config: any, manual = false) {
       if (this.isForkable) {
         this.context.emit('logger/warn', 'app', `attempting to update forkable plugin "${this.plugin.name}", which may lead unexpected behavior`)
       }
@@ -197,7 +199,9 @@ export namespace Plugin {
       for (const fork of this.children) {
         if (fork.config !== oldConfig) continue
         fork.config = resolved
-        this.context.emit('config', fork, config)
+        if (!manual) {
+          this.context.emit('internal/update', fork, config)
+        }
       }
       this.restart()
     }
