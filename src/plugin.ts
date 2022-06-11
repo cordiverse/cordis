@@ -169,6 +169,9 @@ export namespace Plugin {
         if (name) {
           context[name] = instance
         }
+        if (instance['fork']) {
+          this.forkables.push(instance['fork'])
+        }
       } else {
         this.plugin(context, config)
       }

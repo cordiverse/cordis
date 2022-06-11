@@ -4,7 +4,7 @@ import { Context } from './context'
 export class Service {
   protected start(): Awaitable<void> {}
   protected stop(): Awaitable<void> {}
-  protected fork(ctx: Context, config: any) {}
+  protected fork?(ctx: Context, config: any): void
 
   constructor(protected ctx: Context, name: string, immediate?: boolean) {
     Context.service(name)
@@ -23,10 +23,6 @@ export class Service {
     ctx.on('dispose', async () => {
       ctx[name] = null
       await this.stop()
-    })
-
-    ctx.on('fork', (ctx, config) => {
-      this.fork(ctx, config)
     })
   }
 
