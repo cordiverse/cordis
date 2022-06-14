@@ -33,8 +33,10 @@ export namespace Plugin {
     : T extends Object<infer U> ? U
     : never
 
+  let counter = 0
+
   export abstract class State {
-    id = Math.random().toString(36).slice(2, 10)
+    id = counter++
     runtime: Runtime
     context: Context
     disposables: Disposable[] = []
