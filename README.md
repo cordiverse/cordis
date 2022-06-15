@@ -51,13 +51,45 @@ Creates a new context. All properties of the new context are inherited from the 
 
 `ctx.lifecycle` is a built-in service which provides event-related functionality. Most of its methods are also directly accessible in the context.
 
-#### ctx.parallel()
+#### ctx.emit(event, ...param)
 
-#### ctx.emit()
+- event: `string` event name
+- param: `any[]` event parameters
+- returns: `void`
 
-#### ctx.serial()
+Trigger the event called `event`, calling all associated listeners **synchronously** at the same time, passing the supplied arguments to each.
 
-#### ctx.bail()
+<!-- An [`internal/warn`](#internalwarn) event is triggered if a listener throws an error or returns a rejected promise. -->
+
+#### ctx.parallel(event, ...param)
+
+- event: `string` event name
+- param: `any[]` event parameters
+- returns: `Promise<void>`
+
+Trigger the event called `event`, calling all associated listeners **asynchronously** at the same time, passing the supplied arguments to each.
+
+<!-- An [`internal/warn`](#internalwarn) event is triggered if a listener throws an error or returns a rejected promise. -->
+
+#### ctx.bail(event, ...param)
+
+- event: `string` event name
+- param: `any[]` event parameters
+- returns: `any`
+
+Trigger the event called `event`, calling all associated listeners **synchronously** in the order they were registered, passing the supplied arguments to each.
+
+If any listener returns a value other than `false`, `null` or `undefined`, that value is returned. If all listeners return `false`, `null` or `undefined`, an `undefined` is returned. In either case, subsequent listeners will not be called.
+
+#### ctx.serial(event, ...param)
+
+- event: `string` event name
+- param: `any[]` event parameters
+- returns: `Promise<any>`
+
+Trigger the event called `event`, calling all associated listeners **asynchronously** in the order they were registered, passing the supplied arguments to each.
+
+If any listener is fulfilled with a value other than `false`, `null` or `undefined`, the returned promise is fulfilled with that value. If all listeners are fulfilled with `false`, `null` or `undefined`, the returned promise is fulfilled with `undefined`. In either case, subsequent listeners will not be called.
 
 #### ctx.on()
 
@@ -87,6 +119,8 @@ Creates a new context. All properties of the new context are inherited from the 
 
 ### State
 
+State can be accessed via `ctx.state` or passed in in some events.
+
 #### state.uid
 
 - type: `number`
@@ -103,11 +137,23 @@ The plugin runtime associated with the state. If the state is a runtime, then th
 
 #### state.context
 
+#### state.config
+
 #### state.restart()
 
 #### state.update()
 
 #### state.dispose()
+
+### Fork
+
+### Runtime
+
+#### runtime.plugin
+
+#### runtime.isActive
+
+#### runtime.isForkable
 
 ### Events
 
