@@ -37,7 +37,7 @@ export class Context {
     return Object.assign(Object.create(this), meta)
   }
 
-  localize(names: string[]) {
+  isolate(names: string[]) {
     const mapping = Object.create(this.mapping)
     for (const name of names) {
       mapping[name] = Symbol(name)

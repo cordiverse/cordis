@@ -47,14 +47,20 @@ describe('Service', () => {
     expect(callback.mock.calls).to.have.length(0)
     expect(dispose.mock.calls).to.have.length(0)
 
-    app.foo = { bar: 100 }
+    const old = app.foo = { bar: 100 }
     expect(callback.mock.calls).to.have.length(1)
     expect(callback.mock.calls[0][0]).to.equal(100)
     expect(dispose.mock.calls).to.have.length(0)
 
-    app.foo = { bar: 200 }
+    // do not trigger event if reference has not changed
+    old.bar = 200
+    app.foo = old
+    expect(callback.mock.calls).to.have.length(1)
+    expect(dispose.mock.calls).to.have.length(0)
+
+    app.foo = { bar: 300 }
     expect(callback.mock.calls).to.have.length(2)
-    expect(callback.mock.calls[1][0]).to.equal(200)
+    expect(callback.mock.calls[1][0]).to.equal(300)
     expect(dispose.mock.calls).to.have.length(1)
 
     app.foo = null
@@ -99,9 +105,9 @@ describe('Service', () => {
     expect(fork.mock.calls).to.have.length(2)
   })
 
-  it('localize context', async () => {
+  it('isolated context', async () => {
     const app = new App()
-    const ctx = app.localize(['foo'])
+    const ctx = app.isolate(['foo'])
 
     const outer = jest.fn()
     const inner = jest.fn()
