@@ -1,6 +1,6 @@
 import { Context } from './context'
 import { Lifecycle } from './lifecycle'
-import { Registry } from './registry'
+import { Registry } from './plugin'
 
 export class App extends Context {
   options: App.Config

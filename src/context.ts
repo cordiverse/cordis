@@ -1,8 +1,8 @@
 import { defineProperty } from 'cosmokit'
 import { App } from './app'
 import { Lifecycle } from './lifecycle'
-import { Plugin } from './plugin'
-import { Registry } from './registry'
+import { State } from './state'
+import { Registry } from './plugin'
 
 export type Filter = (session: Lifecycle.Session) => boolean
 
@@ -90,7 +90,7 @@ export namespace Context {
 
   export interface Meta {
     app: App
-    state: Plugin.State
+    state: State
     filter: Filter
     mapping: {}
   }

@@ -1,5 +1,6 @@
 import { Awaitable, defineProperty, Promisify, remove } from 'cosmokit'
 import { Context } from './context'
+import { Fork, Runtime } from './state'
 import { Plugin } from './plugin'
 
 function isBailed(value: any) {
@@ -224,13 +225,13 @@ type BeforeEventName = OmitSubstring<EventName & string, 'before-'>
 export type BeforeEventMap = { [E in EventName & string as OmitSubstring<E, 'before-'>]: Events[E] }
 
 export interface Events {
-  'plugin-added'(state: Plugin.Runtime): void
-  'plugin-removed'(state: Plugin.Runtime): void
+  'plugin-added'(state: Runtime): void
+  'plugin-removed'(state: Runtime): void
   'ready'(): Awaitable<void>
   'fork': Plugin.Function
   'dispose'(): Awaitable<void>
   'internal/warn'(format: any, ...param: any[]): void
   'internal/service'(this: Context, name: string, oldValue: any): void
-  'internal/update'(state: Plugin.Fork, config: any): void
+  'internal/update'(state: Fork, config: any): void
   'internal/hook'(name: string, listener: Function, prepend: boolean): () => boolean
 }
