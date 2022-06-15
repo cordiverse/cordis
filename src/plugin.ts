@@ -36,14 +36,14 @@ export namespace Plugin {
   let counter = 0
 
   export abstract class State {
-    id = counter++
+    uid = counter++
     runtime: Runtime
     context: Context
     disposables: Disposable[] = []
 
     abstract dispose(): boolean
     abstract restart(): void
-    abstract update(config: any, manual: boolean): void
+    abstract update(config: any, manual?: boolean): void
 
     constructor(public parent: Context, public config: any) {
       this.context = parent.fork({ state: this })
@@ -115,9 +115,6 @@ export namespace Plugin {
 
     constructor(private registry: Registry, public plugin: Plugin, config: any) {
       super(registry.caller, config)
-      this.context.filter = (session) => {
-        return this.children.some(p => p.context.match(session))
-      }
       registry.set(plugin, this)
       if (plugin) this.init()
     }
@@ -134,7 +131,6 @@ export namespace Plugin {
       this.clear()
       if (this.plugin) {
         const result = this.registry.delete(this.plugin)
-        this.context.emit('logger/debug', 'app', 'dispose:', this.plugin.name)
         this.context.emit('plugin-removed', this)
         return result
       }
@@ -143,8 +139,7 @@ export namespace Plugin {
     init() {
       this.schema = this.plugin['Config'] || this.plugin['schema']
       this.using = this.plugin['using'] || []
-      this.registry.app.emit('plugin-added', this)
-      this.registry.app.emit('logger/debug', 'app', 'plugin:', this.plugin.name)
+      this.context.emit('plugin-added', this)
 
       if (this.plugin['reusable']) {
         this.forkables.push(this.apply)

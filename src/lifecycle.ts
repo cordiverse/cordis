@@ -39,7 +39,9 @@ export class Lifecycle {
   _hooks: Record<keyof any, [Context, (...args: any[]) => any][]> = {}
 
   constructor(private ctx: Context, private config: Lifecycle.Config) {
-    (this as Lifecycle.Delegates).on('internal/hook', (name, listener, prepend) => {
+    const self = this as Lifecycle.Delegates
+
+    self.on('internal/hook', (name, listener, prepend) => {
       const method = prepend ? 'unshift' : 'push'
       const { runtime, disposables } = this.caller.state
       if (name === 'ready' && this.isActive) {
@@ -52,6 +54,12 @@ export class Lifecycle {
       } else if (name === 'fork') {
         runtime.forkables[method](listener as any)
         return this.mark('event <fork>', () => remove(runtime.forkables, listener))
+      }
+    })
+
+    self.on('plugin-added', (runtime) => {
+      runtime.context.filter = (session) => {
+        return runtime.children.some(p => p.context.match(session))
       }
     })
   }
