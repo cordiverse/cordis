@@ -26,6 +26,10 @@ export class Context {
     return `Context <${this.source}>`
   }
 
+  warn(format: any, ...params: any[]) {
+    console.warn(format, ...params)
+  }
+
   fork(meta: Partial<Context.Meta>) {
     return new Context({ ...this, ...meta })
   }
@@ -99,8 +103,6 @@ export namespace Context {
         this.app[privateKey] = value
         if (typeof name !== 'string') return
         this.emit('internal/service', name, oldValue)
-        const action = value ? oldValue ? 'changed' : 'enabled' : 'disabled'
-        this.emit('logger/debug', 'service', name, action)
       },
     })
 

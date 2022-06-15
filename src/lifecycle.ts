@@ -70,7 +70,7 @@ export class Lifecycle {
 
   queue(value: any) {
     const task = Promise.resolve(value)
-      .catch(err => this.emit('logger/warn', 'app', err))
+      .catch(reason => this.ctx.warn(reason))
       .then(() => this.#tasks.delete(task))
     this.#tasks.add(task)
   }
@@ -96,7 +96,7 @@ export class Lifecycle {
       try {
         await callback.apply(session, args)
       } catch (error) {
-        this.emit('logger/warn', 'app', error)
+        this.ctx.warn(error)
       }
     }))
   }
@@ -156,9 +156,7 @@ export class Lifecycle {
 
   register(label: string, hooks: [Context, any][], listener: any, prepend?: boolean) {
     if (hooks.length >= this.config.maxListeners) {
-      this.emit('logger/warn', 'app',
-        `max listener count (${this.config.maxListeners}) for ${label} exceeded, which may be caused by a memory leak`,
-      )
+      this.ctx.warn(`max listener count (${this.config.maxListeners}) for ${label} exceeded, which may be caused by a memory leak`)
     }
 
     const method = prepend ? 'unshift' : 'push'
@@ -204,7 +202,6 @@ export class Lifecycle {
 
   async start() {
     this.isActive = true
-    this.emit('logger/debug', 'app', 'started')
     for (const callback of this.getHooks('ready')) {
       this.queue(callback())
     }
@@ -214,7 +211,6 @@ export class Lifecycle {
 
   async stop() {
     this.isActive = false
-    this.emit('logger/debug', 'app', 'stopped')
     // `dispose` event is handled by ctx.disposables
     await Promise.all(this.ctx.state.disposables.map(dispose => dispose()))
   }
@@ -227,9 +223,6 @@ type BeforeEventName = OmitSubstring<EventName & string, 'before-'>
 export type BeforeEventMap = { [E in EventName & string as OmitSubstring<E, 'before-'>]: Events[E] }
 
 export interface Events {
-  'logger/error'(name: string, format: string, ...param: any[]): void
-  'logger/warn'(name: string, format: string, ...param: any[]): void
-  'logger/debug'(name: string, format: string, ...param: any[]): void
   'plugin-added'(state: Plugin.Runtime): void
   'plugin-removed'(state: Plugin.Runtime): void
   'ready'(): Awaitable<void>

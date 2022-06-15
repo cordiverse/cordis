@@ -191,7 +191,7 @@ export namespace Plugin {
 
     update(config: any, manual = false) {
       if (this.isForkable) {
-        this.context.emit('logger/warn', 'app', `attempting to update forkable plugin "${this.plugin.name}", which may lead unexpected behavior`)
+        this.context.warn(`attempting to update forkable plugin "${this.plugin.name}", which may lead unexpected behavior`)
       }
       const oldConfig = this.config
       const resolved = Registry.validate(this.runtime.plugin, config)
