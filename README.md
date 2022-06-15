@@ -35,3 +35,73 @@ Contexts provide three kinds of functionality:
 ### Service
 
 ### Events
+
+## API
+
+### Lifecycle
+
+#### ctx.parallel()
+
+#### ctx.emit()
+
+#### ctx.serial()
+
+#### ctx.bail()
+
+#### ctx.on()
+
+#### ctx.once()
+
+#### ctx.off()
+
+#### ctx.lifecycle.start()
+
+#### ctx.lifecycle.stop()
+
+#### ctx.lifecycle.mark()
+
+#### ctx.lifecycle.register()
+
+#### ctx.lifecycle.unregister()
+
+### Registry
+
+#### ctx.plugin()
+
+#### ctx.using()
+
+#### ctx.dispose()
+
+### State
+
+#### state.uid
+
+#### state.runtime
+
+#### state.context
+
+#### state.restart()
+
+#### state.update()
+
+#### state.dispose()
+
+### Events
+
+#### ready
+
+#### dispose
+
+#### fork
+
+#### plugin-added
+
+#### plugin-removed
+
+#### internal/warn
+
+#### internal/hook
+
+#### internal/service
+
+#### internal/update
