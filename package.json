@@ -37,7 +37,7 @@
     "chai": "^4.3.6",
     "chai-as-promised": "^7.1.1",
     "chai-shape": "^1.0.0",
-    "dtsc": "^1.1.0",
+    "dtsc": "^1.1.1",
     "esbuild": "^0.14.39",
     "esbuild-register": "^3.3.2",
     "jest-mock": "^28.1.0",

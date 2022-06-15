@@ -230,7 +230,7 @@ export interface Events {
   'fork': Plugin.Function
   'dispose'(): Awaitable<void>
   'internal/warn'(format: any, ...param: any[]): void
-  'internal/service'(name: string, oldValue: any): void
+  'internal/service'(this: Context, name: string, oldValue: any): void
   'internal/update'(state: Plugin.Fork, config: any): void
   'internal/hook'(name: string, listener: Function, prepend: boolean): () => boolean
 }

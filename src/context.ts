@@ -37,6 +37,14 @@ export class Context {
     return Object.assign(Object.create(this), meta)
   }
 
+  localize(names: string[]) {
+    const mapping = Object.create(this.mapping)
+    for (const name of names) {
+      mapping[name] = Symbol(name)
+    }
+    return this.extend({ mapping })
+  }
+
   any() {
     return this.extend({ filter: () => true })
   }
@@ -84,9 +92,10 @@ export namespace Context {
     app: App
     state: Plugin.State
     filter: Filter
+    mapping: {}
   }
 
-  export const internal = {}
+  export const internal = Object.create(null)
 
   export function service(name: keyof any, options: ServiceOptions = {}) {
     if (Object.prototype.hasOwnProperty.call(Context.prototype, name)) return
@@ -95,17 +104,25 @@ export namespace Context {
 
     Object.defineProperty(Context.prototype, name, {
       get(this: Context) {
-        const value = this.app[privateKey]
+        const key = this.mapping[name] || privateKey
+        const value = this.app[key]
         if (!value) return
         defineProperty(value, Context.current, this)
         return value
       },
       set(this: Context, value) {
-        const oldValue = this.app[privateKey]
+        const key = this.mapping[name] || privateKey
+        const oldValue = this.app[key]
         if (oldValue === value) return
-        this.app[privateKey] = value
+        this.app[key] = value
         if (typeof name !== 'string') return
-        this.emit('internal/service', name, oldValue)
+
+        // trigger event
+        const self: Context = Object.create(this)
+        self[Context.filter] = (ctx) => {
+          return this.mapping[name] === ctx.mapping[name]
+        }
+        this.emit(self, 'internal/service', name, oldValue)
       },
     })
 
