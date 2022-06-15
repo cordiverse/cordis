@@ -73,7 +73,7 @@ export namespace Plugin {
     }
 
     restart() {
-      this.clear(true)
+      this.clear()
       if (!this.runtime.isActive) return
       for (const fork of this.runtime.forkables) {
         fork(this.context, this.config)
@@ -111,7 +111,7 @@ export namespace Plugin {
     using: readonly string[] = []
     forkables: Function[] = []
     children: Fork[] = []
-    isActive = false
+    isActive: boolean
 
     constructor(private registry: Registry, public plugin: Plugin, config: any) {
       super(registry.caller, config)
@@ -175,6 +175,7 @@ export namespace Plugin {
     }
 
     restart() {
+      this.isActive = false
       this.clear(true)
       if (this.using.some(name => !this.context[name])) return
 
