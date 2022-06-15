@@ -1,6 +1,6 @@
 import { App, Context } from '../src'
 import { expect } from 'chai'
-import { event, filter } from './shared'
+import { event, filter, Session } from './shared'
 import * as jest from 'jest-mock'
 
 describe('Fork', () => {
@@ -26,26 +26,26 @@ describe('Fork', () => {
 
     const app = new App()
     app.intersect(filter).plugin(pluginA)
-    app.emit({ flag: false }, event)
+    app.emit(new Session(false), event)
     expect(callback.mock.calls).to.have.length(0)
-    app.emit({ flag: true }, event)
+    app.emit(new Session(true), event)
     expect(callback.mock.calls).to.have.length(1)
     expect(callback.mock.calls[0]).to.have.shape([1])
 
     callback.mockClear()
     app.exclude(filter).plugin(pluginB)
-    app.emit({ flag: false }, event)
+    app.emit(new Session(false), event)
     expect(callback.mock.calls).to.have.length(1)
     expect(callback.mock.calls[0]).to.have.shape([3])
-    app.emit({ flag: true }, event)
+    app.emit(new Session(true), event)
     expect(callback.mock.calls).to.have.length(2)
     expect(callback.mock.calls[1]).to.have.shape([3])
 
     callback.mockClear()
     app.dispose(pluginA)
-    app.emit({ flag: true }, event)
+    app.emit(new Session(true), event)
     expect(callback.mock.calls).to.have.length(0)
-    app.emit({ flag: false }, event)
+    app.emit(new Session(false), event)
     expect(callback.mock.calls).to.have.length(1)
     expect(callback.mock.calls[0]).to.have.shape([2])
 
@@ -69,12 +69,12 @@ describe('Fork', () => {
     app.intersect(filter).plugin(reusable, { foo: 1 })
     app.exclude(filter).plugin(reusable, { foo: 2 })
 
-    app.emit({ flag: true }, event)
+    app.emit(new Session(true), event)
     expect(callback.mock.calls).to.have.length(2)
     expect(callback.mock.calls).to.have.shape([[0], [1]])
 
     callback.mockClear()
-    app.emit({ flag: false }, event)
+    app.emit(new Session(false), event)
     expect(callback.mock.calls).to.have.length(2)
     expect(callback.mock.calls).to.have.shape([[0], [2]])
 

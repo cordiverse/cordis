@@ -46,7 +46,7 @@ describe('Plugin', () => {
 
   it('apply invalid plugin', () => {
     const app = new App()
-    expect(() => app.plugin(undefined)).to.throw()
+    expect(() => app.plugin(undefined as any)).to.throw()
     expect(() => app.plugin({} as any)).to.throw()
     expect(() => app.plugin({ apply: {} } as any)).to.throw()
   })

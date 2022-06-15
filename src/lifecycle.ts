@@ -84,7 +84,8 @@ export class Lifecycle {
   * getHooks(name: EventName, session?: Lifecycle.Session) {
     const hooks = this._hooks[name] || []
     for (const [context, callback] of hooks.slice()) {
-      if (!context.match(session)) continue
+      const filter = session?.[Context.filter]
+      if (filter && !filter.call(session, context)) continue
       yield callback
     }
   }

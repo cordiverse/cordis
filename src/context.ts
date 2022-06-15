@@ -8,7 +8,14 @@ export type Filter = (session: Lifecycle.Session) => boolean
 
 export interface Context extends Context.Services, Context.Meta, Lifecycle.Delegates, Registry.Delegates {}
 
+declare global {
+  interface Object {
+    [Context.filter]?(context: Context): boolean
+  }
+}
+
 export class Context {
+  static readonly filter = Symbol('filter')
   static readonly current = Symbol('source')
   static readonly immediate = Symbol('immediate')
 

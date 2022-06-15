@@ -1,4 +1,4 @@
-import { App, Context, Service } from '../src'
+import { App, Context, Plugin, Service } from '../src'
 import { expect } from 'chai'
 import * as jest from 'jest-mock'
 import './shared'
@@ -65,7 +65,7 @@ describe('Service', () => {
   it('lifecycle methods', async () => {
     const start = jest.fn<Service['start']>()
     const stop = jest.fn<Service['stop']>()
-    const fork = jest.fn<Service['fork']>()
+    const fork = jest.fn<Plugin.Function>()
 
     class Foo extends Service {
       constructor(ctx: Context) {

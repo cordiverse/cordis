@@ -33,10 +33,8 @@ export namespace Plugin {
     : T extends Object<infer U> ? U
     : never
 
-  let counter = 0
-
   export abstract class State {
-    uid = counter++
+    uid: number
     runtime: Runtime
     context: Context
     disposables: Disposable[] = []
@@ -46,6 +44,7 @@ export namespace Plugin {
     abstract update(config: any, manual?: boolean): void
 
     constructor(public parent: Context, public config: any) {
+      this.uid = parent.app.counter++
       this.context = parent.extend({ state: this })
     }
 

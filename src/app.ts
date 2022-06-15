@@ -4,6 +4,7 @@ import { Registry } from './registry'
 
 export class App extends Context {
   options: App.Config
+  counter = 0
 
   constructor(config?: App.Config) {
     super({ filter: () => true } as any)
