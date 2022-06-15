@@ -26,7 +26,7 @@ export class Context {
     return `Context <${this.source}>`
   }
 
-  extend(meta: Partial<Context.Meta>) {
+  extend(meta: Partial<Context.Meta>): this {
     return Object.assign(Object.create(this), meta)
   }
 

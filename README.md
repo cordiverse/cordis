@@ -38,7 +38,18 @@ Contexts provide three kinds of functionality:
 
 ## API
 
+### Context
+
+#### ctx.extend(meta)
+
+- meta: `Partial<Context.Meta>`
+- returns: `Context`
+
+Creates a new context. All properties of the new context are inherited from the current context, except for properties specified in meta which are overridden.
+
 ### Lifecycle
+
+`ctx.lifecycle` is a built-in service which provides event-related functionality. Most of its methods are also directly accessible in the context.
 
 #### ctx.parallel()
 
@@ -66,6 +77,8 @@ Contexts provide three kinds of functionality:
 
 ### Registry
 
+`ctx.registry` is a built-in service which provides plugin-related functionality. It is actually a subclass of `Map<Plugin, Runtime>`, so you can access plugin runtime via methods like `ctx.registry.get()`.
+
 #### ctx.plugin()
 
 #### ctx.using()
@@ -76,7 +89,17 @@ Contexts provide three kinds of functionality:
 
 #### state.uid
 
+- type: `number`
+
+An auto-incrementing unique identifier for the state.
+
 #### state.runtime
+
+- type: `Runtime`
+
+The plugin runtime associated with the state. If the state is a runtime, then this property refers to itself.
+
+#### state.parent
 
 #### state.context
 
