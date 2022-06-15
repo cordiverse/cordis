@@ -46,7 +46,7 @@ export namespace Plugin {
     abstract update(config: any, manual?: boolean): void
 
     constructor(public parent: Context, public config: any) {
-      this.context = parent.fork({ state: this })
+      this.context = parent.extend({ state: this })
     }
 
     protected clear(preserve = false) {
@@ -191,7 +191,7 @@ export namespace Plugin {
 
     update(config: any, manual = false) {
       if (this.isForkable) {
-        this.context.warn(`attempting to update forkable plugin "${this.plugin.name}", which may lead unexpected behavior`)
+        this.context.emit('internal/warn', `attempting to update forkable plugin "${this.plugin.name}", which may lead unexpected behavior`)
       }
       const oldConfig = this.config
       const resolved = Registry.validate(this.runtime.plugin, config)

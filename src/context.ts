@@ -26,35 +26,31 @@ export class Context {
     return `Context <${this.source}>`
   }
 
-  warn(format: any, ...params: any[]) {
-    console.warn(format, ...params)
-  }
-
-  fork(meta: Partial<Context.Meta>) {
-    return new Context({ ...this, ...meta })
+  extend(meta: Partial<Context.Meta>) {
+    return Object.assign(Object.create(this), meta)
   }
 
   any() {
-    return this.fork({ filter: () => true })
+    return this.extend({ filter: () => true })
   }
 
   never() {
-    return this.fork({ filter: () => false })
+    return this.extend({ filter: () => false })
   }
 
   union(arg: Filter | Context) {
     const filter = typeof arg === 'function' ? arg : arg.filter
-    return this.fork({ filter: s => this.filter(s) || filter(s) })
+    return this.extend({ filter: s => this.filter(s) || filter(s) })
   }
 
   intersect(arg: Filter | Context) {
     const filter = typeof arg === 'function' ? arg : arg.filter
-    return this.fork({ filter: s => this.filter(s) && filter(s) })
+    return this.extend({ filter: s => this.filter(s) && filter(s) })
   }
 
   exclude(arg: Filter | Context) {
     const filter = typeof arg === 'function' ? arg : arg.filter
-    return this.fork({ filter: s => this.filter(s) && !filter(s) })
+    return this.extend({ filter: s => this.filter(s) && !filter(s) })
   }
 
   match(session?: Lifecycle.Session) {

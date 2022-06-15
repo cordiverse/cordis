@@ -70,7 +70,7 @@ export class Lifecycle {
 
   queue(value: any) {
     const task = Promise.resolve(value)
-      .catch(reason => this.ctx.warn(reason))
+      .catch(reason => this.ctx.emit('internal/warn', reason))
       .then(() => this.#tasks.delete(task))
     this.#tasks.add(task)
   }
@@ -96,7 +96,7 @@ export class Lifecycle {
       try {
         await callback.apply(session, args)
       } catch (error) {
-        this.ctx.warn(error)
+        this.ctx.emit('internal/warn', error)
       }
     }))
   }
@@ -156,7 +156,7 @@ export class Lifecycle {
 
   register(label: string, hooks: [Context, any][], listener: any, prepend?: boolean) {
     if (hooks.length >= this.config.maxListeners) {
-      this.ctx.warn(`max listener count (${this.config.maxListeners}) for ${label} exceeded, which may be caused by a memory leak`)
+      this.ctx.emit('internal/warn', `max listener count (${this.config.maxListeners}) for ${label} exceeded, which may be caused by a memory leak`)
     }
 
     const method = prepend ? 'unshift' : 'push'
@@ -228,6 +228,7 @@ export interface Events {
   'ready'(): Awaitable<void>
   'fork': Plugin.Function
   'dispose'(): Awaitable<void>
+  'internal/warn'(format: any, ...params: any[]): void
   'internal/service'(name: string, oldValue: any): void
   'internal/update'(state: Plugin.Fork, config: any): void
   'internal/hook'(name: string, listener: Function, prepend: boolean): () => boolean
