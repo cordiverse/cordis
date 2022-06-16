@@ -60,13 +60,6 @@ describe('Plugin', () => {
     expect(callback.mock.calls).to.have.length(1)
   })
 
-  it('registry map', () => {
-    const app = new App()
-    const callback = jest.fn()
-    app.plugin(callback)
-    expect(app.registry.has({ apply: callback })).to.be.true
-  })
-
   it('context inspect', () => {
     const app = new App()
 

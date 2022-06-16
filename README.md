@@ -178,20 +178,38 @@ The plugin runtime associated with the state. If the state is a runtime, then th
 
 ### Events
 
-#### ready
+#### ready()
 
-#### dispose
+- mode: parallel
 
-#### fork
+The `ready` event is triggered when the lifecycle starts. If a `ready` listener is registered in a lifecycle that has already started, it will be called immediately.
 
-#### plugin-added
+It is recommended to wrap code in the `ready` event in the following scenarios:
 
-#### plugin-removed
+- contains asynchronous operations (for example IO-intensive tasks)
+- should be called after other plugins are ready (for exmaple performance checks)
 
-#### internal/warn
+#### dispose()
+
+#### fork(ctx, config)
+
+- ctx: `Context`
+- config: `any`
+
+#### internal/warn(...param)
+
+- param: `any[]`
 
 #### internal/hook
 
 #### internal/service
+
+#### internal/runtime(runtime)
+
+- runtime: `Runtime`
+
+#### internal/fork(fork)
+
+- fork: `Fork`
 
 #### internal/update

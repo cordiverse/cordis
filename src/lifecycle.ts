@@ -204,11 +204,11 @@ export class Lifecycle {
 }
 
 export interface Events {
-  'plugin-added'(state: Runtime): void
-  'plugin-removed'(state: Runtime): void
-  'ready'(): Awaitable<void>
   'fork': Plugin.Function
+  'ready'(): Awaitable<void>
   'dispose'(): Awaitable<void>
+  'internal/fork'(fork: Fork): void
+  'internal/runtime'(runtime: Runtime): void
   'internal/warn'(format: any, ...param: any[]): void
   'internal/service'(this: Context, name: string, oldValue: any): void
   'internal/update'(state: Fork, config: any): void

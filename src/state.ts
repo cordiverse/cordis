@@ -61,6 +61,7 @@ export class Fork extends State {
     runtime.children.push(this)
     runtime.disposables.push(this.dispose)
     parent.state?.disposables.push(this.dispose)
+    parent.emit('internal/fork', this)
     if (runtime.isReusable) this.init()
     this.restart()
   }
@@ -89,12 +90,15 @@ export class Fork extends State {
   }
 
   dispose() {
+    this.uid = null
     this.clear()
     remove(this.runtime.disposables, this.dispose)
     if (remove(this.runtime.children, this) && !this.runtime.children.length) {
       this.runtime.dispose()
     }
-    return remove(this.parent.state.disposables, this.dispose)
+    const result = remove(this.parent.state.disposables, this.dispose)
+    this.parent.emit('internal/fork', this)
+    return result
   }
 }
 
@@ -127,10 +131,11 @@ export class Runtime extends State {
   }
 
   dispose() {
+    this.uid = null
     this.clear()
     if (this.plugin) {
       const result = this.registry.delete(this.plugin)
-      this.context.emit('plugin-removed', this)
+      this.context.emit('internal/runtime', this)
       return result
     }
   }
@@ -139,7 +144,7 @@ export class Runtime extends State {
     this.schema = this.plugin['Config'] || this.plugin['schema']
     this.using = this.plugin['using'] || []
     this.isReusable = this.plugin['reusable']
-    this.context.emit('plugin-added', this)
+    this.context.emit('internal/runtime', this)
 
     if (this.isReusable) {
       this.forkables.push(this.apply)

@@ -28,7 +28,9 @@ export class Filter {
 
 export function union(ctx: Context) {
   ctx.app.filter = () => true
-  ctx.on('plugin-added', (runtime) => {
+  ctx.on('internal/runtime', (runtime) => {
+    // same as `!runtime.uid`, but to make coverage happy
+    if (!ctx.registry.has(runtime.plugin)) return
     runtime.context.filter = (session) => {
       return runtime.children.some((child) => {
         return child.context.filter(session)
