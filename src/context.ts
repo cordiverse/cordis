@@ -17,14 +17,8 @@ export class Context {
   static readonly current = Symbol('source')
   static readonly immediate = Symbol('immediate')
 
-  get source() {
-    const { plugin } = this.state.runtime
-    if (!plugin) return 'root'
-    return plugin?.name || 'anonymous'
-  }
-
-  [Symbol.for('nodejs.util.inspect.custom')]() {
-    return `Context <${this.source}>`
+  ;[Symbol.for('nodejs.util.inspect.custom')]() {
+    return `Context <${this.state.runtime.name}>`
   }
 
   extend(meta: Partial<Context.Meta>): this {

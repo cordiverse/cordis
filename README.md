@@ -170,6 +170,8 @@ The plugin runtime associated with the state. If the state is a runtime, then th
 
 ### Runtime
 
+#### runtime.name
+
 #### runtime.plugin
 
 #### runtime.isForkable

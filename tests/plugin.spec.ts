@@ -54,17 +54,27 @@ describe('Plugin', () => {
   it('apply duplicate plugin', () => {
     const app = new App()
     const callback = jest.fn()
-    const plugin = { apply: callback }
-    app.plugin(plugin)
+    app.plugin({ apply: callback })
     expect(callback.mock.calls).to.have.length(1)
-    app.plugin(plugin)
+    app.plugin({ apply: callback })
     expect(callback.mock.calls).to.have.length(1)
+  })
+
+  it('registry map', () => {
+    const app = new App()
+    const callback = jest.fn()
+    app.plugin(callback)
+    expect(app.registry.has({ apply: callback })).to.be.true
   })
 
   it('context inspect', () => {
     const app = new App()
 
     expect(inspect(app)).to.equal('Context <root>')
+
+    app.plugin((ctx) => {
+      expect(inspect(ctx)).to.equal('Context <anonymous>')
+    })
 
     app.plugin(function foo(ctx) {
       expect(inspect(ctx)).to.equal('Context <foo>')
@@ -75,6 +85,12 @@ describe('Plugin', () => {
       apply: (ctx) => {
         expect(inspect(ctx)).to.equal('Context <bar>')
       },
+    })
+
+    app.plugin(class Qux {
+      constructor(ctx) {
+        expect(inspect(ctx)).to.equal('Context <Qux>')
+      }
     })
   })
 })

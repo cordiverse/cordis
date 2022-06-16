@@ -57,7 +57,7 @@ export class Fork extends State {
     this.runtime = runtime
     this.dispose = this.dispose.bind(this)
     defineProperty(this.dispose, kPreserve, true)
-    defineProperty(this.dispose, 'name', `state <${parent.source}>`)
+    defineProperty(this.dispose, 'name', `fork <${parent.state.runtime.name}>`)
     runtime.children.push(this)
     runtime.disposables.push(this.dispose)
     parent.state?.disposables.push(this.dispose)
@@ -114,6 +114,12 @@ export class Runtime extends State {
 
   get isForkable() {
     return this.forkables.length > 0
+  }
+
+  get name() {
+    if (!this.plugin) return 'root'
+    const { name } = this.plugin
+    return !name || name === 'apply' ? 'anonymous' : name
   }
 
   fork(parent: Context, config: any) {
