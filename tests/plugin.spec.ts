@@ -12,7 +12,7 @@ describe('Plugin', () => {
     app.plugin(callback, options)
 
     expect(callback.mock.calls).to.have.length(1)
-    expect(callback.mock.calls[0][1]).to.have.shape(options)
+    expect(callback.mock.calls[0][1]).to.deep.equal(options)
   })
 
   it('apply object plugin', () => {
@@ -23,7 +23,7 @@ describe('Plugin', () => {
     app.plugin(plugin, options)
 
     expect(callback.mock.calls).to.have.length(1)
-    expect(callback.mock.calls[0][1]).to.have.shape(options)
+    expect(callback.mock.calls[0][1]).to.deep.equal(options)
   })
 
   it('apply functional plugin with false', () => {
@@ -41,7 +41,7 @@ describe('Plugin', () => {
     app.plugin(plugin, true)
 
     expect(callback.mock.calls).to.have.length(1)
-    expect(callback.mock.calls[0][1]).to.have.shape({})
+    expect(callback.mock.calls[0][1]).to.deep.equal({})
   })
 
   it('apply invalid plugin', () => {

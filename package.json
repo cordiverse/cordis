@@ -1,7 +1,7 @@
 {
   "name": "cordis",
   "description": "AOP Framework for Modern JavaScript Applications",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "main": "lib/index.cjs",
   "module": "lib/index.mjs",
   "typings": "lib/index.d.ts",
@@ -36,7 +36,6 @@
     "c8": "^7.11.3",
     "chai": "^4.3.6",
     "chai-as-promised": "^7.1.1",
-    "chai-shape": "^1.0.0",
     "dtsc": "^1.1.1",
     "esbuild": "^0.14.39",
     "esbuild-register": "^3.3.2",

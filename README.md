@@ -151,8 +151,6 @@ The plugin runtime associated with the state. If the state is a runtime, then th
 
 #### runtime.plugin
 
-#### runtime.isActive
-
 #### runtime.isForkable
 
 ### Events

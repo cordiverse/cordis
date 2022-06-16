@@ -30,16 +30,16 @@ describe('Fork', () => {
     expect(callback.mock.calls).to.have.length(0)
     app.emit(new Session(true), event)
     expect(callback.mock.calls).to.have.length(1)
-    expect(callback.mock.calls[0]).to.have.shape([1])
+    expect(callback.mock.calls[0]).to.deep.equal([1])
 
     callback.mockClear()
     app.exclude(filter).plugin(pluginB)
     app.emit(new Session(false), event)
     expect(callback.mock.calls).to.have.length(1)
-    expect(callback.mock.calls[0]).to.have.shape([3])
+    expect(callback.mock.calls[0]).to.deep.equal([3])
     app.emit(new Session(true), event)
     expect(callback.mock.calls).to.have.length(2)
-    expect(callback.mock.calls[1]).to.have.shape([3])
+    expect(callback.mock.calls[1]).to.deep.equal([3])
 
     callback.mockClear()
     app.dispose(pluginA)
@@ -47,7 +47,7 @@ describe('Fork', () => {
     expect(callback.mock.calls).to.have.length(0)
     app.emit(new Session(false), event)
     expect(callback.mock.calls).to.have.length(1)
-    expect(callback.mock.calls[0]).to.have.shape([2])
+    expect(callback.mock.calls[0]).to.deep.equal([2])
 
     callback.mockClear()
     app.dispose(pluginB)
@@ -71,12 +71,12 @@ describe('Fork', () => {
 
     app.emit(new Session(true), event)
     expect(callback.mock.calls).to.have.length(2)
-    expect(callback.mock.calls).to.have.shape([[0], [1]])
+    expect(callback.mock.calls).to.deep.equal([[0], [1]])
 
     callback.mockClear()
     app.emit(new Session(false), event)
     expect(callback.mock.calls).to.have.length(2)
-    expect(callback.mock.calls).to.have.shape([[0], [2]])
+    expect(callback.mock.calls).to.deep.equal([[0], [2]])
 
     callback.mockClear()
     app.dispose(reusable)
