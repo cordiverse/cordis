@@ -1,4 +1,4 @@
-import { defineProperty } from 'cosmokit'
+import { defineProperty, Dict } from 'cosmokit'
 import { App } from './app'
 import { Lifecycle } from './lifecycle'
 import { State } from './state'
@@ -92,7 +92,7 @@ export namespace Context {
     app: App
     state: State
     filter: Filter
-    mapping: {}
+    mapping: Dict<symbol>
   }
 
   export const internal = Object.create(null)
@@ -104,14 +104,14 @@ export namespace Context {
 
     Object.defineProperty(Context.prototype, name, {
       get(this: Context) {
-        const key = this.mapping[name] || privateKey
+        const key = this.mapping[name as any] || privateKey
         const value = this.app[key]
         if (!value) return
         defineProperty(value, Context.current, this)
         return value
       },
       set(this: Context, value) {
-        const key = this.mapping[name] || privateKey
+        const key = this.mapping[name as any] || privateKey
         const oldValue = this.app[key]
         if (oldValue === value) return
         this.app[key] = value

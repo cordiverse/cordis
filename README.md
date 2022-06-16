@@ -45,7 +45,28 @@ Contexts provide three kinds of functionality:
 - meta: `Partial<Context.Meta>`
 - returns: `Context`
 
-Creates a new context. All properties of the new context are inherited from the current context, except for properties specified in meta which are overridden.
+Create a new context with the current context as the prototype. Properties in `meta` will be assigned to the new context.
+
+#### ctx.isolate(keys)
+
+- keys: `string[]`
+- returns: `Context`
+
+Create a new context with the current context as the prototype. Services specified in `keys` will be isolated in the new context, while services not included in `keys` are still shared.
+
+```ts
+const root = new App()
+const ctx1 = root.isolate(['foo'])
+const ctx2 = root.isolate(['bar'])
+
+root.foo = { value: 1 }
+ctx1.foo                        // undefined
+ctx2.foo                        // { value: 1 }
+
+ctx1.bar = { value: 2 }
+root.bar                        // { value: 2 }
+ctx2.bar                        // undefined
+```
 
 ### Lifecycle
 
