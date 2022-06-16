@@ -11,7 +11,7 @@ export function createArray<T>(length: number, create: (index: number) => T) {
 function setup() {
   const app = new App({ maxListeners: 64 })
   const warn = jest.fn()
-  app.on('internal/warn', warn)
+  app.on('internal/warning', warn)
   return { app, warn }
 }
 

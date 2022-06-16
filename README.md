@@ -180,8 +180,6 @@ The plugin runtime associated with the state. If the state is a runtime, then th
 
 #### ready()
 
-- mode: parallel
-
 The `ready` event is triggered when the lifecycle starts. If a `ready` listener is registered in a lifecycle that has already started, it will be called immediately.
 
 It is recommended to wrap code in the `ready` event in the following scenarios:
@@ -196,13 +194,21 @@ It is recommended to wrap code in the `ready` event in the following scenarios:
 - ctx: `Context`
 - config: `any`
 
-#### internal/warn(...param)
+#### internal/warning(...param)
 
 - param: `any[]`
 
-#### internal/hook
+#### internal/hook(name, listener, prepend)
 
-#### internal/service
+- name: `string`
+- listener: `Function`
+- prepend: `boolean`
+- returns: `() => boolean`
+
+#### internal/service(name, oldValue)
+
+- name: `string`
+- oldValue: `any`
 
 #### internal/runtime(runtime)
 
@@ -212,4 +218,7 @@ It is recommended to wrap code in the `ready` event in the following scenarios:
 
 - fork: `Fork`
 
-#### internal/update
+#### internal/update(fork, config)
+
+- fork: `Fork`
+- config: `any`

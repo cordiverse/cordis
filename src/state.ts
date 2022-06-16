@@ -189,7 +189,7 @@ export class Runtime extends State {
 
   update(config: any, manual = false) {
     if (this.isForkable) {
-      this.context.emit('internal/warn', `attempting to update forkable plugin "${this.plugin.name}", which may lead to unexpected behavior`)
+      this.context.emit('internal/warning', `attempting to update forkable plugin "${this.plugin.name}", which may lead to unexpected behavior`)
     }
     const oldConfig = this.config
     const resolved = Registry.validate(this.runtime.plugin, config)

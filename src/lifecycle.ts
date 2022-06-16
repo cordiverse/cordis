@@ -62,7 +62,7 @@ export class Lifecycle {
 
   queue(value: any) {
     const task = Promise.resolve(value)
-      .catch(reason => this.ctx.emit('internal/warn', reason))
+      .catch(reason => this.ctx.emit('internal/warning', reason))
       .then(() => this.#tasks.delete(task))
     this.#tasks.add(task)
   }
@@ -89,7 +89,7 @@ export class Lifecycle {
       try {
         await callback.apply(thisArg, args)
       } catch (error) {
-        this.ctx.emit('internal/warn', error)
+        this.ctx.emit('internal/warning', error)
       }
     }))
   }
@@ -149,7 +149,7 @@ export class Lifecycle {
 
   register(label: string, hooks: [Context, any][], listener: any, prepend?: boolean) {
     if (hooks.length >= this.config.maxListeners) {
-      this.ctx.emit('internal/warn', `max listener count (${this.config.maxListeners}) for ${label} exceeded, which may be caused by a memory leak`)
+      this.ctx.emit('internal/warning', `max listener count (${this.config.maxListeners}) for ${label} exceeded, which may be caused by a memory leak`)
     }
 
     const method = prepend ? 'unshift' : 'push'
@@ -209,8 +209,8 @@ export interface Events {
   'dispose'(): Awaitable<void>
   'internal/fork'(fork: Fork): void
   'internal/runtime'(runtime: Runtime): void
-  'internal/warn'(format: any, ...param: any[]): void
+  'internal/warning'(format: any, ...param: any[]): void
   'internal/service'(this: Context, name: string, oldValue: any): void
-  'internal/update'(state: Fork, config: any): void
+  'internal/update'(fork: Fork, config: any): void
   'internal/hook'(name: string, listener: Function, prepend: boolean): () => boolean
 }

@@ -97,7 +97,7 @@ export class Registry extends Map<Plugin, Runtime> {
     const duplicate = this.get(plugin)
     if (duplicate) {
       if (!duplicate.isForkable) {
-        this.app.emit('internal/warn', `duplicate plugin detected: ${plugin.name}`)
+        this.app.emit('internal/warning', `duplicate plugin detected: ${plugin.name}`)
       }
       return duplicate.fork(context, config)
     }
