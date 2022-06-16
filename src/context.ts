@@ -4,8 +4,6 @@ import { Lifecycle } from './lifecycle'
 import { State } from './state'
 import { Registry } from './plugin'
 
-export type Filter = (session: Lifecycle.Session) => boolean
-
 export interface Context extends Context.Services, Context.Meta, Lifecycle.Delegates, Registry.Delegates {}
 
 declare global {
@@ -18,10 +16,6 @@ export class Context {
   static readonly filter = Symbol('filter')
   static readonly current = Symbol('source')
   static readonly immediate = Symbol('immediate')
-
-  constructor(meta: Context.Meta) {
-    Object.assign(this, meta)
-  }
 
   get source() {
     const { plugin } = this.state.runtime
@@ -44,33 +38,6 @@ export class Context {
     }
     return this.extend({ mapping })
   }
-
-  any() {
-    return this.extend({ filter: () => true })
-  }
-
-  never() {
-    return this.extend({ filter: () => false })
-  }
-
-  union(arg: Filter | Context) {
-    const filter = typeof arg === 'function' ? arg : arg.filter
-    return this.extend({ filter: s => this.filter(s) || filter(s) })
-  }
-
-  intersect(arg: Filter | Context) {
-    const filter = typeof arg === 'function' ? arg : arg.filter
-    return this.extend({ filter: s => this.filter(s) && filter(s) })
-  }
-
-  exclude(arg: Filter | Context) {
-    const filter = typeof arg === 'function' ? arg : arg.filter
-    return this.extend({ filter: s => this.filter(s) && !filter(s) })
-  }
-
-  match(session?: Lifecycle.Session) {
-    return !session || this.filter(session)
-  }
 }
 
 export namespace Context {
@@ -91,7 +58,6 @@ export namespace Context {
   export interface Meta {
     app: App
     state: State
-    filter: Filter
     mapping: Dict<symbol>
   }
 

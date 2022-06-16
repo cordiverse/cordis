@@ -2,7 +2,7 @@ import { App } from '../src'
 import { expect } from 'chai'
 import * as jest from 'jest-mock'
 import { noop } from 'cosmokit'
-import { event, filter, Session } from './shared'
+import { event, Filter, Session } from './shared'
 
 export function createArray<T>(length: number, create: (index: number) => T) {
   return [...new Array(length).keys()].map(create)
@@ -22,13 +22,6 @@ describe('Event Listener', () => {
     const { app, warn } = setup()
     createArray(64 + extraCalls, () => app.on(event, noop))
     expect(app.lifecycle._hooks[event].length).to.equal(64 + extraCalls)
-    expect(warn.mock.calls).to.have.length(extraCalls)
-  })
-
-  it('max prepended hooks', () => {
-    const { app, warn } = setup()
-    createArray(64 + extraCalls, () => app.before('custom', noop))
-    expect(app.lifecycle._hooks['before-custom'].length).to.equal(64 + extraCalls)
     expect(warn.mock.calls).to.have.length(extraCalls)
   })
 
@@ -76,7 +69,7 @@ describe('Events Emitter', () => {
     const { app, warn } = setup()
     await app.parallel(event)
     const callback = jest.fn()
-    app.intersect(filter).on(event, callback)
+    app.extend(new Filter(true)).on(event, callback)
 
     await app.parallel(event)
     expect(callback.mock.calls).to.have.length(1)
@@ -97,7 +90,7 @@ describe('Events Emitter', () => {
     const { app, warn } = setup()
     app.emit(event)
     const callback = jest.fn()
-    app.intersect(filter).on(event, callback)
+    app.extend(new Filter(true)).on(event, callback)
 
     app.emit(event)
     expect(callback.mock.calls).to.have.length(1)
@@ -118,7 +111,7 @@ describe('Events Emitter', () => {
     const { app } = setup()
     app.serial(event)
     const callback = jest.fn()
-    app.intersect(filter).on(event, callback)
+    app.extend(new Filter(true)).on(event, callback)
 
     app.serial(event)
     expect(callback.mock.calls).to.have.length(1)
@@ -137,7 +130,7 @@ describe('Events Emitter', () => {
     const { app } = setup()
     app.bail(event)
     const callback = jest.fn()
-    app.intersect(filter).on(event, callback)
+    app.extend(new Filter(true)).on(event, callback)
 
     app.bail(event)
     expect(callback.mock.calls).to.have.length(1)

@@ -8,29 +8,26 @@ function isBailed(value: any) {
 }
 
 export namespace Lifecycle {
-  export interface Session {}
-
   export interface Config {
     maxListeners?: number
   }
 
   export interface Delegates {
-    parallel<K extends EventName>(name: K, ...args: Parameters<Events[K]>): Promise<void>
-    parallel<K extends EventName>(session: Session, name: K, ...args: Parameters<Events[K]>): Promise<void>
-    emit<K extends EventName>(name: K, ...args: Parameters<Events[K]>): void
-    emit<K extends EventName>(session: Session, name: K, ...args: Parameters<Events[K]>): void
-    waterfall<K extends EventName>(name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
-    waterfall<K extends EventName>(session: Session, name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
-    chain<K extends EventName>(name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
-    chain<K extends EventName>(session: Session, name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
-    serial<K extends EventName>(name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
-    serial<K extends EventName>(session: Session, name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
-    bail<K extends EventName>(name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
-    bail<K extends EventName>(session: Session, name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
-    on<K extends EventName>(name: K, listener: Events[K], prepend?: boolean): () => boolean
-    once<K extends EventName>(name: K, listener: Events[K], prepend?: boolean): () => boolean
-    before<K extends BeforeEventName>(name: K, listener: BeforeEventMap[K], append?: boolean): () => boolean
-    off<K extends EventName>(name: K, listener: Events[K]): boolean
+    parallel<K extends keyof Events>(name: K, ...args: Parameters<Events[K]>): Promise<void>
+    parallel<K extends keyof Events>(thisArg: ThisParameterType<Events[K]>, name: K, ...args: Parameters<Events[K]>): Promise<void>
+    emit<K extends keyof Events>(name: K, ...args: Parameters<Events[K]>): void
+    emit<K extends keyof Events>(thisArg: ThisParameterType<Events[K]>, name: K, ...args: Parameters<Events[K]>): void
+    waterfall<K extends keyof Events>(name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
+    waterfall<K extends keyof Events>(thisArg: ThisParameterType<Events[K]>, name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
+    chain<K extends keyof Events>(name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
+    chain<K extends keyof Events>(thisArg: ThisParameterType<Events[K]>, name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
+    serial<K extends keyof Events>(name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
+    serial<K extends keyof Events>(thisArg: ThisParameterType<Events[K]>, name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
+    bail<K extends keyof Events>(name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
+    bail<K extends keyof Events>(thisArg: ThisParameterType<Events[K]>, name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
+    on<K extends keyof Events>(name: K, listener: Events[K], prepend?: boolean): () => boolean
+    once<K extends keyof Events>(name: K, listener: Events[K], prepend?: boolean): () => boolean
+    off<K extends keyof Events>(name: K, listener: Events[K]): boolean
   }
 }
 
@@ -57,12 +54,6 @@ export class Lifecycle {
         return this.mark('event <fork>', () => remove(runtime.forkables, listener))
       }
     })
-
-    self.on('plugin-added', (runtime) => {
-      runtime.context.filter = (session) => {
-        return runtime.children.some(p => p.context.match(session))
-      }
-    })
   }
 
   protected get caller(): Context {
@@ -82,21 +73,21 @@ export class Lifecycle {
     }
   }
 
-  * getHooks(name: EventName, session?: Lifecycle.Session) {
+  * getHooks(name: keyof Events, thisArg?: object) {
     const hooks = this._hooks[name] || []
     for (const [context, callback] of hooks.slice()) {
-      const filter = session?.[Context.filter]
-      if (filter && !filter.call(session, context)) continue
+      const filter = thisArg?.[Context.filter]
+      if (filter && !filter.call(thisArg, context)) continue
       yield callback
     }
   }
 
   async parallel(...args: any[]) {
-    const session = typeof args[0] === 'object' ? args.shift() : null
+    const thisArg = typeof args[0] === 'object' ? args.shift() : null
     const name = args.shift()
-    await Promise.all([...this.getHooks(name, session)].map(async (callback) => {
+    await Promise.all([...this.getHooks(name, thisArg)].map(async (callback) => {
       try {
-        await callback.apply(session, args)
+        await callback.apply(thisArg, args)
       } catch (error) {
         this.ctx.emit('internal/warn', error)
       }
@@ -108,39 +99,39 @@ export class Lifecycle {
   }
 
   async waterfall(...args: [any, ...any[]]) {
-    const session = typeof args[0] === 'object' ? args.shift() : null
+    const thisArg = typeof args[0] === 'object' ? args.shift() : null
     const name = args.shift()
-    for (const callback of this.getHooks(name, session)) {
-      const result = await callback.apply(session, args)
+    for (const callback of this.getHooks(name, thisArg)) {
+      const result = await callback.apply(thisArg, args)
       args[0] = result
     }
     return args[0]
   }
 
   chain(...args: [any, ...any[]]) {
-    const session = typeof args[0] === 'object' ? args.shift() : null
+    const thisArg = typeof args[0] === 'object' ? args.shift() : null
     const name = args.shift()
-    for (const callback of this.getHooks(name, session)) {
-      const result = callback.apply(session, args)
+    for (const callback of this.getHooks(name, thisArg)) {
+      const result = callback.apply(thisArg, args)
       args[0] = result
     }
     return args[0]
   }
 
   async serial(...args: any[]) {
-    const session = typeof args[0] === 'object' ? args.shift() : null
+    const thisArg = typeof args[0] === 'object' ? args.shift() : null
     const name = args.shift()
-    for (const callback of this.getHooks(name, session)) {
-      const result = await callback.apply(session, args)
+    for (const callback of this.getHooks(name, thisArg)) {
+      const result = await callback.apply(thisArg, args)
       if (isBailed(result)) return result
     }
   }
 
   bail(...args: any[]) {
-    const session = typeof args[0] === 'object' ? args.shift() : null
+    const thisArg = typeof args[0] === 'object' ? args.shift() : null
     const name = args.shift()
-    for (const callback of this.getHooks(name, session)) {
-      const result = callback.apply(session, args)
+    for (const callback of this.getHooks(name, thisArg)) {
+      const result = callback.apply(thisArg, args)
       if (isBailed(result)) return result
     }
   }
@@ -174,7 +165,7 @@ export class Lifecycle {
     }
   }
 
-  on(name: EventName, listener: Function, prepend = false) {
+  on(name: keyof Events, listener: Function, prepend = false) {
     // handle special events
     const result = this.bail('internal/hook', name, listener, prepend)
     if (result) return result
@@ -184,7 +175,7 @@ export class Lifecycle {
     return this.register(label, hooks, listener, prepend)
   }
 
-  once(name: EventName, listener: Function, prepend = false) {
+  once(name: keyof Events, listener: Function, prepend = false) {
     const dispose = this.on(name, function (...args: any[]) {
       dispose()
       return listener.apply(this, args)
@@ -192,13 +183,7 @@ export class Lifecycle {
     return dispose
   }
 
-  before<K extends BeforeEventName>(name: K, listener: BeforeEventMap[K], append = false) {
-    const seg = (name as string).split('/')
-    seg[seg.length - 1] = 'before-' + seg[seg.length - 1]
-    return this.on(seg.join('/') as EventName, listener, !append)
-  }
-
-  off<K extends EventName>(name: K, listener: Events[K]) {
+  off<K extends keyof Events>(name: K, listener: Events[K]) {
     return this.unregister(this._hooks[name] || [], listener)
   }
 
@@ -217,12 +202,6 @@ export class Lifecycle {
     await Promise.all(this.ctx.state.disposables.map(dispose => dispose()))
   }
 }
-
-type EventName = keyof Events
-type OmitSubstring<S extends string, T extends string> = S extends `${infer L}${T}${infer R}` ? `${L}${R}` : never
-type BeforeEventName = OmitSubstring<EventName & string, 'before-'>
-
-export type BeforeEventMap = { [E in EventName & string as OmitSubstring<E, 'before-'>]: Events[E] }
 
 export interface Events {
   'plugin-added'(state: Runtime): void

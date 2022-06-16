@@ -1,5 +1,5 @@
 import { use } from 'chai'
-import { Context, Filter } from '../src'
+import { Context } from '../src'
 import promised from 'chai-as-promised'
 
 use(promised)
@@ -7,31 +7,50 @@ use(promised)
 Context.service('foo')
 
 export const event = Symbol('custom-event')
-export const filter: Filter = session => session.flag
 
 export class Session {
   constructor(public flag: boolean) {}
 
   [Context.filter](context: Context) {
+    if (!context.filter) return true
     return context.filter(this)
   }
 }
 
+export class Filter {
+  constructor(private flag: boolean) {}
+
+  filter = (session: Session) => {
+    // basic parity check
+    return session.flag === this.flag
+  }
+}
+
+export function union(ctx: Context) {
+  ctx.app.filter = () => true
+  ctx.on('plugin-added', (runtime) => {
+    runtime.context.filter = (session) => {
+      return runtime.children.some((child) => {
+        return child.context.filter(session)
+      })
+    }
+  })
+}
+
 declare module '../src/lifecycle' {
   interface Events {
-    [event](): void
-    'before-custom'(): void
-  }
-
-  namespace Lifecycle {
-    interface Session {
-      flag: boolean
-    }
+    [event](this: Session): void
   }
 }
 
 declare module '../src/context' {
   interface Context {
     foo: any
+  }
+
+  namespace Context {
+    interface Meta {
+      filter(session: Session): boolean
+    }
   }
 }
