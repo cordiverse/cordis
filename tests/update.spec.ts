@@ -81,11 +81,13 @@ describe('Update', () => {
     app.foo = {}
     expect(callback.mock.calls).to.have.length(1)
     expect(callback.mock.calls[0][1]).to.deep.equal({ value: 2 })
-    expect(fork.runtime.disposables).to.have.length(2)
+    expect(fork.disposables).to.have.length(1)              // service listener
+    expect(fork.runtime.disposables).to.have.length(1)      // fork
 
     fork.update({ value: 3 })
     expect(callback.mock.calls).to.have.length(2)
     expect(callback.mock.calls[1][1]).to.deep.equal({ value: 3 })
-    expect(fork.runtime.disposables).to.have.length(2)
+    expect(fork.disposables).to.have.length(1)              // service listener
+    expect(fork.runtime.disposables).to.have.length(1)      // fork
   })
 })

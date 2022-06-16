@@ -12,6 +12,8 @@ function isConstructor(func: Function) {
   return true
 }
 
+export const kPreserve = Symbol('preserve')
+
 export abstract class State {
   uid: number
   runtime: Runtime
@@ -27,6 +29,20 @@ export abstract class State {
     this.context = parent.extend({ state: this })
   }
 
+  protected init() {
+    if (this.runtime.using.length) {
+      const dispose = this.context.on('internal/service', (name) => {
+        if (!this.runtime.using.includes(name)) return
+        this.restart()
+      })
+      defineProperty(dispose, kPreserve, true)
+    }
+  }
+
+  protected check() {
+    return this.runtime.using.every(name => this.context[name])
+  }
+
   protected clear(preserve = false) {
     this.disposables = this.disposables.splice(0, Infinity).filter((dispose) => {
       if (preserve && dispose[kPreserve]) return true
@@ -34,8 +50,6 @@ export abstract class State {
     })
   }
 }
-
-export const kPreserve = Symbol('preserve')
 
 export class Fork extends State {
   constructor(parent: Context, config: any, runtime: Runtime) {
@@ -47,12 +61,13 @@ export class Fork extends State {
     runtime.children.push(this)
     runtime.disposables.push(this.dispose)
     parent.state?.disposables.push(this.dispose)
+    if (runtime.isReusable) this.init()
     this.restart()
   }
 
   restart() {
-    this.clear()
-    if (!this.runtime.isActive) return
+    this.clear(true)
+    if (!this.check()) return
     for (const fork of this.runtime.forkables) {
       fork(this.context, this.config)
     }
@@ -89,7 +104,7 @@ export class Runtime extends State {
   using: readonly string[] = []
   forkables: Function[] = []
   children: Fork[] = []
-  isActive: boolean
+  isReusable: boolean
 
   constructor(private registry: Registry, public plugin: Plugin, config: any) {
     super(registry.caller, config)
@@ -117,18 +132,13 @@ export class Runtime extends State {
   init() {
     this.schema = this.plugin['Config'] || this.plugin['schema']
     this.using = this.plugin['using'] || []
+    this.isReusable = this.plugin['reusable']
     this.context.emit('plugin-added', this)
 
-    if (this.plugin['reusable']) {
+    if (this.isReusable) {
       this.forkables.push(this.apply)
-    }
-
-    if (this.using.length) {
-      const dispose = this.context.on('internal/service', (name) => {
-        if (!this.using.includes(name)) return
-        this.restart()
-      })
-      defineProperty(dispose, kPreserve, true)
+    } else {
+      super.init()
     }
 
     this.restart()
@@ -153,13 +163,11 @@ export class Runtime extends State {
   }
 
   restart() {
-    this.isActive = false
     this.clear(true)
-    if (this.using.some(name => !this.context[name])) return
+    if (!this.check()) return
 
     // execute plugin body
-    this.isActive = true
-    if (!this.plugin['reusable']) {
+    if (!this.isReusable) {
       this.apply(this.context, this.config)
     }
 
@@ -170,7 +178,7 @@ export class Runtime extends State {
 
   update(config: any, manual = false) {
     if (this.isForkable) {
-      this.context.emit('internal/warn', `attempting to update forkable plugin "${this.plugin.name}", which may lead unexpected behavior`)
+      this.context.emit('internal/warn', `attempting to update forkable plugin "${this.plugin.name}", which may lead to unexpected behavior`)
     }
     const oldConfig = this.config
     const resolved = Registry.validate(this.runtime.plugin, config)
