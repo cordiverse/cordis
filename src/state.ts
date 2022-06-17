@@ -22,7 +22,7 @@ export abstract class State {
 
   abstract dispose(): boolean
   abstract restart(): void
-  abstract update(config: any, manual?: boolean): void
+  abstract update(config: any): void
 
   constructor(public parent: Context, public config: any) {
     this.uid = parent.app.counter++
@@ -60,7 +60,7 @@ export class Fork extends State {
     defineProperty(this.dispose, 'name', `fork <${parent.state.runtime.name}>`)
     runtime.children.push(this)
     runtime.disposables.push(this.dispose)
-    parent.state?.disposables.push(this.dispose)
+    parent.state.disposables.push(this.dispose)
     parent.emit('internal/fork', this)
     if (runtime.isReusable) this.init()
     this.restart()
@@ -74,13 +74,11 @@ export class Fork extends State {
     }
   }
 
-  update(config: any, manual = false) {
+  update(config: any) {
     const oldConfig = this.config
     const resolved = Registry.validate(this.runtime.plugin, config)
     this.config = resolved
-    if (!manual) {
-      this.context.emit('internal/update', this, config)
-    }
+    this.context.emit('internal/update', this, config)
     if (this.runtime.isForkable) {
       this.restart()
     } else if (this.runtime.config === oldConfig) {
@@ -187,7 +185,7 @@ export class Runtime extends State {
     }
   }
 
-  update(config: any, manual = false) {
+  update(config: any) {
     if (this.isForkable) {
       this.context.emit('internal/warning', `attempting to update forkable plugin "${this.plugin.name}", which may lead to unexpected behavior`)
     }
@@ -197,9 +195,7 @@ export class Runtime extends State {
     for (const fork of this.children) {
       if (fork.config !== oldConfig) continue
       fork.config = resolved
-      if (!manual) {
-        this.context.emit('internal/update', fork, config)
-      }
+      this.context.emit('internal/update', fork, config)
     }
     this.restart()
   }
