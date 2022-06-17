@@ -8,13 +8,15 @@ export interface Context extends Context.Services, Context.Meta, Lifecycle.Deleg
 
 declare global {
   interface Object {
+    [Context.source]?: Context
     [Context.filter]?(context: Context): boolean
   }
 }
 
 export class Context {
   static readonly filter = Symbol('filter')
-  static readonly current = Symbol('source')
+  static readonly source = Symbol('source')
+  static readonly current = Symbol('caller')
   static readonly immediate = Symbol('immediate')
 
   ;[Symbol.for('nodejs.util.inspect.custom')]() {
@@ -75,6 +77,9 @@ export namespace Context {
         const oldValue = this.app[key]
         if (oldValue === value) return
         this.app[key] = value
+        if (value && typeof value === 'object') {
+          defineProperty(value, Context.source, this)
+        }
         if (typeof name !== 'string') return
 
         // trigger event
@@ -82,7 +87,7 @@ export namespace Context {
         self[Context.filter] = (ctx) => {
           return this.mapping[name] === ctx.mapping[name]
         }
-        this.emit(self, 'internal/service', name, oldValue)
+        this.emit(self, 'internal/service', name)
       },
     })
 

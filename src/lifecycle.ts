@@ -210,7 +210,7 @@ export interface Events {
   'internal/fork'(fork: Fork): void
   'internal/runtime'(runtime: Runtime): void
   'internal/warning'(format: any, ...param: any[]): void
-  'internal/service'(this: Context, name: string, oldValue: any): void
+  'internal/service'(this: Context, name: string): void
   'internal/update'(fork: Fork, config: any): void
   'internal/hook'(name: string, listener: Function, prepend: boolean): () => boolean
 }
