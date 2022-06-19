@@ -15,6 +15,7 @@ declare global {
 }
 
 export class Context {
+  static readonly static = Symbol('static')
   static readonly filter = Symbol('filter')
   static readonly source = Symbol('source')
   static readonly current = Symbol('current')

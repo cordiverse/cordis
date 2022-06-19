@@ -36,17 +36,16 @@ export class Lifecycle {
   #tasks = new Set<Promise<void>>()
   _hooks: Record<keyof any, [Context, (...args: any[]) => any][]> = {}
 
-  constructor(private ctx: Context, private config: Lifecycle.Config) {
+  constructor(private app: Context, private config: Lifecycle.Config) {
     const self = this as Lifecycle.Delegates
-    this[Context.current] = ctx
+    this[Context.current] = app
 
-    self.on('internal/hook', function (name, listener, prepend) {
+    const dispose = self.on('internal/hook', function (name, listener, prepend) {
       const method = prepend ? 'unshift' : 'push'
       const { state } = this[Context.current]
       const { runtime, disposables } = state
       if (name === 'ready' && this.isActive) {
         this.queue(listener())
-        return () => false
       } else if (name === 'dispose') {
         disposables[method](listener as any)
         defineProperty(listener, 'name', 'event <dispose>')
@@ -56,11 +55,12 @@ export class Lifecycle {
         return state.collect('event <fork>', () => remove(runtime.forkables, listener))
       }
     })
+    defineProperty(dispose, Context.static, true)
   }
 
   queue(value: any) {
     const task = Promise.resolve(value)
-      .catch(reason => this.ctx.emit('internal/warning', reason))
+      .catch(reason => this.app.emit('internal/warning', reason))
       .then(() => this.#tasks.delete(task))
     this.#tasks.add(task)
   }
@@ -87,7 +87,7 @@ export class Lifecycle {
       try {
         await callback.apply(thisArg, args)
       } catch (error) {
-        this.ctx.emit('internal/warning', error)
+        this.app.emit('internal/warning', error)
       }
     }))
   }
@@ -136,7 +136,7 @@ export class Lifecycle {
 
   register(label: string, hooks: [Context, any][], listener: any, prepend?: boolean) {
     if (hooks.length >= this.config.maxListeners) {
-      this.ctx.emit('internal/warning', `max listener count (${this.config.maxListeners}) for ${label} exceeded, which may be caused by a memory leak`)
+      this.app.emit('internal/warning', `max listener count (${this.config.maxListeners}) for ${label} exceeded, which may be caused by a memory leak`)
     }
 
     const caller = this[Context.current]
@@ -186,8 +186,8 @@ export class Lifecycle {
 
   async stop() {
     this.isActive = false
-    // `dispose` event is handled by ctx.disposables
-    await Promise.all(this.ctx.state.disposables.map(dispose => dispose()))
+    // `dispose` event is handled by state.disposables
+    this.app.state.clear(true)
   }
 }
 

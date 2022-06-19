@@ -12,8 +12,6 @@ function isConstructor(func: Function) {
   return true
 }
 
-export const kPreserve = Symbol('preserve')
-
 export abstract class State {
   uid: number
   runtime: Runtime
@@ -45,7 +43,7 @@ export abstract class State {
         if (!this.runtime.using.includes(name)) return
         this.restart()
       })
-      defineProperty(dispose, kPreserve, true)
+      defineProperty(dispose, Context.static, true)
     }
   }
 
@@ -53,9 +51,9 @@ export abstract class State {
     return this.runtime.using.every(name => this.context[name])
   }
 
-  protected clear(preserve = false) {
+  clear(preserve = false) {
     this.disposables = this.disposables.splice(0, Infinity).filter((dispose) => {
-      if (preserve && dispose[kPreserve]) return true
+      if (preserve && dispose[Context.static]) return true
       dispose()
     })
   }
@@ -78,7 +76,7 @@ export class Fork extends State {
       return result
     })
 
-    defineProperty(this.dispose, kPreserve, true)
+    defineProperty(this.dispose, Context.static, true)
     runtime.children.push(this)
     runtime.disposables.push(this.dispose)
     parent.emit('internal/fork', this)

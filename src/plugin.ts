@@ -1,4 +1,3 @@
-import { App } from './app'
 import { Context } from './context'
 import { Fork, Runtime } from './state'
 
@@ -39,7 +38,7 @@ export namespace Registry {
 }
 
 export class Registry extends Map<Plugin, Runtime> {
-  constructor(public app: App, private config: Registry.Config) {
+  constructor(public app: Context, private config: Registry.Config) {
     super()
     this[Context.current] = app
     app.state = new Runtime(this, null, config)
