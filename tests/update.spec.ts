@@ -1,18 +1,19 @@
 import { App, Plugin } from '../src'
 import { expect } from 'chai'
+import { noop } from 'cosmokit'
 import { event } from './shared'
 import * as jest from 'jest-mock'
 
 describe('Update', () => {
   it('update runtime', () => {
     const app = new App()
-    const dispose = jest.fn(() => {})
+    const dispose = jest.fn(noop)
     const callback = jest.fn<Plugin.Function>((ctx) => {
       ctx.on('dispose', dispose)
       ctx.on(event, () => {
         ctx.state.update({ value: 2 })
       })
-      ctx.on('fork', () => {})
+      ctx.on('fork', noop)
     })
 
     app.plugin(callback, { value: 1 })

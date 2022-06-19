@@ -1,11 +1,12 @@
 import { App } from '../src'
 import * as jest from 'jest-mock'
 import { expect } from 'chai'
+import { noop } from 'cosmokit'
 
 describe('Lifecycle', () => {
   it('basic support', async () => {
     const app = new App()
-    const callback = jest.fn(() => {})
+    const callback = jest.fn(noop)
 
     app.on('ready', callback)
     expect(callback.mock.calls).to.have.length(0)

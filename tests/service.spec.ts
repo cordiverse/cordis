@@ -1,4 +1,5 @@
-import { App, Context, Plugin, Service } from '../src'
+import { App, Context, Service } from '../src'
+import { noop } from 'cosmokit'
 import { expect } from 'chai'
 import * as jest from 'jest-mock'
 import './shared'
@@ -36,7 +37,7 @@ describe('Service', () => {
 
   it('dependency update', async () => {
     const callback = jest.fn()
-    const dispose = jest.fn(() => {})
+    const dispose = jest.fn(noop)
 
     const app = new App()
     app.using(['foo'], (ctx) => {
@@ -69,9 +70,9 @@ describe('Service', () => {
   })
 
   it('lifecycle methods', async () => {
-    const start = jest.fn<Service['start']>()
-    const stop = jest.fn<Service['stop']>()
-    const fork = jest.fn<Plugin.Function>()
+    const start = jest.fn(noop)
+    const stop = jest.fn(noop)
+    const fork = jest.fn(noop)
 
     class Foo extends Service {
       constructor(ctx: Context) {

@@ -1,4 +1,4 @@
-import { App, Context } from '../src'
+import { App } from '../src'
 import { expect } from 'chai'
 import * as jest from 'jest-mock'
 import './shared'

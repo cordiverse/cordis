@@ -1,7 +1,7 @@
 import { App, Context } from '../src'
 import { expect } from 'chai'
 import * as jest from 'jest-mock'
-import { Dict } from 'cosmokit'
+import { Dict, noop } from 'cosmokit'
 import { event } from './shared'
 
 describe('Disposables', () => {
@@ -35,9 +35,9 @@ describe('Disposables', () => {
 
   it('memory leak test', async () => {
     function plugin(ctx: Context) {
-      ctx.on('ready', () => {})
-      ctx.on(event, () => {})
-      ctx.on('dispose', () => {})
+      ctx.on('ready', noop)
+      ctx.on(event, noop)
+      ctx.on('dispose', noop)
     }
 
     function getHookSnapshot() {
@@ -60,7 +60,7 @@ describe('Disposables', () => {
 
   it('dispose event', () => {
     const app = new App()
-    const callback = jest.fn(() => {})
+    const callback = jest.fn(noop)
     const plugin = (ctx: Context) => {
       ctx.on('dispose', callback)
     }
