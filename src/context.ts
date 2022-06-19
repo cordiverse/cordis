@@ -25,7 +25,7 @@ export class Context {
     return `Context <${this.state.runtime.name}>`
   }
 
-  extend(meta: Partial<Context.Meta>): this {
+  extend(meta: Partial<Context.Meta> = {}): this {
     return Object.assign(Object.create(this), meta)
   }
 

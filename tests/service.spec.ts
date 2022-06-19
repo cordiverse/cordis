@@ -31,8 +31,30 @@ describe('Service', () => {
     }
 
     const app = new App()
+    const callback = jest.fn(noop)
+    app.on('internal/service', callback)
+
     app.plugin(Foo)
     expect(app.foo).to.be.instanceOf(Foo)
+    expect(callback.mock.calls).to.have.length(1)
+
+    await app.start()
+    expect(callback.mock.calls).to.have.length(1)
+  })
+
+  it('service caller', async () => {
+    class Foo extends Service {
+      constructor(ctx: Context) {
+        super(ctx, 'foo', true)
+      }
+    }
+
+    const app = new App()
+    app.plugin(Foo)
+    expect(app.foo.caller).to.equal(app)
+
+    const ctx = app.extend()
+    expect(ctx.foo.caller).to.equal(ctx)
   })
 
   it('dependency update', async () => {
