@@ -53,7 +53,7 @@ export class Lifecycle {
         return () => remove(disposables, listener)
       } else if (name === 'fork') {
         runtime.forkables[method](listener as any)
-        return this.mark('event <fork>', () => remove(runtime.forkables, listener))
+        return state.collect('event <fork>', () => remove(runtime.forkables, listener))
       }
     })
   }
@@ -134,17 +134,6 @@ export class Lifecycle {
     }
   }
 
-  mark(label: string, callback: () => boolean) {
-    const { disposables } = this.caller.state
-    const dispose = () => {
-      remove(disposables, dispose)
-      return callback()
-    }
-    disposables.push(dispose)
-    defineProperty(dispose, 'name', label)
-    return dispose
-  }
-
   register(label: string, hooks: [Context, any][], listener: any, prepend?: boolean) {
     if (hooks.length >= this.config.maxListeners) {
       this.ctx.emit('internal/warning', `max listener count (${this.config.maxListeners}) for ${label} exceeded, which may be caused by a memory leak`)
@@ -153,7 +142,7 @@ export class Lifecycle {
     const caller = this[Context.current]
     const method = prepend ? 'unshift' : 'push'
     hooks[method]([caller, listener])
-    return this.mark(label, () => this.unregister(hooks, listener))
+    return caller.state.collect(label, () => this.unregister(hooks, listener))
   }
 
   unregister(hooks: [Context, any][], listener: any) {

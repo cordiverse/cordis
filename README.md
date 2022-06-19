@@ -42,17 +42,17 @@ Contexts provide three kinds of functionality:
 
 #### ctx.extend(meta)
 
-- meta: `Partial<Context.Meta>`
+- meta: `Partial<Context.Meta>` additional properties
 - returns: `Context`
 
-Create a new context with the current context as the prototype. Properties in `meta` will be assigned to the new context.
+Create a new context with the current context as the prototype. Properties specified in `meta` will be assigned to the new context.
 
 #### ctx.isolate(keys)
 
-- keys: `string[]`
+- keys: `string[]` service names
 - returns: `Context`
 
-Create a new context with the current context as the prototype. Services specified in `keys` will be isolated in the new context, while services not included in `keys` are still shared.
+Create a new context with the current context as the prototype. Services included in `keys` will be isolated in the new context, while services not included in `keys` are still shared with the parent context.
 
 ```ts
 const root = new App()
@@ -122,8 +122,6 @@ If any listener is fulfilled with a value other than `false`, `null` or `undefin
 
 #### ctx.lifecycle.stop()
 
-#### ctx.lifecycle.mark()
-
 #### ctx.lifecycle.register()
 
 #### ctx.lifecycle.unregister()
@@ -159,6 +157,8 @@ The plugin runtime associated with the state. If the state is a runtime, then th
 #### state.context
 
 #### state.config
+
+#### state.collect()
 
 #### state.restart()
 
@@ -205,7 +205,7 @@ It is recommended to wrap code in the `ready` event in the following scenarios:
 - prepend: `boolean`
 - returns: `() => boolean`
 
-#### internal/service(name, oldValue)
+#### internal/service(name)
 
 - name: `string`
 - oldValue: `any`

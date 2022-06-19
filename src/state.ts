@@ -29,6 +29,16 @@ export abstract class State {
     this.context = parent.extend({ state: this })
   }
 
+  collect(label: string, callback: () => boolean) {
+    const dispose = () => {
+      remove(this.disposables, dispose)
+      return callback()
+    }
+    this.disposables.push(dispose)
+    defineProperty(dispose, 'name', label)
+    return dispose
+  }
+
   protected init() {
     if (this.runtime.using.length) {
       const dispose = this.context.on('internal/service', (name) => {
@@ -52,15 +62,25 @@ export abstract class State {
 }
 
 export class Fork extends State {
-  constructor(parent: Context, config: any, runtime: Runtime) {
+  dispose: () => boolean
+
+  constructor(parent: Context, config: any, public runtime: Runtime) {
     super(parent, config)
-    this.runtime = runtime
-    this.dispose = this.dispose.bind(this)
+
+    this.dispose = parent.state.collect(`fork <${parent.state.runtime.name}>`, () => {
+      this.uid = null
+      this.clear()
+      const result = remove(runtime.disposables, this.dispose)
+      if (remove(runtime.children, this) && !runtime.children.length) {
+        runtime.dispose()
+      }
+      parent.emit('internal/fork', this)
+      return result
+    })
+
     defineProperty(this.dispose, kPreserve, true)
-    defineProperty(this.dispose, 'name', `fork <${parent.state.runtime.name}>`)
     runtime.children.push(this)
     runtime.disposables.push(this.dispose)
-    parent.state.disposables.push(this.dispose)
     parent.emit('internal/fork', this)
     if (runtime.isReusable) this.init()
     this.restart()
@@ -85,18 +105,6 @@ export class Fork extends State {
       this.runtime.config = resolved
       this.runtime.restart()
     }
-  }
-
-  dispose() {
-    this.uid = null
-    this.clear()
-    remove(this.runtime.disposables, this.dispose)
-    if (remove(this.runtime.children, this) && !this.runtime.children.length) {
-      this.runtime.dispose()
-    }
-    const result = remove(this.parent.state.disposables, this.dispose)
-    this.parent.emit('internal/fork', this)
-    return result
   }
 }
 
