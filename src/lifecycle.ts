@@ -38,10 +38,12 @@ export class Lifecycle {
 
   constructor(private ctx: Context, private config: Lifecycle.Config) {
     const self = this as Lifecycle.Delegates
+    this[Context.current] = ctx
 
-    self.on('internal/hook', (name, listener, prepend) => {
+    self.on('internal/hook', function (name, listener, prepend) {
       const method = prepend ? 'unshift' : 'push'
-      const { runtime, disposables } = this.caller.state
+      const { state } = this[Context.current]
+      const { runtime, disposables } = state
       if (name === 'ready' && this.isActive) {
         this.queue(listener())
         return () => false
@@ -54,10 +56,6 @@ export class Lifecycle {
         return this.mark('event <fork>', () => remove(runtime.forkables, listener))
       }
     })
-  }
-
-  protected get caller(): Context {
-    return this[Context.current] || this.ctx
   }
 
   queue(value: any) {
@@ -152,8 +150,9 @@ export class Lifecycle {
       this.ctx.emit('internal/warning', `max listener count (${this.config.maxListeners}) for ${label} exceeded, which may be caused by a memory leak`)
     }
 
+    const caller = this[Context.current]
     const method = prepend ? 'unshift' : 'push'
-    hooks[method]([this.caller, listener])
+    hooks[method]([caller, listener])
     return this.mark(label, () => this.unregister(hooks, listener))
   }
 
@@ -167,7 +166,7 @@ export class Lifecycle {
 
   on(name: keyof Events, listener: Function, prepend = false) {
     // handle special events
-    const result = this.bail('internal/hook', name, listener, prepend)
+    const result = this.bail(this, 'internal/hook', name, listener, prepend)
     if (result) return result
 
     const hooks = this._hooks[name] ||= []
@@ -212,5 +211,5 @@ export interface Events {
   'internal/warning'(format: any, ...param: any[]): void
   'internal/service'(this: Context, name: string): void
   'internal/update'(fork: Fork, config: any): void
-  'internal/hook'(name: string, listener: Function, prepend: boolean): () => boolean
+  'internal/hook'(this: Lifecycle, name: string, listener: Function, prepend: boolean): () => boolean
 }

@@ -41,11 +41,8 @@ export namespace Registry {
 export class Registry extends Map<Plugin, Runtime> {
   constructor(public app: App, private config: Registry.Config) {
     super()
+    this[Context.current] = app
     app.state = new Runtime(this, null, config)
-  }
-
-  get caller(): Context {
-    return this[Context.current] || this.app
   }
 
   private resolve(plugin: Plugin) {
@@ -93,7 +90,7 @@ export class Registry extends Map<Plugin, Runtime> {
     if (!config) return
 
     // check duplication
-    const context = this.caller
+    const context = this[Context.current]
     const duplicate = this.get(plugin)
     if (duplicate) {
       if (!duplicate.isForkable) {

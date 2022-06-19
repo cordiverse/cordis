@@ -8,6 +8,7 @@ export class Service {
 
   constructor(protected ctx: Context, name: string, immediate?: boolean) {
     Context.service(name)
+    this[Context.current] = ctx
 
     if (immediate) {
       this[Context.immediate] = name
@@ -26,7 +27,7 @@ export class Service {
     })
   }
 
-  get caller(): Context {
-    return this[Context.current] || this.ctx
+  get caller() {
+    return this[Context.current]
   }
 }

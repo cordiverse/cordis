@@ -8,6 +8,7 @@ export interface Context extends Context.Services, Context.Meta, Lifecycle.Deleg
 
 declare global {
   interface Object {
+    [Context.current]?: Context
     [Context.source]?: Context
     [Context.filter]?(context: Context): boolean
   }
@@ -16,7 +17,7 @@ declare global {
 export class Context {
   static readonly filter = Symbol('filter')
   static readonly source = Symbol('source')
-  static readonly current = Symbol('caller')
+  static readonly current = Symbol('current')
   static readonly immediate = Symbol('immediate')
 
   ;[Symbol.for('nodejs.util.inspect.custom')]() {

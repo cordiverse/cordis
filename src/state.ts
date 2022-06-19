@@ -109,7 +109,7 @@ export class Runtime extends State {
   isReusable: boolean
 
   constructor(private registry: Registry, public plugin: Plugin, config: any) {
-    super(registry.caller, config)
+    super(registry[Context.current], config)
     registry.set(plugin, this)
     if (plugin) this.init()
   }
