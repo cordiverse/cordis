@@ -17,10 +17,6 @@ export namespace Lifecycle {
     parallel<K extends keyof Events>(thisArg: ThisParameterType<Events[K]>, name: K, ...args: Parameters<Events[K]>): Promise<void>
     emit<K extends keyof Events>(name: K, ...args: Parameters<Events[K]>): void
     emit<K extends keyof Events>(thisArg: ThisParameterType<Events[K]>, name: K, ...args: Parameters<Events[K]>): void
-    waterfall<K extends keyof Events>(name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
-    waterfall<K extends keyof Events>(thisArg: ThisParameterType<Events[K]>, name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
-    chain<K extends keyof Events>(name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
-    chain<K extends keyof Events>(thisArg: ThisParameterType<Events[K]>, name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
     serial<K extends keyof Events>(name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
     serial<K extends keyof Events>(thisArg: ThisParameterType<Events[K]>, name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
     bail<K extends keyof Events>(name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
@@ -94,26 +90,6 @@ export class Lifecycle {
 
   emit(...args: any[]) {
     this.parallel(...args)
-  }
-
-  async waterfall(...args: [any, ...any[]]) {
-    const thisArg = typeof args[0] === 'object' ? args.shift() : null
-    const name = args.shift()
-    for (const callback of this.getHooks(name, thisArg)) {
-      const result = await callback.apply(thisArg, args)
-      args[0] = result
-    }
-    return args[0]
-  }
-
-  chain(...args: [any, ...any[]]) {
-    const thisArg = typeof args[0] === 'object' ? args.shift() : null
-    const name = args.shift()
-    for (const callback of this.getHooks(name, thisArg)) {
-      const result = callback.apply(thisArg, args)
-      args[0] = result
-    }
-    return args[0]
   }
 
   async serial(...args: any[]) {
