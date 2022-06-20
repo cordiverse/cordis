@@ -30,7 +30,7 @@ export namespace Plugin {
 export namespace Registry {
   export interface Config {}
 
-  export interface Delegates {
+  export interface Mixin {
     using(using: readonly string[], callback: Plugin.Function<void>): Fork
     plugin<T extends Plugin>(plugin: T, config?: boolean | Plugin.Config<T>): Fork
     dispose(plugin?: Plugin): Runtime

@@ -12,7 +12,7 @@ export namespace Lifecycle {
     maxListeners?: number
   }
 
-  export interface Delegates {
+  export interface Mixin {
     parallel<K extends keyof Events>(name: K, ...args: Parameters<Events[K]>): Promise<void>
     parallel<K extends keyof Events>(thisArg: ThisParameterType<Events[K]>, name: K, ...args: Parameters<Events[K]>): Promise<void>
     emit<K extends keyof Events>(name: K, ...args: Parameters<Events[K]>): void
@@ -33,7 +33,7 @@ export class Lifecycle {
   _hooks: Record<keyof any, [Context, (...args: any[]) => any][]> = {}
 
   constructor(private app: Context, private config: Lifecycle.Config) {
-    const self = this as Lifecycle.Delegates
+    const self = this as Lifecycle.Mixin
     this[Context.current] = app
 
     const dispose = self.on('internal/hook', function (name, listener, prepend) {
@@ -174,7 +174,7 @@ export interface Events {
   'internal/fork'(fork: Fork): void
   'internal/runtime'(runtime: Runtime): void
   'internal/warning'(format: any, ...param: any[]): void
-  'internal/service'(this: Context, name: string): void
+  'internal/service'(name: string): void
   'internal/update'(fork: Fork, config: any): void
   'internal/hook'(this: Lifecycle, name: string, listener: Function, prepend: boolean): () => boolean
 }

@@ -4,7 +4,7 @@ import { Lifecycle } from './lifecycle'
 import { State } from './state'
 import { Registry } from './plugin'
 
-export interface Context extends Context.Services, Context.Meta, Lifecycle.Delegates, Registry.Delegates {}
+export interface Context extends Context.Services, Context.Meta, Lifecycle.Mixin, Registry.Mixin {}
 
 declare global {
   interface Object {
@@ -48,9 +48,20 @@ export namespace Context {
 
   export const Services: string[] = []
 
-  export interface ServiceOptions {
-    constructor?: any
+  export interface MixinOptions {
     methods?: string[]
+  }
+
+  export function mixin(name: keyof any, options: MixinOptions) {
+    for (const method of options.methods || []) {
+      defineProperty(Context.prototype, method, function (this: Context, ...args: any[]) {
+        return this[name][method](...args)
+      })
+    }
+  }
+
+  export interface ServiceOptions extends MixinOptions {
+    constructor?: any
   }
 
   export interface Meta {
@@ -85,7 +96,7 @@ export namespace Context {
         if (typeof name !== 'string') return
 
         // trigger event
-        const self: Context = Object.create(this)
+        const self: object = Object.create(null)
         self[Context.filter] = (ctx) => {
           return this.mapping[name] === ctx.mapping[name]
         }
@@ -97,11 +108,7 @@ export namespace Context {
       internal[privateKey] = options.constructor
     }
 
-    for (const method of options.methods || []) {
-      defineProperty(Context.prototype, method, function (this: Context, ...args: any[]) {
-        return this[name][method](...args)
-      })
-    }
+    mixin(name, options)
   }
 
   service('registry', {
