@@ -23,7 +23,7 @@ export abstract class State {
   abstract update(config: any): void
 
   constructor(public parent: Context, public config: any) {
-    this.uid = parent.app.counter++
+    this.uid = parent.registry ? parent.registry.counter : 0
     this.context = parent.extend({ state: this })
   }
 

@@ -24,12 +24,14 @@ export namespace Lifecycle {
     on<K extends keyof Events>(name: K, listener: Events[K], prepend?: boolean): () => boolean
     once<K extends keyof Events>(name: K, listener: Events[K], prepend?: boolean): () => boolean
     off<K extends keyof Events>(name: K, listener: Events[K]): boolean
+    start(): Promise<void>
+    stop(): Promise<void>
   }
 }
 
 export class Lifecycle {
   isActive = false
-  #tasks = new Set<Promise<void>>()
+  _tasks = new Set<Promise<void>>()
   _hooks: Record<keyof any, [Context, (...args: any[]) => any][]> = {}
 
   constructor(private app: Context, private config: Lifecycle.Config) {
@@ -57,13 +59,13 @@ export class Lifecycle {
   queue(value: any) {
     const task = Promise.resolve(value)
       .catch(reason => this.app.emit('internal/warning', reason))
-      .then(() => this.#tasks.delete(task))
-    this.#tasks.add(task)
+      .then(() => this._tasks.delete(task))
+    this._tasks.add(task)
   }
 
   async flush() {
-    while (this.#tasks.size) {
-      await Promise.all(Array.from(this.#tasks))
+    while (this._tasks.size) {
+      await Promise.all(Array.from(this._tasks))
     }
   }
 

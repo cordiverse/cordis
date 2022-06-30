@@ -38,10 +38,16 @@ export namespace Registry {
 }
 
 export class Registry extends Map<Plugin, Runtime> {
+  private _counter = 0
+
   constructor(public app: Context, private config: Registry.Config) {
     super()
     this[Context.current] = app
     app.state = new Runtime(this, null, config)
+  }
+
+  get counter() {
+    return ++this._counter
   }
 
   private resolve(plugin: Plugin) {

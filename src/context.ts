@@ -1,5 +1,4 @@
 import { defineProperty, Dict } from 'cosmokit'
-import { App } from './app'
 import { Lifecycle } from './lifecycle'
 import { State } from './state'
 import { Registry } from './plugin'
@@ -21,6 +20,17 @@ export class Context {
   static readonly current = Symbol('current')
   static readonly immediate = Symbol('immediate')
 
+  options: Context.Config
+
+  constructor(config?: Context.Config) {
+    this.app = this
+    this.mapping = Object.create(null)
+    this.options = Registry.validate(Context, config)
+    for (const key of Object.getOwnPropertySymbols(Context.internal)) {
+      this[key] = new Context.internal[key](this, this.options)
+    }
+  }
+
   ;[Symbol.for('nodejs.util.inspect.custom')]() {
     return `Context <${this.state.runtime.name}>`
   }
@@ -39,9 +49,11 @@ export class Context {
 }
 
 export namespace Context {
+  export interface Config extends Lifecycle.Config, Registry.Config {}
+
   /** @deprecated for backward compatibility */
   export interface Services {
-    app: App
+    app: Context
     lifecycle: Lifecycle
     registry: Registry
   }
@@ -65,7 +77,7 @@ export namespace Context {
   }
 
   export interface Meta {
-    app: App
+    app: Context
     state: State
     mapping: Dict<symbol>
   }
@@ -118,6 +130,8 @@ export namespace Context {
 
   service('lifecycle', {
     constructor: Lifecycle,
-    methods: ['on', 'once', 'off', 'before', 'after', 'parallel', 'emit', 'serial', 'bail', 'waterfall', 'chain'],
+    methods: ['on', 'once', 'off', 'before', 'after', 'parallel', 'emit', 'serial', 'bail', 'start', 'stop'],
   })
 }
+
+export const App = Context
