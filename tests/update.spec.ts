@@ -6,7 +6,7 @@ import * as jest from 'jest-mock'
 
 describe('Update', () => {
   it('update runtime', () => {
-    const app = new Context()
+    const root = new Context()
     const dispose = jest.fn(noop)
     const callback = jest.fn<Plugin.Function>((ctx) => {
       ctx.on('dispose', dispose)
@@ -16,10 +16,10 @@ describe('Update', () => {
       ctx.on('fork', noop)
     })
 
-    app.plugin(callback, { value: 1 })
+    root.plugin(callback, { value: 1 })
     expect(dispose.mock.calls).to.have.length(0)
     expect(callback.mock.calls).to.have.length(1)
-    app.emit(event)
+    root.emit(event)
     expect(dispose.mock.calls).to.have.length(1)
     expect(callback.mock.calls).to.have.length(2)
 
@@ -29,31 +29,31 @@ describe('Update', () => {
   })
 
   it('update fork (single)', () => {
-    const app = new Context()
+    const root = new Context()
     const callback = jest.fn(config => {})
-    const fork = app.plugin((ctx, config) => {
+    const fork = root.plugin((ctx, config) => {
       ctx.on(event, () => callback(config))
     }, { value: 1 })
 
-    app.emit(event)
+    root.emit(event)
     expect(callback.mock.calls).to.have.length(1)
     expect(callback.mock.calls[0][0]).to.deep.equal({ value: 1 })
 
     fork.update({ value: 2 })
-    app.emit(event)
+    root.emit(event)
     expect(callback.mock.calls).to.have.length(2)
     expect(callback.mock.calls[1][0]).to.deep.equal({ value: 2 })
   })
 
   it('update fork (multiple)', () => {
-    const app = new Context()
+    const root = new Context()
     const inner = jest.fn<Plugin.Function>()
     const outer = jest.fn<Plugin.Function>((ctx) => {
       ctx.on('fork', inner)
     })
 
-    const fork1 = app.plugin(outer, { value: 1 })
-    const fork2 = app.plugin(outer, { value: 0 })
+    const fork1 = root.plugin(outer, { value: 1 })
+    const fork2 = root.plugin(outer, { value: 0 })
     expect(inner.mock.calls).to.have.length(2)
     expect(outer.mock.calls).to.have.length(1)
 
@@ -65,7 +65,7 @@ describe('Update', () => {
   })
 
   it('deferred update', () => {
-    const app = new Context()
+    const root = new Context()
     const callback = jest.fn()
     const plugin = {
       using: ['foo'],
@@ -73,13 +73,13 @@ describe('Update', () => {
       apply: callback,
     }
 
-    const fork = app.plugin(plugin, { value: 1 })
+    const fork = root.plugin(plugin, { value: 1 })
     expect(callback.mock.calls).to.have.length(0)
 
     fork.update({ value: 2 })
     expect(callback.mock.calls).to.have.length(0)
 
-    app.foo = {}
+    root.foo = {}
     expect(callback.mock.calls).to.have.length(1)
     expect(callback.mock.calls[0][1]).to.deep.equal({ value: 2 })
     expect(fork.disposables).to.have.length(1)              // service listener

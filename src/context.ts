@@ -32,7 +32,7 @@ export class Context {
       }
     }
 
-    this.app = this
+    this.root = this
     this.mapping = Object.create(null)
     this.options = Registry.validate(Context, config)
     attach(this[Context.internal])
@@ -60,7 +60,6 @@ export namespace Context {
 
   /** @deprecated for backward compatibility */
   export interface Services {
-    app: Context
     lifecycle: Lifecycle
     registry: Registry
   }
@@ -73,19 +72,19 @@ export namespace Context {
   }
 
   export function mixin(name: keyof any, options: MixinOptions) {
-    for (const method of options.methods || []) {
-      defineProperty(Context.prototype, method, function (this: Context, ...args: any[]) {
-        return this[name][method](...args)
+    for (const key of options.methods || []) {
+      defineProperty(Context.prototype, key, function (this: Context, ...args: any[]) {
+        return this[name][key](...args)
       })
     }
 
-    for (const property of options.properties || []) {
-      Object.defineProperty(Context.prototype, property, {
+    for (const key of options.properties || []) {
+      Object.defineProperty(Context.prototype, key, {
         get(this: Context) {
-          return this[name][property]
+          return this[name][key]
         },
         set(this: Context, value: any) {
-          this[name][property] = value
+          this[name][key] = value
         },
       })
     }
@@ -96,7 +95,7 @@ export namespace Context {
   }
 
   export interface Meta {
-    app: Context
+    root: Context
     state: State
     runtime: Runtime
     mapping: Dict<symbol>
@@ -110,16 +109,16 @@ export namespace Context {
     Object.defineProperty(this.prototype, name, {
       get(this: Context) {
         const key = this.mapping[name as any] || privateKey
-        const value = this.app[key]
+        const value = this.root[key]
         if (!value) return
         defineProperty(value, Context.current, this)
         return value
       },
       set(this: Context, value) {
         const key = this.mapping[name as any] || privateKey
-        const oldValue = this.app[key]
+        const oldValue = this.root[key]
         if (oldValue === value) return
-        this.app[key] = value
+        this.root[key] = value
         if (value && typeof value === 'object') {
           defineProperty(value, Context.source, this)
         }

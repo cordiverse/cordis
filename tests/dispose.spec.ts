@@ -16,20 +16,20 @@ describe('Disposables', () => {
       })
     }
 
-    const app = new Context()
+    const root = new Context()
     const callback = jest.fn()
-    app.on(event, callback)
-    app.plugin(plugin)
+    root.on(event, callback)
+    root.plugin(plugin)
 
     // 3 handlers now
     expect(callback.mock.calls).to.have.length(0)
-    app.emit(event)
+    root.emit(event)
     expect(callback.mock.calls).to.have.length(4)
 
     // only 1 handler left
     callback.mockClear()
-    app.dispose(plugin)
-    app.emit(event)
+    root.dispose(plugin)
+    root.emit(event)
     expect(callback.mock.calls).to.have.length(1)
   })
 
@@ -42,35 +42,35 @@ describe('Disposables', () => {
 
     function getHookSnapshot() {
       const result: Dict<number> = {}
-      for (const [name, callbacks] of Object.entries(app.lifecycle._hooks)) {
+      for (const [name, callbacks] of Object.entries(root.lifecycle._hooks)) {
         if (callbacks.length) result[name] = callbacks.length
       }
       return result
     }
 
-    const app = new Context()
+    const root = new Context()
     const before = getHookSnapshot()
-    app.plugin(plugin)
+    root.plugin(plugin)
     const after = getHookSnapshot()
-    app.dispose(plugin)
+    root.dispose(plugin)
     expect(before).to.deep.equal(getHookSnapshot())
-    app.plugin(plugin)
+    root.plugin(plugin)
     expect(after).to.deep.equal(getHookSnapshot())
   })
 
   it('dispose event', () => {
-    const app = new Context()
+    const root = new Context()
     const callback = jest.fn(noop)
     const plugin = (ctx: Context) => {
       ctx.on('dispose', callback)
     }
 
-    app.plugin(plugin)
+    root.plugin(plugin)
     expect(callback.mock.calls).to.have.length(0)
-    expect(app.dispose(plugin)).to.be.ok
+    expect(root.dispose(plugin)).to.be.ok
     expect(callback.mock.calls).to.have.length(1)
     // callback should only be called once
-    expect(app.dispose(plugin)).to.be.not.ok
+    expect(root.dispose(plugin)).to.be.not.ok
     expect(callback.mock.calls).to.have.length(1)
   })
 })

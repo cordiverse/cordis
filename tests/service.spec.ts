@@ -12,15 +12,15 @@ describe('Service', () => {
       }
     }
 
-    const app = new Context()
-    app.plugin(Foo)
-    expect(app.foo).to.be.undefined
+    const root = new Context()
+    root.plugin(Foo)
+    expect(root.foo).to.be.undefined
 
-    await app.start()
-    expect(app.foo).to.be.instanceOf(Foo)
+    await root.start()
+    expect(root.foo).to.be.instanceOf(Foo)
 
-    app.dispose(Foo)
-    expect(app.foo).to.be.undefined
+    root.dispose(Foo)
+    expect(root.foo).to.be.undefined
   })
 
   it('immediate service', async () => {
@@ -30,15 +30,15 @@ describe('Service', () => {
       }
     }
 
-    const app = new Context()
+    const root = new Context()
     const callback = jest.fn(noop)
-    app.on('internal/service', callback)
+    root.on('internal/service', callback)
 
-    app.plugin(Foo)
-    expect(app.foo).to.be.instanceOf(Foo)
+    root.plugin(Foo)
+    expect(root.foo).to.be.instanceOf(Foo)
     expect(callback.mock.calls).to.have.length(1)
 
-    await app.start()
+    await root.start()
     expect(callback.mock.calls).to.have.length(1)
   })
 
@@ -49,11 +49,11 @@ describe('Service', () => {
       }
     }
 
-    const app = new Context()
-    app.plugin(Foo)
-    expect(app.foo.caller).to.equal(app)
+    const root = new Context()
+    root.plugin(Foo)
+    expect(root.foo.caller).to.equal(root)
 
-    const ctx = app.extend()
+    const ctx = root.extend()
     expect(ctx.foo.caller).to.equal(ctx)
   })
 
@@ -61,8 +61,8 @@ describe('Service', () => {
     const callback = jest.fn()
     const dispose = jest.fn(noop)
 
-    const app = new Context()
-    app.using(['foo'], (ctx) => {
+    const root = new Context()
+    root.using(['foo'], (ctx) => {
       callback(ctx.foo.bar)
       ctx.on('dispose', dispose)
     })
@@ -70,23 +70,23 @@ describe('Service', () => {
     expect(callback.mock.calls).to.have.length(0)
     expect(dispose.mock.calls).to.have.length(0)
 
-    const old = app.foo = { bar: 100 }
+    const old = root.foo = { bar: 100 }
     expect(callback.mock.calls).to.have.length(1)
     expect(callback.mock.calls[0][0]).to.equal(100)
     expect(dispose.mock.calls).to.have.length(0)
 
     // do not trigger event if reference has not changed
     old.bar = 200
-    app.foo = old
+    root.foo = old
     expect(callback.mock.calls).to.have.length(1)
     expect(dispose.mock.calls).to.have.length(0)
 
-    app.foo = { bar: 300 }
+    root.foo = { bar: 300 }
     expect(callback.mock.calls).to.have.length(2)
     expect(callback.mock.calls[1][0]).to.equal(300)
     expect(dispose.mock.calls).to.have.length(1)
 
-    app.foo = null
+    root.foo = null
     expect(callback.mock.calls).to.have.length(2)
     expect(dispose.mock.calls).to.have.length(2)
   })
@@ -106,23 +106,23 @@ describe('Service', () => {
       fork = fork
     }
 
-    const app = new Context()
-    app.plugin(Foo)
+    const root = new Context()
+    root.plugin(Foo)
     expect(start.mock.calls).to.have.length(0)
     expect(stop.mock.calls).to.have.length(0)
     expect(fork.mock.calls).to.have.length(1)
 
-    await app.start()
+    await root.start()
     expect(start.mock.calls).to.have.length(1)
     expect(stop.mock.calls).to.have.length(0)
     expect(fork.mock.calls).to.have.length(1)
 
-    app.plugin(Foo)
+    root.plugin(Foo)
     expect(start.mock.calls).to.have.length(1)
     expect(stop.mock.calls).to.have.length(0)
     expect(fork.mock.calls).to.have.length(2)
 
-    app.dispose(Foo)
+    root.dispose(Foo)
     expect(start.mock.calls).to.have.length(1)
     expect(stop.mock.calls).to.have.length(1)
     expect(fork.mock.calls).to.have.length(2)

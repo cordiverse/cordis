@@ -10,12 +10,12 @@ AOP Framework for Modern JavaScript Applications.
 ```ts
 import { Context } from 'cordis'
 
-const app = new Context()
+const ctx = new Context()
 
-app.plugin(plugin)              // use plugins
-app.on(event, callback)         // listen to events
+ctx.plugin(plugin)              // use plugins
+ctx.on(event, callback)         // listen to events
 
-app.start()                     // start app
+ctx.start()                     // start app
 ```
 
 ## Concepts

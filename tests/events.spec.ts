@@ -9,139 +9,139 @@ export function createArray<T>(length: number, create: (index: number) => T) {
 }
 
 function setup() {
-  const app = new Context({ maxListeners: 64 })
+  const root = new Context({ maxListeners: 64 })
   const warn = jest.fn()
-  app.on('internal/warning', warn)
-  return { app, warn }
+  root.on('internal/warning', warn)
+  return { root, warn }
 }
 
 describe('Event Listener', () => {
   const extraCalls = 7
 
   it('max appended hooks', async () => {
-    const { app, warn } = setup()
-    createArray(64 + extraCalls, () => app.on(event, noop))
-    expect(app.lifecycle._hooks[event].length).to.equal(64 + extraCalls)
+    const { root, warn } = setup()
+    createArray(64 + extraCalls, () => root.on(event, noop))
+    expect(root.lifecycle._hooks[event].length).to.equal(64 + extraCalls)
     expect(warn.mock.calls).to.have.length(extraCalls)
   })
 
   it('context.prototype.on', () => {
-    const { app } = setup()
+    const { root } = setup()
     const callback = jest.fn()
-    const dispose = app.on(event, callback)
-    app.emit(event)
+    const dispose = root.on(event, callback)
+    root.emit(event)
     expect(callback.mock.calls).to.have.length(1)
-    app.emit(event)
+    root.emit(event)
     expect(callback.mock.calls).to.have.length(2)
     expect(dispose()).to.be.ok
-    app.emit(event)
+    root.emit(event)
     expect(callback.mock.calls).to.have.length(2)
   })
 
   it('context.prototype.once', () => {
-    const { app } = setup()
+    const { root } = setup()
     const callback = jest.fn()
-    const dispose = app.once(event, callback)
-    app.emit(event)
+    const dispose = root.once(event, callback)
+    root.emit(event)
     expect(callback.mock.calls).to.have.length(1)
-    app.emit(event)
+    root.emit(event)
     expect(callback.mock.calls).to.have.length(1)
     expect(dispose()).to.be.not.ok
-    app.emit(event)
+    root.emit(event)
     expect(callback.mock.calls).to.have.length(1)
   })
 
   it('context.prototype.off', () => {
-    const { app } = setup()
+    const { root } = setup()
     const callback = jest.fn()
-    app.on(event, callback)
-    app.emit(event)
+    root.on(event, callback)
+    root.emit(event)
     expect(callback.mock.calls).to.have.length(1)
-    expect(app.off(event, callback)).to.be.ok
-    app.emit(event)
+    expect(root.off(event, callback)).to.be.ok
+    root.emit(event)
     expect(callback.mock.calls).to.have.length(1)
-    expect(app.off(event, callback)).to.be.not.ok
+    expect(root.off(event, callback)).to.be.not.ok
   })
 })
 
 describe('Events Emitter', () => {
   it('context.prototype.parallel', async () => {
-    const { app, warn } = setup()
-    await app.parallel(event)
+    const { root, warn } = setup()
+    await root.parallel(event)
     const callback = jest.fn()
-    app.extend(new Filter(true)).on(event, callback)
+    root.extend(new Filter(true)).on(event, callback)
 
-    await app.parallel(event)
+    await root.parallel(event)
     expect(callback.mock.calls).to.have.length(1)
-    await app.parallel(new Session(false), event)
+    await root.parallel(new Session(false), event)
     expect(callback.mock.calls).to.have.length(1)
-    await app.parallel(new Session(true), event)
+    await root.parallel(new Session(true), event)
     expect(callback.mock.calls).to.have.length(2)
 
     callback.mockImplementation(() => {
       throw new Error('test')
     })
     expect(warn.mock.calls).to.have.length(0)
-    await app.parallel(event)
+    await root.parallel(event)
     expect(warn.mock.calls).to.have.length(1)
   })
 
   it('context.prototype.emit', async () => {
-    const { app, warn } = setup()
-    app.emit(event)
+    const { root, warn } = setup()
+    root.emit(event)
     const callback = jest.fn()
-    app.extend(new Filter(true)).on(event, callback)
+    root.extend(new Filter(true)).on(event, callback)
 
-    app.emit(event)
+    root.emit(event)
     expect(callback.mock.calls).to.have.length(1)
-    app.emit(new Session(false), event)
+    root.emit(new Session(false), event)
     expect(callback.mock.calls).to.have.length(1)
-    app.emit(new Session(true), event)
+    root.emit(new Session(true), event)
     expect(callback.mock.calls).to.have.length(2)
 
     callback.mockImplementation(() => {
       throw new Error('test')
     })
     expect(warn.mock.calls).to.have.length(0)
-    app.emit(event)
+    root.emit(event)
     expect(warn.mock.calls).to.have.length(1)
   })
 
   it('context.prototype.serial', async () => {
-    const { app } = setup()
-    app.serial(event)
+    const { root } = setup()
+    root.serial(event)
     const callback = jest.fn()
-    app.extend(new Filter(true)).on(event, callback)
+    root.extend(new Filter(true)).on(event, callback)
 
-    app.serial(event)
+    root.serial(event)
     expect(callback.mock.calls).to.have.length(1)
-    app.serial(new Session(false), event)
+    root.serial(new Session(false), event)
     expect(callback.mock.calls).to.have.length(1)
-    app.serial(new Session(true), event)
+    root.serial(new Session(true), event)
     expect(callback.mock.calls).to.have.length(2)
 
     callback.mockImplementation(() => {
       throw new Error('message')
     })
-    await expect(app.serial(event)).to.be.rejectedWith('message')
+    await expect(root.serial(event)).to.be.rejectedWith('message')
   })
 
   it('context.prototype.bail', async () => {
-    const { app } = setup()
-    app.bail(event)
+    const { root } = setup()
+    root.bail(event)
     const callback = jest.fn()
-    app.extend(new Filter(true)).on(event, callback)
+    root.extend(new Filter(true)).on(event, callback)
 
-    app.bail(event)
+    root.bail(event)
     expect(callback.mock.calls).to.have.length(1)
-    app.bail(new Session(false), event)
+    root.bail(new Session(false), event)
     expect(callback.mock.calls).to.have.length(1)
-    app.bail(new Session(true), event)
+    root.bail(new Session(true), event)
     expect(callback.mock.calls).to.have.length(2)
 
     callback.mockImplementation(() => {
       throw new Error('message')
     })
-    expect(() => app.bail(event)).to.throw('message')
+    expect(() => root.bail(event)).to.throw('message')
   })
 })

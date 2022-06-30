@@ -5,23 +5,23 @@ import { noop } from 'cosmokit'
 
 describe('Lifecycle', () => {
   it('basic support', async () => {
-    const app = new Context()
+    const root = new Context()
     const callback = jest.fn(noop)
-    const { length } = app.state.disposables
+    const { length } = root.state.disposables
 
-    app.on('ready', callback)
+    root.on('ready', callback)
     expect(callback.mock.calls).to.have.length(0)
 
-    await app.start()
+    await root.start()
     expect(callback.mock.calls).to.have.length(1)
 
-    app.on('ready', callback)
+    root.on('ready', callback)
     expect(callback.mock.calls).to.have.length(2)
 
-    await app.stop()
+    await root.stop()
 
-    await app.start()
+    await root.start()
     expect(callback.mock.calls).to.have.length(2)
-    expect(app.state.disposables.length).to.equal(length)
+    expect(root.state.disposables.length).to.equal(length)
   })
 })

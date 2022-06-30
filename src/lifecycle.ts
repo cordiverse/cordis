@@ -35,13 +35,13 @@ export namespace Lifecycle {
 export class Lifecycle {
   static methods = ['on', 'once', 'off', 'before', 'after', 'parallel', 'emit', 'serial', 'bail', 'start', 'stop']
 
-  private isActive = false
-  private _tasks = new Set<Promise<void>>()
-  private _hooks: Record<keyof any, [Context, (...args: any[]) => any][]> = {}
+  isActive = false
+  _tasks = new Set<Promise<void>>()
+  _hooks: Record<keyof any, [Context, (...args: any[]) => any][]> = {}
 
-  constructor(private app: Context, private config: Lifecycle.Config) {
+  constructor(private root: Context, private config: Lifecycle.Config) {
     const self = this as Lifecycle.Mixin<Events>
-    defineProperty(this, Context.current, app)
+    defineProperty(this, Context.current, root)
 
     const dispose = self.on('internal/hook', function (name, listener, prepend) {
       const method = prepend ? 'unshift' : 'push'
@@ -63,7 +63,7 @@ export class Lifecycle {
 
   queue(value: any) {
     const task = Promise.resolve(value)
-      .catch(reason => this.app.emit('internal/warning', reason))
+      .catch(reason => this.root.emit('internal/warning', reason))
       .then(() => this._tasks.delete(task))
     this._tasks.add(task)
   }
@@ -90,7 +90,7 @@ export class Lifecycle {
       try {
         await callback.apply(thisArg, args)
       } catch (error) {
-        this.app.emit('internal/warning', error)
+        this.root.emit('internal/warning', error)
       }
     }))
   }
@@ -119,7 +119,7 @@ export class Lifecycle {
 
   register(label: string, hooks: [Context, any][], listener: any, prepend?: boolean) {
     if (hooks.length >= this.config.maxListeners) {
-      this.app.emit('internal/warning', `max listener count (${this.config.maxListeners}) for ${label} exceeded, which may be caused by a memory leak`)
+      this.root.emit('internal/warning', `max listener count (${this.config.maxListeners}) for ${label} exceeded, which may be caused by a memory leak`)
     }
 
     const caller = this[Context.current]
@@ -170,7 +170,7 @@ export class Lifecycle {
   async stop() {
     this.isActive = false
     // `dispose` event is handled by state.disposables
-    this.app.state.clear(true)
+    this.root.state.clear(true)
   }
 }
 
