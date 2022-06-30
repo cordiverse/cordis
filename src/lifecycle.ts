@@ -12,18 +12,21 @@ export namespace Lifecycle {
     maxListeners?: number
   }
 
-  export interface Mixin {
-    parallel<K extends keyof Events>(name: K, ...args: Parameters<Events[K]>): Promise<void>
-    parallel<K extends keyof Events>(thisArg: ThisParameterType<Events[K]>, name: K, ...args: Parameters<Events[K]>): Promise<void>
-    emit<K extends keyof Events>(name: K, ...args: Parameters<Events[K]>): void
-    emit<K extends keyof Events>(thisArg: ThisParameterType<Events[K]>, name: K, ...args: Parameters<Events[K]>): void
-    serial<K extends keyof Events>(name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
-    serial<K extends keyof Events>(thisArg: ThisParameterType<Events[K]>, name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
-    bail<K extends keyof Events>(name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
-    bail<K extends keyof Events>(thisArg: ThisParameterType<Events[K]>, name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
-    on<K extends keyof Events>(name: K, listener: Events[K], prepend?: boolean): () => boolean
-    once<K extends keyof Events>(name: K, listener: Events[K], prepend?: boolean): () => boolean
-    off<K extends keyof Events>(name: K, listener: Events[K]): boolean
+  type Parameters<T> = T extends (...args: infer P) => any ? P : never
+  type ReturnType<T> = T extends (...args: any) => infer R ? R : never
+
+  export interface Mixin<S extends Events> {
+    parallel<K extends keyof S>(name: K, ...args: Parameters<S[K]>): Promise<void>
+    parallel<K extends keyof S>(thisArg: ThisParameterType<S[K]>, name: K, ...args: Parameters<S[K]>): Promise<void>
+    emit<K extends keyof S>(name: K, ...args: Parameters<S[K]>): void
+    emit<K extends keyof S>(thisArg: ThisParameterType<S[K]>, name: K, ...args: Parameters<S[K]>): void
+    serial<K extends keyof S>(name: K, ...args: Parameters<S[K]>): Promisify<ReturnType<S[K]>>
+    serial<K extends keyof S>(thisArg: ThisParameterType<S[K]>, name: K, ...args: Parameters<S[K]>): Promisify<ReturnType<S[K]>>
+    bail<K extends keyof S>(name: K, ...args: Parameters<S[K]>): ReturnType<S[K]>
+    bail<K extends keyof S>(thisArg: ThisParameterType<S[K]>, name: K, ...args: Parameters<S[K]>): ReturnType<S[K]>
+    on<K extends keyof S>(name: K, listener: S[K], prepend?: boolean): () => boolean
+    once<K extends keyof S>(name: K, listener: S[K], prepend?: boolean): () => boolean
+    off<K extends keyof S>(name: K, listener: S[K]): boolean
     start(): Promise<void>
     stop(): Promise<void>
   }
@@ -35,8 +38,8 @@ export class Lifecycle {
   _hooks: Record<keyof any, [Context, (...args: any[]) => any][]> = {}
 
   constructor(private app: Context, private config: Lifecycle.Config) {
-    const self = this as Lifecycle.Mixin
-    this[Context.current] = app
+    const self = this as Lifecycle.Mixin<Events>
+    defineProperty(this, Context.current, app)
 
     const dispose = self.on('internal/hook', function (name, listener, prepend) {
       const method = prepend ? 'unshift' : 'push'
@@ -69,7 +72,7 @@ export class Lifecycle {
     }
   }
 
-  * getHooks(name: keyof Events, thisArg?: object) {
+  * getHooks(name: keyof any, thisArg?: object) {
     const hooks = this._hooks[name] || []
     for (const [context, callback] of hooks.slice()) {
       const filter = thisArg?.[Context.filter]
@@ -131,7 +134,7 @@ export class Lifecycle {
     }
   }
 
-  on(name: keyof Events, listener: Function, prepend = false) {
+  on(name: keyof any, listener: Function, prepend = false) {
     // handle special events
     const result = this.bail(this, 'internal/hook', name, listener, prepend)
     if (result) return result
@@ -141,7 +144,7 @@ export class Lifecycle {
     return this.register(label, hooks, listener, prepend)
   }
 
-  once(name: keyof Events, listener: Function, prepend = false) {
+  once(name: keyof any, listener: Function, prepend = false) {
     const dispose = this.on(name, function (...args: any[]) {
       dispose()
       return listener.apply(this, args)
@@ -149,7 +152,7 @@ export class Lifecycle {
     return dispose
   }
 
-  off<K extends keyof Events>(name: K, listener: Events[K]) {
+  off(name: keyof any, listener: Function) {
     return this.unregister(this._hooks[name] || [], listener)
   }
 

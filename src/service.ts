@@ -1,4 +1,4 @@
-import { Awaitable } from 'cosmokit'
+import { Awaitable, defineProperty } from 'cosmokit'
 import { Context } from './context'
 
 export class Service {
@@ -8,7 +8,7 @@ export class Service {
 
   constructor(protected ctx: Context, name: string, immediate?: boolean) {
     Context.service(name)
-    this[Context.current] = ctx
+    defineProperty(this, Context.current, ctx)
 
     if (immediate) {
       this[Context.immediate] = name

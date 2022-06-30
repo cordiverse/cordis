@@ -1,9 +1,9 @@
 import { defineProperty, Dict } from 'cosmokit'
-import { Lifecycle } from './lifecycle'
+import { Events, Lifecycle } from './lifecycle'
 import { State } from './state'
 import { Registry } from './plugin'
 
-export interface Context extends Context.Services, Context.Meta, Lifecycle.Mixin, Registry.Mixin {}
+export interface Context<S extends Events = Events> extends Context.Services, Context.Meta, Lifecycle.Mixin<S> {}
 
 declare global {
   interface Object {

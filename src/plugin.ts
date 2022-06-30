@@ -1,3 +1,4 @@
+import { defineProperty } from 'cosmokit'
 import { Context } from './context'
 import { Fork, Runtime } from './state'
 
@@ -5,15 +6,18 @@ function isApplicable(object: Plugin) {
   return object && typeof object === 'object' && typeof object.apply === 'function'
 }
 
-export type Plugin = Plugin.Function | Plugin.Object
+export type Plugin<C extends Context = Context> =
+  | Plugin.Function<any, C>
+  | Plugin.Constructor<any, C>
+  | Plugin.Object<any, any, C>
 
 export namespace Plugin {
-  export type Function<T = any> = (ctx: Context, options: T) => void
-  export type Constructor<T = any> = new (ctx: Context, options: T) => void
+  export type Function<T = any, C extends Context = Context> = (ctx: C, options: T) => void
+  export type Constructor<T = any, C extends Context = Context> = new (ctx: C, options: T) => void
 
-  export interface Object<S = any, T = any> {
+  export interface Object<S = any, T = any, C extends Context = Context> {
     name?: string
-    apply: Function<T>
+    apply: Function<T, C>
     reusable?: boolean
     Config?: (config?: S) => T
     schema?: (config?: S) => T
@@ -27,22 +31,24 @@ export namespace Plugin {
     : never
 }
 
-export namespace Registry {
-  export interface Config {}
-
-  export interface Mixin {
-    using(using: readonly string[], callback: Plugin.Function<void>): Fork
-    plugin<T extends Plugin>(plugin: T, config?: boolean | Plugin.Config<T>): Fork
-    dispose(plugin?: Plugin): Runtime
+declare module './context' {
+  export interface Context {
+    using(using: readonly string[], callback: Plugin.Function<void, this>): Fork
+    plugin<T extends Plugin<this>>(plugin: T, config?: boolean | Plugin.Config<T>): Fork
+    dispose(plugin?: Plugin<this>): Runtime
   }
 }
 
-export class Registry extends Map<Plugin, Runtime> {
+export namespace Registry {
+  export interface Config {}
+}
+
+export class Registry<C extends Context = Context> extends Map<Plugin<C>, Runtime> {
   private _counter = 0
 
-  constructor(public app: Context, private config: Registry.Config) {
+  constructor(private app: C, private config: Registry.Config) {
     super()
-    this[Context.current] = app
+    defineProperty(this, Context.current, app)
     app.state = new Runtime(this, null, config)
   }
 
