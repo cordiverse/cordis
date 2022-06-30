@@ -125,4 +125,22 @@ describe('Fork', () => {
     app.emit(event)
     expect(listener.mock.calls).to.have.length(3)
   })
+
+  it('state.uid', () => {
+    const app = new Context()
+    const callback1 = jest.fn()
+    expect(app.state.uid).to.equal(0)
+
+    const fork1 = app.plugin(callback1)
+    expect(fork1.runtime.uid).to.equal(1)
+    expect(fork1.uid).to.equal(2)
+
+    const fork2 = app.plugin(noop)
+    expect(fork2.runtime.uid).to.equal(3)
+    expect(fork2.uid).to.equal(4)
+
+    const fork3 = app.plugin(callback1)
+    expect(fork3.runtime.uid).to.equal(1)
+    expect(fork3.uid).to.equal(5)
+  })
 })

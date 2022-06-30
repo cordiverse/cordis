@@ -8,9 +8,9 @@
 AOP Framework for Modern JavaScript Applications.
 
 ```ts
-import { App } from 'cordis'
+import { Context } from 'cordis'
 
-const app = new App()
+const app = new Context()
 
 app.plugin(plugin)              // use plugins
 app.on(event, callback)         // listen to events
@@ -19,8 +19,6 @@ app.start()                     // start app
 ```
 
 ## Concepts
-
-### App
 
 ### Context
 
@@ -55,7 +53,7 @@ Create a new context with the current context as the prototype. Properties speci
 Create a new context with the current context as the prototype. Services included in `keys` will be isolated in the new context, while services not included in `keys` are still shared with the parent context.
 
 ```ts
-const root = new App()
+const root = new Context()
 const ctx1 = root.isolate(['foo'])
 const ctx2 = root.isolate(['bar'])
 
