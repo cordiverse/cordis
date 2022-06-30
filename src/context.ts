@@ -18,17 +18,24 @@ export class Context {
   static readonly filter = Symbol('filter')
   static readonly source = Symbol('source')
   static readonly current = Symbol('current')
+  static readonly internal = Symbol('internal')
   static readonly immediate = Symbol('immediate')
 
   options: Context.Config
 
   constructor(config?: Context.Config) {
+    const attach = (internal: {}) => {
+      if (!internal) return
+      attach(Object.getPrototypeOf(internal))
+      for (const key of Object.getOwnPropertySymbols(internal)) {
+        this[key] = new internal[key](this, this.options)
+      }
+    }
+
     this.app = this
     this.mapping = Object.create(null)
     this.options = Registry.validate(Context, config)
-    for (const key of Object.getOwnPropertySymbols(Context.internal)) {
-      this[key] = new Context.internal[key](this, this.options)
-    }
+    attach(this[Context.internal])
   }
 
   ;[Symbol.for('nodejs.util.inspect.custom')]() {
@@ -82,14 +89,12 @@ export namespace Context {
     mapping: Dict<symbol>
   }
 
-  export const internal = Object.create(null)
-
   export function service(name: keyof any, options: ServiceOptions = {}) {
-    if (Object.prototype.hasOwnProperty.call(Context.prototype, name)) return
+    if (Object.prototype.hasOwnProperty.call(this.prototype, name)) return
     const privateKey = typeof name === 'symbol' ? name : Symbol(name)
     if (typeof name === 'string') Services.push(name)
 
-    Object.defineProperty(Context.prototype, name, {
+    Object.defineProperty(this.prototype, name, {
       get(this: Context) {
         const key = this.mapping[name as any] || privateKey
         const value = this.app[key]
@@ -116,20 +121,31 @@ export namespace Context {
       },
     })
 
+    function ensureInternal(prototype: {}) {
+      if (Object.prototype.hasOwnProperty.call(prototype, Context.internal)) {
+        return prototype[Context.internal]
+      }
+      const parent = ensureInternal(Object.getPrototypeOf(prototype))
+      return prototype[Context.internal] = Object.create(parent)
+    }
+
     if (Object.prototype.hasOwnProperty.call(options, 'constructor')) {
+      const internal = ensureInternal(this.prototype)
       internal[privateKey] = options.constructor
     }
 
     mixin(name, options)
   }
-
-  service('registry', {
-    constructor: Registry,
-    methods: ['using', 'plugin', 'dispose'],
-  })
-
-  service('lifecycle', {
-    constructor: Lifecycle,
-    methods: ['on', 'once', 'off', 'before', 'after', 'parallel', 'emit', 'serial', 'bail', 'start', 'stop'],
-  })
 }
+
+Context.prototype[Context.internal] = Object.create(null)
+
+Context.service('registry', {
+  constructor: Registry,
+  methods: ['using', 'plugin', 'dispose'],
+})
+
+Context.service('lifecycle', {
+  constructor: Lifecycle,
+  methods: ['on', 'once', 'off', 'before', 'after', 'parallel', 'emit', 'serial', 'bail', 'start', 'stop'],
+})
