@@ -1,11 +1,11 @@
-import { App } from '../src'
+import { Context } from '../src'
 import { expect } from 'chai'
 import * as jest from 'jest-mock'
 import './shared'
 
 describe('Isolation', () => {
   it('isolated context', async () => {
-    const app = new App()
+    const app = new Context()
     const ctx = app.isolate(['foo'])
 
     const outer = jest.fn()
@@ -39,7 +39,7 @@ describe('Isolation', () => {
   })
 
   it('isolated fork', () => {
-    const app = new App()
+    const app = new Context()
     const callback = jest.fn()
     const plugin = {
       reusable: true,

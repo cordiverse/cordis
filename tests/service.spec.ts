@@ -1,4 +1,4 @@
-import { App, Context, Service } from '../src'
+import { Context, Service } from '../src'
 import { noop } from 'cosmokit'
 import { expect } from 'chai'
 import * as jest from 'jest-mock'
@@ -12,7 +12,7 @@ describe('Service', () => {
       }
     }
 
-    const app = new App()
+    const app = new Context()
     app.plugin(Foo)
     expect(app.foo).to.be.undefined
 
@@ -30,7 +30,7 @@ describe('Service', () => {
       }
     }
 
-    const app = new App()
+    const app = new Context()
     const callback = jest.fn(noop)
     app.on('internal/service', callback)
 
@@ -49,7 +49,7 @@ describe('Service', () => {
       }
     }
 
-    const app = new App()
+    const app = new Context()
     app.plugin(Foo)
     expect(app.foo.caller).to.equal(app)
 
@@ -61,7 +61,7 @@ describe('Service', () => {
     const callback = jest.fn()
     const dispose = jest.fn(noop)
 
-    const app = new App()
+    const app = new Context()
     app.using(['foo'], (ctx) => {
       callback(ctx.foo.bar)
       ctx.on('dispose', dispose)
@@ -106,7 +106,7 @@ describe('Service', () => {
       fork = fork
     }
 
-    const app = new App()
+    const app = new Context()
     app.plugin(Foo)
     expect(start.mock.calls).to.have.length(0)
     expect(stop.mock.calls).to.have.length(0)

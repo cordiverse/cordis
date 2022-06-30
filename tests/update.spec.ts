@@ -1,4 +1,4 @@
-import { App, Plugin } from '../src'
+import { Context, Plugin } from '../src'
 import { expect } from 'chai'
 import { noop } from 'cosmokit'
 import { event } from './shared'
@@ -6,7 +6,7 @@ import * as jest from 'jest-mock'
 
 describe('Update', () => {
   it('update runtime', () => {
-    const app = new App()
+    const app = new Context()
     const dispose = jest.fn(noop)
     const callback = jest.fn<Plugin.Function>((ctx) => {
       ctx.on('dispose', dispose)
@@ -29,7 +29,7 @@ describe('Update', () => {
   })
 
   it('update fork (single)', () => {
-    const app = new App()
+    const app = new Context()
     const callback = jest.fn(config => {})
     const fork = app.plugin((ctx, config) => {
       ctx.on(event, () => callback(config))
@@ -46,7 +46,7 @@ describe('Update', () => {
   })
 
   it('update fork (multiple)', () => {
-    const app = new App()
+    const app = new Context()
     const inner = jest.fn<Plugin.Function>()
     const outer = jest.fn<Plugin.Function>((ctx) => {
       ctx.on('fork', inner)
@@ -65,7 +65,7 @@ describe('Update', () => {
   })
 
   it('deferred update', () => {
-    const app = new App()
+    const app = new Context()
     const callback = jest.fn()
     const plugin = {
       using: ['foo'],

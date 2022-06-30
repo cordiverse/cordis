@@ -1,4 +1,4 @@
-import { App, Context } from '../src'
+import { Context } from '../src'
 import { expect } from 'chai'
 import * as jest from 'jest-mock'
 import { Dict, noop } from 'cosmokit'
@@ -16,7 +16,7 @@ describe('Disposables', () => {
       })
     }
 
-    const app = new App()
+    const app = new Context()
     const callback = jest.fn()
     app.on(event, callback)
     app.plugin(plugin)
@@ -48,7 +48,7 @@ describe('Disposables', () => {
       return result
     }
 
-    const app = new App()
+    const app = new Context()
     const before = getHookSnapshot()
     app.plugin(plugin)
     const after = getHookSnapshot()
@@ -59,7 +59,7 @@ describe('Disposables', () => {
   })
 
   it('dispose event', () => {
-    const app = new App()
+    const app = new Context()
     const callback = jest.fn(noop)
     const plugin = (ctx: Context) => {
       ctx.on('dispose', callback)

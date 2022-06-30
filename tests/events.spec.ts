@@ -1,4 +1,4 @@
-import { App } from '../src'
+import { Context } from '../src'
 import { expect } from 'chai'
 import * as jest from 'jest-mock'
 import { noop } from 'cosmokit'
@@ -9,7 +9,7 @@ export function createArray<T>(length: number, create: (index: number) => T) {
 }
 
 function setup() {
-  const app = new App({ maxListeners: 64 })
+  const app = new Context({ maxListeners: 64 })
   const warn = jest.fn()
   app.on('internal/warning', warn)
   return { app, warn }

@@ -133,5 +133,3 @@ export namespace Context {
     methods: ['on', 'once', 'off', 'before', 'after', 'parallel', 'emit', 'serial', 'bail', 'start', 'stop'],
   })
 }
-
-export const App = Context

@@ -1,4 +1,5 @@
-import { App, Context } from '../src'
+import { Context } from '../src'
+import { noop } from 'cosmokit'
 import { expect } from 'chai'
 import { event, Filter, Session, union } from './shared'
 import * as jest from 'jest-mock'
@@ -24,7 +25,7 @@ describe('Fork', () => {
       ctx.plugin(reusable, { foo: 2 })
     }
 
-    const app = new App()
+    const app = new Context()
     app.plugin(union)
     app.extend(new Filter(true)).plugin(pluginA)
     app.emit(new Session(false), event)
@@ -65,7 +66,7 @@ describe('Fork', () => {
       },
     }
 
-    const app = new App()
+    const app = new Context()
     app.plugin(reusable, { foo: 0 })
     app.extend(new Filter(true)).plugin(reusable, { foo: 1 })
     app.extend(new Filter(false)).plugin(reusable, { foo: 2 })
@@ -86,7 +87,7 @@ describe('Fork', () => {
   })
 
   it('deferred execution', () => {
-    const app = new App()
+    const app = new Context()
     const listener = jest.fn()
     const callback = jest.fn((ctx: Context) => {
       ctx.on(event, listener)

@@ -1,11 +1,11 @@
-import { App } from '../src'
+import { Context } from '../src'
 import * as jest from 'jest-mock'
 import { expect } from 'chai'
 import { noop } from 'cosmokit'
 
 describe('Lifecycle', () => {
   it('basic support', async () => {
-    const app = new App()
+    const app = new Context()
     const callback = jest.fn(noop)
     const { length } = app.state.disposables
 
