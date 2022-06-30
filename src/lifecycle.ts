@@ -33,9 +33,11 @@ export namespace Lifecycle {
 }
 
 export class Lifecycle {
-  isActive = false
-  _tasks = new Set<Promise<void>>()
-  _hooks: Record<keyof any, [Context, (...args: any[]) => any][]> = {}
+  static methods = ['on', 'once', 'off', 'before', 'after', 'parallel', 'emit', 'serial', 'bail', 'start', 'stop']
+
+  private isActive = false
+  private _tasks = new Set<Promise<void>>()
+  private _hooks: Record<keyof any, [Context, (...args: any[]) => any][]> = {}
 
   constructor(private app: Context, private config: Lifecycle.Config) {
     const self = this as Lifecycle.Mixin<Events>

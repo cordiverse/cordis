@@ -1,6 +1,6 @@
 import { defineProperty, Dict } from 'cosmokit'
 import { Events, Lifecycle } from './lifecycle'
-import { State } from './state'
+import { isConstructor, State } from './state'
 import { Registry } from './plugin'
 
 export interface Context<S extends Events = Events> extends Context.Services, Context.Meta, Lifecycle.Mixin<S> {}
@@ -80,7 +80,7 @@ export namespace Context {
   }
 
   export interface ServiceOptions extends MixinOptions {
-    constructor?: any
+    prototype?: any
   }
 
   export interface Meta {
@@ -121,31 +121,24 @@ export namespace Context {
       },
     })
 
-    function ensureInternal(prototype: {}) {
-      if (Object.prototype.hasOwnProperty.call(prototype, Context.internal)) {
-        return prototype[Context.internal]
-      }
-      const parent = ensureInternal(Object.getPrototypeOf(prototype))
-      return prototype[Context.internal] = Object.create(parent)
-    }
-
-    if (Object.prototype.hasOwnProperty.call(options, 'constructor')) {
+    if (isConstructor(options)) {
       const internal = ensureInternal(this.prototype)
-      internal[privateKey] = options.constructor
+      internal[privateKey] = options
     }
 
     mixin(name, options)
+  }
+
+  function ensureInternal(prototype: {}) {
+    if (Object.prototype.hasOwnProperty.call(prototype, Context.internal)) {
+      return prototype[Context.internal]
+    }
+    const parent = ensureInternal(Object.getPrototypeOf(prototype))
+    return prototype[Context.internal] = Object.create(parent)
   }
 }
 
 Context.prototype[Context.internal] = Object.create(null)
 
-Context.service('registry', {
-  constructor: Registry,
-  methods: ['using', 'plugin', 'dispose'],
-})
-
-Context.service('lifecycle', {
-  constructor: Lifecycle,
-  methods: ['on', 'once', 'off', 'before', 'after', 'parallel', 'emit', 'serial', 'bail', 'start', 'stop'],
-})
+Context.service('registry', Registry)
+Context.service('lifecycle', Lifecycle)

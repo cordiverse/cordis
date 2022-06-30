@@ -44,6 +44,8 @@ export namespace Registry {
 }
 
 export class Registry<C extends Context = Context> extends Map<Plugin<C>, Runtime> {
+  static methods = ['using', 'plugin', 'dispose']
+
   private _counter = 0
 
   constructor(private app: C, private config: Registry.Config) {

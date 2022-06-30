@@ -18,9 +18,9 @@ describe('Extend', () => {
     class C3 extends C1 {}
     class S3 {}
 
-    C2.service('s2', S2.prototype)
-    C1.service('s1', S1.prototype)
-    C3.service('s3', S3.prototype)
+    C2.service('s2', S2)
+    C1.service('s1', S1)
+    C3.service('s3', S3)
 
     const c1 = new C1()
     expect(c1.s1).to.be.ok
