@@ -1,6 +1,6 @@
 import { defineProperty, remove } from 'cosmokit'
 import { Context } from './context'
-import { Plugin, Registry } from './plugin'
+import { Plugin, Registry } from './registry'
 
 export type Disposable = () => void
 
@@ -65,7 +65,7 @@ export class Fork extends State {
   constructor(parent: Context, config: any, public runtime: Runtime) {
     super(parent, config)
 
-    this.dispose = parent.state.collect(`fork <${parent.state.runtime.name}>`, () => {
+    this.dispose = parent.state.collect(`fork <${parent.runtime.name}>`, () => {
       this.uid = null
       this.clear()
       const result = remove(runtime.disposables, this.dispose)

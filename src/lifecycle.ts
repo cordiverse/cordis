@@ -1,7 +1,7 @@
 import { Awaitable, defineProperty, Promisify, remove } from 'cosmokit'
 import { Context } from './context'
 import { Fork, Runtime } from './state'
-import { Plugin } from './plugin'
+import { Plugin } from './registry'
 
 function isBailed(value: any) {
   return value !== null && value !== false && value !== undefined

@@ -1,7 +1,7 @@
 import { defineProperty, Dict } from 'cosmokit'
 import { Events, Lifecycle } from './lifecycle'
-import { isConstructor, State } from './state'
-import { Registry } from './plugin'
+import { isConstructor, Runtime, State } from './state'
+import { Registry } from './registry'
 
 export interface Context<S extends Events = Events> extends Context.Services, Context.Meta, Lifecycle.Mixin<S> {}
 
@@ -38,8 +38,8 @@ export class Context {
     attach(this[Context.internal])
   }
 
-  ;[Symbol.for('nodejs.util.inspect.custom')]() {
-    return `Context <${this.state.runtime.name}>`
+  [Symbol.for('nodejs.util.inspect.custom')]() {
+    return `Context <${this.runtime.name}>`
   }
 
   extend(meta: Partial<Context.Meta> = {}): this {
@@ -69,12 +69,24 @@ export namespace Context {
 
   export interface MixinOptions {
     methods?: string[]
+    properties?: string[]
   }
 
   export function mixin(name: keyof any, options: MixinOptions) {
     for (const method of options.methods || []) {
       defineProperty(Context.prototype, method, function (this: Context, ...args: any[]) {
         return this[name][method](...args)
+      })
+    }
+
+    for (const property of options.properties || []) {
+      Object.defineProperty(Context.prototype, property, {
+        get(this: Context) {
+          return this[name][property]
+        },
+        set(this: Context, value: any) {
+          this[name][property] = value
+        },
       })
     }
   }
@@ -86,6 +98,7 @@ export namespace Context {
   export interface Meta {
     app: Context
     state: State
+    runtime: Runtime
     mapping: Dict<symbol>
   }
 
@@ -142,3 +155,7 @@ Context.prototype[Context.internal] = Object.create(null)
 
 Context.service('registry', Registry)
 Context.service('lifecycle', Lifecycle)
+
+Context.mixin('state', {
+  properties: ['runtime'],
+})
