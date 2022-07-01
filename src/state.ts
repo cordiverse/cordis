@@ -170,7 +170,7 @@ export class Runtime extends State {
         context[name] = instance
       }
       if (instance['fork']) {
-        this.forkables.push(instance['fork'])
+        this.forkables.push(instance['fork'].bind(instance))
       }
     } else {
       this.plugin(context, config)

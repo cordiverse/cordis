@@ -7,43 +7,46 @@ function isBailed(value: any) {
   return value !== null && value !== false && value !== undefined
 }
 
-export namespace Lifecycle {
-  export interface Config {
-    maxListeners?: number
-  }
+type P<F> = F extends (...args: infer P) => any ? P : never
+type R<F> = F extends (...args: any) => infer R ? R : never
+type T<F> = F extends (this: infer T, ...args: any) => any ? T : never
+type E<C extends Context> = C[typeof Events]
 
-  type Parameters<T> = T extends (...args: infer P) => any ? P : never
-  type ReturnType<T> = T extends (...args: any) => infer R ? R : never
-
-  export interface Mixin<S extends Events> {
-    parallel<K extends keyof S>(name: K, ...args: Parameters<S[K]>): Promise<void>
-    parallel<K extends keyof S>(thisArg: ThisParameterType<S[K]>, name: K, ...args: Parameters<S[K]>): Promise<void>
-    emit<K extends keyof S>(name: K, ...args: Parameters<S[K]>): void
-    emit<K extends keyof S>(thisArg: ThisParameterType<S[K]>, name: K, ...args: Parameters<S[K]>): void
-    serial<K extends keyof S>(name: K, ...args: Parameters<S[K]>): Promisify<ReturnType<S[K]>>
-    serial<K extends keyof S>(thisArg: ThisParameterType<S[K]>, name: K, ...args: Parameters<S[K]>): Promisify<ReturnType<S[K]>>
-    bail<K extends keyof S>(name: K, ...args: Parameters<S[K]>): ReturnType<S[K]>
-    bail<K extends keyof S>(thisArg: ThisParameterType<S[K]>, name: K, ...args: Parameters<S[K]>): ReturnType<S[K]>
-    on<K extends keyof S>(name: K, listener: S[K], prepend?: boolean): () => boolean
-    once<K extends keyof S>(name: K, listener: S[K], prepend?: boolean): () => boolean
-    off<K extends keyof S>(name: K, listener: S[K]): boolean
+declare module './context' {
+  export interface Context {
+    [Events]: Events<this>
+    parallel<K extends keyof E<this>>(name: K, ...args: P<E<this>[K]>): Promise<void>
+    parallel<K extends keyof E<this>>(thisArg: T<E<this>[K]>, name: K, ...args: P<E<this>[K]>): Promise<void>
+    emit<K extends keyof E<this>>(name: K, ...args: P<E<this>[K]>): void
+    emit<K extends keyof E<this>>(thisArg: T<E<this>[K]>, name: K, ...args: P<E<this>[K]>): void
+    serial<K extends keyof E<this>>(name: K, ...args: P<E<this>[K]>): Promisify<R<E<this>[K]>>
+    serial<K extends keyof E<this>>(thisArg: T<E<this>[K]>, name: K, ...args: P<E<this>[K]>): Promisify<R<E<this>[K]>>
+    bail<K extends keyof E<this>>(name: K, ...args: P<E<this>[K]>): R<E<this>[K]>
+    bail<K extends keyof E<this>>(thisArg: T<E<this>[K]>, name: K, ...args: P<E<this>[K]>): R<E<this>[K]>
+    on<K extends keyof E<this>>(name: K, listener: E<this>[K], prepend?: boolean): () => boolean
+    once<K extends keyof E<this>>(name: K, listener: E<this>[K], prepend?: boolean): () => boolean
+    off<K extends keyof E<this>>(name: K, listener: E<this>[K]): boolean
     start(): Promise<void>
     stop(): Promise<void>
   }
 }
 
+export namespace Lifecycle {
+  export interface Config {
+    maxListeners?: number
+  }
+}
+
 export class Lifecycle {
-  static methods = ['on', 'once', 'off', 'before', 'after', 'parallel', 'emit', 'serial', 'bail', 'start', 'stop']
+  static readonly methods = ['on', 'once', 'off', 'before', 'after', 'parallel', 'emit', 'serial', 'bail', 'start', 'stop']
 
   isActive = false
   _tasks = new Set<Promise<void>>()
   _hooks: Record<keyof any, [Context, (...args: any[]) => any][]> = {}
 
   constructor(private root: Context, private config: Lifecycle.Config) {
-    const self = this as Lifecycle.Mixin<Events>
     defineProperty(this, Context.current, root)
-
-    const dispose = self.on('internal/hook', function (name, listener, prepend) {
+    const dispose = this.on('internal/hook', function (name, listener, prepend) {
       const method = prepend ? 'unshift' : 'push'
       const { state } = this[Context.current]
       const { runtime, disposables } = state
@@ -136,7 +139,7 @@ export class Lifecycle {
     }
   }
 
-  on(name: keyof any, listener: Function, prepend = false) {
+  on(name: keyof any, listener: (...args: any) => any, prepend = false) {
     // handle special events
     const result = this.bail(this, 'internal/hook', name, listener, prepend)
     if (result) return result
@@ -146,7 +149,7 @@ export class Lifecycle {
     return this.register(label, hooks, listener, prepend)
   }
 
-  once(name: keyof any, listener: Function, prepend = false) {
+  once(name: keyof any, listener: (...args: any) => any, prepend = false) {
     const dispose = this.on(name, function (...args: any[]) {
       dispose()
       return listener.apply(this, args)
@@ -154,7 +157,7 @@ export class Lifecycle {
     return dispose
   }
 
-  off(name: keyof any, listener: Function) {
+  off(name: keyof any, listener: (...args: any) => any) {
     return this.unregister(this._hooks[name] || [], listener)
   }
 
@@ -174,8 +177,10 @@ export class Lifecycle {
   }
 }
 
-export interface Events {
-  'fork': Plugin.Function
+export const Events = Symbol('events')
+
+export interface Events<C extends Context = Context> {
+  'fork': Plugin.Function<any, C>
   'ready'(): Awaitable<void>
   'dispose'(): Awaitable<void>
   'internal/fork'(fork: Fork): void

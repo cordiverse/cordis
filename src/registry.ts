@@ -44,11 +44,11 @@ export namespace Registry {
 }
 
 export class Registry<C extends Context = Context> extends Map<Plugin<C>, Runtime> {
-  static methods = ['using', 'plugin', 'dispose']
+  static readonly methods = ['using', 'plugin', 'dispose']
 
   private _counter = 0
 
-  constructor(private root: C, private config: Registry.Config) {
+  constructor(private root: Context, private config: Registry.Config) {
     super()
     defineProperty(this, Context.current, root)
     root.state = new Runtime(this, null, config)
