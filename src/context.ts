@@ -13,7 +13,7 @@ declare global {
   }
 }
 
-export class Context {
+export class Context<T extends Context.Config = Context.Config> {
   static readonly static = Symbol('static')
   static readonly filter = Symbol('filter')
   static readonly source = Symbol('source')
@@ -21,9 +21,9 @@ export class Context {
   static readonly internal = Symbol('internal')
   static readonly immediate = Symbol('immediate')
 
-  options: Context.Config
+  public options: T
 
-  constructor(config?: Context.Config) {
+  constructor(config?: T) {
     const attach = (internal: {}) => {
       if (!internal) return
       attach(Object.getPrototypeOf(internal))
