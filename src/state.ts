@@ -12,9 +12,10 @@ export function isConstructor(func: any): func is new (...args: any) => any {
   return true
 }
 
-export abstract class State {
+export abstract class State<C extends Context = Context> {
   uid: number
-  runtime: Runtime
+  runtime: Runtime<C>
+  ctx: C
   context: Context
   disposables: Disposable[] = []
 
@@ -22,9 +23,9 @@ export abstract class State {
   abstract restart(): void
   abstract update(config: any): void
 
-  constructor(public parent: Context, public config: any) {
+  constructor(public parent: C, public config: any) {
     this.uid = parent.registry ? parent.registry.counter : 0
-    this.context = parent.extend({ state: this })
+    this.ctx = this.context = parent.extend({ state: this })
   }
 
   collect(label: string, callback: () => boolean) {
@@ -59,11 +60,11 @@ export abstract class State {
   }
 }
 
-export class Fork extends State {
+export class Fork<C extends Context = Context> extends State<C> {
   dispose: () => boolean
 
-  constructor(parent: Context, config: any, public runtime: Runtime) {
-    super(parent, config)
+  constructor(parent: Context, config: any, public runtime: Runtime<C>) {
+    super(parent as C, config)
 
     this.dispose = parent.state.collect(`fork <${parent.runtime.name}>`, () => {
       this.uid = null
@@ -72,14 +73,14 @@ export class Fork extends State {
       if (remove(runtime.children, this) && !runtime.children.length) {
         runtime.dispose()
       }
-      parent.emit('internal/fork', this)
+      this.context.emit('internal/fork', this)
       return result
     })
 
     defineProperty(this.dispose, Context.static, true)
     runtime.children.push(this)
     runtime.disposables.push(this.dispose)
-    parent.emit('internal/fork', this)
+    this.context.emit('internal/fork', this)
     if (runtime.isReusable) this.init()
     this.restart()
   }
@@ -106,16 +107,16 @@ export class Fork extends State {
   }
 }
 
-export class Runtime extends State {
+export class Runtime<C extends Context = Context> extends State<C> {
   runtime = this
   schema: any
   using: readonly string[] = []
   forkables: Function[] = []
-  children: Fork[] = []
+  children: Fork<C>[] = []
   isReusable: boolean
 
-  constructor(private registry: Registry, public plugin: Plugin, config: any) {
-    super(registry[Context.current], config)
+  constructor(private registry: Registry<C>, public plugin: Plugin, config: any) {
+    super(registry[Context.current] as C, config)
     registry.set(plugin, this)
     if (plugin) this.init()
   }

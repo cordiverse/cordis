@@ -42,7 +42,7 @@ export class Context<T extends Context.Config = Context.Config> {
     return `Context <${this.runtime.name}>`
   }
 
-  extend(meta: Partial<Context.Meta> = {}): this {
+  extend(meta = {}): this {
     return Object.assign(Object.create(this), meta)
   }
 

@@ -7,25 +7,25 @@ function isBailed(value: any) {
   return value !== null && value !== false && value !== undefined
 }
 
-type P<F> = F extends (...args: infer P) => any ? P : never
-type R<F> = F extends (...args: any) => infer R ? R : never
-type T<F> = F extends (this: infer T, ...args: any) => any ? T : never
-type E<C extends Context> = C[typeof Events]
+type Parameters<F> = F extends (...args: infer P) => any ? P : never
+type ReturnType<F> = F extends (...args: any) => infer R ? R : never
+type ThisType<F> = F extends (this: infer T, ...args: any) => any ? T : never
+type GetEvents<C extends Context> = C[typeof Events]
 
 declare module './context' {
   export interface Context {
     [Events]: Events<this>
-    parallel<K extends keyof E<this>>(name: K, ...args: P<E<this>[K]>): Promise<void>
-    parallel<K extends keyof E<this>>(thisArg: T<E<this>[K]>, name: K, ...args: P<E<this>[K]>): Promise<void>
-    emit<K extends keyof E<this>>(name: K, ...args: P<E<this>[K]>): void
-    emit<K extends keyof E<this>>(thisArg: T<E<this>[K]>, name: K, ...args: P<E<this>[K]>): void
-    serial<K extends keyof E<this>>(name: K, ...args: P<E<this>[K]>): Promisify<R<E<this>[K]>>
-    serial<K extends keyof E<this>>(thisArg: T<E<this>[K]>, name: K, ...args: P<E<this>[K]>): Promisify<R<E<this>[K]>>
-    bail<K extends keyof E<this>>(name: K, ...args: P<E<this>[K]>): R<E<this>[K]>
-    bail<K extends keyof E<this>>(thisArg: T<E<this>[K]>, name: K, ...args: P<E<this>[K]>): R<E<this>[K]>
-    on<K extends keyof E<this>>(name: K, listener: E<this>[K], prepend?: boolean): () => boolean
-    once<K extends keyof E<this>>(name: K, listener: E<this>[K], prepend?: boolean): () => boolean
-    off<K extends keyof E<this>>(name: K, listener: E<this>[K]): boolean
+    parallel<K extends keyof GetEvents<this>>(name: K, ...args: Parameters<GetEvents<this>[K]>): Promise<void>
+    parallel<K extends keyof GetEvents<this>>(thisArg: ThisType<GetEvents<this>[K]>, name: K, ...args: Parameters<GetEvents<this>[K]>): Promise<void>
+    emit<K extends keyof GetEvents<this>>(name: K, ...args: Parameters<this[typeof Events][K]>): void
+    emit<K extends keyof GetEvents<this>>(thisArg: ThisType<GetEvents<this>[K]>, name: K, ...args: Parameters<GetEvents<this>[K]>): void
+    serial<K extends keyof GetEvents<this>>(name: K, ...args: Parameters<GetEvents<this>[K]>): Promisify<ReturnType<GetEvents<this>[K]>>
+    serial<K extends keyof GetEvents<this>>(thisArg: ThisType<GetEvents<this>[K]>, name: K, ...args: Parameters<GetEvents<this>[K]>): Promisify<ReturnType<GetEvents<this>[K]>>
+    bail<K extends keyof GetEvents<this>>(name: K, ...args: Parameters<GetEvents<this>[K]>): ReturnType<GetEvents<this>[K]>
+    bail<K extends keyof GetEvents<this>>(thisArg: ThisType<GetEvents<this>[K]>, name: K, ...args: Parameters<GetEvents<this>[K]>): ReturnType<GetEvents<this>[K]>
+    on<K extends keyof GetEvents<this>>(name: K, listener: GetEvents<this>[K], prepend?: boolean): () => boolean
+    once<K extends keyof GetEvents<this>>(name: K, listener: GetEvents<this>[K], prepend?: boolean): () => boolean
+    off<K extends keyof GetEvents<this>>(name: K, listener: GetEvents<this>[K]): boolean
     start(): Promise<void>
     stop(): Promise<void>
   }
@@ -183,10 +183,10 @@ export interface Events<C extends Context = Context> {
   'fork': Plugin.Function<any, C>
   'ready'(): Awaitable<void>
   'dispose'(): Awaitable<void>
-  'internal/fork'(fork: Fork): void
-  'internal/runtime'(runtime: Runtime): void
+  'internal/fork'(fork: Fork<C>): void
+  'internal/runtime'(runtime: Runtime<C>): void
   'internal/warning'(format: any, ...param: any[]): void
   'internal/service'(name: string): void
-  'internal/update'(fork: Fork, config: any): void
+  'internal/update'(fork: Fork<C>, config: any): void
   'internal/hook'(this: Lifecycle, name: string, listener: Function, prepend: boolean): () => boolean
 }
