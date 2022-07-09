@@ -1,5 +1,5 @@
 import { expect } from 'chai'
-import { Context } from '../src'
+import { Context, Service } from '../src'
 
 describe('Extend', () => {
   it('basic support', () => {
@@ -36,5 +36,23 @@ describe('Extend', () => {
     expect(c3.s1).to.be.ok
     expect(c3.s2).to.be.undefined
     expect(c3.s3).to.be.ok
+  })
+
+  it('service isolation', () => {
+    class Inherited extends Context {
+      temp: Temp
+    }
+
+    class Temp extends Service {
+      constructor(ctx: Context) {
+        super(ctx, 'temp', true)
+      }
+    }
+
+    const ctx = new Inherited()
+    ctx.plugin(Temp)
+
+    expect(Object.getOwnPropertyDescriptors(Inherited.prototype)).to.have.property('temp')
+    expect(Object.getOwnPropertyDescriptors(Context.prototype)).to.not.have.property('temp')
   })
 })

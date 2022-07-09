@@ -3,7 +3,12 @@ import { Lifecycle } from './lifecycle'
 import { isConstructor, Runtime, State } from './state'
 import { Registry } from './registry'
 
-export interface Context extends Context.Services, Context.Meta {}
+export interface Context extends Context.Services {
+  root: this
+  state: State<this>
+  runtime: Runtime<this>
+  mapping: Dict<symbol>
+}
 
 export class Context<T extends Context.Config = Context.Config> {
   static readonly events = Symbol('events')
@@ -85,13 +90,6 @@ export namespace Context {
 
   export interface ServiceOptions extends MixinOptions {
     prototype?: any
-  }
-
-  export interface Meta {
-    root: Context
-    state: State
-    runtime: Runtime
-    mapping: Dict<symbol>
   }
 
   export function service(name: keyof any, options: ServiceOptions = {}) {
