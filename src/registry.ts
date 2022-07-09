@@ -2,7 +2,7 @@ import { defineProperty } from 'cosmokit'
 import { Context } from './context'
 import { Fork, Runtime } from './state'
 
-function isApplicable(object: Plugin) {
+export function isApplicable(object: Plugin) {
   return object && typeof object === 'object' && typeof object.apply === 'function'
 }
 

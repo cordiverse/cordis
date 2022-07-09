@@ -5,15 +5,8 @@ import { Registry } from './registry'
 
 export interface Context extends Context.Services, Context.Meta {}
 
-declare global {
-  interface Object {
-    [Context.current]?: Context
-    [Context.source]?: Context
-    [Context.filter]?(context: Context): boolean
-  }
-}
-
 export class Context<T extends Context.Config = Context.Config> {
+  static readonly events = Symbol('events')
   static readonly static = Symbol('static')
   static readonly filter = Symbol('filter')
   static readonly source = Symbol('source')

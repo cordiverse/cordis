@@ -3,21 +3,21 @@ import { Context } from './context'
 import { Fork, Runtime } from './state'
 import { Plugin } from './registry'
 
-function isBailed(value: any) {
+export function isBailed(value: any) {
   return value !== null && value !== false && value !== undefined
 }
 
-type Parameters<F> = F extends (...args: infer P) => any ? P : never
-type ReturnType<F> = F extends (...args: any) => infer R ? R : never
-type ThisType<F> = F extends (this: infer T, ...args: any) => any ? T : never
-type GetEvents<C extends Context> = C[typeof Events]
+export type Parameters<F> = F extends (...args: infer P) => any ? P : never
+export type ReturnType<F> = F extends (...args: any) => infer R ? R : never
+export type ThisType<F> = F extends (this: infer T, ...args: any) => any ? T : never
+export type GetEvents<C extends Context> = C[typeof Context.events]
 
 declare module './context' {
   export interface Context {
-    [Events]: Events<this>
+    [Context.events]: Events<this>
     parallel<K extends keyof GetEvents<this>>(name: K, ...args: Parameters<GetEvents<this>[K]>): Promise<void>
     parallel<K extends keyof GetEvents<this>>(thisArg: ThisType<GetEvents<this>[K]>, name: K, ...args: Parameters<GetEvents<this>[K]>): Promise<void>
-    emit<K extends keyof GetEvents<this>>(name: K, ...args: Parameters<this[typeof Events][K]>): void
+    emit<K extends keyof GetEvents<this>>(name: K, ...args: Parameters<GetEvents<this>[K]>): void
     emit<K extends keyof GetEvents<this>>(thisArg: ThisType<GetEvents<this>[K]>, name: K, ...args: Parameters<GetEvents<this>[K]>): void
     serial<K extends keyof GetEvents<this>>(name: K, ...args: Parameters<GetEvents<this>[K]>): Promisify<ReturnType<GetEvents<this>[K]>>
     serial<K extends keyof GetEvents<this>>(thisArg: ThisType<GetEvents<this>[K]>, name: K, ...args: Parameters<GetEvents<this>[K]>): Promisify<ReturnType<GetEvents<this>[K]>>
@@ -176,8 +176,6 @@ export class Lifecycle {
     this.root.state.clear(true)
   }
 }
-
-export const Events = Symbol('events')
 
 export interface Events<C extends Context = Context> {
   'fork': Plugin.Function<any, C>
