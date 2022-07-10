@@ -4,14 +4,16 @@ import { Runtime, State } from './state'
 import { Registry } from './registry'
 import { isConstructor, resolveConfig } from './utils'
 
-export interface Context extends Context.Services {
+export interface Context {
   root: this
   state: State<this>
   runtime: Runtime<this>
   mapping: Dict<symbol>
+  lifecycle: Lifecycle
+  registry: Registry<this>
 }
 
-export class Context<T extends Context.Config = Context.Config> {
+export class Context {
   static readonly events = Symbol('events')
   static readonly static = Symbol('static')
   static readonly filter = Symbol('filter')
@@ -20,9 +22,9 @@ export class Context<T extends Context.Config = Context.Config> {
   static readonly internal = Symbol('internal')
   static readonly immediate = Symbol('immediate')
 
-  public options: T
+  public options: Context.Config
 
-  constructor(config?: T) {
+  constructor(config?: Context.Config) {
     const attach = (internal: {}) => {
       if (!internal) return
       attach(Object.getPrototypeOf(internal))
@@ -56,12 +58,6 @@ export class Context<T extends Context.Config = Context.Config> {
 
 export namespace Context {
   export interface Config extends Lifecycle.Config, Registry.Config {}
-
-  /** @deprecated for backward compatibility */
-  export interface Services {
-    lifecycle: Lifecycle
-    registry: Registry
-  }
 
   export const Services: string[] = []
 

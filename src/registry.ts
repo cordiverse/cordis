@@ -34,9 +34,9 @@ export namespace Plugin {
 
 declare module './context' {
   export interface Context {
-    using(using: readonly string[], callback: Plugin.Function<void, this>): Fork
-    plugin<T extends Plugin<this>>(plugin: T, config?: boolean | Plugin.Config<T>): Fork
-    dispose(plugin?: Plugin<this>): Runtime
+    using(using: readonly string[], callback: Plugin.Function<void, this>): Fork<this>
+    plugin<T extends Plugin<this>>(plugin: T, config?: boolean | Plugin.Config<T>): Fork<this>
+    dispose(plugin?: Plugin<this>): Runtime<this>
   }
 }
 
@@ -44,7 +44,7 @@ export namespace Registry {
   export interface Config {}
 }
 
-export class Registry<C extends Context = Context> extends Map<Plugin<C>, Runtime> {
+export class Registry<C extends Context = Context> extends Map<Plugin<C>, Runtime<C>> {
   static readonly methods = ['using', 'plugin', 'dispose']
 
   private _counter = 0
