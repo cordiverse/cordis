@@ -1,7 +1,8 @@
 import { defineProperty, Dict } from 'cosmokit'
 import { Lifecycle } from './lifecycle'
-import { isConstructor, Runtime, State } from './state'
+import { Runtime, State } from './state'
 import { Registry } from './registry'
+import { isConstructor, resolveConfig } from './utils'
 
 export interface Context extends Context.Services {
   root: this
@@ -32,7 +33,7 @@ export class Context<T extends Context.Config = Context.Config> {
 
     this.root = this
     this.mapping = Object.create(null)
-    this.options = Registry.validate(Context, config)
+    this.options = resolveConfig(Object.getPrototypeOf(this).constructor, config)
     attach(this[Context.internal])
   }
 

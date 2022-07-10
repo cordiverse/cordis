@@ -1,6 +1,7 @@
 import { defineProperty } from 'cosmokit'
 import { Context } from './context'
 import { Fork, Runtime } from './state'
+import { resolveConfig } from './utils'
 
 export function isApplicable(object: Plugin) {
   return object && typeof object === 'object' && typeof object.apply === 'function'
@@ -82,24 +83,14 @@ export class Registry<C extends Context = Context> extends Map<Plugin<C>, Runtim
     return this.plugin({ using, apply: callback, name: callback.name })
   }
 
-  static validate(plugin: any, config: any) {
-    if (config === false) return
-    if (config === true) config = undefined
-    config ??= {}
-
-    const schema = plugin['Config'] || plugin['schema']
-    if (schema) config = schema(config)
-    return config
-  }
-
   plugin(plugin: Plugin, config?: any) {
     // check if it's a valid plugin
     if (typeof plugin !== 'function' && !isApplicable(plugin)) {
       throw new Error('invalid plugin, expect function or object with an "apply" method')
     }
 
-    // validate plugin config
-    config = Registry.validate(plugin, config)
+    // resolve plugin config
+    config = resolveConfig(plugin, config)
     if (!config) return
 
     // check duplication

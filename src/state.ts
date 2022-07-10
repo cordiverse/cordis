@@ -1,16 +1,9 @@
 import { defineProperty, remove } from 'cosmokit'
 import { Context } from './context'
 import { Plugin, Registry } from './registry'
+import { isConstructor, resolveConfig } from './utils'
 
 export type Disposable = () => void
-
-export function isConstructor(func: any): func is new (...args: any) => any {
-  // async function or arrow function
-  if (!func.prototype) return false
-  // generator function or malformed definition
-  if (func.prototype.constructor !== func) return false
-  return true
-}
 
 export abstract class State<C extends Context = Context> {
   uid: number
@@ -95,7 +88,7 @@ export class Fork<C extends Context = Context> extends State<C> {
 
   update(config: any) {
     const oldConfig = this.config
-    const resolved = Registry.validate(this.runtime.plugin, config)
+    const resolved = resolveConfig(this.runtime.plugin, config)
     this.config = resolved
     this.context.emit('internal/update', this, config)
     if (this.runtime.isForkable) {
@@ -197,7 +190,7 @@ export class Runtime<C extends Context = Context> extends State<C> {
       this.context.emit('internal/warning', `attempting to update forkable plugin "${this.plugin.name}", which may lead to unexpected behavior`)
     }
     const oldConfig = this.config
-    const resolved = Registry.validate(this.runtime.plugin, config)
+    const resolved = resolveConfig(this.runtime.plugin, config)
     this.config = resolved
     for (const fork of this.children) {
       if (fork.config !== oldConfig) continue
