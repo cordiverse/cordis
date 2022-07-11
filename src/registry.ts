@@ -25,7 +25,7 @@ export namespace Plugin {
     using?: readonly string[]
   }
 
-  export type Config<T extends Plugin> =
+  export type Config<T extends Plugin<any>> =
     | T extends Constructor<infer U> ? U
     : T extends Function<infer U> ? U
     : T extends Object<infer U> ? U

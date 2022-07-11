@@ -12,6 +12,6 @@ export function resolveConfig(plugin: any, config: any) {
   config ??= {}
 
   const schema = plugin['Config'] || plugin['schema']
-  if (schema) config = schema(config)
+  if (schema && plugin['schema'] !== false) config = schema(config)
   return config
 }

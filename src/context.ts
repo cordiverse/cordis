@@ -59,8 +59,6 @@ export class Context {
 export namespace Context {
   export interface Config extends Lifecycle.Config, Registry.Config {}
 
-  export const Services: string[] = []
-
   export interface MixinOptions {
     methods?: string[]
     properties?: string[]
@@ -92,7 +90,6 @@ export namespace Context {
   export function service(name: keyof any, options: ServiceOptions = {}) {
     if (Object.prototype.hasOwnProperty.call(this.prototype, name)) return
     const privateKey = typeof name === 'symbol' ? name : Symbol(name)
-    if (typeof name === 'string') Services.push(name)
 
     Object.defineProperty(this.prototype, name, {
       get(this: Context) {
