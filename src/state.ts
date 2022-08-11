@@ -132,9 +132,8 @@ export class Runtime<C extends Context = Context> extends State<C> {
     this.uid = null
     this.clear()
     if (this.plugin) {
-      const result = this.registry.delete(this.plugin)
       this.context.emit('internal/runtime', this)
-      return result
+      return true
     }
   }
 

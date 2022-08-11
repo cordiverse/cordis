@@ -130,13 +130,29 @@ If any listener is fulfilled with a value other than `false`, `null` or `undefin
 
 ### Registry
 
-`ctx.registry` is a built-in service which provides plugin-related functionality. It is actually a subclass of `Map<Plugin, Runtime>`, so you can access plugin runtime via methods like `ctx.registry.get()`.
+`ctx.registry` is a built-in service which provides plugin-related functionality. It is actually a subclass of `Map<Plugin, Runtime>`, so you can access plugin runtime via methods like `ctx.registry.get()` and `ctx.registry.delete()`.
 
-#### ctx.plugin()
+#### ctx.plugin(plugin, config?)
 
-#### ctx.using()
+- plugin: `object` the plugin to apply
+- config: `object` config for the plugin
+- returns: `Fork`
 
-#### ctx.dispose()
+Apply a plugin.
+
+#### ctx.using(names, callback)
+
+- names: `string[]` service names
+- callback: `Function` plugin function
+
+A syntax sugar of below code:
+
+```ts
+ctx.plugin({
+  using: names,
+  plugin: callback,
+})
+```
 
 ### State
 

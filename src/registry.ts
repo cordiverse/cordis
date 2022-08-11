@@ -79,7 +79,10 @@ export class Registry<C extends Context = Context> extends Map<Plugin<C>, Runtim
   }
 
   delete(plugin: Plugin) {
-    return super.delete(this.resolve(plugin))
+    const runtime = this.get(plugin)
+    if (!runtime) return false
+    super.delete(plugin)
+    return runtime.dispose()
   }
 
   using(using: readonly string[], callback: Plugin.Function<void>) {
@@ -110,10 +113,8 @@ export class Registry<C extends Context = Context> extends Map<Plugin<C>, Runtim
     return runtime.fork(context, config)
   }
 
+  /** @deprecated use `ctx.registry.delete()` instead */
   dispose(plugin: Plugin) {
-    const runtime = this.get(plugin)
-    if (!runtime) return
-    runtime.dispose()
-    return runtime
+    return this.delete(plugin)
   }
 }

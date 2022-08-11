@@ -19,7 +19,7 @@ describe('Service', () => {
     await root.start()
     expect(root.foo).to.be.instanceOf(Foo)
 
-    root.dispose(Foo)
+    root.registry.delete(Foo)
     expect(root.foo).to.be.undefined
   })
 
@@ -122,7 +122,7 @@ describe('Service', () => {
     expect(stop.mock.calls).to.have.length(0)
     expect(fork.mock.calls).to.have.length(2)
 
-    root.dispose(Foo)
+    root.registry.delete(Foo)
     expect(start.mock.calls).to.have.length(1)
     expect(stop.mock.calls).to.have.length(1)
     expect(fork.mock.calls).to.have.length(2)

@@ -44,7 +44,7 @@ describe('Fork', () => {
     expect(callback.mock.calls[1]).to.deep.equal([3])
 
     callback.mockClear()
-    app.dispose(pluginA)
+    app.registry.delete(pluginA)
     app.emit(new Session(true), event)
     expect(callback.mock.calls).to.have.length(0)
     app.emit(new Session(false), event)
@@ -52,7 +52,7 @@ describe('Fork', () => {
     expect(callback.mock.calls[0]).to.deep.equal([2])
 
     callback.mockClear()
-    app.dispose(pluginB)
+    app.registry.delete(pluginB)
     app.emit(event)
     expect(callback.mock.calls).to.have.length(0)
   })
@@ -81,7 +81,7 @@ describe('Fork', () => {
     expect(callback.mock.calls).to.deep.equal([[0], [2]])
 
     callback.mockClear()
-    app.dispose(reusable)
+    app.registry.delete(reusable)
     app.emit(event)
     expect(callback.mock.calls).to.have.length(0)
   })
