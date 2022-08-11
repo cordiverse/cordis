@@ -150,7 +150,7 @@ An auto-incrementing unique identifier for the state.
 
 #### state.runtime
 
-- type: `Runtime`
+- type: [`Runtime`](#runtime)
 
 The plugin runtime associated with the state. If the state is a runtime, then this property refers to itself.
 
@@ -172,9 +172,17 @@ The plugin runtime associated with the state. If the state is a runtime, then th
 
 ### Runtime
 
+Runtime is a subclass of [`State`](#state), representing the runtime state of a plugin.
+
+It can be accessed via `ctx.runtime` or passed in in some events.
+
 #### runtime.name
 
 #### runtime.plugin
+
+#### runtime.children
+
+- type: [`Fork[]`](#fork)
 
 #### runtime.isForkable
 

@@ -1,13 +1,10 @@
 import { defineProperty, Dict } from 'cosmokit'
 import { Lifecycle } from './lifecycle'
-import { Runtime, State } from './state'
 import { Registry } from './registry'
 import { isConstructor, resolveConfig } from './utils'
 
 export interface Context {
   root: this
-  state: State<this>
-  runtime: Runtime<this>
   mapping: Dict<symbol>
   lifecycle: Lifecycle
   registry: Registry<this>
@@ -141,5 +138,5 @@ Context.service('registry', Registry)
 Context.service('lifecycle', Lifecycle)
 
 Context.mixin('state', {
-  properties: ['runtime'],
+  properties: ['runtime', 'collect'],
 })

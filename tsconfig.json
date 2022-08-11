@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
-    "outFile": "lib/index.d.ts",
     "rootDir": "src",
+    "outFile": "lib/index.d.ts",
     "target": "es2019",
     "module": "commonjs",
     "declaration": true,
