@@ -13,10 +13,10 @@ export type Plugin<C extends Context = Context> =
   | Plugin.Object<any, any, C>
 
 export namespace Plugin {
-  export type Function<T = any, C extends Context = Context> = (ctx: C, options: T) => void
-  export type Constructor<T = any, C extends Context = Context> = new (ctx: C, options: T) => void
+  export type Function<T = any, C extends Context = any> = (ctx: C, options: T) => void
+  export type Constructor<T = any, C extends Context = any> = new (ctx: C, options: T) => void
 
-  export interface Object<S = any, T = any, C extends Context = Context> {
+  export interface Object<S = any, T = any, C extends Context = any> {
     name?: string
     apply: Function<T, C>
     reusable?: boolean
