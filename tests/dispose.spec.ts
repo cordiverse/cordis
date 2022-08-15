@@ -28,7 +28,7 @@ describe('Disposables', () => {
 
     // only 1 handler left
     callback.mockClear()
-    root.registry.delete(plugin)
+    root.dispose(plugin)
     root.emit(event)
     expect(callback.mock.calls).to.have.length(1)
   })
@@ -52,7 +52,7 @@ describe('Disposables', () => {
     const before = getHookSnapshot()
     root.plugin(plugin)
     const after = getHookSnapshot()
-    root.registry.delete(plugin)
+    root.dispose(plugin)
     expect(before).to.deep.equal(getHookSnapshot())
     root.plugin(plugin)
     expect(after).to.deep.equal(getHookSnapshot())
@@ -67,10 +67,10 @@ describe('Disposables', () => {
 
     root.plugin(plugin)
     expect(callback.mock.calls).to.have.length(0)
-    expect(root.registry.delete(plugin)).to.be.ok
+    expect(root.dispose(plugin)).to.be.ok
     expect(callback.mock.calls).to.have.length(1)
     // callback should only be called once
-    expect(root.registry.delete(plugin)).to.be.not.ok
+    expect(root.dispose(plugin)).to.be.not.ok
     expect(callback.mock.calls).to.have.length(1)
   })
 })

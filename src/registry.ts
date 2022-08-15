@@ -39,6 +39,7 @@ declare module './context' {
     collect(label: string, callback: () => boolean): () => boolean
     using(using: readonly string[], callback: Plugin.Function<void, this>): Fork<this>
     plugin<T extends Plugin<this>>(plugin: T, config?: boolean | Plugin.Config<T>): Fork<this>
+    /** @deprecated use `ctx.registry.delete()` instead */
     dispose(plugin?: Plugin<this>): Runtime<this>
   }
 }
@@ -113,7 +114,6 @@ export class Registry<C extends Context = Context> extends Map<Plugin<C>, Runtim
     return runtime.fork(context, config)
   }
 
-  /** @deprecated use `ctx.registry.delete()` instead */
   dispose(plugin: Plugin) {
     return this.delete(plugin)
   }

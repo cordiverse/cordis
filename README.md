@@ -18,7 +18,7 @@ ctx.on(event, callback)         // listen to events
 ctx.start()                     // start app
 ```
 
-## Concepts
+## Guide
 
 ### Context
 
@@ -29,6 +29,34 @@ Contexts provide three kinds of functionality:
 - filtering sessions for events (session context)
 
 ### Plugin
+
+A **plugin** is one of three basic forms:
+
+- a function that accepts two parameters, of which the first is the plugin context, and the second is the provided opions
+- a class that accepts above parameters
+- an object with an `apply` method in the form of the above function
+
+When a plugin is loaded, it is basically equivalent to calling the above function or class. Therefore, the following four ways of adding a event listener is basically equivalent:
+
+```ts
+ctx.on(event, callback)
+
+ctx.plugin(ctx => ctx.on(event, callback))
+
+ctx.plugin({
+  apply: ctx => ctx.on(event, callback),
+})
+
+ctx.plugin(class {
+  constructor(ctx) {
+    ctx.on(event, callback)
+  }
+})
+```
+
+It seems that this just changes the way of writing the direct call, but plugins can help us combine and modularize multiple logics while managing the options, which can greatly improve code maintainability.
+
+#### Unload a plugin
 
 ### Service
 
