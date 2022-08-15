@@ -28,6 +28,31 @@ Contexts provide three kinds of functionality:
 - managing states of plugins (plugin context)
 - filtering sessions for events (session context)
 
+### Events
+
+Cordis has a built-in event model.
+
+#### Listen to events
+
+To add an event listener, simply use `ctx.on()`, which is similar to the `EventEmitter` that comes with Node.js: the first parameter incidates the name of the event and the second parameter is the callback function. We also support similar methods `ctx.once()`, which is used to listen to events only once, and `ctx.off()`, which is used to cancel as event listeners.
+
+```ts
+ctx.on('some-event', callback)
+ctx.once('some-event', callback)
+ctx.off('some-event', callback)
+```
+
+One difference between cordis `Context` and Node.js `EventEmitter` is that both `ctx.on()` and `ctx.once()` returns a dispose function, which can be called to cancel the event listener. So you do not actually have to use `ctx.once()` and `ctx.off()`. Here is an example of add a listener that will only be called once:
+
+```ts
+const dispose = ctx.on('some-event', (...args) => {
+  dispose()
+  // do something
+})
+```
+
+#### Trigger events
+
 ### Plugin
 
 A **plugin** is one of three basic forms:
@@ -82,7 +107,6 @@ ctx.registry.delete(plugin)
 
 ### Service
 
-### Events
 
 ## API
 
