@@ -58,6 +58,28 @@ It seems that this just changes the way of writing the direct call, but plugins 
 
 #### Unload a plugin
 
+`ctx.plugin()` returns a `Fork` instance. To unload a plugin, we can use the `dispose()` method of it:
+
+```ts
+// load a plugin
+const fork = ctx.plugin((ctx) => {
+  ctx.on(event1, callback1)
+  ctx.on(event2, callback2)
+  ctx.on(event3, callback3)
+})
+
+// unload the plugin, removing all listeners
+fork.dispose()
+```
+
+Some plugins can be loaded multiple times. To unload every fork of a plugin without access to the `Fork` instance, we can use `ctx.registry`:
+
+```ts
+// remove all forks of the plugin
+// return true if the plugin is active
+ctx.registry.delete(plugin)
+```
+
 ### Service
 
 ### Events
