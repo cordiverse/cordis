@@ -53,6 +53,23 @@ const dispose = ctx.on('some-event', (...args) => {
 
 #### Trigger events
 
+In cordis, triggering an event can take many forms. Currently we support four methods with some differences between them:
+
+- emit: calling all listeners at the same time
+- parallel: the asynchronous version of `emit`
+- bail: calling all listeners in the order they were registered; when a value other than `false`, `null` or `undefined` is returned, the value is returned and subsequent listeners will not be called
+- serial: the synchronous version of `bail`
+
+The usage of these methods is also similar to `EventEmitter`. The first parameter is the event name, and the following parameters are passed to the listeners. Below is an example:
+
+```ts
+ctx.emit('some-event', arg1, arg2, ...rest)
+// corresponds to
+ctx.on('some-event', (arg1, arg2, ...rest) => {})
+```
+
+#### Events with `this` argument
+
 ### Plugin
 
 A **plugin** is one of three basic forms:
