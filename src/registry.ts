@@ -40,7 +40,7 @@ declare module './context' {
     using(using: readonly string[], callback: Plugin.Function<void, this>): Fork<this>
     plugin<T extends Plugin<this>>(plugin: T, config?: boolean | Plugin.Config<T>): Fork<this>
     /** @deprecated use `ctx.registry.delete()` instead */
-    dispose(plugin?: Plugin<this>): Runtime<this>
+    dispose(plugin?: Plugin<this>): boolean
   }
 }
 
@@ -67,30 +67,31 @@ export class Registry<C extends Context = Context> extends Map<Plugin<C>, Runtim
     return plugin && (typeof plugin === 'function' ? plugin : plugin.apply)
   }
 
-  get(plugin: Plugin) {
+  get(plugin: Plugin<C>) {
     return super.get(this.resolve(plugin))
   }
 
-  has(plugin: Plugin) {
+  has(plugin: Plugin<C>) {
     return super.has(this.resolve(plugin))
   }
 
-  set(plugin: Plugin, state: Runtime) {
+  set(plugin: Plugin<C>, state: Runtime<C>) {
     return super.set(this.resolve(plugin), state)
   }
 
-  delete(plugin: Plugin) {
+  delete(plugin: Plugin<C>) {
+    plugin = this.resolve(plugin)
     const runtime = this.get(plugin)
     if (!runtime) return false
     super.delete(plugin)
     return runtime.dispose()
   }
 
-  using(using: readonly string[], callback: Plugin.Function<void>) {
+  using(using: readonly string[], callback: Plugin.Function<void, C>) {
     return this.plugin({ using, apply: callback, name: callback.name })
   }
 
-  plugin(plugin: Plugin, config?: any) {
+  plugin(plugin: Plugin<C>, config?: any) {
     // check if it's a valid plugin
     if (typeof plugin !== 'function' && !isApplicable(plugin)) {
       throw new Error('invalid plugin, expect function or object with an "apply" method')
@@ -114,7 +115,7 @@ export class Registry<C extends Context = Context> extends Map<Plugin<C>, Runtim
     return runtime.fork(context, config)
   }
 
-  dispose(plugin: Plugin) {
+  dispose(plugin: Plugin<C>) {
     return this.delete(plugin)
   }
 }
