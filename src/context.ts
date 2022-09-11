@@ -70,6 +70,7 @@ export namespace Context {
 
     for (const key of options.properties || []) {
       Object.defineProperty(Context.prototype, key, {
+        configurable: true,
         get(this: Context) {
           return this[name][key]
         },
@@ -85,10 +86,10 @@ export namespace Context {
   }
 
   export function service(name: keyof any, options: ServiceOptions = {}) {
-    if (Object.prototype.hasOwnProperty.call(this.prototype, name)) return
     const privateKey = typeof name === 'symbol' ? name : Symbol(name)
 
     Object.defineProperty(this.prototype, name, {
+      configurable: true,
       get(this: Context) {
         const key = this.mapping[name as any] || privateKey
         const value = this.root[key]
