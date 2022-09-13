@@ -5,7 +5,7 @@ import { Dict, noop } from 'cosmokit'
 import { event } from './shared'
 
 describe('Disposables', () => {
-  it('context.prototype.dispose', () => {
+  it('fork.dispose', () => {
     const plugin = (ctx: Context) => {
       ctx.on(event, callback)
       ctx.plugin((ctx) => {
@@ -19,16 +19,18 @@ describe('Disposables', () => {
     const root = new Context()
     const callback = jest.fn()
     root.on(event, callback)
-    root.plugin(plugin)
+    const fork = root.plugin(plugin)
 
-    // 3 handlers now
+    // 4 handlers by now
     expect(callback.mock.calls).to.have.length(0)
+    expect(root.registry.size).to.equal(4)
     root.emit(event)
     expect(callback.mock.calls).to.have.length(4)
 
     // only 1 handler left
     callback.mockClear()
-    root.dispose(plugin)
+    fork.dispose()
+    expect(root.registry.size).to.equal(1)
     root.emit(event)
     expect(callback.mock.calls).to.have.length(1)
   })

@@ -48,11 +48,6 @@ declare module '../src/lifecycle' {
 declare module '../src/context' {
   interface Context {
     foo: any
-  }
-
-  namespace Context {
-    interface Meta {
-      filter(session: Session): boolean
-    }
+    filter(session: Session): boolean
   }
 }

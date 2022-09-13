@@ -61,7 +61,7 @@ export class Lifecycle {
         return state.collect('event <fork>', () => remove(runtime.forkables, listener))
       }
     })
-    defineProperty(dispose, Context.static, true)
+    defineProperty(dispose, Context.static, root.state)
   }
 
   queue(value: any) {

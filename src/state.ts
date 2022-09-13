@@ -6,12 +6,12 @@ import { isConstructor, resolveConfig } from './utils'
 export type Disposable = () => void
 
 export abstract class State<C extends Context = Context> {
-  uid: number
-  runtime: Runtime<C>
+  uid: number | null
   ctx: C
   context: Context
   disposables: Disposable[] = []
 
+  abstract runtime: Runtime<C>
   abstract dispose(): boolean
   abstract restart(): void
   abstract update(config: any): void
@@ -37,7 +37,7 @@ export abstract class State<C extends Context = Context> {
         if (!this.runtime.using.includes(name)) return
         this.restart()
       })
-      defineProperty(dispose, Context.static, true)
+      defineProperty(dispose, Context.static, this)
     }
   }
 
@@ -47,7 +47,7 @@ export abstract class State<C extends Context = Context> {
 
   clear(preserve = false) {
     this.disposables = this.disposables.splice(0, Infinity).filter((dispose) => {
-      if (preserve && dispose[Context.static]) return true
+      if (preserve && dispose[Context.static] === this) return true
       dispose()
     })
   }
@@ -64,13 +64,13 @@ export class Fork<C extends Context = Context> extends State<C> {
       this.clear()
       const result = remove(runtime.disposables, this.dispose)
       if (remove(runtime.children, this) && !runtime.children.length) {
-        runtime.dispose()
+        parent.registry.delete(runtime.plugin)
       }
       this.context.emit('internal/fork', this)
       return result
     })
 
-    defineProperty(this.dispose, Context.static, true)
+    defineProperty(this.dispose, Context.static, runtime)
     runtime.children.push(this)
     runtime.disposables.push(this.dispose)
     this.context.emit('internal/fork', this)
