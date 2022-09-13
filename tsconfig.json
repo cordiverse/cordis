@@ -9,7 +9,10 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "moduleResolution": "node",
-    "strictBindCallApply": true,
+    "strict": true,
+    "noImplicitAny": false,
+    "noImplicitThis": false,
+    "strictFunctionTypes": false,
   },
   "include": [
     "src",

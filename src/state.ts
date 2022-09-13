@@ -106,7 +106,7 @@ export class Runtime<C extends Context = Context> extends State<C> {
   using: readonly string[] = []
   forkables: Function[] = []
   children: Fork<C>[] = []
-  isReusable: boolean
+  isReusable = false
 
   constructor(private registry: Registry<C>, public plugin: Plugin, config: any) {
     super(registry[Context.current] as C, config)
@@ -134,6 +134,8 @@ export class Runtime<C extends Context = Context> extends State<C> {
     if (this.plugin) {
       this.context.emit('internal/runtime', this)
       return true
+    } else {
+      return false
     }
   }
 

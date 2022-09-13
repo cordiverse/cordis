@@ -56,7 +56,7 @@ export class Registry<C extends Context = Context> extends Map<Plugin<C>, Runtim
   constructor(private root: Context, private config: Registry.Config) {
     super()
     defineProperty(this, Context.current, root)
-    root.state = new Runtime(this, null, config)
+    root.state = new Runtime(this, null!, config)
   }
 
   get counter() {
@@ -103,15 +103,15 @@ export class Registry<C extends Context = Context> extends Map<Plugin<C>, Runtim
 
     // check duplication
     const context = this[Context.current]
-    const duplicate = this.get(plugin)
-    if (duplicate) {
-      if (!duplicate.isForkable) {
+    let runtime = this.get(plugin)
+    if (runtime) {
+      if (!runtime.isForkable) {
         this.root.emit('internal/warning', `duplicate plugin detected: ${plugin.name}`)
       }
-      return duplicate.fork(context, config)
+      return runtime.fork(context, config)
     }
 
-    const runtime = new Runtime(this, plugin, config)
+    runtime = new Runtime(this, plugin, config)
     return runtime.fork(context, config)
   }
 
