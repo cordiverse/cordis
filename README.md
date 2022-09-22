@@ -18,6 +18,18 @@ ctx.on(event, callback)         // listen to events
 ctx.start()                     // start app
 ```
 
+## Contents
+
+- [Events](#events-)
+  - [Listen to events](#listen-to-events-)
+  - [Trigger events](#trigger-events-)
+  - [Events with `this` argument](#events-with-this-argument-)
+- [Plugin](#plugin-)
+  - [Unload a plugin](#unload-a-plugin-)
+- [Service](#service-)
+  - [Built-in services](#built-in-services-)
+  - [Service as a plugin](#service-as-a-plugin-)
+
 ## Guide
 
 ### Context
@@ -28,11 +40,11 @@ Contexts provide three kinds of functionality:
 - managing states of plugins (plugin context)
 - filtering sessions for events (session context)
 
-### Events
+### Events [↑](#contents)
 
 Cordis has a built-in event model.
 
-#### Listen to events
+#### Listen to events [↑](#contents)
 
 To add an event listener, simply use `ctx.on()`, which is similar to the `EventEmitter` that comes with Node.js: the first parameter incidates the name of the event and the second parameter is the callback function. We also support similar methods `ctx.once()`, which is used to listen to events only once, and `ctx.off()`, which is used to cancel as event listeners.
 
@@ -51,7 +63,7 @@ const dispose = ctx.on('some-event', (...args) => {
 })
 ```
 
-#### Trigger events
+#### Trigger events [↑](#contents)
 
 In cordis, triggering an event can take many forms. Currently we support four methods with some differences between them:
 
@@ -68,7 +80,7 @@ ctx.emit('some-event', arg1, arg2, ...rest)
 ctx.on('some-event', (arg1, arg2, ...rest) => {})
 ```
 
-#### Events with `this` argument
+#### Events with `this` argument [↑](#contents)
 
 A custom `this` argument can be passed to the listeners:
 
@@ -89,7 +101,7 @@ thisArg[Context.filter] = (ctx) => {
 }
 ```
 
-### Plugin
+### Plugin [↑](#contents)
 
 A **plugin** is one of three basic forms:
 
@@ -117,7 +129,7 @@ ctx.plugin(class {
 
 It seems that this just changes the way of writing the direct call, but plugins can help us combine and modularize multiple logics while managing the options, which can greatly improve code maintainability.
 
-#### Unload a plugin
+#### Unload a plugin [↑](#contents)
 
 `ctx.plugin()` returns a `Fork` instance. To unload a plugin, we can use the `dispose()` method of it:
 
@@ -133,7 +145,7 @@ const fork = ctx.plugin((ctx) => {
 fork.dispose()
 ```
 
-Some plugins can be loaded multiple times. To unload every fork of a plugin without access to the `Fork` instance, we can use `ctx.registry`:
+Some plugins can be loaded multiple times. To unload every forks of a plugin without access to the `Fork` instance, we can use `ctx.registry`:
 
 ```ts
 // remove all forks of the plugin
@@ -141,13 +153,13 @@ Some plugins can be loaded multiple times. To unload every fork of a plugin with
 ctx.registry.delete(plugin)
 ```
 
-### Service
+### Service [↑](#contents)
 
 A **service** is an object that can be accessed by multiple contexts. Most of the contexts' functionalities come from services.
 
 For ones who are familiar with IoC / DI, services provide an IoC (inversion of control), but is not implemented through DI (dependency injection). Cordis provides easy access to services within the context through TypeScript's unique mechanism of declaration merging.
 
-#### Built-in services
+#### Built-in services [↑](#contents)
 
 Cordis has four built-in services:
 
@@ -158,7 +170,7 @@ Cordis has four built-in services:
 
 You can access to these services from any contexts.
 
-#### Service as a plugin
+#### Service as a plugin [↑](#contents)
 
 Custom services can be loaded as plugins. To create a service plugin, simply derive a class from `Service`:
 
