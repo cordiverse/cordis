@@ -1,5 +1,5 @@
 export * from './context'
-export * from './lifecycle'
+export * from './events'
 export * from './registry'
 export * from './service'
 export * from './state'

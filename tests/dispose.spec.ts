@@ -44,7 +44,7 @@ describe('Disposables', () => {
 
     function getHookSnapshot() {
       const result: Dict<number> = {}
-      for (const [name, callbacks] of Object.entries(root.lifecycle._hooks)) {
+      for (const [name, callbacks] of Object.entries(root.events._hooks)) {
         if (callbacks.length) result[name] = callbacks.length
       }
       return result

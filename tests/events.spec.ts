@@ -21,7 +21,7 @@ describe('Event Listener', () => {
   it('max appended hooks', async () => {
     const { root, warn } = setup()
     createArray(64 + extraCalls, () => root.on(event, noop))
-    expect(root.lifecycle._hooks[event].length).to.equal(64 + extraCalls)
+    expect(root.events._hooks[event].length).to.equal(64 + extraCalls)
     expect(warn.mock.calls).to.have.length(extraCalls)
   })
 

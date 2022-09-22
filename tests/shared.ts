@@ -39,7 +39,7 @@ export function union(ctx: Context) {
   })
 }
 
-declare module '../src/lifecycle' {
+declare module '../src/events' {
   interface Events {
     [event](this: Session): void
   }

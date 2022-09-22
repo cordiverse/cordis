@@ -1,5 +1,5 @@
 import { defineProperty, Dict } from 'cosmokit'
-import { Lifecycle } from './lifecycle'
+import { Lifecycle } from './events'
 import { Registry } from './registry'
 import { isConstructor, resolveConfig } from './utils'
 
@@ -38,6 +38,10 @@ export class Context {
 
   [Symbol.for('nodejs.util.inspect.custom')]() {
     return `Context <${this.runtime.name}>`
+  }
+
+  get events() {
+    return this.lifecycle
   }
 
   extend(meta = {}): this {

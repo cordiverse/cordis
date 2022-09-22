@@ -176,9 +176,9 @@ root.bar                        // { value: 2 }
 ctx2.bar                        // undefined
 ```
 
-### Lifecycle
+### Events
 
-`ctx.lifecycle` is a built-in service which provides event-related functionality. Most of its methods are also directly accessible in the context.
+`ctx.events` is a built-in service which provides event-related functionality. Most of its methods are also directly accessible in the context.
 
 #### ctx.emit(thisArg?, event, ...param)
 
@@ -230,13 +230,13 @@ If any listener is fulfilled with a value other than `false`, `null` or `undefin
 
 #### ctx.off()
 
-#### ctx.lifecycle.start()
+#### ctx.events.start()
 
-#### ctx.lifecycle.stop()
+#### ctx.events.stop()
 
-#### ctx.lifecycle.register()
+#### ctx.events.register()
 
-#### ctx.lifecycle.unregister()
+#### ctx.events.unregister()
 
 ### Registry
 
