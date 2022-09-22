@@ -24,13 +24,12 @@ ctx.start()                     // start app
   - [Listen to events](#listen-to-events-)
   - [Trigger events](#trigger-events-)
   - [Events with `this` argument](#events-with-this-argument-)
+  - [Application lifecycle](#application-lifecycle-)
 - [Plugin](#plugin-)
   - [Plugin as a module](#plugin-as-a-module-)
   - [Unload a plugin](#unload-a-plugin-)
-- [Lifecycle](#lifecycle-)
-  - [`ready` - add a deferred task](#ready---deferred-callback-)
-  - [`dispose` - clean up side effects](#dispose---clean-up-side-effects-)
-  - [`fork` - create reusable plugins](#fork---create-reusable-plugins-)
+  - [Clean up side effects](#clean-up-side-effects-)
+  - [Reusable plugins](#reusable-plugins-)
 - [Service](#service-)
   - [Built-in services](#built-in-services-)
   - [Service as a plugin](#service-as-a-plugin-)
@@ -47,7 +46,7 @@ Contexts provide three kinds of functionality:
 
 ### Events [↑](#contents)
 
-Cordis has a built-in event model.
+Cordis has a built-in event model with lifecycle management.
 
 #### Listen to events [↑](#contents)
 
@@ -105,6 +104,42 @@ thisArg[Context.filter] = (ctx) => {
   // if not specified, all listeners will be called
 }
 ```
+
+#### Application lifecycle [↑](#contents)
+
+There are some special events related to the application lifecycle. You can listen to them as if they were normal events, but they are not triggered by `ctx.emit()`.
+
+- `ready`: triggered when the application starts
+- `dispose`: triggered when the context is unloaded
+- `fork`: trigged every time when the plugin is loaded
+
+The `ready` event is triggered when the application starts. If a `ready` listener is registered in a application that has already started, it will be called immediately. Below is an example:
+
+```ts
+ctx.on('ready', async () => {
+  await someAsyncWork()
+  console.log(1)
+})
+
+console.log(2)
+
+// start the application
+// trigger the `ready` event
+await ctx.start()
+
+ctx.on('ready', () => {
+  console.log(3)
+})
+
+// output: 2 1 3
+```
+
+It is recommended to wrap code in the `ready` event in the following scenarios:
+
+- contains asynchronous operations (for example IO-intensive tasks)
+- should be called after other plugins are ready (for exmaple performance checks)
+
+We will talk about `dispose` and `fork` events in the [Plugin](#plugin-) section.
 
 ### Plugin [↑](#contents)
 
@@ -186,37 +221,7 @@ Some plugins can be loaded multiple times. To unload every forks of a plugin wit
 ctx.registry.delete(plugin)
 ```
 
-### Lifecycle [↑](#contents)
-
-There are some special events related to the application lifecycle.
-
-#### `ready` - add a deferred task [↑](#contents)
-
-The `ready` event is triggered when the application starts. If a `ready` listener is registered in a application that has already started, it will be called immediately. Below is an example:
-
-```ts
-ctx.on('ready', async () => {
-  await someAsyncWork()
-  console.log(1)
-})
-
-console.log(2)
-
-await ctx.start()
-
-ctx.on('ready', () => {
-  console.log(3)
-})
-
-// output: 2 1 3
-```
-
-It is recommended to wrap code in the `ready` event in the following scenarios:
-
-- contains asynchronous operations (for example IO-intensive tasks)
-- should be called after other plugins are ready (for exmaple performance checks)
-
-### `dispose` - clean up side effects [↑](#contents)
+#### Clean up side effects [↑](#contents)
 
 The `dispose` event is triggered when the context is unloaded. It can be used to clean up plugins' side effects. 
 
@@ -243,7 +248,7 @@ export function apply(ctx) {
 
 In this example, without the `dispose` event, the port 8080 will still be occupied after the plugin is unloaded. If the plugin is loaded a second time, the server will fail to start.
 
-#### `fork` - create reusable plugins [↑](#contents)
+#### Reusable plugins [↑](#contents)
 
 By default, a plugin is loaded only once. If we want to create a reusable plugin, we can use the `fork` event:
 
@@ -508,13 +513,13 @@ It can be accessed via `ctx.runtime` or passed in in some events.
 
 The `ready` event is triggered when the application starts. If a `ready` listener is registered in a application that has already started, it will be called immediately.
 
-See: [`ready` - add a deferred task](#ready---deferred-callback-)
+See: [Application lifecycle](#application-lifecycle-)
 
 #### dispose()
 
 The `dispose` event is triggered when the context is unloaded. It can be used to clean up plugins' side effects.
 
-See: [`dispose` - clean up side effects](#dispose---clean-up-side-effects-)
+See: [Clean up side effects](#clean-up-side-effects-)
 
 #### fork(ctx, config)
 
@@ -523,7 +528,7 @@ See: [`dispose` - clean up side effects](#dispose---clean-up-side-effects-)
 
 The `fork` event is triggered when the plugin is loaded. It is used to create reusable plugins.
 
-See: [`fork` - create reusable plugins](#fork---create-reusable-plugins-)
+See: [Reusable plugins](#reusable-plugins-)
 
 #### internal/warning(...param)
 
