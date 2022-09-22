@@ -28,7 +28,8 @@ ctx.start()                     // start app
   - [Plugin as a module](#plugin-as-a-module-)
   - [Unload a plugin](#unload-a-plugin-)
 - [Lifecycle](#lifecycle-)
-  - [`ready` - deferred callback](#ready-deferred-callback-)
+  - [`ready` - deferred callback](#ready---deferred-callback-)
+  - [`dispose` - clean up side effects](#dispose---clean-up-side-effects-)
 - [Service](#service-)
   - [Built-in services](#built-in-services-)
   - [Service as a plugin](#service-as-a-plugin-)
@@ -214,6 +215,33 @@ It is recommended to wrap code in the `ready` event in the following scenarios:
 - contains asynchronous operations (for example IO-intensive tasks)
 - should be called after other plugins are ready (for exmaple performance checks)
 
+### `dispose` - clean up side effects [↑](#contents)
+
+The `dispose` event is triggered when the context is unloaded. It can be used to clean up plugins' side effects. 
+
+Most of the built-in methods of `Context` are already implemented to be disposable (including `ctx.on()` and `ctx.plugin()`), so you do not need to handle these side effects manually. However, if some side effects are introduced by other means, a `dispose` listener is necessary.
+
+Below is an example:
+
+```ts
+// server-plugin.ts
+export function apply(ctx: Context) {
+  const server = createServer()
+
+  ctx.on('ready', () => {
+    // start the server
+    server.listen(8080)
+  })
+
+  ctx.on('dispose', () => {
+    // clean up the side effect
+    server.close()
+  })
+}
+```
+
+In this example, without the `dispose` event, the port 8080 will still be occupied after the plugin is unloaded. If the plugin is loaded a second time, the server will fail to start.
+
 ### Service [↑](#contents)
 
 A **service** is an object that can be accessed by multiple contexts. Most of the contexts' functionalities come from services.
@@ -224,7 +252,7 @@ For ones who are familiar with IoC / DI, services provide an IoC (inversion of c
 
 Cordis has four built-in services:
 
-- `ctx.events`: event model
+- `ctx.events`: event model and lifecycle
 - `ctx.registry`: plugin management
 - `ctx.root`: the root context
 - `ctx.state`: the current plugin fork
@@ -290,7 +318,7 @@ ctx2.bar                        // undefined
 
 ### Events
 
-`ctx.events` is a built-in service of event model. Most of its methods are also directly accessible in the context.
+`ctx.events` is a built-in service of event model and lifecycle. Most of its methods are also directly accessible in the context.
 
 #### ctx.emit(thisArg?, event, ...param)
 
@@ -430,9 +458,13 @@ It can be accessed via `ctx.runtime` or passed in in some events.
 
 The `ready` event is triggered when the application starts. If a `ready` listener is registered in a application that has already started, it will be called immediately.
 
-See: [`ready` - deferred callback](#ready-deferred-callback-)
+See: [`ready` - deferred callback](#ready---deferred-callback-)
 
 #### dispose()
+
+The `dispose` event is triggered when the context is unloaded. It can be used to clean up plugins' side effects.
+
+See: [`dispose` - clean up side effects](#dispose---clean-up-side-effects-)
 
 #### fork(ctx, config)
 
