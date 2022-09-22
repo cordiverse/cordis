@@ -27,6 +27,8 @@ ctx.start()                     // start app
 - [Plugin](#plugin-)
   - [Plugin as a module](#plugin-as-a-module-)
   - [Unload a plugin](#unload-a-plugin-)
+- [Lifecycle](#lifecycle-)
+  - [`ready` - deferred callback](#ready-deferred-callback-)
 - [Service](#service-)
   - [Built-in services](#built-in-services-)
   - [Service as a plugin](#service-as-a-plugin-)
@@ -181,6 +183,36 @@ Some plugins can be loaded multiple times. To unload every forks of a plugin wit
 // return true if the plugin is active
 ctx.registry.delete(plugin)
 ```
+
+### Lifecycle [↑](#contents)
+
+There are some special events related to the application lifecycle.
+
+#### `ready` - deferred callback [↑](#contents)
+
+The `ready` event is triggered when the application starts. If a `ready` listener is registered in a application that has already started, it will be called immediately. Below is an example:
+
+```ts
+ctx.on('ready', async () => {
+  await someAsyncWork()
+  console.log(1)
+})
+
+console.log(2)
+
+await ctx.start()
+
+ctx.on('ready', () => {
+  console.log(3)
+})
+
+// output: 2 1 3
+```
+
+It is recommended to wrap code in the `ready` event in the following scenarios:
+
+- contains asynchronous operations (for example IO-intensive tasks)
+- should be called after other plugins are ready (for exmaple performance checks)
 
 ### Service [↑](#contents)
 
@@ -396,12 +428,9 @@ It can be accessed via `ctx.runtime` or passed in in some events.
 
 #### ready()
 
-The `ready` event is triggered when the lifecycle starts. If a `ready` listener is registered in a lifecycle that has already started, it will be called immediately.
+The `ready` event is triggered when the application starts. If a `ready` listener is registered in a application that has already started, it will be called immediately.
 
-It is recommended to wrap code in the `ready` event in the following scenarios:
-
-- contains asynchronous operations (for example IO-intensive tasks)
-- should be called after other plugins are ready (for exmaple performance checks)
+See: [`ready` - deferred callback](#ready-deferred-callback-)
 
 #### dispose()
 
