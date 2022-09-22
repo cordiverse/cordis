@@ -70,6 +70,25 @@ ctx.on('some-event', (arg1, arg2, ...rest) => {})
 
 #### Events with `this` argument
 
+A custom `this` argument can be passed to the listeners:
+
+```ts
+ctx.emit(thisArg, 'some-event', arg1, arg2, ...rest)
+// corresponds to
+ctx.on('some-event', function (arg1, arg2, ...rest) {
+  // `this` will point to `thisArg`
+})
+```
+
+An optional symbol `Context.filter` on `this` argument can be used to filter listeners:
+
+```ts
+thisArg[Context.filter] = (ctx) => {
+  // return truthy to call the listener, falsy to skip the listener
+  // if not specified, all listeners will be called
+}
+```
+
 ### Plugin
 
 A **plugin** is one of three basic forms:
