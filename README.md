@@ -25,12 +25,13 @@ ctx.start()                     // start app
   - [Trigger events](#trigger-events-)
   - [Events with `this` argument](#events-with-this-argument-)
 - [Plugin](#plugin-)
+  - [Plugin as a module](#plugin-as-a-module-)
   - [Unload a plugin](#unload-a-plugin-)
 - [Service](#service-)
   - [Built-in services](#built-in-services-)
   - [Service as a plugin](#service-as-a-plugin-)
 
-## Guide
+## Guide [↑](#contents)
 
 ### Context
 
@@ -127,7 +128,35 @@ ctx.plugin(class {
 })
 ```
 
-It seems that this just changes the way of writing the direct call, but plugins can help us combine and modularize multiple logics while managing the options, which can greatly improve code maintainability.
+It seems that this just changes the way of writing the direct call, but plugins can help us organize complicated logics while managing the options, which can greatly improve code maintainability.
+
+#### Plugin as a module [↑](#contents)
+
+It is recommended to write plugins as modules, specifically, as [default exports](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/import#default_import) or [namespace exports](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/import#namespace_import).
+
+```ts
+// foo.ts (default export)
+export default class Foo {
+  constructor(ctx: Context) {}
+}
+```
+
+```ts
+// bar.ts (namespace export)
+// it is also recommended to export a `name` in this case
+export const name = 'bar'
+
+export function apply(ctx: Context) {}
+```
+
+```ts
+// index.ts
+import Foo from './foo'
+import * as Bar from './bar'
+
+ctx.plugin(Foo)
+ctx.plugin(Bar)
+```
 
 #### Unload a plugin [↑](#contents)
 
