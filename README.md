@@ -28,8 +28,9 @@ ctx.start()                     // start app
   - [Plugin as a module](#plugin-as-a-module-)
   - [Unload a plugin](#unload-a-plugin-)
 - [Lifecycle](#lifecycle-)
-  - [`ready` - deferred callback](#ready---deferred-callback-)
+  - [`ready` - add a deferred task](#ready---deferred-callback-)
   - [`dispose` - clean up side effects](#dispose---clean-up-side-effects-)
+  - [`fork` - create reusable plugins](#fork---create-reusable-plugins-)
 - [Service](#service-)
   - [Built-in services](#built-in-services-)
   - [Service as a plugin](#service-as-a-plugin-)
@@ -140,7 +141,7 @@ It is recommended to write plugins as modules, specifically, as [default exports
 ```ts
 // foo.ts (default export)
 export default class Foo {
-  constructor(ctx: Context) {}
+  constructor(ctx) {}
 }
 ```
 
@@ -149,7 +150,7 @@ export default class Foo {
 // it is also recommended to export a `name` in this case
 export const name = 'bar'
 
-export function apply(ctx: Context) {}
+export function apply(ctx) {}
 ```
 
 ```ts
@@ -189,7 +190,7 @@ ctx.registry.delete(plugin)
 
 There are some special events related to the application lifecycle.
 
-#### `ready` - deferred callback [↑](#contents)
+#### `ready` - add a deferred task [↑](#contents)
 
 The `ready` event is triggered when the application starts. If a `ready` listener is registered in a application that has already started, it will be called immediately. Below is an example:
 
@@ -225,7 +226,7 @@ Below is an example:
 
 ```ts
 // server-plugin.ts
-export function apply(ctx: Context) {
+export function apply(ctx) {
   const server = createServer()
 
   ctx.on('ready', () => {
@@ -241,6 +242,55 @@ export function apply(ctx: Context) {
 ```
 
 In this example, without the `dispose` event, the port 8080 will still be occupied after the plugin is unloaded. If the plugin is loaded a second time, the server will fail to start.
+
+#### `fork` - create reusable plugins [↑](#contents)
+
+By default, a plugin is loaded only once. If we want to create a reusable plugin, we can use the `fork` event:
+
+```ts
+function callback(ctx, config) {
+  console.log('outer', config.value)
+
+  ctx.on('fork', (ctx, config) => {
+    console.log('inner', config.value)
+  })
+}
+
+// outer foo
+// inner foo
+ctx.plugin(callback, { value: 'foo' })
+
+// inner bar
+ctx.plugin(callback, { value: 'bar' })
+```
+
+Note that the `fork` listener itself is a plugin function. You can also listen to `dispose` event inside `fork` listeners, which serves a different purposes: the inner `dispose` listener is called when the fork is unloaded, while the outer `dispose` listener is called when the whole plugin is unloaded (via `ctx.registry.delete()` or when all forks are unloaded).
+
+```ts
+function callback(ctx) {
+  ctx.on('dispose', () => {
+    console.log('outer dispose')
+  })
+
+  ctx.on('fork', (ctx) => {
+    ctx.on('dispose', () => {
+      console.log('inner dispose')
+    })
+  })
+}
+
+const fork1 = ctx.plugin(callback)
+const fork2 = ctx.plugin(callback)
+
+// inner dispose
+fork1.dispose()
+
+// inner dispose
+// outer dispose
+fork2.dispose()
+```
+
+Also, you should never use methods from the outer `ctx` parameter because they are not bound to the fork and cannot be cleaned up when the fork is disposed. Instead, simply use the `ctx` parameter of the `fork` listener.
 
 ### Service [↑](#contents)
 
@@ -458,7 +508,7 @@ It can be accessed via `ctx.runtime` or passed in in some events.
 
 The `ready` event is triggered when the application starts. If a `ready` listener is registered in a application that has already started, it will be called immediately.
 
-See: [`ready` - deferred callback](#ready---deferred-callback-)
+See: [`ready` - add a deferred task](#ready---deferred-callback-)
 
 #### dispose()
 
@@ -470,6 +520,10 @@ See: [`dispose` - clean up side effects](#dispose---clean-up-side-effects-)
 
 - ctx: `Context`
 - config: `any`
+
+The `fork` event is triggered when the plugin is loaded. It is used to create reusable plugins.
+
+See: [`fork` - create reusable plugins](#fork---create-reusable-plugins-)
 
 #### internal/warning(...param)
 
