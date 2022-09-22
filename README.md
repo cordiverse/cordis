@@ -143,6 +143,45 @@ ctx.registry.delete(plugin)
 
 ### Service
 
+A **service** is an object that can be accessed by multiple contexts. Most of the contexts' functionalities come from services.
+
+For ones who are familiar with IoC / DI, services provide an IoC (inversion of control), but is not implemented through DI (dependency injection). Cordis provides easy access to services within the context through TypeScript's unique mechanism of declaration merging.
+
+#### Built-in services
+
+Cordis has four built-in services:
+
+- `ctx.events`: event model
+- `ctx.registry`: plugin management
+- `ctx.root`: the root context
+- `ctx.state`: the current plugin fork
+
+You can access to these services from any contexts.
+
+#### Service as a plugin
+
+Custom services can be loaded as plugins. To create a service plugin, simply derive a class from `Service`:
+
+```ts
+import { Service } from 'cordis'
+
+class CustomService extends Service {
+  constructor(ctx) {
+    super(ctx, 'custom', true)
+  }
+
+  method() {
+    // do something
+  }
+}
+```
+
+Load the service plugin, and we can access the custom service through `ctx.custom`:
+
+```ts
+ctx.plugin(CustomService)
+ctx.custom.method()
+```
 
 ## API
 
@@ -178,7 +217,7 @@ ctx2.bar                        // undefined
 
 ### Events
 
-`ctx.events` is a built-in service which provides event-related functionality. Most of its methods are also directly accessible in the context.
+`ctx.events` is a built-in service of event model. Most of its methods are also directly accessible in the context.
 
 #### ctx.emit(thisArg?, event, ...param)
 
@@ -240,7 +279,7 @@ If any listener is fulfilled with a value other than `false`, `null` or `undefin
 
 ### Registry
 
-`ctx.registry` is a built-in service which provides plugin-related functionality. It is actually a subclass of `Map<Plugin, Runtime>`, so you can access plugin runtime via methods like `ctx.registry.get()` and `ctx.registry.delete()`.
+`ctx.registry` is a built-in service of plugin management. It is actually a subclass of `Map<Plugin, Runtime>`, so you can access plugin runtime via methods like `ctx.registry.get()` and `ctx.registry.delete()`.
 
 #### ctx.plugin(plugin, config?)
 
