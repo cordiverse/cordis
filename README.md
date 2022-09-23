@@ -33,6 +33,7 @@ ctx.start()                     // start app
 - [Service](#service-)
   - [Built-in services](#built-in-services-)
   - [Service as a plugin](#service-as-a-plugin-)
+  - [Service dependencies](#service-dependencies-)
 
 ## Guide [↑](#contents)
 
@@ -139,7 +140,7 @@ It is recommended to wrap code in the `ready` event in the following scenarios:
 - contains asynchronous operations (for example IO-intensive tasks)
 - should be called after other plugins are ready (for exmaple performance checks)
 
-We will talk about `dispose` and `fork` events in the [Plugin](#plugin-) section.
+We will talk about `dispose` and `fork` events in the next section.
 
 ### Plugin [↑](#contents)
 
@@ -230,13 +231,13 @@ Most of the built-in methods of `Context` are already implemented to be disposab
 Below is an example:
 
 ```ts
-// server-plugin.ts
+// an example server plugin
 export function apply(ctx) {
   const server = createServer()
 
   ctx.on('ready', () => {
     // start the server
-    server.listen(8080)
+    server.listen(80)
   })
 
   ctx.on('dispose', () => {
@@ -246,13 +247,14 @@ export function apply(ctx) {
 }
 ```
 
-In this example, without the `dispose` event, the port 8080 will still be occupied after the plugin is unloaded. If the plugin is loaded a second time, the server will fail to start.
+In this example, without the `dispose` event, the port `80` will still be occupied after the plugin is unloaded. If the plugin is loaded a second time, the server will fail to start.
 
 #### Reusable plugins [↑](#contents)
 
 By default, a plugin is loaded only once. If we want to create a reusable plugin, we can use the `fork` event:
 
 ```ts
+// an example reusable plugin
 function callback(ctx, config) {
   console.log('outer', config.value)
 
@@ -269,9 +271,10 @@ ctx.plugin(callback, { value: 'foo' })
 ctx.plugin(callback, { value: 'bar' })
 ```
 
-Note that the `fork` listener itself is a plugin function. You can also listen to `dispose` event inside `fork` listeners, which serves a different purposes: the inner `dispose` listener is called when the fork is unloaded, while the outer `dispose` listener is called when the whole plugin is unloaded (via `ctx.registry.delete()` or when all forks are unloaded).
+Note that the `fork` listener itself is a plugin function. You can also listen to `dispose` event inside `fork` listeners, which serves a different purpose: the inner `dispose` listener is called when the fork is unloaded, while the outer `dispose` listener is called when the whole plugin is unloaded (either via `ctx.registry.delete()` or when all forks are unloaded).
 
 ```ts
+// an example reusable plugin
 function callback(ctx) {
   ctx.on('dispose', () => {
     console.log('outer dispose')
@@ -332,11 +335,88 @@ class CustomService extends Service {
 }
 ```
 
-Load the service plugin, and we can access the custom service through `ctx.custom`:
+The second parameter of the constructor is the service name. After loading the service plugin, we can access the custom service through `ctx.custom`:
 
 ```ts
 ctx.plugin(CustomService)
 ctx.custom.method()
+```
+
+The third parameter of the constructor is a boolean value of whether the service is immediately available. If it is `false` (by default), the service will only be available after the application is started.
+
+There are also some abstract methods for lifecycle events:
+
+```ts
+class CustomService extends Service {
+  constructor(ctx) {
+    super(ctx, 'custom', true)
+  }
+
+  // `ready` listener
+  start() {}
+  // `dispose` listener
+  stop() {}
+  // `fork` listener
+  fork() {}
+}
+```
+
+#### Service dependencies [↑](#contents)
+
+Some plugins may depend on certain services. For example, supposing we have a service called `database`, and we want to use it in a plugin:
+
+```ts
+// my-plugin.ts
+export function apply(ctx) {
+  // fetch data from the database
+  ctx.database.get(table, id)
+}
+```
+
+Trying to load this plugin is likely to result in an error because `ctx.database` may be `undefined` when the plugin is loaded. To make sure that the plugin is loaded after the service is available, we can use a special property called `using`:
+
+```ts
+// my-plugin.ts
+export const using = ['database']
+
+export function apply(ctx) {
+  // fetch data from the database
+  ctx.database.get(table, id)
+}
+```
+
+```ts
+// for class plugins, use static property
+export default class MyPlugin {
+  static using = ['database']
+
+  constructor(ctx) {
+    // fetch data from the database
+    ctx.database.get(table, id)
+  }
+}
+```
+
+`using` is a list of service dependencies. If a service is a dependency of a plugin, it means:
+
+- the plugin will not be loaded until the service becomes truthy
+- the plugin will be unloaded as soon as the service changes
+- if the changed value is still truthy, the plugin will be reloaded
+
+For plugins whose functions depend on a service, we also provide a syntactic sugar `ctx.using()`:
+
+```ts
+ctx.using(['database'], (ctx) => {
+  ctx.database.get(table, id)
+})
+
+// equivalent to
+ctx.plugin({
+  using: ['database'],
+  apply: (ctx) => {
+    ctx.database.get(table, id)
+  },
+})
 ```
 
 ## API
