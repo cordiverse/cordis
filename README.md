@@ -32,8 +32,9 @@ ctx.start()                     // start app
   - [Reusable plugins](#reusable-plugins-)
 - [Service](#service-)
   - [Built-in services](#built-in-services-)
-  - [Service as a plugin](#service-as-a-plugin-)
-  - [Service dependencies](#service-dependencies-)
+  - [Use services](#use-services-)
+  - [Write services](#write-services-)
+  - [Service scopes](#service-scopes-)
 
 ## Guide [↑](#contents)
 
@@ -317,7 +318,63 @@ Cordis has four built-in services:
 
 You can access to these services from any contexts.
 
-#### Service as a plugin [↑](#contents)
+#### Use services [↑](#contents)
+
+Some plugins may depend on certain services. For example, supposing we have a service called `database`, and we want to use it in a plugin:
+
+```ts
+export function apply(ctx) {
+  // fetch data from the database
+  ctx.database.get(table, id)
+}
+```
+
+Trying to load this plugin is likely to result in an error because `ctx.database` may be `undefined` when the plugin is loaded. To make sure that the plugin is loaded after the service is available, we can use a special property called `using`:
+
+```ts
+export const using = ['database']
+
+export function apply(ctx) {
+  // fetch data from the database
+  ctx.database.get(table, id)
+}
+```
+
+```ts
+// for class plugins, use static property
+export default class MyPlugin {
+  static using = ['database']
+
+  constructor(ctx) {
+    // fetch data from the database
+    ctx.database.get(table, id)
+  }
+}
+```
+
+`using` is a list of service dependencies. If a service is a dependency of a plugin, it means:
+
+- the plugin will not be loaded until the service becomes truthy
+- the plugin will be unloaded as soon as the service changes
+- if the changed value is still truthy, the plugin will be reloaded
+
+For plugins whose functions depend on a service, we also provide a syntactic sugar `ctx.using()`:
+
+```ts
+ctx.using(['database'], (ctx) => {
+  ctx.database.get(table, id)
+})
+
+// equivalent to
+ctx.plugin({
+  using: ['database'],
+  apply: (ctx) => {
+    ctx.database.get(table, id)
+  },
+})
+```
+
+#### Write services [↑](#contents)
 
 Custom services can be loaded as plugins. To create a service plugin, simply derive a class from `Service`:
 
@@ -361,63 +418,37 @@ class CustomService extends Service {
 }
 ```
 
-#### Service dependencies [↑](#contents)
+#### Service scopes [↑](#contents)
 
-Some plugins may depend on certain services. For example, supposing we have a service called `database`, and we want to use it in a plugin:
-
-```ts
-// my-plugin.ts
-export function apply(ctx) {
-  // fetch data from the database
-  ctx.database.get(table, id)
-}
-```
-
-Trying to load this plugin is likely to result in an error because `ctx.database` may be `undefined` when the plugin is loaded. To make sure that the plugin is loaded after the service is available, we can use a special property called `using`:
+By default, a service is available in all contexts. Below is an example:
 
 ```ts
-// my-plugin.ts
-export const using = ['database']
-
-export function apply(ctx) {
-  // fetch data from the database
-  ctx.database.get(table, id)
-}
+ctx.custom              // undefined
+// register the service with a plugin
+const fork = ctx.plugin(CustomService)
+ctx.custom              // CustomService
+// unload the service plugin
+fork.dispose()
+ctx.custom              // undefined
 ```
+
+Registering multiple services will only override themselves. In order to limit the scope of a service (so that multiple services may exist at the same time), simply create an isolate scope:
 
 ```ts
-// for class plugins, use static property
-export default class MyPlugin {
-  static using = ['database']
+const root = new Context()
+const ctx1 = root.isolate(['foo'])
+const ctx2 = root.isolate(['bar'])
 
-  constructor(ctx) {
-    // fetch data from the database
-    ctx.database.get(table, id)
-  }
-}
+root.foo = { value: 1 }
+ctx1.foo                        // undefined
+ctx2.foo                        // { value: 1 }
+
+ctx1.bar = { value: 2 }
+root.bar                        // { value: 2 }
+ctx2.bar                        // undefined
 ```
 
-`using` is a list of service dependencies. If a service is a dependency of a plugin, it means:
-
-- the plugin will not be loaded until the service becomes truthy
-- the plugin will be unloaded as soon as the service changes
-- if the changed value is still truthy, the plugin will be reloaded
-
-For plugins whose functions depend on a service, we also provide a syntactic sugar `ctx.using()`:
-
-```ts
-ctx.using(['database'], (ctx) => {
-  ctx.database.get(table, id)
-})
-
-// equivalent to
-ctx.plugin({
-  using: ['database'],
-  apply: (ctx) => {
-    ctx.database.get(table, id)
-  },
-})
-```
+`ctx.isolate()` accepts a parameter `keys` and returns a new context. Services included in `keys` will be isolated in the new context, while services not included in `keys` are still shared with the parent context.
 
 ## API
 
@@ -538,6 +569,8 @@ ctx.plugin({
   plugin: callback,
 })
 ```
+
+See: [Use services](#use-services-)
 
 ### State
 
