@@ -301,6 +301,38 @@ fork2.dispose()
 
 Also, you should never use methods from the outer `ctx` parameter because they are not bound to the fork and cannot be cleaned up when the fork is disposed. Instead, simply use the `ctx` parameter of the `fork` listener.
 
+Finally, cordis provides a syntactic sugar for complete reusable plugins (i.e. plugins which only have fork listeners):
+
+```ts
+// mark the callback as fork listener
+export const reusable = true
+
+export function apply(ctx) {
+  // do something
+}
+```
+
+```ts
+// equivalent to
+export function apply(ctx) {
+  ctx.on('fork', (ctx) => {
+    // do something
+  })
+}
+```
+
+For class plugins, simply use the static property:
+
+```ts
+export default class MyPlugin {
+  static reusable = true
+
+  constructor(ctx) {
+    // do something
+  }
+}
+```
+
 ### Service [↑](#contents)
 
 A **service** is an object that can be accessed by multiple contexts. Most of the contexts' functionalities come from services.
@@ -309,12 +341,11 @@ For ones who are familiar with IoC / DI, services provide an IoC (inversion of c
 
 #### Built-in services [↑](#contents)
 
-Cordis has four built-in services:
+Cordis has three built-in services:
 
 - `ctx.events`: event model and lifecycle
 - `ctx.registry`: plugin management
 - `ctx.root`: the root context
-- `ctx.state`: the current plugin fork
 
 You can access to these services from any contexts.
 
@@ -329,7 +360,21 @@ export function apply(ctx) {
 }
 ```
 
-Trying to load this plugin is likely to result in an error because `ctx.database` may be `undefined` when the plugin is loaded. To make sure that the plugin is loaded after the service is available, we can use a special property called `using`:
+Trying to load this plugin is likely to result in an error because `ctx.database` may be `undefined` when the plugin is loaded. The way to fix this problem depends on when and how the service is used.
+
+If the service is only optional needed when the application is running (e.g. referenced in some event listener), we can simply check the availability of the service before using it:
+
+```ts
+export function apply(ctx) {
+  ctx.on('custom-event', () => {
+    // check if the service is available
+    if (!ctx.database) return
+    ctx.database.get(table, id)
+  })
+}
+```
+
+However, If a plugin completely depends on the service, we cannot just check the service in the plugin callback, because when the plugin is loaded, the service may not be available yet. To make sure that the plugin is loaded only when the service is available, we can use a special property called `using`:
 
 ```ts
 export const using = ['database']
@@ -341,7 +386,7 @@ export function apply(ctx) {
 ```
 
 ```ts
-// for class plugins, use static property
+// for class plugins, simply use static property
 export default class MyPlugin {
   static using = ['database']
 
@@ -373,6 +418,8 @@ ctx.plugin({
   },
 })
 ```
+
+Similar to fork callbacks, always use the `ctx` parameter of the callback instead of the outer `ctx` for disposability.
 
 #### Write services [↑](#contents)
 
@@ -435,7 +482,6 @@ ctx.custom              // undefined
 Registering multiple services will only override themselves. In order to limit the scope of a service (so that multiple services may exist at the same time), simply create an isolate scope:
 
 ```ts
-const root = new Context()
 const ctx1 = root.isolate(['foo'])
 const ctx2 = root.isolate(['bar'])
 
@@ -468,19 +514,7 @@ Create a new context with the current context as the prototype. Properties speci
 
 Create a new context with the current context as the prototype. Services included in `keys` will be isolated in the new context, while services not included in `keys` are still shared with the parent context.
 
-```ts
-const root = new Context()
-const ctx1 = root.isolate(['foo'])
-const ctx2 = root.isolate(['bar'])
-
-root.foo = { value: 1 }
-ctx1.foo                        // undefined
-ctx2.foo                        // { value: 1 }
-
-ctx1.bar = { value: 2 }
-root.bar                        // { value: 2 }
-ctx2.bar                        // undefined
-```
+See: [Service scopes](#service-scopes-)
 
 ### Events
 
