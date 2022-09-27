@@ -1,7 +1,7 @@
 import { Context } from '../src'
 import { expect } from 'chai'
 import * as jest from 'jest-mock'
-import './shared'
+import './utils'
 
 describe('Isolation', () => {
   it('isolated context', async () => {

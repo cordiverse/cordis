@@ -1,7 +1,7 @@
 import { Context } from '../src'
 import { noop } from 'cosmokit'
 import { expect } from 'chai'
-import { event, Filter, Session, union } from './shared'
+import { event, Filter, Session, union } from './utils'
 import * as jest from 'jest-mock'
 
 describe('Fork', () => {

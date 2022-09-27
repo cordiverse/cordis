@@ -2,7 +2,7 @@ import { Context } from '../src'
 import { expect } from 'chai'
 import * as jest from 'jest-mock'
 import { Dict, noop } from 'cosmokit'
-import { event } from './shared'
+import { event } from './utils'
 
 describe('Disposables', () => {
   it('fork.dispose', () => {

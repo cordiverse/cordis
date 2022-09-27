@@ -2,7 +2,7 @@ import { Context } from '../src'
 import { expect } from 'chai'
 import * as jest from 'jest-mock'
 import { noop } from 'cosmokit'
-import { event, Filter, Session } from './shared'
+import { event, Filter, Session } from './utils'
 
 export function createArray<T>(length: number, create: (index: number) => T) {
   return [...new Array(length).keys()].map(create)

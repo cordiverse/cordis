@@ -2,7 +2,7 @@ import { Context, Service } from '../src'
 import { noop } from 'cosmokit'
 import { expect } from 'chai'
 import * as jest from 'jest-mock'
-import './shared'
+import './utils'
 
 describe('Service', () => {
   it('normal service', async () => {

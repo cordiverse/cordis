@@ -2,7 +2,7 @@ import { Context } from '../src'
 import { expect } from 'chai'
 import * as jest from 'jest-mock'
 import { inspect } from 'util'
-import './shared'
+import './utils'
 
 describe('Plugin', () => {
   it('apply functional plugin', () => {

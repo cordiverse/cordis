@@ -1,7 +1,7 @@
 import { Context } from '../src'
 import { expect } from 'chai'
 import { noop } from 'cosmokit'
-import { event } from './shared'
+import { event } from './utils'
 import * as jest from 'jest-mock'
 
 describe('Update', () => {
