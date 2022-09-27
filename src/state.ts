@@ -7,6 +7,7 @@ declare module './context' {
   export interface Context {
     state: State<this>
     runtime: Runtime<this>
+    update(config: any): void
     collect(label: string, callback: () => boolean): () => boolean
     accept(keys: string[], callback?: (config: any) => void | boolean): () => boolean
   }
