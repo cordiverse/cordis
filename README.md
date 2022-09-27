@@ -34,6 +34,7 @@ ctx.start()                     // start app
   - [Built-in services](#built-in-services-)
   - [Use services](#use-services-)
   - [Write services](#write-services-)
+  - [Write disposable methods](#write-disposable-methods-)
   - [Service scopes](#service-scopes-)
 - [Context](#context-)
   - [Services and mixins](#services-and-mixins-)
@@ -469,32 +470,70 @@ class CustomService extends Service {
 }
 ```
 
+#### Write disposable methods [↑](#contents)
+
+It is good practice to write disposable methods for services so that plugins can use them without worrying about the cleanup of resources. Take a simple list service as an example:
+
+```ts
+class ListService extends Service {
+  constructor(ctx) {
+    super(ctx, 'list', true)
+    this.data = []
+  }
+
+  addItem(item) {
+    this.data.push(item)
+    // collect side effects
+    return this.caller.collect('list-item', () => {
+      return this.removeItem(item)
+    })
+  }
+
+  removeItem(item) {
+    const index = this.data.indexOf(item)
+    if (index >= 0) {
+      this.data.splice(index, 1)
+      return true
+    } else {
+      return false
+    }
+  }
+}
+```
+
+`ListService` provides two methods: `addItem` and `removeItem`.
+
+- The `addItem` method adds an item to the list and returns a disposable function which can be used to remove the item from the list. When the caller context is disposed, the disposable function will be automatically called.
+- The `removeItem` method removes an item from the list and returns a boolean value indicating whether the item is successfully removed.
+
+In the above example, `addItem` is implemented as disposable via `this.caller.collect()`. `caller` is a special property which always points to the last context which access the serivce. `ctx.collect()` accepts two parameters: the first is the name of disposable, the second is the callback function.
+
 #### Service scopes [↑](#contents)
 
 By default, a service is available in all contexts. Below is an example:
 
 ```ts
-ctx.custom              // undefined
+ctx.custom                      // undefined
 // register the service with a plugin
 const fork = ctx.plugin(CustomService)
-ctx.custom              // CustomService
+ctx.custom                      // CustomService
 // unload the service plugin
 fork.dispose()
-ctx.custom              // undefined
+ctx.custom                      // undefined
 ```
 
 Registering multiple services will only override themselves. In order to limit the scope of a service (so that multiple services may exist at the same time), simply create an isolate scope:
 
 ```ts
-const ctx1 = root.isolate(['foo'])
-const ctx2 = root.isolate(['bar'])
+const ctx1 = ctx.isolate(['foo'])
+const ctx2 = ctx.isolate(['bar'])
 
-root.foo = { value: 1 }
+ctx.foo = { value: 1 }
 ctx1.foo                        // undefined
 ctx2.foo                        // { value: 1 }
 
 ctx1.bar = { value: 2 }
-root.bar                        // { value: 2 }
+ctx.bar                         // { value: 2 }
 ctx2.bar                        // undefined
 ```
 
@@ -532,6 +571,8 @@ Context.mixin('state', {
   methods: ['collect', 'accept', 'update'],
 })
 ```
+
+If a mixin is accessed via a service, it will be affected by service scope.
 
 ## API
 
