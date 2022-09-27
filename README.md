@@ -5,7 +5,7 @@
 [![npm](https://img.shields.io/npm/v/cordis?style=flat-square)](https://www.npmjs.com/package/cordis)
 [![GitHub](https://img.shields.io/github/license/shigma/cordis?style=flat-square)](https://github.com/shigma/cordis/blob/master/LICENSE)
 
-AOP Framework for Modern JavaScript Applications.
+Cordis is an AOP framework for modern JavaScript applications. You can think of it as a kind of meta-framework as developers can build their own frameworks on top of it.
 
 ```ts
 import { Context } from 'cordis'
@@ -35,16 +35,20 @@ ctx.start()                     // start app
   - [Use services](#use-services-)
   - [Write services](#write-services-)
   - [Service scopes](#service-scopes-)
+- [Context](#context-)
+  - [Services and mixins](#services-and-mixins-)
 
 ## Guide [↑](#contents)
 
-### Context
+Creating a cordis application is very simple:
 
-Contexts provide three kinds of functionality:
+```ts
+import { Context } from 'cordis'
 
-- allowing access to services (service container)
-- managing states of plugins (plugin context)
-- filtering sessions for events (session context)
+const ctx = new Context()
+```
+
+Almost every feature of cordis is based on contexts. We will see how to use them in the following sections.
 
 ### Events [↑](#contents)
 
@@ -495,6 +499,39 @@ ctx2.bar                        // undefined
 ```
 
 `ctx.isolate()` accepts a parameter `keys` and returns a new context. Services included in `keys` will be isolated in the new context, while services not included in `keys` are still shared with the parent context.
+
+### Context [↑](#contents)
+
+Context provides API for framework developers rather than users. You can create your own framework based on cordis with context API.
+
+#### Services and mixins [↑](#contents)
+
+`Context.service()` is a static method that registers a service. If you write your serivce as a derived class, you do not need to call this method because cordis will automatically register the service.
+
+This method is useful for framework developers who may want to provide built-in services or just declare abstract services which may not be implemented by plugins.
+
+```ts
+// declare an abstract service
+Context.service('database')
+
+function apply(ctx) {
+  // use the database service
+  ctx.database.get(table, id)
+}
+```
+
+`Context.mixin()` is a static method that allows you to delegate properties and methods to the context.
+
+> Note: please don't abuse this feature, as adding a lot of mixins can lead to name conflicts.
+
+```ts
+Context.mixin('state', {
+  // delegate `ctx.state.runtime` to `ctx.runtime`
+  properties: ['runtime'],
+  // delegate `ctx.state.collect()` to `ctx.collect()`
+  methods: ['collect', 'accept', 'update'],
+})
+```
 
 ## API
 
