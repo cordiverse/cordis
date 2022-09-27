@@ -9,6 +9,7 @@ declare module './context' {
     runtime: Runtime<this>
     update(config: any): void
     collect(label: string, callback: () => boolean): () => boolean
+    accept(callback?: (config: any) => void | boolean): () => boolean
     accept(keys: string[], callback?: (config: any) => void | boolean): () => boolean
   }
 }
@@ -16,7 +17,7 @@ declare module './context' {
 export type Disposable = () => void
 
 export interface Acceptor {
-  keys: string[]
+  keys?: string[]
   callback?: (config: any) => void | boolean
 }
 
@@ -75,10 +76,14 @@ export abstract class State<C extends Context = Context> {
     })
   }
 
-  accept(keys: string[], callback?: (config: any) => void | boolean): () => boolean {
-    const acceptor: Acceptor = { keys, callback }
+  accept(callback?: (config: any) => void | boolean): () => boolean
+  accept(keys: string[], callback?: (config: any) => void | boolean): () => boolean
+  accept(...args: any[]) {
+    const acceptor: Acceptor = Array.isArray(args[0])
+      ? { keys: args[0], callback: args[1] }
+      : { callback: args[0] }
     this.acceptors.push(acceptor)
-    return this.collect(`accept <${keys.join(', ')}>`, () => remove(this.acceptors, acceptor))
+    return this.collect(`accept <${acceptor.keys?.join(', ') || '*'}>`, () => remove(this.acceptors, acceptor))
   }
 
   diff(resolved: any) {
@@ -88,8 +93,12 @@ export abstract class State<C extends Context = Context> {
     const declined = new Set(modified)
     let shouldUpdate = false
     for (const { keys, callback } of this.acceptors) {
-      keys.forEach(key => declined.delete(key))
-      if (!intersection(keys, modified).length) continue
+      if (keys) {
+        keys.forEach(key => declined.delete(key))
+        if (!intersection(keys, modified).length) continue
+      } else {
+        declined.clear()
+      }
       const result = callback?.(resolved)
       if (result) shouldUpdate = true
     }

@@ -6,7 +6,7 @@ import * as jest from 'jest-mock'
 
 describe('Update', () => {
   interface Config {
-    foo: number
+    foo?: number
     bar?: number
   }
 
@@ -43,10 +43,10 @@ describe('Update', () => {
 
   it('update fork (single)', () => {
     const root = new Context()
-    const callback = jest.fn((value: number) => {})
+    const callback = jest.fn((value?: number) => {})
     const plugin = jest.fn((ctx, config: Config) => {
       ctx.on(event, () => callback(config.foo))
-      ctx.accept(['foo'], () => true)
+      // accept only bar
       ctx.accept(['bar'])
     })
 
@@ -97,6 +97,49 @@ describe('Update', () => {
     expect(outer.mock.calls).to.have.length(1)
     expect(fork1.config).to.deep.equal({ foo: 2, bar: 1 })
     expect(fork2.config).to.deep.equal({ foo: 2, bar: 1 })
+  })
+
+  it('nested update', () => {
+    const root = new Context()
+    const inner = jest.fn((ctx: Context, config: Config) => {
+      // accept everything except bar
+      ctx.accept()
+      ctx.accept(['bar'], () => true)
+    })
+    const plugin = {
+      reusable: true,
+      apply: inner,
+    }
+    const outer = jest.fn((ctx: Context, config: Config & { qux?: Config }) => {
+      const fork1 = ctx.plugin(plugin, config)
+      const fork2 = ctx.plugin(plugin, config.qux)
+      ctx.accept(['foo', 'bar'], (config) => {
+        fork1.update(config)
+      })
+      ctx.accept(['qux'], (config) => {
+        fork2.update(config.qux)
+      })
+    })
+
+    const fork = root.plugin(outer, { foo: 1, bar: 1 })
+    expect(outer.mock.calls).to.have.length(1)
+    expect(inner.mock.calls).to.have.length(2)
+
+    fork.update({ foo: 1 })
+    expect(outer.mock.calls).to.have.length(1)
+    expect(inner.mock.calls).to.have.length(3)
+
+    fork.update({})
+    expect(outer.mock.calls).to.have.length(1)
+    expect(inner.mock.calls).to.have.length(3)
+
+    fork.update({ foo: 1, qux: { foo: 1 } })
+    expect(outer.mock.calls).to.have.length(1)
+    expect(inner.mock.calls).to.have.length(3)
+
+    fork.update({ qux: { foo: 1, bar: 1 } })
+    expect(outer.mock.calls).to.have.length(1)
+    expect(inner.mock.calls).to.have.length(4)
   })
 
   it('deferred update', () => {
