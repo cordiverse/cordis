@@ -46,7 +46,7 @@ export class Lifecycle {
 
   constructor(private root: Context, private config: Lifecycle.Config) {
     defineProperty(this, Context.current, root)
-    const dispose = this.on('internal/hook', function (name, listener, prepend) {
+    defineProperty(this.on('internal/hook', function (name, listener, prepend) {
       const method = prepend ? 'unshift' : 'push'
       const { state } = this[Context.current]
       const { runtime, disposables } = state
@@ -60,8 +60,7 @@ export class Lifecycle {
         runtime.forkables[method](listener as any)
         return state.collect('event <fork>', () => remove(runtime.forkables, listener))
       }
-    })
-    defineProperty(dispose, Context.static, root.state)
+    }), Context.static, root.state)
   }
 
   queue(value: any) {
@@ -184,7 +183,8 @@ export interface Events<C extends Context = Context> {
   'internal/fork'(fork: Fork<C>): void
   'internal/runtime'(runtime: Runtime<C>): void
   'internal/warning'(format: any, ...param: any[]): void
-  'internal/service'(name: string): void
+  'internal/before-service'(name: string, value: any): void
+  'internal/service'(name: string, oldValue: any): void
   'internal/update'(fork: Fork<C>, config: any): void
   'internal/hook'(this: Lifecycle, name: string, listener: Function, prepend: boolean): () => boolean
 }

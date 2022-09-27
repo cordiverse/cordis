@@ -1,11 +1,11 @@
-import { defineProperty, Dict } from 'cosmokit'
+import { defineProperty } from 'cosmokit'
 import { Lifecycle } from './events'
 import { Registry } from './registry'
 import { getConstructor, isConstructor, resolveConfig } from './utils'
 
 export interface Context {
   root: this
-  mapping: Dict<symbol>
+  mapping: Record<string | symbol, symbol>
   lifecycle: Lifecycle
   registry: Registry<this>
 }
@@ -105,18 +105,23 @@ export namespace Context {
         const key = this.mapping[name as any] || privateKey
         const oldValue = this.root[key]
         if (oldValue === value) return
+
+        // setup filter for events
+        const self = Object.create(null)
+        self[Context.filter] = (ctx: Context) => {
+          return this.mapping[name] === ctx.mapping[name]
+        }
+
+        if (typeof name === 'string') {
+          this.emit(self, 'internal/before-service', name, value)
+        }
         this.root[key] = value
         if (value && typeof value === 'object') {
           defineProperty(value, Context.source, this)
         }
-        if (typeof name !== 'string') return
-
-        // trigger event
-        const self: object = Object.create(null)
-        self[Context.filter] = (ctx) => {
-          return this.mapping[name] === ctx.mapping[name]
+        if (typeof name === 'string') {
+          this.emit(self, 'internal/service', name, oldValue)
         }
-        this.emit(self, 'internal/service', name)
       },
     })
 

@@ -30,7 +30,7 @@ export abstract class State<C extends Context = Context> {
 
   abstract runtime: Runtime<C>
   abstract dispose(): boolean
-  abstract restart(): void
+  abstract start(): void
   abstract update(config: any): void
 
   constructor(public parent: C, public config: any) {
@@ -39,23 +39,29 @@ export abstract class State<C extends Context = Context> {
   }
 
   collect(label: string, callback: () => boolean) {
-    const dispose = () => {
+    const dispose = defineProperty(() => {
       remove(this.disposables, dispose)
       return callback()
-    }
+    }, 'name', label)
     this.disposables.push(dispose)
-    defineProperty(dispose, 'name', label)
     return dispose
   }
 
-  protected init() {
-    if (this.runtime.using.length) {
-      const dispose = this.context.on('internal/service', (name) => {
-        if (!this.runtime.using.includes(name)) return
-        this.restart()
-      })
-      defineProperty(dispose, Context.static, this)
-    }
+  restart() {
+    this.clear(true)
+    this.start()
+  }
+
+  protected setup() {
+    if (!this.runtime.using.length) return
+    defineProperty(this.context.on('internal/before-service', (name) => {
+      if (!this.runtime.using.includes(name)) return
+      this.clear(true)
+    }), Context.static, this)
+    defineProperty(this.context.on('internal/service', (name) => {
+      if (!this.runtime.using.includes(name)) return
+      this.start()
+    }), Context.static, this)
   }
 
   protected check() {
@@ -97,7 +103,7 @@ export class Fork<C extends Context = Context> extends State<C> {
   constructor(parent: Context, config: any, public runtime: Runtime<C>) {
     super(parent as C, config)
 
-    this.dispose = parent.state.collect(`fork <${parent.runtime.name}>`, () => {
+    this.dispose = defineProperty(parent.state.collect(`fork <${parent.runtime.name}>`, () => {
       this.uid = null
       this.clear()
       const result = remove(runtime.disposables, this.dispose)
@@ -106,18 +112,19 @@ export class Fork<C extends Context = Context> extends State<C> {
       }
       this.context.emit('internal/fork', this)
       return result
-    })
+    }), Context.static, runtime)
 
-    defineProperty(this.dispose, Context.static, runtime)
     runtime.children.push(this)
     runtime.disposables.push(this.dispose)
     this.context.emit('internal/fork', this)
-    if (runtime.isReusable) this.init()
-    this.restart()
+    if (runtime.isReusable) {
+      // non-reusable plugin forks are not responsive to isolated service changes
+      this.setup()
+    }
+    this.start()
   }
 
-  restart() {
-    this.clear(true)
+  start() {
     if (!this.check()) return
     for (const fork of this.runtime.forkables) {
       fork(this.context, this.config)
@@ -150,10 +157,10 @@ export class Runtime<C extends Context = Context> extends State<C> {
   children: Fork<C>[] = []
   isReusable = false
 
-  constructor(private registry: Registry<C>, public plugin: Plugin, config: any) {
+  constructor(registry: Registry<C>, public plugin: Plugin, config: any) {
     super(registry[Context.current] as C, config)
     registry.set(plugin, this)
-    if (plugin) this.init()
+    if (plugin) this.setup()
   }
 
   get isForkable() {
@@ -177,7 +184,7 @@ export class Runtime<C extends Context = Context> extends State<C> {
     return true
   }
 
-  init() {
+  setup() {
     this.schema = this.plugin['Config'] || this.plugin['schema']
     this.using = this.plugin['using'] || []
     this.isReusable = this.plugin['reusable']
@@ -186,7 +193,7 @@ export class Runtime<C extends Context = Context> extends State<C> {
     if (this.isReusable) {
       this.forkables.push(this.apply)
     } else {
-      super.init()
+      super.setup()
     }
 
     this.restart()
@@ -210,8 +217,14 @@ export class Runtime<C extends Context = Context> extends State<C> {
     }
   }
 
-  restart() {
-    this.clear(true)
+  clear(preserve?: boolean) {
+    super.clear(preserve)
+    for (const fork of this.children) {
+      fork.clear(preserve)
+    }
+  }
+
+  start() {
     if (!this.check()) return
 
     // execute plugin body
@@ -220,7 +233,7 @@ export class Runtime<C extends Context = Context> extends State<C> {
     }
 
     for (const fork of this.children) {
-      fork.restart()
+      fork.start()
     }
   }
 
