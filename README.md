@@ -150,7 +150,7 @@ We will talk about `dispose` and `fork` events in the next section.
 
 ### Plugin [↑](#contents)
 
-A **plugin** is one of three basic forms:
+A **plugin** is in one of three basic forms:
 
 - a function that accepts two parameters, of which the first is the plugin context, and the second is the provided opions
 - a class that accepts above parameters
@@ -306,7 +306,7 @@ fork2.dispose()
 
 Also, you should never use methods from the outer `ctx` parameter because they are not bound to the fork and cannot be cleaned up when the fork is disposed. Instead, simply use the `ctx` parameter of the `fork` listener.
 
-Finally, cordis provides a syntactic sugar for complete reusable plugins (i.e. plugins which only have fork listeners):
+Finally, cordis provides a syntactic sugar for fully reusable plugins (i.e. plugins which only have fork listeners):
 
 ```ts
 // mark the callback as fork listener
@@ -352,7 +352,7 @@ Cordis has three built-in services:
 - `ctx.registry`: plugin management
 - `ctx.root`: the root context
 
-You can access to these services from any contexts.
+You can access these services from any contexts.
 
 #### Use services [↑](#contents)
 
@@ -483,7 +483,7 @@ class ListService extends Service {
 
   addItem(item) {
     this.data.push(item)
-    // collect side effects
+    // return a dispose function
     return this.caller.collect('list-item', () => {
       return this.removeItem(item)
     })
@@ -503,10 +503,10 @@ class ListService extends Service {
 
 `ListService` provides two methods: `addItem` and `removeItem`.
 
-- The `addItem` method adds an item to the list and returns a disposable function which can be used to remove the item from the list. When the caller context is disposed, the disposable function will be automatically called.
+- The `addItem` method adds an item to the list and returns a dispose function which can be used to remove the item from the list. When the caller context is disposed, the disposable function will be automatically called.
 - The `removeItem` method removes an item from the list and returns a boolean value indicating whether the item is successfully removed.
 
-In the above example, `addItem` is implemented as disposable via `this.caller.collect()`. `caller` is a special property which always points to the last context which access the serivce. `ctx.collect()` accepts two parameters: the first is the name of disposable, the second is the callback function.
+In the above example, `addItem` is implemented as disposable via `this.caller.collect()`. `caller` is a special property which always points to the last context which access the service. `ctx.collect()` accepts two parameters: the first is the name of disposable, the second is the callback function.
 
 #### Service isolation [↑](#contents)
 
@@ -549,7 +549,7 @@ Context provides API for framework developers rather than users. You can create 
 
 #### Services and mixins [↑](#contents)
 
-`Context.service()` is a static method that registers a service. If you write your serivce as a derived class, you do not need to call this method because cordis will automatically register the service.
+`Context.service()` is a static method that registers a service. If you write your service as a derived class, you do not need to call this method because cordis will automatically register the service.
 
 This method is useful for framework developers who may want to provide built-in services or just declare abstract services which may not be implemented by plugins.
 
@@ -576,7 +576,7 @@ Context.mixin('state', {
 })
 ```
 
-If a mixin is accessed via a service, it will be affected by service scope.
+Mixins from services will still support service features such as [disposable](#write-disposable-methods-) and [isolation](#service-isolation-).
 
 ## API
 
