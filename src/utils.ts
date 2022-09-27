@@ -6,6 +6,10 @@ export function isConstructor(func: any): func is new (...args: any) => any {
   return true
 }
 
+export function getConstructor(instance: any) {
+  return Object.getPrototypeOf(instance).constructor
+}
+
 export function resolveConfig(plugin: any, config: any) {
   if (config === false) return
   if (config === true) config = undefined

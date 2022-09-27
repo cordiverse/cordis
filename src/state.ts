@@ -1,7 +1,7 @@
 import { deepEqual, defineProperty, intersection, remove } from 'cosmokit'
 import { Context } from './context'
 import { Plugin, Registry } from './registry'
-import { isConstructor, resolveConfig } from './utils'
+import { getConstructor, isConstructor, resolveConfig } from './utils'
 
 declare module './context' {
   export interface Context {
@@ -214,7 +214,7 @@ export class Runtime<C extends Context = Context> extends State<C> {
     if (!this.check()) return
 
     // execute plugin body
-    if (!this.isReusable) {
+    if (!this.isReusable && this.plugin) {
       this.apply(this.context, this.config)
     }
 
@@ -228,7 +228,7 @@ export class Runtime<C extends Context = Context> extends State<C> {
       this.context.emit('internal/warning', `attempting to update forkable plugin "${this.plugin.name}", which may lead to unexpected behavior`)
     }
     const oldConfig = this.config
-    const resolved = resolveConfig(this.runtime.plugin, config)
+    const resolved = resolveConfig(this.runtime.plugin || getConstructor(this.context), config)
     const shouldUpdate = this.diff(resolved)
     this.config = resolved
     for (const fork of this.children) {

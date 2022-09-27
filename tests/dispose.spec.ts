@@ -29,7 +29,14 @@ describe('Disposables', () => {
 
     // only 1 handler left
     callback.mockClear()
-    fork.dispose()
+    expect(fork.dispose()).to.be.true
+    expect(root.registry.size).to.equal(1)
+    root.emit(event)
+    expect(callback.mock.calls).to.have.length(1)
+
+    // subsequent calls should be noop
+    callback.mockClear()
+    expect(fork.dispose()).to.be.false
     expect(root.registry.size).to.equal(1)
     root.emit(event)
     expect(callback.mock.calls).to.have.length(1)

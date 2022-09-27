@@ -1,5 +1,6 @@
 import { Awaitable, defineProperty } from 'cosmokit'
 import { Context } from './context'
+import { getConstructor } from './utils'
 
 export class Service<C extends Context = Context> {
   protected start(): Awaitable<void> {}
@@ -7,7 +8,7 @@ export class Service<C extends Context = Context> {
   protected fork?(ctx: C, config: any): void
 
   constructor(protected ctx: C, name: string, immediate?: boolean) {
-    Object.getPrototypeOf(ctx.root).constructor.service(name)
+    getConstructor(ctx.root).service(name)
     defineProperty(this, Context.current, ctx)
 
     if (immediate) {
