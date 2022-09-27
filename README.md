@@ -35,7 +35,7 @@ ctx.start()                     // start app
   - [Use services](#use-services-)
   - [Write services](#write-services-)
   - [Write disposable methods](#write-disposable-methods-)
-  - [Service scopes](#service-scopes-)
+  - [Service isolation](#service-isolation-)
 - [Context](#context-)
   - [Services and mixins](#services-and-mixins-)
 
@@ -508,7 +508,9 @@ class ListService extends Service {
 
 In the above example, `addItem` is implemented as disposable via `this.caller.collect()`. `caller` is a special property which always points to the last context which access the serivce. `ctx.collect()` accepts two parameters: the first is the name of disposable, the second is the callback function.
 
-#### Service scopes [↑](#contents)
+#### Service isolation [↑](#contents)
+
+> Note: this is an experimental API and may be changed in the future.
 
 By default, a service is available in all contexts. Below is an example:
 
@@ -522,7 +524,7 @@ fork.dispose()
 ctx.custom                      // undefined
 ```
 
-Registering multiple services will only override themselves. In order to limit the scope of a service (so that multiple services may exist at the same time), simply create an isolate scope:
+Registering multiple services will only override themselves. In order to limit the scope of a service (so that multiple services may exist at the same time), simply create an isolated scope:
 
 ```ts
 const ctx1 = ctx.isolate(['foo'])
@@ -538,6 +540,8 @@ ctx2.bar                        // undefined
 ```
 
 `ctx.isolate()` accepts a parameter `keys` and returns a new context. Services included in `keys` will be isolated in the new context, while services not included in `keys` are still shared with the parent context.
+
+> Note: there is an edge case when using service isolation, service dependencies and `fork` events at the same time. Forks from a partially reusable plugin are **not** responsive to isolated service changes, because it may cause unexpected reloading across forks. If you want to write reusable plugin with service dependencies, just use `reusable` property instead of listening to `fork` event.
 
 ### Context [↑](#contents)
 
@@ -587,12 +591,14 @@ Create a new context with the current context as the prototype. Properties speci
 
 #### ctx.isolate(keys)
 
+> Note: this is an experimental API and may be changed in the future.
+
 - keys: `string[]` service names
 - returns: `Context`
 
 Create a new context with the current context as the prototype. Services included in `keys` will be isolated in the new context, while services not included in `keys` are still shared with the parent context.
 
-See: [Service scopes](#service-scopes-)
+See: [Service isolation](#service-isolation-)
 
 ### Events
 
