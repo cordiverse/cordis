@@ -34,9 +34,6 @@ export namespace Plugin {
 
 declare module './context' {
   export interface Context {
-    state: State<this>
-    runtime: Runtime<this>
-    collect(label: string, callback: () => boolean): () => boolean
     using(using: readonly string[], callback: Plugin.Function<void, this>): Fork<this>
     plugin<T extends Plugin<this>>(plugin: T, config?: boolean | Plugin.Config<T>): Fork<this>
     /** @deprecated use `ctx.registry.delete()` instead */

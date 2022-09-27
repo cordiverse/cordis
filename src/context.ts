@@ -143,5 +143,6 @@ Context.service('registry', Registry)
 Context.service('lifecycle', Lifecycle)
 
 Context.mixin('state', {
-  properties: ['runtime', 'collect'],
+  properties: ['runtime'],
+  methods: ['collect', 'accept']
 })

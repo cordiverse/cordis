@@ -1,15 +1,31 @@
-import { defineProperty, remove } from 'cosmokit'
+import { deepEqual, defineProperty, intersection, remove } from 'cosmokit'
 import { Context } from './context'
 import { Plugin, Registry } from './registry'
 import { isConstructor, resolveConfig } from './utils'
 
+declare module './context' {
+  export interface Context {
+    state: State<this>
+    runtime: Runtime<this>
+    collect(label: string, callback: () => boolean): () => boolean
+    accept(keys: string[], callback?: (config: any) => void | boolean): () => boolean
+  }
+}
+
 export type Disposable = () => void
+
+export interface Acceptor {
+  keys: string[]
+  callback?: (config: any) => void | boolean
+}
 
 export abstract class State<C extends Context = Context> {
   uid: number | null
   ctx: C
   context: Context
   disposables: Disposable[] = []
+
+  protected acceptors: Acceptor[] = []
 
   abstract runtime: Runtime<C>
   abstract dispose(): boolean
@@ -51,6 +67,27 @@ export abstract class State<C extends Context = Context> {
       dispose()
     })
   }
+
+  accept(keys: string[], callback?: (config: any) => void | boolean): () => boolean {
+    const acceptor: Acceptor = { keys, callback }
+    this.acceptors.push(acceptor)
+    return this.collect(`accept <${keys.join(', ')}>`, () => remove(this.acceptors, acceptor))
+  }
+
+  diff(resolved: any) {
+    const modified = Object
+      .keys({ ...this.config, ...resolved })
+      .filter(key => !deepEqual(this.config[key], resolved[key]))
+    const declined = new Set(modified)
+    let shouldUpdate = false
+    for (const { keys, callback } of this.acceptors) {
+      keys.forEach(key => declined.delete(key))
+      if (!intersection(keys, modified).length) continue
+      const result = callback?.(resolved)
+      if (result) shouldUpdate = true
+    }
+    return !!declined.size || shouldUpdate
+  }
 }
 
 export class Fork<C extends Context = Context> extends State<C> {
@@ -89,13 +126,17 @@ export class Fork<C extends Context = Context> extends State<C> {
   update(config: any) {
     const oldConfig = this.config
     const resolved = resolveConfig(this.runtime.plugin, config)
-    this.config = resolved
-    this.context.emit('internal/update', this, config)
     if (this.runtime.isForkable) {
-      this.restart()
+      const shouldUpdate = this.diff(resolved)
+      this.config = resolved
+      this.context.emit('internal/update', this, config)
+      if (shouldUpdate) this.restart()
     } else if (this.runtime.config === oldConfig) {
+      const shouldUpdate = this.runtime.diff(resolved)
+      this.config = resolved
       this.runtime.config = resolved
-      this.runtime.restart()
+      this.context.emit('internal/update', this, config)
+      if (shouldUpdate) this.runtime.restart()
     }
   }
 }
@@ -131,12 +172,8 @@ export class Runtime<C extends Context = Context> extends State<C> {
   dispose() {
     this.uid = null
     this.clear()
-    if (this.plugin) {
-      this.context.emit('internal/runtime', this)
-      return true
-    } else {
-      return false
-    }
+    this.context.emit('internal/runtime', this)
+    return true
   }
 
   init() {
@@ -192,12 +229,15 @@ export class Runtime<C extends Context = Context> extends State<C> {
     }
     const oldConfig = this.config
     const resolved = resolveConfig(this.runtime.plugin, config)
+    const shouldUpdate = this.diff(resolved)
     this.config = resolved
     for (const fork of this.children) {
       if (fork.config !== oldConfig) continue
       fork.config = resolved
       this.context.emit('internal/update', fork, config)
     }
-    this.restart()
+    if (shouldUpdate) {
+      this.restart()
+    }
   }
 }
