@@ -16,7 +16,7 @@ describe('Update', () => {
     const plugin = jest.fn((ctx: Context, config: Config) => {
       ctx.on('dispose', dispose)
       ctx.on(event, () => {
-        ctx.update({ foo: 2 })
+        ctx.state.update({ foo: 2 })
       })
       // make coverage happy
       ctx.on('fork', noop)
@@ -178,10 +178,10 @@ describe('Update', () => {
     root.on('dispose', callback)
     expect(callback.mock.calls).to.have.length(0)
 
-    root.update({ maxListeners: 100 })
+    root.state.update({ maxListeners: 100 })
     expect(callback.mock.calls).to.have.length(0)
 
-    root.update({ foo: 100 })
+    root.state.update({ foo: 100 })
     expect(callback.mock.calls).to.have.length(1)
     expect(root.state.disposables.length).to.equal(length)
   })

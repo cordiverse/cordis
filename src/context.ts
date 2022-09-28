@@ -19,21 +19,24 @@ export class Context {
   static readonly internal = Symbol('internal')
   static readonly immediate = Symbol('immediate')
 
-  public options: Context.Config
-
   constructor(config?: Context.Config) {
+    const options = resolveConfig(getConstructor(this), config)
     const attach = (internal: {}) => {
       if (!internal) return
       attach(Object.getPrototypeOf(internal))
       for (const key of Object.getOwnPropertySymbols(internal)) {
-        this[key] = new internal[key](this, this.options)
+        this[key] = new internal[key](this, options)
       }
     }
 
     this.root = this
     this.mapping = Object.create(null)
-    this.options = resolveConfig(getConstructor(this), config)
     attach(this[Context.internal])
+    this.state.config = options
+  }
+
+  get options(): Context.Config {
+    return this.root.state.config
   }
 
   [Symbol.for('nodejs.util.inspect.custom')]() {
@@ -149,5 +152,5 @@ Context.service('lifecycle', Lifecycle)
 
 Context.mixin('state', {
   properties: ['runtime'],
-  methods: ['collect', 'accept', 'update'],
+  methods: ['collect', 'accept'],
 })
