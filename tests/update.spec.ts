@@ -74,7 +74,7 @@ describe('Update', () => {
   it('update fork (multiple)', () => {
     const root = new Context()
     const inner = jest.fn((ctx: Context) => {
-      ctx.accept(['foo'], () => true)
+      ctx.decline(['foo'])
       ctx.accept(['bar'])
     })
     const outer = jest.fn((ctx: Context, config: Config) => {
@@ -104,7 +104,7 @@ describe('Update', () => {
     const inner = jest.fn((ctx: Context, config: Config) => {
       // accept everything except bar
       ctx.accept()
-      ctx.accept(['bar'], () => true)
+      ctx.decline(['bar'])
     })
     const plugin = {
       reusable: true,
@@ -175,6 +175,7 @@ describe('Update', () => {
     const callback = jest.fn(noop)
     const { length } = root.state.disposables
 
+    root.decline(['foo'])
     root.on('dispose', callback)
     expect(callback.mock.calls).to.have.length(0)
 

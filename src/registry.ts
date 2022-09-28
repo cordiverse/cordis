@@ -54,7 +54,7 @@ export class Registry<C extends Context = Context> extends Map<Plugin<C>, Runtim
     super()
     defineProperty(this, Context.current, root)
     root.state = new Runtime(this, null!, config)
-    defineProperty(root.accept(['maxListeners']), Context.static, root.state)
+    defineProperty(root.accept(), Context.static, root.state)
   }
 
   get counter() {

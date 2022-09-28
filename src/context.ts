@@ -152,5 +152,5 @@ Context.service('lifecycle', Lifecycle)
 
 Context.mixin('state', {
   properties: ['runtime'],
-  methods: ['collect', 'accept'],
+  methods: ['collect', 'accept', 'decline'],
 })

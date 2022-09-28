@@ -10,6 +10,7 @@ declare module './context' {
     collect(label: string, callback: () => boolean): () => boolean
     accept(callback?: (config: any) => void | boolean): () => boolean
     accept(keys: string[], callback?: (config: any) => void | boolean): () => boolean
+    decline(keys: string[]): () => boolean
   }
 }
 
@@ -83,6 +84,10 @@ export abstract class State<C extends Context = Context> {
       : { callback: args[0] }
     this.acceptors.push(acceptor)
     return this.collect(`accept <${acceptor.keys?.join(', ') || '*'}>`, () => remove(this.acceptors, acceptor))
+  }
+
+  decline(keys: string[]) {
+    return this.accept(keys, () => true)
   }
 
   diff(resolved: any) {
