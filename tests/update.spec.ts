@@ -154,7 +154,7 @@ describe('Update', () => {
     const fork = root.plugin(plugin, { value: 1 })
     expect(callback.mock.calls).to.have.length(0)
 
-    fork.update({ value: 2 })
+    fork.update({ value: 2 }, true)
     expect(callback.mock.calls).to.have.length(0)
 
     root.foo = {}
@@ -163,7 +163,7 @@ describe('Update', () => {
     expect(fork.disposables).to.have.length(2)              // service listener
     expect(fork.runtime.disposables).to.have.length(1)      // fork
 
-    fork.update({ value: 3 })
+    fork.update({ value: 3 }, true)
     expect(callback.mock.calls).to.have.length(2)
     expect(callback.mock.calls[1][1]).to.deep.equal({ value: 3 })
     expect(fork.disposables).to.have.length(2)              // service listener

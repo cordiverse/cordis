@@ -36,7 +36,7 @@ export abstract class State<C extends Context = Context> {
   abstract runtime: Runtime<C>
   abstract dispose(): boolean
   abstract start(): void
-  abstract update(config: any): void
+  abstract update(config: any, forced?: boolean): void
 
   constructor(public parent: C, public config: any) {
     this.uid = parent.registry ? parent.registry.counter : 0
@@ -69,7 +69,7 @@ export abstract class State<C extends Context = Context> {
     }), Context.static, this)
   }
 
-  protected check() {
+  protected checkDeps() {
     return this.runtime.using.every(name => this.context[name])
   }
 
@@ -93,7 +93,9 @@ export abstract class State<C extends Context = Context> {
     return this.accept(keys, () => true)
   }
 
-  checkUpdate(resolved: any) {
+  checkUpdate(resolved: any, forced?: boolean) {
+    if (forced) return [true, true]
+
     const modified: Record<string, boolean> = Object.create(null)
     const checkPropertyUpdate = (key: string) => {
       const result = modified[key] ??= !deepEqual(this.config[key], resolved[key])
@@ -159,18 +161,18 @@ export class Fork<C extends Context = Context> extends State<C> {
   }
 
   start() {
-    if (!this.check()) return
+    if (!this.checkDeps()) return
     for (const fork of this.runtime.forkables) {
       fork(this.context, this.config)
     }
   }
 
-  update(config: any) {
+  update(config: any, forced?: boolean) {
     const oldConfig = this.config
     const state: State<C> = this.runtime.isForkable ? this : this.runtime
     if (state.config !== oldConfig) return
     const resolved = resolveConfig(this.runtime.plugin, config)
-    const [hasUpdate, shouldRestart] = state.checkUpdate(resolved)
+    const [hasUpdate, shouldRestart] = state.checkUpdate(resolved, forced)
     this.config = resolved
     state.config = resolved
     if (hasUpdate) {
@@ -256,7 +258,7 @@ export class Runtime<C extends Context = Context> extends State<C> {
   }
 
   start() {
-    if (!this.check()) return
+    if (!this.checkDeps()) return
 
     // execute plugin body
     if (!this.isReusable && this.plugin) {
@@ -268,13 +270,13 @@ export class Runtime<C extends Context = Context> extends State<C> {
     }
   }
 
-  update(config: any) {
+  update(config: any, forced?: boolean) {
     if (this.isForkable) {
       this.context.emit('internal/warning', `attempting to update forkable plugin "${this.plugin.name}", which may lead to unexpected behavior`)
     }
     const oldConfig = this.config
     const resolved = resolveConfig(this.runtime.plugin || getConstructor(this.context), config)
-    const [hasUpdate, shouldRestart] = this.checkUpdate(resolved)
+    const [hasUpdate, shouldRestart] = this.checkUpdate(resolved, forced)
     this.config = resolved
     for (const fork of this.children) {
       if (fork.config !== oldConfig) continue
