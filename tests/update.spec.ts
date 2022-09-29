@@ -115,10 +115,10 @@ describe('Update', () => {
       const fork2 = ctx.plugin(plugin, config.qux)
       ctx.accept(['foo', 'bar'], (config) => {
         fork1.update(config)
-      })
+      }, { passive: true })
       ctx.accept(['qux'], (config) => {
         fork2.update(config.qux)
-      })
+      }, { passive: true })
     })
 
     const fork = root.plugin(outer, { foo: 1, bar: 1 })

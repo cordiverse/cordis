@@ -1,4 +1,4 @@
-import { deepEqual, defineProperty, intersection, remove } from 'cosmokit'
+import { deepEqual, defineProperty, remove } from 'cosmokit'
 import { Context } from './context'
 import { Plugin, Registry } from './registry'
 import { getConstructor, isConstructor, resolveConfig } from './utils'
@@ -8,15 +8,19 @@ declare module './context' {
     state: State<this>
     runtime: Runtime<this>
     collect(label: string, callback: () => boolean): () => boolean
-    accept(callback?: (config: any) => void | boolean): () => boolean
-    accept(keys: string[], callback?: (config: any) => void | boolean): () => boolean
+    accept(callback?: (config: any) => void | boolean, options?: AcceptOptions): () => boolean
+    accept(keys: string[], callback?: (config: any) => void | boolean, options?: AcceptOptions): () => boolean
     decline(keys: string[]): () => boolean
   }
 }
 
 export type Disposable = () => void
 
-export interface Acceptor {
+export interface AcceptOptions {
+  passive?: boolean
+}
+
+export interface Acceptor extends AcceptOptions {
   keys?: string[]
   callback?: (config: any) => void | boolean
 }
@@ -76,37 +80,54 @@ export abstract class State<C extends Context = Context> {
     })
   }
 
-  accept(callback?: (config: any) => void | boolean): () => boolean
-  accept(keys: string[], callback?: (config: any) => void | boolean): () => boolean
+  accept(callback?: (config: any) => void | boolean, options?: AcceptOptions): () => boolean
+  accept(keys: string[], callback?: (config: any) => void | boolean, options?: AcceptOptions): () => boolean
   accept(...args: any[]) {
-    const acceptor: Acceptor = Array.isArray(args[0])
-      ? { keys: args[0], callback: args[1] }
-      : { callback: args[0] }
+    const keys = Array.isArray(args[0]) ? args.shift() : null
+    const acceptor: Acceptor = { keys, callback: args[0], ...args[1] }
     this.acceptors.push(acceptor)
-    return this.collect(`accept <${acceptor.keys?.join(', ') || '*'}>`, () => remove(this.acceptors, acceptor))
+    return this.collect(`accept <${keys?.join(', ') || '*'}>`, () => remove(this.acceptors, acceptor))
   }
 
   decline(keys: string[]) {
     return this.accept(keys, () => true)
   }
 
-  diff(resolved: any) {
-    const modified = Object
-      .keys({ ...this.config, ...resolved })
-      .filter(key => !deepEqual(this.config[key], resolved[key]))
-    const declined = new Set(modified)
-    let shouldUpdate = false
-    for (const { keys, callback } of this.acceptors) {
-      if (keys) {
-        keys.forEach(key => declined.delete(key))
-        if (!intersection(keys, modified).length) continue
+  checkUpdate(resolved: any) {
+    const modified: Record<string, boolean> = Object.create(null)
+    const checkPropertyUpdate = (key: string) => {
+      const result = modified[key] ??= !deepEqual(this.config[key], resolved[key])
+      hasUpdate ||= result
+      return result
+    }
+
+    const ignored = new Set<string>()
+    let hasUpdate = false, shouldRestart = false
+    let fallback: boolean | null = null
+    for (const { keys, callback, passive } of this.acceptors) {
+      if (!keys) {
+        fallback ||= !passive
+      } else if (passive) {
+        keys?.forEach(key => ignored.add(key))
       } else {
-        declined.clear()
+        let hasUpdate = false
+        for (const key of keys) {
+          hasUpdate ||= checkPropertyUpdate(key)
+        }
+        if (!hasUpdate) continue
       }
       const result = callback?.(resolved)
-      if (result) shouldUpdate = true
+      if (result) shouldRestart = true
     }
-    return !!declined.size || shouldUpdate
+
+    for (const key in { ...this.config, ...resolved }) {
+      if (fallback === false) continue
+      if (!(key in modified) && !ignored.has(key)) {
+        const hasUpdate = checkPropertyUpdate(key)
+        if (fallback === null) shouldRestart ||= hasUpdate
+      }
+    }
+    return [hasUpdate, shouldRestart]
   }
 }
 
@@ -146,19 +167,16 @@ export class Fork<C extends Context = Context> extends State<C> {
 
   update(config: any) {
     const oldConfig = this.config
+    const state: State<C> = this.runtime.isForkable ? this : this.runtime
+    if (state.config !== oldConfig) return
     const resolved = resolveConfig(this.runtime.plugin, config)
-    if (this.runtime.isForkable) {
-      const shouldUpdate = this.diff(resolved)
-      this.config = resolved
+    const [hasUpdate, shouldRestart] = state.checkUpdate(resolved)
+    this.config = resolved
+    state.config = resolved
+    if (hasUpdate) {
       this.context.emit('internal/update', this, config)
-      if (shouldUpdate) this.restart()
-    } else if (this.runtime.config === oldConfig) {
-      const shouldUpdate = this.runtime.diff(resolved)
-      this.config = resolved
-      this.runtime.config = resolved
-      this.context.emit('internal/update', this, config)
-      if (shouldUpdate) this.runtime.restart()
     }
+    if (shouldRestart) state.restart()
   }
 }
 
@@ -256,15 +274,15 @@ export class Runtime<C extends Context = Context> extends State<C> {
     }
     const oldConfig = this.config
     const resolved = resolveConfig(this.runtime.plugin || getConstructor(this.context), config)
-    const shouldUpdate = this.diff(resolved)
+    const [hasUpdate, shouldRestart] = this.checkUpdate(resolved)
     this.config = resolved
     for (const fork of this.children) {
       if (fork.config !== oldConfig) continue
       fork.config = resolved
-      this.context.emit('internal/update', fork, config)
+      if (hasUpdate) {
+        this.context.emit('internal/update', fork, config)
+      }
     }
-    if (shouldUpdate) {
-      this.restart()
-    }
+    if (shouldRestart) this.restart()
   }
 }
