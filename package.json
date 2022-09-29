@@ -1,7 +1,8 @@
 {
   "name": "cordis",
   "description": "AOP Framework for Modern JavaScript Applications",
-  "version": "2.3.5",
+  "version": "2.3.7",
+  "sideEffects": false,
   "main": "lib/index.cjs",
   "module": "lib/index.mjs",
   "typings": "lib/index.d.ts",

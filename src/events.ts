@@ -44,7 +44,7 @@ export class Lifecycle {
   _tasks = new Set<Promise<void>>()
   _hooks: Record<keyof any, [Context, (...args: any[]) => any][]> = {}
 
-  constructor(private root: Context, private config: Lifecycle.Config) {
+  constructor(private root: Context) {
     defineProperty(this, Context.current, root)
     defineProperty(this.on('internal/hook', function (name, listener, prepend) {
       const method = prepend ? 'unshift' : 'push'
@@ -120,8 +120,9 @@ export class Lifecycle {
   }
 
   register(label: string, hooks: [Context, any][], listener: any, prepend?: boolean) {
-    if (hooks.length >= this.config.maxListeners!) {
-      this.root.emit('internal/warning', `max listener count (${this.config.maxListeners!}) for ${label} exceeded, which may be caused by a memory leak`)
+    const maxListeners = this.root.options.maxListeners!
+    if (hooks.length >= maxListeners!) {
+      this.root.emit('internal/warning', `max listener count (${maxListeners!}) for ${label} exceeded, which may be caused by a memory leak`)
     }
 
     const caller = this[Context.current]

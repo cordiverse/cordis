@@ -50,7 +50,7 @@ export class Registry<C extends Context = Context> extends Map<Plugin<C>, Runtim
 
   private _counter = 0
 
-  constructor(private root: Context, private config: Registry.Config) {
+  constructor(private root: Context, config: Registry.Config) {
     super()
     defineProperty(this, Context.current, root)
     root.state = new Runtime(this, null!, config)
