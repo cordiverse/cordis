@@ -176,7 +176,7 @@ export class Fork<C extends Context = Context> extends State<C> {
     this.config = resolved
     state.config = resolved
     if (hasUpdate) {
-      this.context.emit('internal/update', this, config)
+      this.context.emit('internal/update', this, oldConfig)
     }
     if (shouldRestart) state.restart()
   }
@@ -282,7 +282,7 @@ export class Runtime<C extends Context = Context> extends State<C> {
       if (fork.config !== oldConfig) continue
       fork.config = resolved
       if (hasUpdate) {
-        this.context.emit('internal/update', fork, config)
+        this.context.emit('internal/update', fork, oldConfig)
       }
     }
     if (shouldRestart) this.restart()

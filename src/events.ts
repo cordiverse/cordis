@@ -186,6 +186,6 @@ export interface Events<C extends Context = Context> {
   'internal/warning'(format: any, ...param: any[]): void
   'internal/before-service'(name: string, value: any): void
   'internal/service'(name: string, oldValue: any): void
-  'internal/update'(fork: Fork<C>, config: any): void
+  'internal/update'(fork: Fork<C>, oldConfig: any): void
   'internal/hook'(this: Lifecycle, name: string, listener: Function, prepend: boolean): () => boolean
 }

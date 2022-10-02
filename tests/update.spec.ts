@@ -113,7 +113,7 @@ describe('Update', () => {
     const outer = jest.fn((ctx: Context, config: Config & { qux?: Config }) => {
       const fork1 = ctx.plugin(plugin, config)
       const fork2 = ctx.plugin(plugin, config.qux)
-      ctx.accept(['foo', 'bar'], (config) => {
+      ctx.accept((config) => {
         fork1.update(config)
       }, { passive: true })
       ctx.accept(['qux'], (config) => {
