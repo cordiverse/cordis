@@ -19,6 +19,7 @@ export namespace Plugin {
   export interface Object<S = any, T = any, C extends Context = any> {
     name?: string
     apply: Function<T, C>
+    reactive?: boolean
     reusable?: boolean
     Config?: (config?: S) => T
     schema?: (config?: S) => T
@@ -54,7 +55,7 @@ export class Registry<C extends Context = Context> extends Map<Plugin<C>, Runtim
     super()
     defineProperty(this, Context.current, root)
     root.state = new Runtime(this, null!, config)
-    defineProperty(root.accept(), Context.static, root.state)
+    root.state.runtime.isReactive = true
   }
 
   get counter() {

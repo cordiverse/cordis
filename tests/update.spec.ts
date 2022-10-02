@@ -103,11 +103,11 @@ describe('Update', () => {
     const root = new Context()
     const inner = jest.fn((ctx: Context, config: Config) => {
       // accept everything except bar
-      ctx.accept()
       ctx.decline(['bar'])
     })
     const plugin = {
       reusable: true,
+      reactive: true,
       apply: inner,
     }
     const outer = jest.fn((ctx: Context, config: Config & { qux?: Config }) => {

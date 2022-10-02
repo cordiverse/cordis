@@ -105,7 +105,7 @@ export abstract class State<C extends Context = Context> {
 
     const ignored = new Set<string>()
     let hasUpdate = false, shouldRestart = false
-    let fallback: boolean | null = null
+    let fallback: boolean | null = this.runtime.isReactive || null
     for (const { keys, callback, passive } of this.acceptors) {
       if (!keys) {
         fallback ||= !passive
@@ -189,6 +189,7 @@ export class Runtime<C extends Context = Context> extends State<C> {
   forkables: Function[] = []
   children: Fork<C>[] = []
   isReusable = false
+  isReactive = false
 
   constructor(registry: Registry<C>, public plugin: Plugin, config: any) {
     super(registry[Context.current] as C, config)
@@ -221,6 +222,7 @@ export class Runtime<C extends Context = Context> extends State<C> {
     this.schema = this.plugin['Config'] || this.plugin['schema']
     this.using = this.plugin['using'] || []
     this.isReusable = this.plugin['reusable']
+    this.isReactive = this.plugin['reactive']
     this.context.emit('internal/runtime', this)
 
     if (this.isReusable) {
