@@ -45,7 +45,7 @@ describe('Update', () => {
     const root = new Context()
     const listener = jest.fn((value?: number) => {})
     const updater = jest.fn(() => {})
-    const plugin = jest.fn((ctx: Context, config: Config) => {
+    const plugin = jest.fn((ctx: Context<Config>) => {
       ctx.on(event, () => listener(ctx.config.foo))
       // accept only foo
       ctx.accept(['foo'], updater, { immediate: true })

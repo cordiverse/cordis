@@ -10,6 +10,7 @@ export function createArray<T>(length: number, create: (index: number) => T) {
 
 function setup() {
   const root = new Context({ maxListeners: 64 })
+  expect(root.config).to.deep.equal({ maxListeners: 64 })
   const warn = jest.fn()
   root.on('internal/warning', warn)
   return { root, warn }

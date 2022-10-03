@@ -120,7 +120,7 @@ export class Lifecycle {
   }
 
   register(label: string, hooks: [Context, any][], listener: any, prepend?: boolean) {
-    const maxListeners = this.root.options.maxListeners!
+    const maxListeners = this.root.config.maxListeners!
     if (hooks.length >= maxListeners!) {
       this.root.emit('internal/warning', `max listener count (${maxListeners!}) for ${label} exceeded, which may be caused by a memory leak`)
     }
@@ -178,14 +178,14 @@ export class Lifecycle {
 }
 
 export interface Events<C extends Context = Context> {
-  'fork': Plugin.Function<any, C>
+  'fork': Plugin.Function<C['config'], C>
   'ready'(): Awaitable<void>
   'dispose'(): Awaitable<void>
-  'internal/fork'(fork: Fork<C>): void
-  'internal/runtime'(runtime: Runtime<C>): void
+  'internal/fork'(fork: Fork<Context.Parameterized<C>>): void
+  'internal/runtime'(runtime: Runtime<Context.Parameterized<C>>): void
   'internal/warning'(format: any, ...param: any[]): void
   'internal/before-service'(name: string, value: any): void
   'internal/service'(name: string, oldValue: any): void
-  'internal/update'(fork: Fork<C>, oldConfig: any): void
+  'internal/update'(fork: Fork<Context.Parameterized<C>>, oldConfig: any): void
   'internal/hook'(this: Lifecycle, name: string, listener: Function, prepend: boolean): () => boolean
 }

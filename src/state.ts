@@ -4,14 +4,14 @@ import { Plugin, Registry } from './registry'
 import { getConstructor, isConstructor, resolveConfig } from './utils'
 
 declare module './context' {
-  export interface Context<T = any> {
+  export interface Context<T> {
     config: T
     state: State<this>
     runtime: Runtime<this>
     collect(label: string, callback: () => boolean): () => boolean
-    accept(callback?: (config: any) => void | boolean, options?: AcceptOptions): () => boolean
-    accept(keys: string[], callback?: (config: any) => void | boolean, options?: AcceptOptions): () => boolean
-    decline(keys: string[]): () => boolean
+    accept(callback?: (config: this['config']) => void | boolean, options?: AcceptOptions): () => boolean
+    accept(keys: (keyof this['config'])[], callback?: (config: this['config']) => void | boolean, options?: AcceptOptions): () => boolean
+    decline(keys: (keyof this['config'])[]): () => boolean
   }
 }
 
@@ -30,17 +30,17 @@ export interface Acceptor extends AcceptOptions {
 export abstract class State<C extends Context = Context> {
   uid: number | null
   ctx: C
-  context: Context
   disposables: Disposable[] = []
 
+  protected context: Context
   protected acceptors: Acceptor[] = []
 
   abstract runtime: Runtime<C>
   abstract dispose(): boolean
   abstract start(): void
-  abstract update(config: any, forced?: boolean): void
+  abstract update(config: C['config'], forced?: boolean): void
 
-  constructor(public parent: C, public config: any) {
+  constructor(public parent: C, public config: C['config']) {
     this.uid = parent.registry ? parent.registry.counter : 0
     this.ctx = this.context = parent.extend({ state: this })
   }
@@ -72,7 +72,7 @@ export abstract class State<C extends Context = Context> {
   }
 
   protected checkDeps() {
-    return this.runtime.using.every(name => this.context[name])
+    return this.runtime.using.every(name => this.ctx[name])
   }
 
   clear(preserve = false) {
@@ -82,8 +82,8 @@ export abstract class State<C extends Context = Context> {
     })
   }
 
-  accept(callback?: (config: any) => void | boolean, options?: AcceptOptions): () => boolean
-  accept(keys: string[], callback?: (config: any) => void | boolean, options?: AcceptOptions): () => boolean
+  accept(callback?: (config: C['config']) => void | boolean, options?: AcceptOptions): () => boolean
+  accept(keys: string[], callback?: (config: C['config']) => void | boolean, options?: AcceptOptions): () => boolean
   accept(...args: any[]) {
     const keys = Array.isArray(args[0]) ? args.shift() : null
     const acceptor: Acceptor = { keys, callback: args[0], ...args[1] }
@@ -139,7 +139,7 @@ export abstract class State<C extends Context = Context> {
 export class Fork<C extends Context = Context> extends State<C> {
   dispose: () => boolean
 
-  constructor(parent: Context, config: any, public runtime: Runtime<C>) {
+  constructor(parent: Context, config: C['config'], public runtime: Runtime<C>) {
     super(parent as C, config)
 
     this.dispose = defineProperty(parent.state.collect(`fork <${parent.runtime.name}>`, () => {
@@ -275,7 +275,7 @@ export class Runtime<C extends Context = Context> extends State<C> {
     }
   }
 
-  update(config: any, forced?: boolean) {
+  update(config: C['config'], forced?: boolean) {
     if (this.isForkable) {
       this.context.emit('internal/warning', `attempting to update forkable plugin "${this.plugin.name}", which may lead to unexpected behavior`)
     }

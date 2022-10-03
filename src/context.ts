@@ -4,13 +4,15 @@ import { Registry } from './registry'
 import { getConstructor, isConstructor, resolveConfig } from './utils'
 
 export interface Context {
-  root: this
+  [Context.config]: Context.Config
+  root: Context.Parameterized<this, this[typeof Context.config]>
   mapping: Record<string | symbol, symbol>
   lifecycle: Lifecycle
   registry: Registry<this>
 }
 
-export class Context {
+export class Context<T = any> {
+  static readonly config = Symbol('config')
   static readonly events = Symbol('events')
   static readonly static = Symbol('static')
   static readonly filter = Symbol('filter')
@@ -29,14 +31,14 @@ export class Context {
       }
     }
 
-    this.root = this
+    this.root = this as any
     this.mapping = Object.create(null)
     attach(this[Context.internal])
     this.state.config = options
   }
 
-  get options(): Context.Config {
-    return this.root.state.config
+  get options() {
+    return this.root.config
   }
 
   [Symbol.for('nodejs.util.inspect.custom')]() {
@@ -61,6 +63,8 @@ export class Context {
 }
 
 export namespace Context {
+  export type Parameterized<C, T = any> = Omit<C, 'config'> & { config: T }
+
   export interface Config extends Lifecycle.Config, Registry.Config {}
 
   export interface MixinOptions {

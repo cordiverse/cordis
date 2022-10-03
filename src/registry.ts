@@ -35,10 +35,10 @@ export namespace Plugin {
 
 declare module './context' {
   export interface Context {
-    using(using: readonly string[], callback: Plugin.Function<void, this>): Fork<this>
-    plugin<T extends Plugin<this>>(plugin: T, config?: boolean | Plugin.Config<T>): Fork<this>
+    using(using: readonly string[], callback: Plugin.Function<void, Context.Parameterized<this>>): Fork<Context.Parameterized<this>>
+    plugin<S extends Plugin<Context.Parameterized<this>>, T extends Plugin.Config<S>>(plugin: S, config?: boolean | T): Fork<Context.Parameterized<this, T>>
     /** @deprecated use `ctx.registry.delete()` instead */
-    dispose(plugin?: Plugin<this>): boolean
+    dispose(plugin?: Plugin<Context.Parameterized<this>>): boolean
   }
 }
 
