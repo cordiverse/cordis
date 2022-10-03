@@ -4,7 +4,8 @@ import { Plugin, Registry } from './registry'
 import { getConstructor, isConstructor, resolveConfig } from './utils'
 
 declare module './context' {
-  export interface Context {
+  export interface Context<T = any> {
+    config: T
     state: State<this>
     runtime: Runtime<this>
     collect(label: string, callback: () => boolean): () => boolean
@@ -18,6 +19,7 @@ export type Disposable = () => void
 
 export interface AcceptOptions {
   passive?: boolean
+  immediate?: boolean
 }
 
 export interface Acceptor extends AcceptOptions {
@@ -86,6 +88,7 @@ export abstract class State<C extends Context = Context> {
     const keys = Array.isArray(args[0]) ? args.shift() : null
     const acceptor: Acceptor = { keys, callback: args[0], ...args[1] }
     this.acceptors.push(acceptor)
+    if (acceptor.immediate) acceptor.callback?.(this.config)
     return this.collect(`accept <${keys?.join(', ') || '*'}>`, () => remove(this.acceptors, acceptor))
   }
 

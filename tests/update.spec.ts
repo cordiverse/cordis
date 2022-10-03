@@ -43,32 +43,33 @@ describe('Update', () => {
 
   it('update fork (single)', () => {
     const root = new Context()
-    const callback = jest.fn((value?: number) => {})
-    const plugin = jest.fn((ctx, config: Config) => {
-      ctx.on(event, () => callback(config.foo))
-      // accept only bar
-      ctx.accept(['bar'])
+    const listener = jest.fn((value?: number) => {})
+    const updater = jest.fn(() => {})
+    const plugin = jest.fn((ctx: Context, config: Config) => {
+      ctx.on(event, () => listener(ctx.config.foo))
+      // accept only foo
+      ctx.accept(['foo'], updater, { immediate: true })
     })
 
     const fork = root.plugin(plugin, { foo: 1 })
     expect(plugin.mock.calls).to.have.length(1)
+    expect(updater.mock.calls).to.have.length(1)
 
     root.emit(event)
-    expect(callback.mock.calls).to.have.length(1)
-    expect(callback.mock.calls[0][0]).to.deep.equal(1)
+    expect(listener.mock.calls).to.have.length(1)
+    expect(listener.mock.calls[0][0]).to.deep.equal(1)
 
     fork.update({ foo: 2 })
-    expect(plugin.mock.calls).to.have.length(2)
+    expect(plugin.mock.calls).to.have.length(1)
+    expect(updater.mock.calls).to.have.length(2)
 
     root.emit(event)
-    expect(callback.mock.calls).to.have.length(2)
-    expect(callback.mock.calls[1][0]).to.deep.equal(2)
+    expect(listener.mock.calls).to.have.length(2)
+    expect(listener.mock.calls[1][0]).to.deep.equal(2)
 
     fork.update({ foo: 2, bar: 3 })
     expect(plugin.mock.calls).to.have.length(2)
-
-    fork.update({ foo: 2, bar: 3, qux: 4 })
-    expect(plugin.mock.calls).to.have.length(3)
+    expect(updater.mock.calls).to.have.length(3)
   })
 
   it('update fork (multiple)', () => {
@@ -101,7 +102,7 @@ describe('Update', () => {
 
   it('nested update', () => {
     const root = new Context()
-    const inner = jest.fn((ctx: Context, config: Config) => {
+    const inner = jest.fn((ctx: Context<Config>, config: Config) => {
       // accept everything except bar
       ctx.decline(['bar'])
     })
