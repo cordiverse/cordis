@@ -166,7 +166,7 @@ export class Fork<C extends Context = Context> extends State<C> {
   start() {
     if (!this.checkDeps()) return
     for (const fork of this.runtime.forkables) {
-      fork(this.context, this.config)
+      this.ctx.lifecycle.queue(fork(this.context, this.config))
     }
   }
 
@@ -239,7 +239,8 @@ export class Runtime<C extends Context = Context> extends State<C> {
 
   private apply = (context: Context, config: any) => {
     if (typeof this.plugin !== 'function') {
-      this.plugin.apply(context, config)
+      const instance = this.plugin.apply(context, config)
+      this.ctx.lifecycle.queue(instance)
     } else if (isConstructor(this.plugin)) {
       // eslint-disable-next-line new-cap
       const instance = new this.plugin(context, config)
@@ -251,7 +252,8 @@ export class Runtime<C extends Context = Context> extends State<C> {
         this.forkables.push(instance['fork'].bind(instance))
       }
     } else {
-      this.plugin(context, config)
+      const instance = this.plugin(context, config)
+      this.ctx.lifecycle.queue(instance)
     }
   }
 
