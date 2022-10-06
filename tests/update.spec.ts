@@ -102,9 +102,11 @@ describe('Update', () => {
 
   it('nested update', () => {
     const root = new Context()
+    const listener = jest.fn((value?: number) => {})
     const inner = jest.fn((ctx: Context<Config>, config: Config) => {
       // accept everything except bar
       ctx.decline(['bar'])
+      ctx.on(event, () => listener(config.foo))
     })
     const plugin = {
       reusable: true,
@@ -125,6 +127,11 @@ describe('Update', () => {
     const fork = root.plugin(outer, { foo: 1, bar: 1 })
     expect(outer.mock.calls).to.have.length(1)
     expect(inner.mock.calls).to.have.length(2)
+    root.emit(event)
+    expect(listener.mock.calls).to.have.length(2)
+    expect(listener.mock.calls[0][0]).to.equal(1)
+    expect(listener.mock.calls[1][0]).to.equal(undefined)
+    listener.mockClear()
 
     fork.update({ foo: 1 })
     expect(outer.mock.calls).to.have.length(1)
@@ -134,13 +141,31 @@ describe('Update', () => {
     expect(outer.mock.calls).to.have.length(1)
     expect(inner.mock.calls).to.have.length(3)
 
+    root.emit(event)
+    expect(listener.mock.calls).to.have.length(2)
+    expect(listener.mock.calls[0][0]).to.equal(undefined)
+    expect(listener.mock.calls[1][0]).to.equal(undefined)
+    listener.mockClear()
+
     fork.update({ foo: 1, qux: { foo: 1 } })
     expect(outer.mock.calls).to.have.length(1)
     expect(inner.mock.calls).to.have.length(3)
 
+    root.emit(event)
+    expect(listener.mock.calls).to.have.length(2)
+    expect(listener.mock.calls[0][0]).to.equal(1)
+    expect(listener.mock.calls[1][0]).to.equal(1)
+    listener.mockClear()
+
     fork.update({ qux: { foo: 1, bar: 1 } })
     expect(outer.mock.calls).to.have.length(1)
     expect(inner.mock.calls).to.have.length(4)
+
+    root.emit(event)
+    expect(listener.mock.calls).to.have.length(2)
+    expect(listener.mock.calls[0][0]).to.equal(undefined)
+    expect(listener.mock.calls[1][0]).to.equal(1)
+    listener.mockClear()
   })
 
   it('deferred update', () => {

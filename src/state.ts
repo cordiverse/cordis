@@ -32,6 +32,7 @@ export abstract class State<C extends Context = Context> {
   ctx: C
   disposables: Disposable[] = []
 
+  protected proxy: any
   protected context: Context
   protected acceptors: Acceptor[] = []
 
@@ -43,6 +44,13 @@ export abstract class State<C extends Context = Context> {
   constructor(public parent: C, public config: C['config']) {
     this.uid = parent.registry ? parent.registry.counter : 0
     this.ctx = this.context = parent.extend({ state: this })
+    this.proxy = new Proxy({}, {
+      get: (target, key) => Reflect.get(this.config, key),
+    })
+  }
+
+  protected get _config() {
+    return this.runtime.isReactive ? this.proxy : this.config
   }
 
   collect(label: string, callback: () => boolean) {
@@ -166,7 +174,7 @@ export class Fork<C extends Context = Context> extends State<C> {
   start() {
     if (!this.checkDeps()) return
     for (const fork of this.runtime.forkables) {
-      this.ctx.lifecycle.queue(fork(this.context, this.config))
+      this.ctx.lifecycle.queue(fork(this.context, this._config))
     }
   }
 
@@ -176,6 +184,7 @@ export class Fork<C extends Context = Context> extends State<C> {
     if (state.config !== oldConfig) return
     const resolved = resolveConfig(this.runtime.plugin, config)
     const [hasUpdate, shouldRestart] = state.checkUpdate(resolved, forced)
+    this.context.emit('internal/before-update', this, config)
     this.config = resolved
     state.config = resolved
     if (hasUpdate) {
@@ -269,7 +278,7 @@ export class Runtime<C extends Context = Context> extends State<C> {
 
     // execute plugin body
     if (!this.isReusable && this.plugin) {
-      this.apply(this.context, this.config)
+      this.apply(this.context, this._config)
     }
 
     for (const fork of this.children) {
@@ -284,12 +293,13 @@ export class Runtime<C extends Context = Context> extends State<C> {
     const oldConfig = this.config
     const resolved = resolveConfig(this.runtime.plugin || getConstructor(this.context), config)
     const [hasUpdate, shouldRestart] = this.checkUpdate(resolved, forced)
+    const state = this.children.find(fork => fork.config === oldConfig)
     this.config = resolved
-    for (const fork of this.children) {
-      if (fork.config !== oldConfig) continue
-      fork.config = resolved
+    if (state) {
+      this.context.emit('internal/before-update', state, config)
+      state.config = resolved
       if (hasUpdate) {
-        this.context.emit('internal/update', fork, oldConfig)
+        this.context.emit('internal/update', state, oldConfig)
       }
     }
     if (shouldRestart) this.restart()
