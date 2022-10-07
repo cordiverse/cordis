@@ -37,10 +37,6 @@ export class Context<T = any> {
     this.state.config = options
   }
 
-  get options() {
-    return this.root.config
-  }
-
   [Symbol.for('nodejs.util.inspect.custom')]() {
     return `Context <${this.runtime.name}>`
   }

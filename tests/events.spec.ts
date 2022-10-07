@@ -67,7 +67,7 @@ describe('Event Listener', () => {
 
 describe('Events Emitter', () => {
   it('context.prototype.parallel', async () => {
-    const { root, warn } = setup()
+    const { root } = setup()
     await root.parallel(event)
     const callback = jest.fn()
     root.extend(new Filter(true)).on(event, callback)
@@ -82,9 +82,7 @@ describe('Events Emitter', () => {
     callback.mockImplementation(() => {
       throw new Error('test')
     })
-    expect(warn.mock.calls).to.have.length(0)
-    await root.parallel(event)
-    expect(warn.mock.calls).to.have.length(1)
+    await expect(root.parallel(event)).to.be.rejectedWith('test')
   })
 
   it('context.prototype.emit', async () => {
@@ -103,9 +101,7 @@ describe('Events Emitter', () => {
     callback.mockImplementation(() => {
       throw new Error('test')
     })
-    expect(warn.mock.calls).to.have.length(0)
-    root.emit(event)
-    expect(warn.mock.calls).to.have.length(1)
+    expect(() => root.emit(event)).to.throw('test')
   })
 
   it('context.prototype.serial', async () => {

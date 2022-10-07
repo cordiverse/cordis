@@ -89,16 +89,16 @@ export class Lifecycle {
     const thisArg = typeof args[0] === 'object' ? args.shift() : null
     const name = args.shift()
     await Promise.all([...this.getHooks(name, thisArg)].map(async (callback) => {
-      try {
-        await callback.apply(thisArg, args)
-      } catch (error) {
-        this.root.emit('internal/warning', error)
-      }
+      await callback.apply(thisArg, args)
     }))
   }
 
   emit(...args: any[]) {
-    this.parallel(...args)
+    const thisArg = typeof args[0] === 'object' ? args.shift() : null
+    const name = args.shift()
+    for (const callback of this.getHooks(name, thisArg)) {
+      callback.apply(thisArg, args)
+    }
   }
 
   async serial(...args: any[]) {
