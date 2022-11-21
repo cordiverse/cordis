@@ -1,6 +1,6 @@
 import { Awaitable, defineProperty, Promisify, remove } from 'cosmokit'
 import { Context } from './context'
-import { Fork, Runtime } from './state'
+import { ForkScope, MainScope } from './scope'
 import { Plugin } from './registry'
 
 export function isBailed(value: any) {
@@ -181,12 +181,12 @@ export interface Events<C extends Context = Context> {
   'fork': Plugin.Function<C['config'], C>
   'ready'(): Awaitable<void>
   'dispose'(): Awaitable<void>
-  'internal/fork'(fork: Fork<Context.Parameterized<C>>): void
-  'internal/runtime'(runtime: Runtime<Context.Parameterized<C>>): void
+  'internal/fork'(fork: ForkScope<Context.Parameterized<C>>): void
+  'internal/runtime'(runtime: MainScope<Context.Parameterized<C>>): void
   'internal/warning'(format: any, ...param: any[]): void
   'internal/before-service'(name: string, value: any): void
   'internal/service'(name: string, oldValue: any): void
-  'internal/before-update'(fork: Fork<Context.Parameterized<C>>, config: any): void
-  'internal/update'(fork: Fork<Context.Parameterized<C>>, oldConfig: any): void
+  'internal/before-update'(fork: ForkScope<Context.Parameterized<C>>, config: any): void
+  'internal/update'(fork: ForkScope<Context.Parameterized<C>>, oldConfig: any): void
   'internal/hook'(this: Lifecycle, name: string, listener: Function, prepend: boolean): () => boolean
 }

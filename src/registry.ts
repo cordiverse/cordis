@@ -1,6 +1,6 @@
 import { defineProperty } from 'cosmokit'
 import { Context } from './context'
-import { Fork, Runtime } from './state'
+import { ForkScope, MainScope } from './scope'
 import { resolveConfig } from './utils'
 
 export function isApplicable(object: Plugin) {
@@ -35,8 +35,8 @@ export namespace Plugin {
 
 declare module './context' {
   export interface Context {
-    using(using: readonly string[], callback: Plugin.Function<void, Context.Parameterized<this>>): Fork<Context.Parameterized<this>>
-    plugin<S extends Plugin<Context.Parameterized<this>>, T extends Plugin.Config<S>>(plugin: S, config?: boolean | T): Fork<Context.Parameterized<this, T>>
+    using(using: readonly string[], callback: Plugin.Function<void, Context.Parameterized<this>>): ForkScope<Context.Parameterized<this>>
+    plugin<S extends Plugin<Context.Parameterized<this>>, T extends Plugin.Config<S>>(plugin: S, config?: boolean | T): ForkScope<Context.Parameterized<this, T>>
     /** @deprecated use `ctx.registry.delete()` instead */
     dispose(plugin?: Plugin<Context.Parameterized<this>>): boolean
   }
@@ -46,7 +46,7 @@ export namespace Registry {
   export interface Config {}
 }
 
-export class Registry<C extends Context = Context> extends Map<Plugin<C>, Runtime<C>> {
+export class Registry<C extends Context = Context> extends Map<Plugin<C>, MainScope<C>> {
   static readonly methods = ['using', 'plugin', 'dispose']
 
   private _counter = 0
@@ -54,7 +54,7 @@ export class Registry<C extends Context = Context> extends Map<Plugin<C>, Runtim
   constructor(private root: Context, config: Registry.Config) {
     super()
     defineProperty(this, Context.current, root)
-    root.state = new Runtime(this, null!, config)
+    root.state = new MainScope(this, null!, config)
     root.state.runtime.isReactive = true
   }
 
@@ -74,7 +74,7 @@ export class Registry<C extends Context = Context> extends Map<Plugin<C>, Runtim
     return super.has(this.resolve(plugin))
   }
 
-  set(plugin: Plugin<C>, state: Runtime<C>) {
+  set(plugin: Plugin<C>, state: MainScope<C>) {
     return super.set(this.resolve(plugin), state)
   }
 
@@ -110,7 +110,7 @@ export class Registry<C extends Context = Context> extends Map<Plugin<C>, Runtim
       return runtime.fork(context, config)
     }
 
-    runtime = new Runtime(this, plugin, config)
+    runtime = new MainScope(this, plugin, config)
     return runtime.fork(context, config)
   }
 

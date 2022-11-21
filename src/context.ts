@@ -34,7 +34,6 @@ export class Context<T = any> {
     this.root = this as any
     this.mapping = Object.create(null)
     attach(this[Context.internal])
-    this.state.config = options
   }
 
   [Symbol.for('nodejs.util.inspect.custom')]() {

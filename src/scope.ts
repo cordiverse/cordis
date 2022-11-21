@@ -6,8 +6,8 @@ import { getConstructor, isConstructor, resolveConfig } from './utils'
 declare module './context' {
   export interface Context<T> {
     config: T
-    state: State<this>
-    runtime: Runtime<this>
+    state: EffectScope<this>
+    runtime: MainScope<this>
     collect(label: string, callback: () => boolean): () => boolean
     accept(callback?: (config: this['config']) => void | boolean, options?: AcceptOptions): () => boolean
     accept(keys: (keyof this['config'])[], callback?: (config: this['config']) => void | boolean, options?: AcceptOptions): () => boolean
@@ -27,7 +27,7 @@ export interface Acceptor extends AcceptOptions {
   callback?: (config: any) => void | boolean
 }
 
-export abstract class State<C extends Context = Context> {
+export abstract class EffectScope<C extends Context = Context> {
   uid: number | null
   ctx: C
   disposables: Disposable[] = []
@@ -36,7 +36,7 @@ export abstract class State<C extends Context = Context> {
   protected context: Context
   protected acceptors: Acceptor[] = []
 
-  abstract runtime: Runtime<C>
+  abstract runtime: MainScope<C>
   abstract dispose(): boolean
   abstract start(): void
   abstract update(config: C['config'], forced?: boolean): void
@@ -144,10 +144,10 @@ export abstract class State<C extends Context = Context> {
   }
 }
 
-export class Fork<C extends Context = Context> extends State<C> {
+export class ForkScope<C extends Context = Context> extends EffectScope<C> {
   dispose: () => boolean
 
-  constructor(parent: Context, config: C['config'], public runtime: Runtime<C>) {
+  constructor(parent: Context, config: C['config'], public runtime: MainScope<C>) {
     super(parent as C, config)
 
     this.dispose = defineProperty(parent.state.collect(`fork <${parent.runtime.name}>`, () => {
@@ -180,7 +180,7 @@ export class Fork<C extends Context = Context> extends State<C> {
 
   update(config: any, forced?: boolean) {
     const oldConfig = this.config
-    const state: State<C> = this.runtime.isForkable ? this : this.runtime
+    const state: EffectScope<C> = this.runtime.isForkable ? this : this.runtime
     if (state.config !== oldConfig) return
     const resolved = resolveConfig(this.runtime.plugin, config)
     const [hasUpdate, shouldRestart] = state.checkUpdate(resolved, forced)
@@ -194,12 +194,12 @@ export class Fork<C extends Context = Context> extends State<C> {
   }
 }
 
-export class Runtime<C extends Context = Context> extends State<C> {
+export class MainScope<C extends Context = Context> extends EffectScope<C> {
   runtime = this
   schema: any
   using: readonly string[] = []
   forkables: Function[] = []
-  children: Fork<C>[] = []
+  children: ForkScope<C>[] = []
   isReusable = false
   isReactive = false
 
@@ -220,7 +220,7 @@ export class Runtime<C extends Context = Context> extends State<C> {
   }
 
   fork(parent: Context, config: any) {
-    return new Fork(parent, config, this)
+    return new ForkScope(parent, config, this)
   }
 
   dispose() {
