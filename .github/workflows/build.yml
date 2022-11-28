@@ -16,7 +16,7 @@ jobs:
       - name: Check out
         uses: actions/checkout@v3
       - name: Set up Node
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v3
         with:
           node-version: ${{ matrix.node-version }}
       - name: Install
@@ -26,9 +26,7 @@ jobs:
       - name: Unit Test
         run: yarn test:json
       - name: Report Coverage
-        if: ${{ matrix.node-version == 14 }}
-        uses: codecov/codecov-action@v2
+        uses: codecov/codecov-action@v3
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage/coverage-final.json
           name: codecov
