@@ -206,7 +206,7 @@ ctx.plugin(Bar)
 
 #### Unload a plugin [↑](#contents)
 
-`ctx.plugin()` returns a `Fork` instance. To unload a plugin, we can use the `dispose()` method of it:
+`ctx.plugin()` returns a `ForkScope` instance. To unload a plugin, we can use the `dispose()` method of it:
 
 ```ts
 // load a plugin
@@ -220,7 +220,7 @@ const fork = ctx.plugin((ctx) => {
 fork.dispose()
 ```
 
-Some plugins can be loaded multiple times. To unload every forks of a plugin without access to the `Fork` instance, we can use `ctx.registry`:
+Some plugins can be loaded multiple times. To unload every forks of a plugin without access to the `ForkScope` instance, we can use `ctx.registry`:
 
 ```ts
 // remove all forks of the plugin
@@ -569,8 +569,6 @@ function apply(ctx) {
 
 ```ts
 Context.mixin('state', {
-  // delegate `ctx.state.runtime` to `ctx.runtime`
-  properties: ['runtime'],
   // delegate `ctx.state.collect()` to `ctx.collect()`
   methods: ['collect', 'accept', 'update'],
 })
@@ -664,13 +662,13 @@ If any listener is fulfilled with a value other than `false`, `null` or `undefin
 
 ### Registry
 
-`ctx.registry` is a built-in service of plugin management. It is actually a subclass of `Map<Plugin, Runtime>`, so you can access plugin runtime via methods like `ctx.registry.get()` and `ctx.registry.delete()`.
+`ctx.registry` is a built-in service of plugin management. It is actually a subclass of `Map<Plugin, MainScope>`, so you can access plugin runtime via methods like `ctx.registry.get()` and `ctx.registry.delete()`.
 
 #### ctx.plugin(plugin, config?)
 
 - plugin: `object` the plugin to apply
 - config: `object` config for the plugin
-- returns: `Fork`
+- returns: `ForkScope`
 
 Apply a plugin.
 
@@ -690,43 +688,43 @@ ctx.plugin({
 
 See: [Use services](#use-services-)
 
-### State
+### EffectScope
 
-State can be accessed via `ctx.state` or passed in in some events.
+`EffectScope` can be accessed via `ctx.state` or passed in in some events.
 
-#### state.uid
+#### scope.uid
 
 - type: `number`
 
-An auto-incrementing unique identifier for the state.
+An auto-incrementing unique identifier for the effect scope.
 
-#### state.runtime
+#### scope.runtime
 
-- type: [`Runtime`](#runtime)
+- type: [`MainScope`](#mainscope)
 
-The plugin runtime associated with the state. If the state is a runtime, then this property refers to itself.
+The plugin runtime associated with the effect scope. If the scope is a runtime, then this property refers to itself.
 
-#### state.parent
+#### scope.parent
 
-#### state.context
+#### scope.context
 
-#### state.config
+#### scope.config
 
-#### state.collect()
+#### scope.collect()
 
-#### state.restart()
+#### scope.restart()
 
-#### state.update()
+#### scope.update()
 
-#### state.dispose()
+#### scope.dispose()
 
-### Fork
+### ForkScope
 
-### Runtime
+### MainScope
 
-Runtime is a subclass of [`State`](#state), representing the runtime state of a plugin.
+MainScope is a subclass of [`EffectScope`](#effectscope), representing the main scope of a plugin.
 
-It can be accessed via `ctx.runtime` or passed in in some events.
+It can be accessed via `ctx.scope.main` or passed in in some events.
 
 #### runtime.name
 
@@ -734,7 +732,7 @@ It can be accessed via `ctx.runtime` or passed in in some events.
 
 #### runtime.children
 
-- type: [`Fork[]`](#fork)
+- type: [`ForkScope[]`](#forkscope)
 
 #### runtime.isForkable
 
@@ -779,13 +777,13 @@ See: [Reusable plugins](#reusable-plugins-)
 
 #### internal/runtime(runtime)
 
-- runtime: `Runtime`
+- runtime: `MainScope`
 
 #### internal/fork(fork)
 
-- fork: `Fork`
+- fork: `ForkScope`
 
 #### internal/update(fork, config)
 
-- fork: `Fork`
+- fork: `ForkScope`
 - config: `any`
