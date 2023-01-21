@@ -60,7 +60,7 @@ export class Lifecycle {
         runtime.forkables[method](listener as any)
         return state.collect('event <fork>', () => remove(runtime.forkables, listener))
       }
-    }), Context.static, root.state)
+    }), Context.static, root.scope)
   }
 
   queue(value: any) {
@@ -173,7 +173,7 @@ export class Lifecycle {
   async stop() {
     this.isActive = false
     // `dispose` event is handled by state.disposables
-    this.root.state.clear(true)
+    this.root.scope.clear(true)
   }
 }
 

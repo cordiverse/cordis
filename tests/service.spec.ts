@@ -58,9 +58,9 @@ describe('Service', () => {
   })
 
   it('dependency update', async () => {
-    const callback = jest.fn()
-    const dispose = jest.fn()
-    const plugin = jest.fn((ctx) => {
+    const callback = jest.fn((foo: any) => {})
+    const dispose = jest.fn((foo: any) => {})
+    const plugin = jest.fn((ctx: Context) => {
       ctx.on('ready', () => callback(ctx.foo))
       ctx.on('dispose', () => dispose(ctx.foo))
     })

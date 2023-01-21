@@ -44,6 +44,11 @@ export class Context<T = any> {
     return this.lifecycle
   }
 
+  /** @deprecated */
+  get state() {
+    return this.scope
+  }
+
   extend(meta = {}): this {
     return Object.assign(Object.create(this), meta)
   }

@@ -54,8 +54,8 @@ export class Registry<C extends Context = Context> extends Map<Plugin<C>, MainSc
   constructor(private root: Context, config: Registry.Config) {
     super()
     defineProperty(this, Context.current, root)
-    root.state = new MainScope(this, null!, config)
-    root.state.runtime.isReactive = true
+    root.scope = new MainScope(this, null!, config)
+    root.scope.runtime.isReactive = true
   }
 
   get counter() {

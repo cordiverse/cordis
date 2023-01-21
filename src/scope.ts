@@ -6,7 +6,7 @@ import { getConstructor, isConstructor, resolveConfig } from './utils'
 declare module './context' {
   export interface Context<T> {
     config: T
-    state: EffectScope<this>
+    scope: EffectScope<this>
     runtime: MainScope<this>
     collect(label: string, callback: () => boolean): () => boolean
     accept(callback?: (config: this['config']) => void | boolean, options?: AcceptOptions): () => boolean
@@ -28,9 +28,9 @@ export interface Acceptor extends AcceptOptions {
 }
 
 export abstract class EffectScope<C extends Context = Context> {
-  uid: number | null
-  ctx: C
-  disposables: Disposable[] = []
+  public uid: number | null
+  public ctx: C
+  public disposables: Disposable[] = []
 
   protected proxy: any
   protected context: Context
@@ -43,7 +43,7 @@ export abstract class EffectScope<C extends Context = Context> {
 
   constructor(public parent: C, public config: C['config']) {
     this.uid = parent.registry ? parent.registry.counter : 0
-    this.ctx = this.context = parent.extend({ state: this })
+    this.ctx = this.context = parent.extend({ scope: this })
     this.proxy = new Proxy({}, {
       get: (target, key) => Reflect.get(this.config, key),
     })
@@ -150,7 +150,7 @@ export class ForkScope<C extends Context = Context> extends EffectScope<C> {
   constructor(parent: Context, config: C['config'], public runtime: MainScope<C>) {
     super(parent as C, config)
 
-    this.dispose = defineProperty(parent.state.collect(`fork <${parent.runtime.name}>`, () => {
+    this.dispose = defineProperty(parent.scope.collect(`fork <${parent.runtime.name}>`, () => {
       this.uid = null
       this.clear()
       const result = remove(runtime.disposables, this.dispose)
