@@ -51,7 +51,7 @@ export class Lifecycle {
       const { scope } = this[Context.current]
       const { runtime, disposables } = scope
       if (name === 'ready' && this.isActive) {
-        scope.queue(async () => listener())
+        scope.ensure(async () => listener())
       } else if (name === 'dispose') {
         disposables[method](listener as any)
         defineProperty(listener, 'name', 'event <dispose>')
@@ -65,7 +65,7 @@ export class Lifecycle {
 
   /** @deprecated */
   queue(value: any) {
-    this[Context.current].scope.queue(async () => value)
+    this[Context.current].scope.ensure(async () => value)
   }
 
   async flush() {
@@ -164,7 +164,7 @@ export class Lifecycle {
     const hooks = this._hooks.ready || []
     while (hooks.length) {
       const [context, callback] = hooks.shift()!
-      context.scope.queue(async () => callback())
+      context.scope.ensure(async () => callback())
     }
     await this.flush()
   }

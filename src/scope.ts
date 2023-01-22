@@ -90,7 +90,7 @@ export abstract class EffectScope<C extends Context = Context> {
     }
   }
 
-  queue(callback: () => Promise<void>) {
+  ensure(callback: () => Promise<void>) {
     const task = callback()
       .catch((reason) => {
         this.context.emit('internal/warning', reason)
@@ -220,7 +220,7 @@ export class ForkScope<C extends Context = Context> extends EffectScope<C> {
     if (!this.ready) return
     this._updateStatus(() => this.hasError = false)
     for (const fork of this.runtime.forkables) {
-      this.queue(async () => fork(this.context, this._config))
+      this.ensure(async () => fork(this.context, this._config))
     }
   }
 
@@ -295,7 +295,7 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
   private apply = (context: Context, config: any) => {
     const plugin = this.plugin
     if (typeof plugin !== 'function') {
-      this.queue(async () => plugin.apply(context, config))
+      this.ensure(async () => plugin.apply(context, config))
     } else if (isConstructor(plugin)) {
       // eslint-disable-next-line new-cap
       const instance = new plugin(context, config)
@@ -307,7 +307,7 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
         this.forkables.push(instance['fork'].bind(instance))
       }
     } else {
-      this.queue(async () => plugin(context, config))
+      this.ensure(async () => plugin(context, config))
     }
   }
 
