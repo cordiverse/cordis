@@ -27,14 +27,20 @@ export interface Acceptor extends AcceptOptions {
   callback?: (config: any) => void | boolean
 }
 
+export type ScopeStatus = 'pending' | 'loading' | 'active' | 'failed' | 'disposed'
+
 export abstract class EffectScope<C extends Context = Context> {
   public uid: number | null
   public ctx: C
   public disposables: Disposable[] = []
+  public error: any
+  public status: ScopeStatus = 'pending'
 
   protected proxy: any
   protected context: Context
   protected acceptors: Acceptor[] = []
+  protected tasks = new Set<Promise<void>>()
+  protected hasError = false
 
   abstract runtime: MainScope<C>
   abstract dispose(): boolean
@@ -63,15 +69,53 @@ export abstract class EffectScope<C extends Context = Context> {
   }
 
   restart() {
-    this.clear(true)
+    this.reset()
     this.start()
+  }
+
+  protected _getStatus() {
+    if (this.uid === null) return 'disposed'
+    if (this.hasError) return 'failed'
+    if (this.tasks.size) return 'loading'
+    if (this.ready) return 'active'
+    return 'pending'
+  }
+
+  protected _updateStatus(callback?: () => void) {
+    const oldValue = this.status
+    callback?.()
+    this.status = this._getStatus()
+    if (oldValue !== this.status) {
+      this.context.emit('internal/status', this, oldValue)
+    }
+  }
+
+  queue(callback: () => Promise<void>) {
+    const task = callback()
+      .catch((reason) => {
+        this.context.emit('internal/warning', reason)
+        this.cancel(reason)
+      })
+      .finally(() => {
+        this._updateStatus(() => this.tasks.delete(task))
+        this.context.events._tasks.delete(task)
+      })
+    this._updateStatus(() => this.tasks.add(task))
+    this.context.events._tasks.add(task)
+  }
+
+  cancel(reason: any) {
+    this.error = reason
+    this._updateStatus(() => this.hasError = true)
+    this.reset()
   }
 
   protected setup() {
     if (!this.runtime.using.length) return
     defineProperty(this.context.on('internal/before-service', (name) => {
       if (!this.runtime.using.includes(name)) return
-      this.clear(true)
+      this._updateStatus()
+      this.reset()
     }), Context.static, this)
     defineProperty(this.context.on('internal/service', (name) => {
       if (!this.runtime.using.includes(name)) return
@@ -79,13 +123,13 @@ export abstract class EffectScope<C extends Context = Context> {
     }), Context.static, this)
   }
 
-  protected checkDeps() {
+  get ready() {
     return this.runtime.using.every(name => this.ctx[name])
   }
 
-  clear(preserve = false) {
+  reset() {
     this.disposables = this.disposables.splice(0, Infinity).filter((dispose) => {
-      if (preserve && dispose[Context.static] === this) return true
+      if (this.uid !== null && dispose[Context.static] === this) return true
       dispose()
     })
   }
@@ -106,6 +150,7 @@ export abstract class EffectScope<C extends Context = Context> {
 
   checkUpdate(resolved: any, forced?: boolean) {
     if (forced) return [true, true]
+    if (forced === false) return [false, false]
 
     const modified: Record<string, boolean> = Object.create(null)
     const checkPropertyUpdate = (key: string) => {
@@ -152,7 +197,7 @@ export class ForkScope<C extends Context = Context> extends EffectScope<C> {
 
     this.dispose = defineProperty(parent.scope.collect(`fork <${parent.runtime.name}>`, () => {
       this.uid = null
-      this.clear()
+      this.reset()
       const result = remove(runtime.disposables, this.dispose)
       if (remove(runtime.children, this) && !runtime.children.length) {
         parent.registry.delete(runtime.plugin)
@@ -172,9 +217,10 @@ export class ForkScope<C extends Context = Context> extends EffectScope<C> {
   }
 
   start() {
-    if (!this.checkDeps()) return
+    if (!this.ready) return
+    this._updateStatus(() => this.hasError = false)
     for (const fork of this.runtime.forkables) {
-      this.ctx.lifecycle.queue(fork(this.context, this._config))
+      this.queue(async () => fork(this.context, this._config))
     }
   }
 
@@ -225,7 +271,7 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
 
   dispose() {
     this.uid = null
-    this.clear()
+    this.reset()
     this.context.emit('internal/runtime', this)
     return true
   }
@@ -247,12 +293,12 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
   }
 
   private apply = (context: Context, config: any) => {
-    if (typeof this.plugin !== 'function') {
-      const instance = this.plugin.apply(context, config)
-      this.ctx.lifecycle.queue(instance)
-    } else if (isConstructor(this.plugin)) {
+    const plugin = this.plugin
+    if (typeof plugin !== 'function') {
+      this.queue(async () => plugin.apply(context, config))
+    } else if (isConstructor(plugin)) {
       // eslint-disable-next-line new-cap
-      const instance = new this.plugin(context, config)
+      const instance = new plugin(context, config)
       const name = instance[Context.immediate]
       if (name) {
         context[name] = instance
@@ -261,20 +307,20 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
         this.forkables.push(instance['fork'].bind(instance))
       }
     } else {
-      const instance = this.plugin(context, config)
-      this.ctx.lifecycle.queue(instance)
+      this.queue(async () => plugin(context, config))
     }
   }
 
-  clear(preserve?: boolean) {
-    super.clear(preserve)
+  reset() {
+    super.reset()
     for (const fork of this.children) {
-      fork.clear(preserve)
+      fork.reset()
     }
   }
 
   start() {
-    if (!this.checkDeps()) return
+    if (!this.ready) return
+    this._updateStatus(() => this.hasError = false)
 
     // execute plugin body
     if (!this.isReusable && this.plugin) {

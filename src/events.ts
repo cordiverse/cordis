@@ -1,6 +1,6 @@
 import { Awaitable, defineProperty, Promisify, remove } from 'cosmokit'
 import { Context } from './context'
-import { ForkScope, MainScope } from './scope'
+import { EffectScope, ForkScope, MainScope, ScopeStatus } from './scope'
 import { Plugin } from './registry'
 
 export function isBailed(value: any) {
@@ -48,26 +48,24 @@ export class Lifecycle {
     defineProperty(this, Context.current, root)
     defineProperty(this.on('internal/hook', function (name, listener, prepend) {
       const method = prepend ? 'unshift' : 'push'
-      const { state } = this[Context.current]
-      const { runtime, disposables } = state
+      const { scope } = this[Context.current]
+      const { runtime, disposables } = scope
       if (name === 'ready' && this.isActive) {
-        this.queue(listener())
+        scope.queue(async () => listener())
       } else if (name === 'dispose') {
         disposables[method](listener as any)
         defineProperty(listener, 'name', 'event <dispose>')
         return () => remove(disposables, listener)
       } else if (name === 'fork') {
         runtime.forkables[method](listener as any)
-        return state.collect('event <fork>', () => remove(runtime.forkables, listener))
+        return scope.collect('event <fork>', () => remove(runtime.forkables, listener))
       }
     }), Context.static, root.scope)
   }
 
+  /** @deprecated */
   queue(value: any) {
-    const task = Promise.resolve(value)
-      .catch(reason => this.root.emit('internal/warning', reason))
-      .then(() => this._tasks.delete(task))
-    this._tasks.add(task)
+    this[Context.current].scope.queue(async () => value)
   }
 
   async flush() {
@@ -163,17 +161,18 @@ export class Lifecycle {
 
   async start() {
     this.isActive = true
-    for (const callback of this.getHooks('ready')) {
-      this.queue(callback())
+    const hooks = this._hooks.ready || []
+    while (hooks.length) {
+      const [context, callback] = hooks.shift()!
+      context.scope.queue(async () => callback())
     }
-    delete this._hooks.ready
     await this.flush()
   }
 
   async stop() {
     this.isActive = false
     // `dispose` event is handled by state.disposables
-    this.root.scope.clear(true)
+    this.root.scope.reset()
   }
 }
 
@@ -183,6 +182,7 @@ export interface Events<C extends Context = Context> {
   'dispose'(): Awaitable<void>
   'internal/fork'(fork: ForkScope<Context.Parameterized<C>>): void
   'internal/runtime'(runtime: MainScope<Context.Parameterized<C>>): void
+  'internal/status'(scope: EffectScope<Context.Parameterized<C>>, oldValue: ScopeStatus): void
   'internal/warning'(format: any, ...param: any[]): void
   'internal/before-service'(name: string, value: any): void
   'internal/service'(name: string, oldValue: any): void
