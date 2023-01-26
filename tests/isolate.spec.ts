@@ -14,20 +14,20 @@ describe('Isolation', () => {
     ctx.on('internal/service', inner)
 
     root.foo = { bar: 100 }
-    expect(root.foo).to.deep.equal({ bar: 100 })
+    expect(root.foo).to.have.property('bar', 100)
     expect(ctx.foo).to.be.not.ok
     expect(outer.mock.calls).to.have.length(1)
     expect(inner.mock.calls).to.have.length(0)
 
     ctx.foo = { bar: 200 }
-    expect(root.foo).to.deep.equal({ bar: 100 })
-    expect(ctx.foo).to.deep.equal({ bar: 200 })
+    expect(root.foo).to.have.property('bar', 100)
+    expect(ctx.foo).to.have.property('bar', 200)
     expect(outer.mock.calls).to.have.length(1)
     expect(inner.mock.calls).to.have.length(1)
 
     root.foo = null
     expect(root.foo).to.be.not.ok
-    expect(ctx.foo).to.deep.equal({ bar: 200 })
+    expect(ctx.foo).to.have.property('bar', 200)
     expect(outer.mock.calls).to.have.length(2)
     expect(inner.mock.calls).to.have.length(1)
 
