@@ -74,7 +74,7 @@ describe('Service', () => {
 
     const old = root.foo = { bar: 100 }
     expect(callback.mock.calls).to.have.length(1)
-    expect(callback.mock.calls[0][0]).to.deep.equal({ bar: 100 })
+    expect(callback.mock.calls[0][0]).to.have.property('bar', 100)
     expect(dispose.mock.calls).to.have.length(0)
 
     // do not trigger event if reference has not changed
@@ -83,16 +83,17 @@ describe('Service', () => {
     expect(callback.mock.calls).to.have.length(1)
     expect(dispose.mock.calls).to.have.length(0)
 
+    root.foo = null
     root.foo = { bar: 300 }
     expect(callback.mock.calls).to.have.length(2)
-    expect(callback.mock.calls[1][0]).to.deep.equal({ bar: 300 })
+    expect(callback.mock.calls[1][0]).to.have.property('bar', 300)
     expect(dispose.mock.calls).to.have.length(1)
-    expect(dispose.mock.calls[0][0]).to.deep.equal({ bar: 200 })
+    expect(dispose.mock.calls[0][0]).to.have.property('bar', 200)
 
     root.foo = null
     expect(callback.mock.calls).to.have.length(2)
     expect(dispose.mock.calls).to.have.length(2)
-    expect(dispose.mock.calls[1][0]).to.deep.equal({ bar: 300 })
+    expect(dispose.mock.calls[1][0]).to.have.property('bar', 300)
   })
 
   it('lifecycle methods', async () => {

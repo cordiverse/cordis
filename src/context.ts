@@ -109,7 +109,7 @@ export namespace Context {
         return value
       },
       set(this: Context, value) {
-        const key = this.mapping[name as any] || privateKey
+        const key = this.mapping[name] || privateKey
         const oldValue = this.root[key]
         if (oldValue === value) return
 
@@ -117,6 +117,11 @@ export namespace Context {
         const self = Object.create(null)
         self[Context.filter] = (ctx: Context) => {
           return this.mapping[name] === ctx.mapping[name]
+        }
+
+        // check override
+        if (value && oldValue && typeof name === 'string') {
+          throw new Error(`service ${name} has been registered`)
         }
 
         if (typeof name === 'string') {

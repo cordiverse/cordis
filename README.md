@@ -569,7 +569,7 @@ function apply(ctx) {
 
 ```ts
 Context.mixin('state', {
-  // delegate `ctx.state.collect()` to `ctx.collect()`
+  // delegate `ctx.scope.collect()` to `ctx.collect()`
   methods: ['collect', 'accept', 'update'],
 })
 ```
@@ -690,7 +690,7 @@ See: [Use services](#use-services-)
 
 ### EffectScope
 
-`EffectScope` can be accessed via `ctx.state` or passed in in some events.
+`EffectScope` can be accessed via `ctx.scope` or passed in in some events.
 
 #### scope.uid
 
