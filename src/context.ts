@@ -74,13 +74,14 @@ export namespace Context {
 
   export function mixin(name: keyof any, options: MixinOptions) {
     for (const key of options.methods || []) {
-      defineProperty(Context.prototype, key, function (this: Context, ...args: any[]) {
+      const method = defineProperty(function (this: Context, ...args: any[]) {
         return this[name][key](...args)
-      })
+      }, 'name', key)
+      defineProperty(this.prototype, key, method)
     }
 
     for (const key of options.properties || []) {
-      Object.defineProperty(Context.prototype, key, {
+      Object.defineProperty(this.prototype, key, {
         configurable: true,
         get(this: Context) {
           return this[name][key]
@@ -97,6 +98,7 @@ export namespace Context {
   }
 
   export function service(name: keyof any, options: ServiceOptions = {}) {
+    if (Object.prototype.hasOwnProperty.call(this.prototype, name)) return
     const privateKey = typeof name === 'symbol' ? name : Symbol(name)
 
     Object.defineProperty(this.prototype, name, {
@@ -142,7 +144,7 @@ export namespace Context {
       internal[privateKey] = options
     }
 
-    mixin(name, options)
+    this.mixin(name, options)
   }
 
   function ensureInternal(prototype: {}) {
