@@ -3,23 +3,24 @@ import { Lifecycle } from './events'
 import { Registry } from './registry'
 import { getConstructor, isConstructor, resolveConfig } from './utils'
 
-export interface Context {
+export interface Context<T = any> {
   [Context.config]: Context.Config
   root: Context.Parameterized<this, this[typeof Context.config]>
   mapping: Record<string | symbol, symbol>
   lifecycle: Lifecycle
   registry: Registry<this>
+  config: T
 }
 
-export class Context<T = any> {
+export class Context {
   static readonly config = Symbol('config')
   static readonly events = Symbol('events')
   static readonly static = Symbol('static')
   static readonly filter = Symbol('filter')
   static readonly source = Symbol('source')
+  static readonly expose = Symbol('expose')
   static readonly current = Symbol('current')
   static readonly internal = Symbol('internal')
-  static readonly immediate = Symbol('immediate')
 
   constructor(config?: Context.Config) {
     const options = resolveConfig(getConstructor(this), config)
@@ -27,7 +28,9 @@ export class Context<T = any> {
       if (!internal) return
       attach(Object.getPrototypeOf(internal))
       for (const key of Object.getOwnPropertySymbols(internal)) {
-        this[key] = new internal[key](this, options)
+        const constructor = internal[key]
+        const name = constructor[Context.expose]
+        this[key] = new constructor(this, name ? options?.[name] : options)
       }
     }
 

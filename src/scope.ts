@@ -4,8 +4,7 @@ import { Plugin, Registry } from './registry'
 import { getConstructor, isConstructor, resolveConfig } from './utils'
 
 declare module './context' {
-  export interface Context<T> {
-    config: T
+  export interface Context {
     scope: EffectScope<this>
     runtime: MainScope<this>
     collect(label: string, callback: () => boolean): () => boolean
@@ -299,7 +298,7 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
     } else if (isConstructor(plugin)) {
       // eslint-disable-next-line new-cap
       const instance = new plugin(context, config)
-      const name = instance[Context.immediate]
+      const name = instance[Context.expose]
       if (name) {
         context[name] = instance
       }

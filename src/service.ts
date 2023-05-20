@@ -12,7 +12,7 @@ export class Service<C extends Context = Context> {
     defineProperty(this, Context.current, ctx)
 
     if (immediate) {
-      this[Context.immediate] = name
+      this[Context.expose] = name
     }
 
     ctx.on('ready', async () => {
