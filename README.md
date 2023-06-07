@@ -28,7 +28,7 @@ ctx.start()                     // start app
 - [Plugin](#plugin-)
   - [Plugin as a module](#plugin-as-a-module-)
   - [Unload a plugin](#unload-a-plugin-)
-  - [Clean up side effects](#clean-up-side-effects-)
+  - [Clear side effects](#clear-side-effects-)
   - [Reusable plugins](#reusable-plugins-)
 - [Service](#service-)
   - [Built-in services](#built-in-services-)
@@ -57,7 +57,7 @@ Cordis has a built-in event model with lifecycle management.
 
 #### Listen to events [↑](#contents)
 
-To add an event listener, simply use `ctx.on()`, which is similar to the `EventEmitter` that comes with Node.js: the first parameter incidates the name of the event and the second parameter is the callback function. We also support similar methods `ctx.once()`, which is used to listen to events only once, and `ctx.off()`, which is used to cancel as event listeners.
+To add an event listener, simply use `ctx.on()`, which is similar to the `EventEmitter` that comes with Node.js: the first parameter indicates the name of the event and the second parameter is the callback function. We also support similar methods `ctx.once()`, which is used to listen to events only once, and `ctx.off()`, which is used to cancel as event listeners.
 
 ```ts
 ctx.on('some-event', callback)
@@ -76,7 +76,7 @@ const dispose = ctx.on('some-event', (...args) => {
 
 #### Trigger events [↑](#contents)
 
-In cordis, triggering an event can take many forms. Currently we support four methods with some differences between them:
+In cordis, triggering an event can take many forms. Currently, we support four methods with some differences between them:
 
 - emit: calling all listeners at the same time
 - parallel: the asynchronous version of `emit`
@@ -118,9 +118,9 @@ There are some special events related to the application lifecycle. You can list
 
 - `ready`: triggered when the application starts
 - `dispose`: triggered when the context is unloaded
-- `fork`: trigged every time when the plugin is loaded
+- `fork`: triggered every time when the plugin is loaded
 
-The `ready` event is triggered when the application starts. If a `ready` listener is registered in a application that has already started, it will be called immediately. Below is an example:
+The `ready` event is triggered when the application starts. If a `ready` listener is registered in an application that has already started, it will be called immediately. Below is an example:
 
 ```ts
 ctx.on('ready', async () => {
@@ -144,7 +144,7 @@ ctx.on('ready', () => {
 It is recommended to wrap code in the `ready` event in the following scenarios:
 
 - contains asynchronous operations (for example IO-intensive tasks)
-- should be called after other plugins are ready (for exmaple performance checks)
+- should be called after other plugins are ready (for example performance checks)
 
 We will talk about `dispose` and `fork` events in the next section.
 
@@ -152,11 +152,11 @@ We will talk about `dispose` and `fork` events in the next section.
 
 A **plugin** is in one of three basic forms:
 
-- a function that accepts two parameters, of which the first is the plugin context, and the second is the provided opions
+- a function that accepts two parameters, of which the first is the plugin context, and the second is the provided options
 - a class that accepts above parameters
 - an object with an `apply` method in the form of the above function
 
-When a plugin is loaded, it is basically equivalent to calling the above function or class. Therefore, the following four ways of adding a event listener is basically equivalent:
+When a plugin is loaded, it is basically equivalent to calling the above function or class. Therefore, the following four ways of adding an event listener is basically equivalent:
 
 ```ts
 ctx.on(event, callback)
@@ -220,7 +220,7 @@ const fork = ctx.plugin((ctx) => {
 fork.dispose()
 ```
 
-Some plugins can be loaded multiple times. To unload every forks of a plugin without access to the `ForkScope` instance, we can use `ctx.registry`:
+Some plugins can be loaded multiple times. To unload every fork of a plugin without access to the `ForkScope` instance, we can use `ctx.registry`:
 
 ```ts
 // remove all forks of the plugin
@@ -228,9 +228,9 @@ Some plugins can be loaded multiple times. To unload every forks of a plugin wit
 ctx.registry.delete(plugin)
 ```
 
-#### Clean up side effects [↑](#contents)
+#### Clear side effects [↑](#contents)
 
-The `dispose` event is triggered when the context is unloaded. It can be used to clean up plugins' side effects. 
+The `dispose` event is triggered when the context is unloaded. It can be used to clean up plugins' side effects.
 
 Most of the built-in methods of `Context` are already implemented to be disposable (including `ctx.on()` and `ctx.plugin()`), so you do not need to handle these side effects manually. However, if some side effects are introduced by other means, a `dispose` listener is necessary.
 
@@ -277,7 +277,7 @@ ctx.plugin(callback, { value: 'foo' })
 ctx.plugin(callback, { value: 'bar' })
 ```
 
-Note that the `fork` listener itself is a plugin function. You can also listen to `dispose` event inside `fork` listeners, which serves a different purpose: the inner `dispose` listener is called when the fork is unloaded, while the outer `dispose` listener is called when the whole plugin is unloaded (either via `ctx.registry.delete()` or when all forks are unloaded).
+Note that the `fork` listener itself is a plugin function. You can also listen to `dispose` event inside `fork` listeners, which serves a different purpose: the inner `dispose` listener is called when the fork is unloaded, while the outer `dispose` listener is called when the whole plugin is unloaded (either via `ctx.registry.delete()` or when unloaded all forks).
 
 ```ts
 // an example reusable plugin
@@ -690,7 +690,7 @@ See: [Use services](#use-services-)
 
 ### EffectScope
 
-`EffectScope` can be accessed via `ctx.scope` or passed in in some events.
+`EffectScope` can be accessed via `ctx.scope` or passed-in in some events.
 
 #### scope.uid
 
@@ -724,7 +724,7 @@ The plugin runtime associated with the effect scope. If the scope is a runtime, 
 
 MainScope is a subclass of [`EffectScope`](#effectscope), representing the main scope of a plugin.
 
-It can be accessed via `ctx.scope.main` or passed in in some events.
+It can be accessed via `ctx.scope.main` or passed-in in some events.
 
 #### runtime.name
 
@@ -740,7 +740,7 @@ It can be accessed via `ctx.scope.main` or passed in in some events.
 
 #### ready()
 
-The `ready` event is triggered when the application starts. If a `ready` listener is registered in a application that has already started, it will be called immediately.
+The `ready` event is triggered when the application starts. If a `ready` listener is registered in an application that has already started, it will be called immediately.
 
 See: [Application lifecycle](#application-lifecycle-)
 
@@ -748,7 +748,7 @@ See: [Application lifecycle](#application-lifecycle-)
 
 The `dispose` event is triggered when the context is unloaded. It can be used to clean up plugins' side effects.
 
-See: [Clean up side effects](#clean-up-side-effects-)
+See: [Clear side effects](#clear-side-effects-)
 
 #### fork(ctx, config)
 
