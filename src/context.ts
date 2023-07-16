@@ -5,7 +5,7 @@ import { getConstructor, isConstructor, resolveConfig } from './utils'
 
 export interface Context<T = any> {
   [Context.config]: Context.Config
-  root: Context.Parameterized<this, this[typeof Context.config]>
+  root: Context.Configured<this, this[typeof Context.config]>
   mapping: Record<string | symbol, symbol>
   lifecycle: Lifecycle
   registry: Registry<this>
@@ -66,7 +66,7 @@ export class Context {
 }
 
 export namespace Context {
-  export type Parameterized<C, T = any> = Omit<C, 'config'> & { config: T }
+  export type Configured<C, T = any> = Omit<C, 'config'> & { config: T }
 
   export interface Config extends Lifecycle.Config, Registry.Config {}
 

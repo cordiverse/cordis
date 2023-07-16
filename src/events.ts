@@ -180,13 +180,13 @@ export interface Events<C extends Context = Context> {
   'fork': Plugin.Function<C['config'], C>
   'ready'(): Awaitable<void>
   'dispose'(): Awaitable<void>
-  'internal/fork'(fork: ForkScope<Context.Parameterized<C>>): void
-  'internal/runtime'(runtime: MainScope<Context.Parameterized<C>>): void
-  'internal/status'(scope: EffectScope<Context.Parameterized<C>>, oldValue: ScopeStatus): void
+  'internal/fork'(fork: ForkScope<Context.Configured<C>>): void
+  'internal/runtime'(runtime: MainScope<Context.Configured<C>>): void
+  'internal/status'(scope: EffectScope<Context.Configured<C>>, oldValue: ScopeStatus): void
   'internal/warning'(format: any, ...param: any[]): void
   'internal/before-service'(name: string, value: any): void
   'internal/service'(name: string, oldValue: any): void
-  'internal/before-update'(fork: ForkScope<Context.Parameterized<C>>, config: any): void
-  'internal/update'(fork: ForkScope<Context.Parameterized<C>>, oldConfig: any): void
+  'internal/before-update'(fork: ForkScope<Context.Configured<C>>, config: any): void
+  'internal/update'(fork: ForkScope<Context.Configured<C>>, oldConfig: any): void
   'internal/hook'(this: Lifecycle, name: string, listener: Function, prepend: boolean): () => boolean
 }
