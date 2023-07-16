@@ -132,4 +132,44 @@ describe('Service', () => {
     expect(stop.mock.calls).to.have.length(1)
     expect(fork.mock.calls).to.have.length(2)
   })
+
+  // https://github.com/koishijs/koishi/issues/1130
+  it('immediate + dependency', async () => {
+    const foo = jest.fn(noop)
+    const bar = jest.fn(noop)
+    const qux = jest.fn(noop)
+
+    class Foo extends Service {
+      static using = ['qux']
+      constructor(ctx: Context) {
+        super(ctx, 'foo', true)
+      }
+      start = foo
+    }
+
+    class Bar extends Service {
+      static using = ['foo', 'qux']
+      constructor(ctx: Context) {
+        super(ctx, 'bar', true)
+      }
+      start = bar
+    }
+
+    class Qux extends Service {
+      constructor(ctx: Context) {
+        super(ctx, 'qux', true)
+      }
+      start = qux
+    }
+
+    const root = new Context()
+    root.plugin(Foo)
+    root.plugin(Bar)
+    root.plugin(Qux)
+
+    await root.start()
+    expect(foo.mock.calls).to.have.length(1)
+    expect(bar.mock.calls).to.have.length(1)
+    expect(qux.mock.calls).to.have.length(1)
+  })
 })

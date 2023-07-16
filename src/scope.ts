@@ -40,10 +40,10 @@ export abstract class EffectScope<C extends Context = Context> {
   protected acceptors: Acceptor[] = []
   protected tasks = new Set<Promise<void>>()
   protected hasError = false
+  protected isActive = false
 
   abstract runtime: MainScope<C>
   abstract dispose(): boolean
-  abstract start(): void
   abstract update(config: C['config'], forced?: boolean): void
 
   constructor(public parent: C, public config: C['config']) {
@@ -127,10 +127,18 @@ export abstract class EffectScope<C extends Context = Context> {
   }
 
   reset() {
+    if (!this.isActive) return true
+    this.isActive = false
     this.disposables = this.disposables.splice(0, Infinity).filter((dispose) => {
       if (this.uid !== null && dispose[Context.static] === this) return true
       dispose()
     })
+  }
+
+  start() {
+    if (!this.ready || this.isActive) return true
+    this.isActive = true
+    this._updateStatus(() => this.hasError = false)
   }
 
   accept(callback?: (config: C['config']) => void | boolean, options?: AcceptOptions): () => boolean
@@ -216,8 +224,7 @@ export class ForkScope<C extends Context = Context> extends EffectScope<C> {
   }
 
   start() {
-    if (!this.ready) return
-    this._updateStatus(() => this.hasError = false)
+    if (super.start()) return true
     for (const fork of this.runtime.forkables) {
       this.ensure(async () => fork(this.context, this._config))
     }
@@ -251,7 +258,11 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
   constructor(registry: Registry<C>, public plugin: Plugin, config: any) {
     super(registry[Context.current] as C, config)
     registry.set(plugin, this)
-    if (plugin) this.setup()
+    if (plugin) {
+      this.setup()
+    } else {
+      this.isActive = true
+    }
   }
 
   get isForkable() {
@@ -311,21 +322,17 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
   }
 
   reset() {
-    super.reset()
+    if (super.reset()) return true
     for (const fork of this.children) {
       fork.reset()
     }
   }
 
   start() {
-    if (!this.ready) return
-    this._updateStatus(() => this.hasError = false)
-
-    // execute plugin body
+    if (super.start()) return true
     if (!this.isReusable && this.plugin) {
       this.apply(this.context, this._config)
     }
-
     for (const fork of this.children) {
       fork.start()
     }
