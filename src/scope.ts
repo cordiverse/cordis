@@ -136,7 +136,7 @@ export abstract class EffectScope<C extends Context = Context> {
   }
 
   start() {
-    if (!this.ready || this.isActive) return true
+    if (!this.ready || this.isActive || this.uid === null) return true
     this.isActive = true
     this._updateStatus(() => this.hasError = false)
   }
