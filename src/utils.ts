@@ -13,9 +13,8 @@ export function getConstructor(instance: any) {
 export function resolveConfig(plugin: any, config: any) {
   if (config === false) return
   if (config === true) config = undefined
-  config ??= {}
 
   const schema = plugin['Config'] || plugin['schema']
   if (schema && plugin['schema'] !== false) config = schema(config)
-  return config
+  return config ?? {}
 }
