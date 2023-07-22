@@ -2,7 +2,7 @@ import { Context, Service } from '../src'
 import { noop } from 'cosmokit'
 import { expect } from 'chai'
 import * as jest from 'jest-mock'
-import './utils'
+import { getHookSnapshot } from './utils'
 
 describe('Service', () => {
   it('normal service', async () => {
@@ -131,6 +131,25 @@ describe('Service', () => {
     expect(start.mock.calls).to.have.length(1)
     expect(stop.mock.calls).to.have.length(1)
     expect(fork.mock.calls).to.have.length(2)
+  })
+
+  // https://github.com/koishijs/koishi/issues/1110
+  it('memory leak test', async () => {
+    class Test extends Service {
+      constructor(ctx: Context) {
+        super(ctx, 'test', true)
+        ctx.using(['test'], () => {})
+      }
+    }
+
+    const root = new Context()
+    const before = getHookSnapshot(root)
+    root.plugin(Test)
+    const after = getHookSnapshot(root)
+    root.registry.delete(Test)
+    expect(before).to.deep.equal(getHookSnapshot(root))
+    root.plugin(Test)
+    expect(after).to.deep.equal(getHookSnapshot(root))
   })
 
   // https://github.com/koishijs/koishi/issues/1130

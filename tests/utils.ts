@@ -1,6 +1,7 @@
 import { use } from 'chai'
 import { Context } from '../src'
 import promised from 'chai-as-promised'
+import { Dict } from 'cosmokit'
 
 use(promised)
 
@@ -31,9 +32,9 @@ export function union(ctx: Context) {
   ctx.on('internal/runtime', (runtime) => {
     // same as `!runtime.uid`, but to make coverage happy
     if (!ctx.registry.has(runtime.plugin)) return
-    runtime.context.filter = (session) => {
+    runtime.ctx.filter = (session) => {
       return runtime.children.some((child) => {
-        return child.context.filter(session)
+        return child.ctx.filter(session)
       })
     }
   })
@@ -50,4 +51,12 @@ declare module '../src/context' {
     foo: any
     filter(session: Session): boolean
   }
+}
+
+export function getHookSnapshot(ctx: Context) {
+  const result: Dict<number> = {}
+  for (const [name, callbacks] of Object.entries(ctx.events._hooks)) {
+    if (callbacks.length) result[name] = callbacks.length
+  }
+  return result
 }

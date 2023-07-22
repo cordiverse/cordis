@@ -127,9 +127,8 @@ export abstract class EffectScope<C extends Context = Context> {
   }
 
   reset() {
-    if (!this.isActive) return true
     this.isActive = false
-    this.disposables = this.disposables.splice(0, Infinity).filter((dispose) => {
+    this.disposables = this.disposables.splice(0).filter((dispose) => {
       if (this.uid !== null && dispose[Context.static] === this) return true
       dispose()
     })
@@ -322,7 +321,7 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
   }
 
   reset() {
-    if (super.reset()) return true
+    super.reset()
     for (const fork of this.children) {
       fork.reset()
     }

@@ -1,8 +1,8 @@
 import { Context } from '../src'
 import { expect } from 'chai'
 import * as jest from 'jest-mock'
-import { Dict, noop } from 'cosmokit'
-import { event } from './utils'
+import { noop } from 'cosmokit'
+import { event, getHookSnapshot } from './utils'
 
 describe('Disposables', () => {
   it('fork.dispose', () => {
@@ -49,22 +49,14 @@ describe('Disposables', () => {
       ctx.on('dispose', noop)
     }
 
-    function getHookSnapshot() {
-      const result: Dict<number> = {}
-      for (const [name, callbacks] of Object.entries(root.events._hooks)) {
-        if (callbacks.length) result[name] = callbacks.length
-      }
-      return result
-    }
-
     const root = new Context()
-    const before = getHookSnapshot()
+    const before = getHookSnapshot(root)
     root.plugin(plugin)
-    const after = getHookSnapshot()
+    const after = getHookSnapshot(root)
     root.dispose(plugin)
-    expect(before).to.deep.equal(getHookSnapshot())
+    expect(before).to.deep.equal(getHookSnapshot(root))
     root.plugin(plugin)
-    expect(after).to.deep.equal(getHookSnapshot())
+    expect(after).to.deep.equal(getHookSnapshot(root))
   })
 
   it('dispose event', () => {
