@@ -7,7 +7,7 @@ declare module './context' {
   export interface Context {
     scope: EffectScope<this>
     runtime: MainScope<this>
-    collect(label: string, callback: () => boolean): () => boolean
+    collect(label: string, callback: () => void): () => void
     accept(callback?: (config: this['config']) => void | boolean, options?: AcceptOptions): () => boolean
     accept(keys: (keyof this['config'])[], callback?: (config: this['config']) => void | boolean, options?: AcceptOptions): () => boolean
     decline(keys: (keyof this['config'])[]): () => boolean
@@ -58,7 +58,7 @@ export abstract class EffectScope<C extends Context = Context> {
     return this.runtime.isReactive ? this.proxy : this.config
   }
 
-  collect(label: string, callback: () => boolean) {
+  collect(label: string, callback: () => any) {
     const dispose = defineProperty(() => {
       remove(this.disposables, dispose)
       return callback()

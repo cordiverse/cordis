@@ -63,7 +63,11 @@ export class Registry<C extends Context = Context> extends Map<Plugin<C>, MainSc
   }
 
   resolve(plugin: Plugin) {
-    return plugin && (typeof plugin === 'function' ? plugin : plugin.apply)
+    // Allow `null` as a special case.
+    if (plugin === null) return plugin
+    if (typeof plugin === 'function') return plugin
+    if (isApplicable(plugin)) return plugin.apply
+    throw new Error('invalid plugin, expect function or object with an "apply" method')
   }
 
   get(plugin: Plugin<C>) {
@@ -92,9 +96,7 @@ export class Registry<C extends Context = Context> extends Map<Plugin<C>, MainSc
 
   plugin(plugin: Plugin<C>, config?: any) {
     // check if it's a valid plugin
-    if (typeof plugin !== 'function' && !isApplicable(plugin)) {
-      throw new Error('invalid plugin, expect function or object with an "apply" method')
-    }
+    this.resolve(plugin)
 
     // resolve plugin config
     config = resolveConfig(plugin, config)
