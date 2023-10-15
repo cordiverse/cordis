@@ -43,7 +43,7 @@ describe('Isolation', () => {
     const callback = jest.fn()
     const plugin = {
       reusable: true,
-      using: ['foo'],
+      inject: ['foo'],
       apply: callback,
     }
 

@@ -23,6 +23,8 @@ export namespace Plugin {
     reusable?: boolean
     Config?: (config?: S) => T
     schema?: (config?: S) => T
+    inject?: readonly string[]
+    /** @deprecated use `inject` instead */
     using?: readonly string[]
   }
 
@@ -35,7 +37,7 @@ export namespace Plugin {
 
 declare module './context' {
   export interface Context {
-    using(using: readonly string[], callback: Plugin.Function<void, Context.Configured<this>>): ForkScope<Context.Configured<this>>
+    using(deps: readonly string[], callback: Plugin.Function<void, Context.Configured<this>>): ForkScope<Context.Configured<this>>
     plugin<S extends Plugin<Context.Configured<this>>, T extends Plugin.Config<S>>(plugin: S, config?: boolean | T): ForkScope<Context.Configured<this, T>>
     /** @deprecated use `ctx.registry.delete()` instead */
     dispose(plugin?: Plugin<Context.Configured<this>>): boolean
@@ -90,8 +92,8 @@ export class Registry<C extends Context = Context> extends Map<Plugin<C>, MainSc
     return runtime.dispose()
   }
 
-  using(using: readonly string[], callback: Plugin.Function<void, C>) {
-    return this.plugin({ using, apply: callback, name: callback.name })
+  using(inject: readonly string[], callback: Plugin.Function<void, C>) {
+    return this.plugin({ inject, apply: callback, name: callback.name })
   }
 
   plugin(plugin: Plugin<C>, config?: any) {

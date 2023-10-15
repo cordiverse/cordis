@@ -159,7 +159,7 @@ describe('Service', () => {
     const qux = jest.fn(noop)
 
     class Foo extends Service {
-      static using = ['qux']
+      static inject = ['qux']
       constructor(ctx: Context) {
         super(ctx, 'foo', true)
       }
@@ -167,7 +167,7 @@ describe('Service', () => {
     }
 
     class Bar extends Service {
-      static using = ['foo', 'qux']
+      static inject = ['foo', 'qux']
       constructor(ctx: Context) {
         super(ctx, 'bar', true)
       }

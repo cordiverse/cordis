@@ -93,7 +93,7 @@ describe('Fork', () => {
       ctx.on(event, listener)
     })
     const plugin = {
-      using: ['foo'],
+      inject: ['foo'],
       apply(ctx: Context) {
         ctx.on('fork', callback)
       },

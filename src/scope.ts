@@ -287,7 +287,7 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
 
   setup() {
     this.schema = this.plugin['Config'] || this.plugin['schema']
-    this.using = this.plugin['using'] || []
+    this.using = this.plugin['using'] || this.plugin['inject'] || []
     this.isReusable = this.plugin['reusable']
     this.isReactive = this.plugin['reactive']
     this.context.emit('internal/runtime', this)

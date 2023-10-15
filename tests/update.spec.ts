@@ -172,7 +172,7 @@ describe('Update', () => {
     const root = new Context()
     const callback = jest.fn()
     const plugin = {
-      using: ['foo'],
+      inject: ['foo'],
       reusable: true,
       apply: callback,
     }
