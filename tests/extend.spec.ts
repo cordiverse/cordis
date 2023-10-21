@@ -3,20 +3,18 @@ import { Context, Service } from '../src'
 
 describe('Extend', () => {
   it('basic support', () => {
-    interface C1 {
+    class S1 {}
+    class S2 {}
+    class S3 {}
+
+    class C1 extends Context {
       s1: S1
       s2: S2
       s3: S3
     }
 
-    class C1 extends Context {}
-    class S1 {}
-
     class C2 extends C1 {}
-    class S2 {}
-
     class C3 extends C1 {}
-    class S3 {}
 
     C2.service('s2', S2)
     C1.service('s1', S1)
@@ -39,20 +37,25 @@ describe('Extend', () => {
   })
 
   it('service isolation', () => {
-    class Inherited extends Context {
+    class Temp {}
+    class C1 extends Context {
       temp: Temp
     }
 
-    class Temp extends Service {
-      constructor(ctx: Context) {
-        super(ctx, 'temp', true)
-      }
+    class C2 extends C1 {}
+    C2.service('temp')
+
+    const plugin = (ctx: C1) => {
+      ctx.temp = new Temp()
     }
 
-    const ctx = new Inherited()
-    ctx.plugin(Temp)
+    const c1 = new C1()
+    c1.plugin(plugin)
+    const c2 = new C2()
+    c2.plugin(plugin)
 
-    expect(Object.getOwnPropertyDescriptors(Inherited.prototype)).to.have.property('temp')
-    expect(Object.getOwnPropertyDescriptors(Context.prototype)).to.not.have.property('temp')
+    // `temp` is not a service of C1
+    expect(c1.temp).to.be.not.ok
+    expect(c2.temp).to.be.ok
   })
 })

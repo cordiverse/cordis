@@ -40,11 +40,15 @@ describe('Isolation', () => {
 
   it('isolated fork', () => {
     const root = new Context()
-    const callback = jest.fn()
+    const callback = jest.fn(() => {})
+    const dispose = jest.fn(() => {})
     const plugin = {
       reusable: true,
       inject: ['foo'],
-      apply: callback,
+      apply: (ctx: Context) => {
+        callback()
+        ctx.on('dispose', dispose)
+      },
     }
 
     const ctx1 = root.isolate(['foo'])
@@ -59,5 +63,39 @@ describe('Isolation', () => {
     expect(callback.mock.calls).to.have.length(1)
     ctx2.foo = { bar: 300 }
     expect(callback.mock.calls).to.have.length(2)
+    expect(dispose.mock.calls).to.have.length(0)
+  })
+
+  it('shared service', () => {
+    const root = new Context()
+    const callback = jest.fn(() => {})
+    const dispose = jest.fn(() => {})
+    const plugin = {
+      reusable: true,
+      inject: ['foo'],
+      apply: (ctx: Context) => {
+        callback()
+        ctx.on('dispose', dispose)
+      },
+    }
+
+    const ctx1 = root.isolate(['foo'], 'test')
+    ctx1.plugin(plugin)
+    const ctx2 = root.isolate(['foo'], 'test')
+    ctx2.plugin(plugin)
+    expect(callback.mock.calls).to.have.length(0)
+
+    root.foo = { bar: 100 }
+    expect(callback.mock.calls).to.have.length(0)
+    ctx1.foo = { bar: 200 }
+    expect(callback.mock.calls).to.have.length(2)
+    expect(dispose.mock.calls).to.have.length(0)
+    ctx2.foo = null
+    expect(dispose.mock.calls).to.have.length(2)
+    ctx2.foo = { bar: 300 }
+    expect(callback.mock.calls).to.have.length(4)
+    expect(dispose.mock.calls).to.have.length(2)
+    ctx1.foo = null
+    expect(dispose.mock.calls).to.have.length(4)
   })
 })

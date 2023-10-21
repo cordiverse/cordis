@@ -14,6 +14,7 @@ export type GetEvents<C extends Context> = C[typeof Context.events]
 
 declare module './context' {
   export interface Context {
+    /* eslint-disable max-len */
     [Context.events]: Events<this>
     parallel<K extends keyof GetEvents<this>>(name: K, ...args: Parameters<GetEvents<this>[K]>): Promise<void>
     parallel<K extends keyof GetEvents<this>>(thisArg: ThisType<GetEvents<this>[K]>, name: K, ...args: Parameters<GetEvents<this>[K]>): Promise<void>
@@ -28,6 +29,7 @@ declare module './context' {
     off<K extends keyof GetEvents<this>>(name: K, listener: GetEvents<this>[K]): boolean
     start(): Promise<void>
     stop(): Promise<void>
+    /* eslint-enable max-len */
   }
 }
 
@@ -38,7 +40,7 @@ export namespace Lifecycle {
 }
 
 export class Lifecycle {
-  static readonly methods = ['on', 'once', 'off', 'before', 'after', 'parallel', 'emit', 'serial', 'bail', 'start', 'stop']
+  static readonly methods = ['on', 'once', 'off', 'after', 'parallel', 'emit', 'serial', 'bail', 'start', 'stop']
 
   isActive = false
   _tasks = new Set<Promise<void>>()
@@ -180,13 +182,13 @@ export interface Events<C extends Context = Context> {
   'fork': Plugin.Function<C['config'], C>
   'ready'(): Awaitable<void>
   'dispose'(): Awaitable<void>
-  'internal/fork'(fork: ForkScope<Context.Configured<C>>): void
-  'internal/runtime'(runtime: MainScope<Context.Configured<C>>): void
-  'internal/status'(scope: EffectScope<Context.Configured<C>>, oldValue: ScopeStatus): void
+  'internal/fork'(fork: ForkScope<Context.Parameterized<C>>): void
+  'internal/runtime'(runtime: MainScope<Context.Parameterized<C>>): void
+  'internal/status'(scope: EffectScope<Context.Parameterized<C>>, oldValue: ScopeStatus): void
   'internal/warning'(format: any, ...param: any[]): void
   'internal/before-service'(name: string, value: any): void
   'internal/service'(name: string, oldValue: any): void
-  'internal/before-update'(fork: ForkScope<Context.Configured<C>>, config: any): void
-  'internal/update'(fork: ForkScope<Context.Configured<C>>, oldConfig: any): void
+  'internal/before-update'(fork: ForkScope<Context.Parameterized<C>>, config: any): void
+  'internal/update'(fork: ForkScope<Context.Parameterized<C>>, oldConfig: any): void
   'internal/hook'(this: Lifecycle, name: string, listener: Function, prepend: boolean): () => boolean
 }

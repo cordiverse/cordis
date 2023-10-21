@@ -75,7 +75,7 @@ describe('Plugin', () => {
 
     root.plugin({
       name: 'bar',
-      apply: (ctx) => {
+      apply: (ctx: Context, config: {foo: 1}) => {
         expect(inspect(ctx)).to.equal('Context <bar>')
       },
     })
