@@ -40,8 +40,6 @@ export namespace Lifecycle {
 }
 
 export class Lifecycle {
-  static readonly methods = ['on', 'once', 'off', 'after', 'parallel', 'emit', 'serial', 'bail', 'start', 'stop']
-
   isActive = false
   _tasks = new Set<Promise<void>>()
   _hooks: Record<keyof any, [Context, (...args: any[]) => any][]> = {}
