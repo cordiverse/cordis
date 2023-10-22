@@ -8,9 +8,11 @@ export namespace Context {
 
   export interface Config extends Lifecycle.Config, Registry.Config {}
 
+  /** @deprecated use `string[]` instead */
   export interface MixinOptions {
     methods?: string[]
     accessors?: string[]
+    prototype?: {}
   }
 
   export type Internal = Internal.Service | Internal.Mixin
@@ -61,19 +63,20 @@ export class Context {
   }
 
   /** @deprecated */
-  static mixin(name: keyof any, options: Context.MixinOptions) {
+  static mixin(name: keyof any, options: string[] | Context.MixinOptions) {
     const internal = Context.ensureInternal.call(this)
-    for (const key of options.methods || []) {
-      internal[key] = { type: 'mixin', service: name }
+    if (!Array.isArray(options)) {
+      options = [...options.accessors || [], ...options.methods || []]
     }
-    for (const key of options.accessors || []) {
+    for (const key of options) {
       internal[key] = { type: 'mixin', service: name }
     }
   }
 
   /** @deprecated */
-  static service(name: keyof any, options: Context.MixinOptions = {}) {
+  static service(name: keyof any, options: string[] | Context.MixinOptions = {}) {
     const internal = this.ensureInternal()
+    if (name in internal) return
     const key = typeof name === 'symbol' ? name : Symbol(name)
     internal[name] = { type: 'service', key }
     if (isConstructor(options)) {
@@ -120,20 +123,16 @@ export class Context {
         }
 
         // check override
-        if (value && oldValue && typeof name === 'string') {
+        if (value && oldValue) {
           throw new Error(`service ${name} has been registered`)
         }
 
-        if (typeof name === 'string' && !internal.prototype) {
-          ctx.root.emit(self, 'internal/before-service', name, value)
-        }
+        ctx.root.emit(self, 'internal/before-service', name, value)
         ctx.root[key] = value
         if (value && typeof value === 'object') {
           defineProperty(value, Context.source, ctx)
         }
-        if (typeof name === 'string' && !internal.prototype) {
-          ctx.root.emit(self, 'internal/service', name, oldValue)
-        }
+        ctx.root.emit(self, 'internal/service', name, oldValue)
         return true
       }
       return false
@@ -146,18 +145,11 @@ export class Context {
     self[Context.shadow] = Object.create(null)
     self.root = self as any
     self.realms = Object.create(null)
-    self.mixin('scope', {
-      accessors: ['config', 'runtime'],
-      methods: ['collect', 'accept', 'decline'],
-    })
+    self.mixin('scope', ['config', 'runtime', 'collect', 'accept', 'decline'])
+    self.mixin('registry', ['using', 'plugin', 'dispose'])
+    self.mixin('lifecycle', ['on', 'once', 'off', 'after', 'parallel', 'emit', 'serial', 'bail', 'start', 'stop'])
     self.provide('registry', new Registry(self, config!))
-    self.mixin('registry', {
-      methods: ['using', 'plugin', 'dispose'],
-    })
     self.provide('lifecycle', new Lifecycle(self))
-    self.mixin('lifecycle', {
-      methods: ['on', 'once', 'off', 'after', 'parallel', 'emit', 'serial', 'bail', 'start', 'stop'],
-    })
 
     const attach = (internal: Context[typeof Context.internal]) => {
       if (!internal) return
@@ -186,15 +178,15 @@ export class Context {
     return this.scope
   }
 
-  provide<K extends string & keyof this>(name: K, value?: this[K]) {
+  provide(name: string, value?: any) {
     const internal = Context.ensureInternal.call(this)
     const key = Symbol(name)
     internal[name] = { type: 'service', key }
     this[key] = value
   }
 
-  mixin(name: string, options: Context.MixinOptions) {
-    return Context.mixin.call(this, name, options)
+  mixin(name: string, mixins: string[]) {
+    return Context.mixin.call(this, name, mixins)
   }
 
   extend(meta = {}): this {

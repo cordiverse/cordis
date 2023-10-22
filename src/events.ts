@@ -74,44 +74,48 @@ export class Lifecycle {
     }
   }
 
-  * getHooks(name: keyof any, thisArg?: object) {
+  getHooks(name: keyof any, thisArg?: object) {
     const hooks = this._hooks[name] || []
-    for (const [context, callback] of hooks.slice()) {
+    return hooks.slice().filter(([context]) => {
       const filter = thisArg?.[Context.filter]
-      if (filter && !filter.call(thisArg, context)) continue
-      yield callback
+      return !filter || filter.call(thisArg, context)
+    }).map(([, callback]) => callback)
+  }
+
+  prepareEvent(type: string, args: any[]) {
+    const thisArg = typeof args[0] === 'object' ? args.shift() : null
+    const name = args.shift()
+    if (name !== 'internal/event') {
+      this.emit('internal/event', type, name, args, thisArg)
     }
+    return [this.getHooks(name, thisArg), thisArg] as const
   }
 
   async parallel(...args: any[]) {
-    const thisArg = typeof args[0] === 'object' ? args.shift() : null
-    const name = args.shift()
-    await Promise.all([...this.getHooks(name, thisArg)].map(async (callback) => {
+    const [hooks, thisArg] = this.prepareEvent('parallel', args)
+    await Promise.all(hooks.map(async (callback) => {
       await callback.apply(thisArg, args)
     }))
   }
 
   emit(...args: any[]) {
-    const thisArg = typeof args[0] === 'object' ? args.shift() : null
-    const name = args.shift()
-    for (const callback of this.getHooks(name, thisArg)) {
+    const [hooks, thisArg] = this.prepareEvent('emit', args)
+    for (const callback of hooks) {
       callback.apply(thisArg, args)
     }
   }
 
   async serial(...args: any[]) {
-    const thisArg = typeof args[0] === 'object' ? args.shift() : null
-    const name = args.shift()
-    for (const callback of this.getHooks(name, thisArg)) {
+    const [hooks, thisArg] = this.prepareEvent('serial', args)
+    for (const callback of hooks) {
       const result = await callback.apply(thisArg, args)
       if (isBailed(result)) return result
     }
   }
 
   bail(...args: any[]) {
-    const thisArg = typeof args[0] === 'object' ? args.shift() : null
-    const name = args.shift()
-    for (const callback of this.getHooks(name, thisArg)) {
+    const [hooks, thisArg] = this.prepareEvent('bail', args)
+    for (const callback of hooks) {
       const result = callback.apply(thisArg, args)
       if (isBailed(result)) return result
     }
@@ -189,4 +193,5 @@ export interface Events<C extends Context = Context> {
   'internal/before-update'(fork: ForkScope<Context.Parameterized<C>>, config: any): void
   'internal/update'(fork: ForkScope<Context.Parameterized<C>>, oldConfig: any): void
   'internal/hook'(this: Lifecycle, name: string, listener: Function, prepend: boolean): () => boolean
+  'internal/event'(type: 'emit' | 'parallel' | 'serial' | 'bail', name: string, args: any[], thisArg: any): void
 }
