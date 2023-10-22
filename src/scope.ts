@@ -35,8 +35,9 @@ export abstract class EffectScope<C extends Context = Context> {
   public error: any
   public status: ScopeStatus = 'pending'
 
-  protected proxy: any
+  // Same as `this.ctx`, but with a more specific type.
   protected context: Context
+  protected proxy: any
   protected acceptors: Acceptor[] = []
   protected tasks = new Set<Promise<void>>()
   protected hasError = false
