@@ -119,7 +119,7 @@ export class Lifecycle {
   register(label: string, hooks: [Context, any][], listener: any, prepend?: boolean) {
     const maxListeners = this.root.config.maxListeners!
     if (hooks.length >= maxListeners!) {
-      this.root.emit('internal/warning', `max listener count (${maxListeners!}) for ${label} exceeded, which may be caused by a memory leak`)
+      this.root.emit('internal/warning', new Error(`max listener count (${maxListeners!}) for ${label} exceeded, which may be caused by a memory leak`))
     }
 
     const caller = this[Context.current]

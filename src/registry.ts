@@ -1,6 +1,6 @@
 import { defineProperty } from 'cosmokit'
 import { Context } from './context'
-import { ForkScope, MainScope } from './scope'
+import { ForkScope, Inject, MainScope } from './scope'
 import { resolveConfig } from './utils'
 
 export function isApplicable(object: Plugin) {
@@ -23,9 +23,9 @@ export namespace Plugin {
     reusable?: boolean
     Config?: (config?: S) => T
     schema?: (config?: S) => T
-    inject?: readonly string[]
+    inject?: readonly string[] | Partial<Inject>
     /** @deprecated use `inject` instead */
-    using?: readonly string[]
+    using?: readonly string[] | Partial<Inject>
   }
 
   export type Config<T extends Plugin<any>> =
@@ -110,7 +110,7 @@ export class Registry<C extends Context = Context> {
     return this._internal.forEach(callback)
   }
 
-  using(inject: readonly string[], callback: Plugin.Function<void, C>) {
+  using(inject: readonly string[] | Partial<Inject>, callback: Plugin.Function<void, C>) {
     return this.plugin({ inject, apply: callback, name: callback.name })
   }
 
@@ -127,7 +127,7 @@ export class Registry<C extends Context = Context> {
     let runtime = this.get(plugin)
     if (runtime) {
       if (!runtime.isForkable) {
-        context.emit('internal/warning', `duplicate plugin detected: ${plugin.name}`)
+        context.emit('internal/warning', new Error(`duplicate plugin detected: ${plugin.name}`))
       }
       return runtime.fork(context, config)
     }

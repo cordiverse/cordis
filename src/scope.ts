@@ -14,6 +14,11 @@ declare module './context' {
   }
 }
 
+export interface Inject {
+  readonly required: readonly string[]
+  readonly optional: readonly string[]
+}
+
 export type Disposable = () => void
 
 export interface AcceptOptions {
@@ -249,7 +254,8 @@ export class ForkScope<C extends Context = Context> extends EffectScope<C> {
 export class MainScope<C extends Context = Context> extends EffectScope<C> {
   runtime = this
   schema: any
-  using: readonly string[] = []
+  using: string[] = []
+  inject = new Set<string>()
   forkables: Function[] = []
   children: ForkScope<C>[] = []
   isReusable = false
@@ -288,7 +294,14 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
 
   setup() {
     this.schema = this.plugin['Config'] || this.plugin['schema']
-    this.using = this.plugin['using'] || this.plugin['inject'] || []
+    const inject = this.plugin['using'] || this.plugin['inject'] || []
+    if (Array.isArray(inject)) {
+      this.using = inject
+      this.inject = new Set(inject)
+    } else {
+      this.using = inject.required || []
+      this.inject = new Set([...this.using, ...inject.optional || []])
+    }
     this.isReusable = this.plugin['reusable']
     this.isReactive = this.plugin['reactive']
     this.context.emit('internal/runtime', this)
@@ -340,7 +353,7 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
 
   update(config: C['config'], forced?: boolean) {
     if (this.isForkable) {
-      this.context.emit('internal/warning', `attempting to update forkable plugin "${this.plugin.name}", which may lead to unexpected behavior`)
+      this.context.emit('internal/warning', new Error(`attempting to update forkable plugin "${this.plugin.name}", which may lead to unexpected behavior`))
     }
     const oldConfig = this.config
     const resolved = resolveConfig(this.runtime.plugin || getConstructor(this.context), config)

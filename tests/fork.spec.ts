@@ -1,7 +1,7 @@
 import { Context } from '../src'
 import { noop } from 'cosmokit'
 import { expect } from 'chai'
-import { event, Filter, Session, union } from './utils'
+import { event, Filter, Session, filter } from './utils'
 import * as jest from 'jest-mock'
 
 describe('Fork', () => {
@@ -26,7 +26,7 @@ describe('Fork', () => {
     }
 
     const root = new Context()
-    root.plugin(union)
+    root.plugin(filter)
     root.extend(new Filter(true)).plugin(pluginA)
     root.emit(new Session(false), event)
     expect(callback.mock.calls).to.have.length(0)
@@ -67,6 +67,7 @@ describe('Fork', () => {
     }
 
     const root = new Context()
+    root.plugin(filter)
     root.plugin(reusable, { foo: 0 })
     root.extend(new Filter(true)).plugin(reusable, { foo: 1 })
     root.extend(new Filter(false)).plugin(reusable, { foo: 2 })

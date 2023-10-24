@@ -27,7 +27,7 @@ export class Filter {
   }
 }
 
-export function union(ctx: Context) {
+export function filter(ctx: Context) {
   ctx.root.filter = () => true
   ctx.on('internal/runtime', (runtime) => {
     // same as `!runtime.uid`, but to make coverage happy

@@ -22,7 +22,7 @@ export class Service<C extends Context = Context> {
     })
 
     ctx.on('dispose', async () => {
-      ctx[name] = null
+      ctx[name] = undefined
       await this.stop()
     })
   }

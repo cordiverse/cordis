@@ -85,68 +85,69 @@ export class Context {
     this.mixin(name, options)
   }
 
+  // prototype: for prototype detection
+  // then:      for async function return
+  static builtin = ['prototype', 'then', 'scope', 'registry', 'lifecycle']
+
   static handler: ProxyHandler<Context> = {
     get(target, name, ctx: Context) {
       if (typeof name !== 'string') return Reflect.get(target, name, ctx)
       const internal = ctx[Context.internal][name]
-      if (!internal) return Reflect.get(target, name, ctx)
+      if (!internal) {
+        if (Reflect.has(target, name) || Context.builtin.includes(name)) {
+          return Reflect.get(target, name, ctx)
+        }
+        if (!ctx.runtime.inject.has(name)) {
+          ctx.emit('internal/warning', new Error(`property ${name} is not registered, declare it as \`inject\` to suppress this warning`))
+        }
+        return undefined
+      }
+
       if (internal.type === 'mixin') {
         const service = ctx[internal.service]
+        if (!service || typeof service !== 'object') return service
         const value = Reflect.get(service, name)
         if (typeof value !== 'function') return value
         return value.bind(service)
       } else if (internal.type === 'service') {
-        const key = ctx[Context.shadow][name] || internal.key
-        const value = ctx.root[key]
-        if (!value) return
-        // We cannot proxy these built-in types,
-        // fallback to the original value.
-        if (isUnproxyable(value)) {
-          defineProperty(value, Context.current, ctx)
-          return value
-        }
-        return new Proxy(value, {
-          get(target, name, receiver) {
-            if (name === Context.current) return ctx
-            return Reflect.get(target, name, receiver)
-          },
-        })
+        return ctx.get(name)
       }
     },
+
     set(target, name, value, ctx: Context) {
       if (typeof name !== 'string') return Reflect.set(target, name, value, ctx)
       const internal = ctx[Context.internal][name]
       if (!internal) return Reflect.set(target, name, value, ctx)
       if (internal.type === 'mixin') {
         return Reflect.set(ctx[internal.service], name, value)
-      } else if (internal.type === 'service') {
-        const key = ctx[Context.shadow][name] || internal.key
-        const oldValue = ctx.root[key]
-        if (oldValue === value) return true
-
-        // setup filter for events
-        const self = Object.create(null)
-        self[Context.filter] = (ctx2: Context) => {
-          return ctx[Context.shadow][name] === ctx2[Context.shadow][name]
-        }
-
-        // check override
-        if (value && oldValue) {
-          throw new Error(`service ${name} has been registered`)
-        }
-        if (isUnproxyable(value)) {
-          ctx.emit('internal/warning', `service ${name} is an unproxyable object, which may lead to unexpected behavior`)
-        }
-
-        ctx.root.emit(self, 'internal/before-service', name, value)
-        ctx.root[key] = value
-        if (value && typeof value === 'object') {
-          defineProperty(value, Context.source, ctx)
-        }
-        ctx.root.emit(self, 'internal/service', name, oldValue)
-        return true
       }
-      return false
+
+      // service
+      const key = ctx[Context.shadow][name] || internal.key
+      const oldValue = ctx.root[key]
+      if (oldValue === value) return true
+
+      // setup filter for events
+      const self = Object.create(null)
+      self[Context.filter] = (ctx2: Context) => {
+        return ctx[Context.shadow][name] === ctx2[Context.shadow][name]
+      }
+
+      // check override
+      if (value && oldValue) {
+        throw new Error(`service ${name} has been registered`)
+      }
+      if (isUnproxyable(value)) {
+        ctx.emit('internal/warning', new Error(`service ${name} is an unproxyable object, which may lead to unexpected behavior`))
+      }
+
+      ctx.root.emit(self, 'internal/before-service', name, value)
+      ctx.root[key] = value
+      if (value && typeof value === 'object') {
+        defineProperty(value, Context.source, ctx)
+      }
+      ctx.root.emit(self, 'internal/service', name, oldValue)
+      return true
     },
   }
 
@@ -187,6 +188,26 @@ export class Context {
   /** @deprecated */
   get state() {
     return this.scope
+  }
+
+  get(name: string) {
+    const internal = this[Context.internal][name]
+    if (internal?.type !== 'service') return
+    const key = this[Context.shadow][name] || internal.key
+    const value = this.root[key]
+    if (!value || typeof value !== 'object') return value
+    // We cannot proxy these built-in types,
+    // fallback to the original value.
+    if (isUnproxyable(value)) {
+      defineProperty(value, Context.current, this)
+      return value
+    }
+    return new Proxy(value, {
+      get: (target, name, receiver) => {
+        if (name === Context.current) return this
+        return Reflect.get(target, name, receiver)
+      },
+    })
   }
 
   provide(name: string, value?: any) {
