@@ -48,11 +48,11 @@ export namespace Registry {
   export interface Config {}
 }
 
-export class Registry<C extends Context = Context> extends Map<Plugin<C>, MainScope<C>> {
+export class Registry<C extends Context = Context> {
   private _counter = 0
+  private _internal = new Map<Plugin<C>, MainScope<C>>()
 
   constructor(private root: Context, config: Registry.Config) {
-    super()
     defineProperty(this, Context.current, root)
     root.scope = new MainScope(this, null!, config)
     root.scope.runtime.isReactive = true
@@ -60,6 +60,10 @@ export class Registry<C extends Context = Context> extends Map<Plugin<C>, MainSc
 
   get counter() {
     return ++this._counter
+  }
+
+  get size() {
+    return this._internal.size
   }
 
   resolve(plugin: Plugin) {
@@ -71,23 +75,39 @@ export class Registry<C extends Context = Context> extends Map<Plugin<C>, MainSc
   }
 
   get(plugin: Plugin<C>) {
-    return super.get(this.resolve(plugin))
+    return this._internal.get(this.resolve(plugin))
   }
 
   has(plugin: Plugin<C>) {
-    return super.has(this.resolve(plugin))
+    return this._internal.has(this.resolve(plugin))
   }
 
   set(plugin: Plugin<C>, state: MainScope<C>) {
-    return super.set(this.resolve(plugin), state)
+    return this._internal.set(this.resolve(plugin), state)
   }
 
   delete(plugin: Plugin<C>) {
     plugin = this.resolve(plugin)
     const runtime = this.get(plugin)
     if (!runtime) return false
-    super.delete(plugin)
+    this._internal.delete(plugin)
     return runtime.dispose()
+  }
+
+  keys() {
+    return this._internal.keys()
+  }
+
+  values() {
+    return this._internal.values()
+  }
+
+  entries() {
+    return this._internal.entries()
+  }
+
+  forEach(callback: (value: MainScope<C>, key: Plugin<C>, map: Map<Plugin<C>, MainScope<C>>) => void) {
+    return this._internal.forEach(callback)
   }
 
   using(inject: readonly string[], callback: Plugin.Function<void, C>) {
@@ -107,7 +127,7 @@ export class Registry<C extends Context = Context> extends Map<Plugin<C>, MainSc
     let runtime = this.get(plugin)
     if (runtime) {
       if (!runtime.isForkable) {
-        this.root.emit('internal/warning', `duplicate plugin detected: ${plugin.name}`)
+        context.emit('internal/warning', `duplicate plugin detected: ${plugin.name}`)
       }
       return runtime.fork(context, config)
     }

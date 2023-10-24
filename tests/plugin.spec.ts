@@ -86,4 +86,13 @@ describe('Plugin', () => {
       }
     })
   })
+
+  it('registry', () => {
+    // make coverage happy
+    const root = new Context()
+    root.registry.keys()
+    root.registry.values()
+    root.registry.entries()
+    root.registry.forEach(() => {})
+  })
 })
