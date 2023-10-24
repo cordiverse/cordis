@@ -63,11 +63,6 @@ export class Lifecycle {
     }), Context.static, root.scope)
   }
 
-  /** @deprecated */
-  queue(value: any) {
-    this[Context.current].scope.ensure(async () => value)
-  }
-
   async flush() {
     while (this._tasks.size) {
       await Promise.all(Array.from(this._tasks))

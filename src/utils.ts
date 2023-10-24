@@ -18,3 +18,7 @@ export function resolveConfig(plugin: any, config: any) {
   if (schema && plugin['schema'] !== false) config = schema(config)
   return config ?? {}
 }
+
+export function isUnproxyable(value: any) {
+  return [Map, Set, Date, Promise].some(constructor => value instanceof constructor)
+}

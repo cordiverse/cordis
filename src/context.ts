@@ -1,7 +1,7 @@
 import { defineProperty } from 'cosmokit'
 import { Lifecycle } from './events'
 import { Registry } from './registry'
-import { getConstructor, isConstructor, resolveConfig } from './utils'
+import { getConstructor, isConstructor, isUnproxyable, resolveConfig } from './utils'
 
 export namespace Context {
   export type Parameterized<C, T = any> = Omit<C, 'config'> & { config: T }
@@ -99,10 +99,18 @@ export class Context {
         const key = ctx[Context.shadow][name] || internal.key
         const value = ctx.root[key]
         if (!value) return
-        // TODO: define Context.current with proxy
-        // need a @disposable decorator here
-        defineProperty(value, Context.current, ctx)
-        return value
+        // We cannot proxy these built-in types,
+        // fallback to the original value.
+        if (isUnproxyable(value)) {
+          defineProperty(value, Context.current, ctx)
+          return value
+        }
+        return new Proxy(value, {
+          get(target, name, receiver) {
+            if (name === Context.current) return ctx
+            return Reflect.get(target, name, receiver)
+          },
+        })
       }
     },
     set(target, name, value, ctx: Context) {
@@ -125,6 +133,9 @@ export class Context {
         // check override
         if (value && oldValue) {
           throw new Error(`service ${name} has been registered`)
+        }
+        if (isUnproxyable(value)) {
+          ctx.emit('internal/warning', `service ${name} is an unproxyable object, which may lead to unexpected behavior`)
         }
 
         ctx.root.emit(self, 'internal/before-service', name, value)

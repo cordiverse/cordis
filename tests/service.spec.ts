@@ -5,6 +5,16 @@ import * as jest from 'jest-mock'
 import { getHookSnapshot } from './utils'
 
 describe('Service', () => {
+  it('unproxyable object', () => {
+    const root = new Context()
+    const warn = jest.fn()
+    root.on('internal/warning', warn)
+    root.provide('foo')
+    root.foo = new Set()
+    root.foo.add(1)
+    expect(warn.mock.calls).to.have.length(1)
+  })
+
   it('normal service', async () => {
     class Foo extends Service {
       constructor(ctx: Context) {
