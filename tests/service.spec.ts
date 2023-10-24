@@ -5,43 +5,57 @@ import * as jest from 'jest-mock'
 import { getHookSnapshot } from './utils'
 
 describe('Service', () => {
-  it('service access', () => {
+  it('service access', async () => {
     const root = new Context()
     const warn = jest.fn()
     root.on('internal/warning', warn)
     root.provide('foo')
 
-    // service should be proxyable
-    root.foo = new Set()
-    expect(warn.mock.calls).to.have.length(1)
+    root.plugin((ctx) => {
+      // service should be proxyable
+      ctx.foo = new Set()
+      expect(warn.mock.calls).to.have.length(1)
+  
+      // `foo` is not declared as injection
+      ctx.foo.add(1)
+      expect(warn.mock.calls).to.have.length(2)
+  
+      // service cannot be overwritten
+      expect(() => ctx.foo = new Set()).to.throw()
+    })
 
-    // `foo` is not declared as injection
-    root.foo.add(1)
-    expect(warn.mock.calls).to.have.length(2)
-
-    // service cannot be overwritten
-    expect(() => root.foo = new Set()).to.throw()
+    await root.lifecycle.flush()
+    root.registry.forEach((scope) => {
+      if (scope.error) throw scope.error
+    })
   })
 
-  it('non-service access', () => {
+  it('non-service access', async () => {
     const root = new Context()
     const warn = jest.fn()
     root.on('internal/warning', warn)
 
-    // `bar` is neither defined on context nor declared as injection
-    root.bar
-    expect(warn.mock.calls).to.have.length(1)
+    root.plugin((ctx) => {
+      // `bar` is neither defined on context nor declared as injection
+      ctx.bar
+      expect(warn.mock.calls).to.have.length(1)
+  
+      // non-service can be unproxyable
+      ctx.bar = new Set()
+      expect(warn.mock.calls).to.have.length(1)
+  
+      // non-service can be accessed if defined on context
+      ctx.bar.add(1)
+      expect(warn.mock.calls).to.have.length(1)
+  
+      // non-service can be overwritten
+      expect(() => ctx.bar = new Set()).to.not.throw()
+    })
 
-    // non-service can be unproxyable
-    root.bar = new Set()
-    expect(warn.mock.calls).to.have.length(1)
-
-    // non-service can be accessed if defined on context
-    root.bar.add(1)
-    expect(warn.mock.calls).to.have.length(1)
-
-    // non-service can be overwritten
-    expect(() => root.bar = new Set()).to.not.throw()
+    await root.lifecycle.flush()
+    root.registry.forEach((scope) => {
+      if (scope.error) throw scope.error
+    })
   })
 
   it('normal service', async () => {

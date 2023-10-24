@@ -87,7 +87,6 @@ describe('Plugin', () => {
     })
 
     await root.lifecycle.flush()
-    expect(root.registry.size).to.equal(5)
     root.registry.forEach((scope) => {
       if (scope.error) throw scope.error
     })

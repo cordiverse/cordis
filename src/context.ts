@@ -21,6 +21,7 @@ export namespace Context {
     export interface Service {
       type: 'service'
       key: symbol
+      builtin?: boolean
       prototype?: {}
     }
 
@@ -43,15 +44,15 @@ export interface Context<T = any> {
 }
 
 export class Context {
-  static readonly config = Symbol('config')
-  static readonly events = Symbol('events')
-  static readonly static = Symbol('static')
-  static readonly filter = Symbol('filter')
-  static readonly source = Symbol('source')
-  static readonly expose = Symbol('expose')
-  static readonly shadow = Symbol('shadow')
-  static readonly current = Symbol('current')
-  static readonly internal = Symbol('internal')
+  static readonly config = Symbol.for('cordis.config')
+  static readonly events = Symbol.for('cordis.events')
+  static readonly static = Symbol.for('cordis.static')
+  static readonly filter = Symbol.for('cordis.filter')
+  static readonly source = Symbol.for('cordis.source')
+  static readonly expose = Symbol.for('cordis.expose')
+  static readonly shadow = Symbol.for('cordis.shadow')
+  static readonly current = Symbol.for('cordis.current')
+  static readonly internal = Symbol.for('cordis.internal')
 
   private static ensureInternal(): Context[typeof Context.internal] {
     const ctx = this.prototype || this
@@ -90,14 +91,14 @@ export class Context {
       if (typeof name !== 'string') return Reflect.get(target, name, ctx)
 
       const checkInject = (name: string) => {
-        // Case 1: a normal property defined on `target`
+        // Case 1: a normal property defined on context
         if (Reflect.has(target, name)) return
         // Case 2: built-in services and special properties
         // - prototype: prototype detection
         // - then: async function return
         if (['prototype', 'then', 'registry', 'lifecycle'].includes(name)) return
-        // Case 3: declared as plugin injection
-        if (ctx.runtime.inject.has(name)) return
+        // Case 3: access from root or declared as `inject`
+        if (!ctx.runtime.plugin || ctx.runtime.inject.has(name)) return
         ctx.emit('internal/warning', new Error(`property ${name} is not registered, declare it as \`inject\` to suppress this warning`))
       }
 
@@ -114,13 +115,14 @@ export class Context {
         if (typeof value !== 'function') return value
         return value.bind(service)
       } else if (internal.type === 'service') {
-        checkInject(name)
-        return ctx.get(name)
+        if (!internal.builtin) checkInject(name)
+        return ctx.get(name as any)
       }
     },
 
     set(target, name, value, ctx: Context) {
       if (typeof name !== 'string') return Reflect.set(target, name, value, ctx)
+
       const internal = ctx[Context.internal][name]
       if (!internal) return Reflect.set(target, name, value, ctx)
       if (internal.type === 'mixin') {
@@ -165,8 +167,8 @@ export class Context {
     self.mixin('scope', ['config', 'runtime', 'collect', 'accept', 'decline'])
     self.mixin('registry', ['using', 'plugin', 'dispose'])
     self.mixin('lifecycle', ['on', 'once', 'off', 'after', 'parallel', 'emit', 'serial', 'bail', 'start', 'stop'])
-    self.provide('registry', new Registry(self, config!))
-    self.provide('lifecycle', new Lifecycle(self))
+    self.provide('registry', new Registry(self, config!), true)
+    self.provide('lifecycle', new Lifecycle(self), true)
 
     const attach = (internal: Context[typeof Context.internal]) => {
       if (!internal) return
@@ -203,10 +205,10 @@ export class Context {
     return this.scope
   }
 
-  get(name: string) {
+  get<K extends string & keyof this>(name: K): undefined | this[K] {
     const internal = this[Context.internal][name]
     if (internal?.type !== 'service') return
-    const key = this[Context.shadow][name] || internal.key
+    const key: symbol = this[Context.shadow][name] || internal.key
     const value = this.root[key]
     if (!value || typeof value !== 'object') return value
     if (isUnproxyable(value)) {
@@ -221,10 +223,10 @@ export class Context {
     })
   }
 
-  provide(name: string, value?: any) {
+  provide(name: string, value?: any, builtin?: boolean) {
     const internal = Context.ensureInternal.call(this)
     const key = Symbol(name)
-    internal[name] = { type: 'service', key }
+    internal[name] = { type: 'service', key, builtin }
     this[key] = value
   }
 
