@@ -5,14 +5,43 @@ import * as jest from 'jest-mock'
 import { getHookSnapshot } from './utils'
 
 describe('Service', () => {
-  it('unproxyable object', () => {
+  it('service access', () => {
     const root = new Context()
     const warn = jest.fn()
     root.on('internal/warning', warn)
     root.provide('foo')
+
+    // service should be proxyable
     root.foo = new Set()
-    root.foo.add(1)
     expect(warn.mock.calls).to.have.length(1)
+
+    // `foo` is not declared as injection
+    root.foo.add(1)
+    expect(warn.mock.calls).to.have.length(2)
+
+    // service cannot be overwritten
+    expect(() => root.foo = new Set()).to.throw()
+  })
+
+  it('non-service access', () => {
+    const root = new Context()
+    const warn = jest.fn()
+    root.on('internal/warning', warn)
+
+    // `bar` is neither defined on context nor declared as injection
+    root.bar
+    expect(warn.mock.calls).to.have.length(1)
+
+    // non-service can be unproxyable
+    root.bar = new Set()
+    expect(warn.mock.calls).to.have.length(1)
+
+    // non-service can be accessed if defined on context
+    root.bar.add(1)
+    expect(warn.mock.calls).to.have.length(1)
+
+    // non-service can be overwritten
+    expect(() => root.bar = new Set()).to.not.throw()
   })
 
   it('normal service', async () => {

@@ -49,6 +49,7 @@ declare module '../src/events' {
 declare module '../src/context' {
   interface Context {
     foo: any
+    bar: any
     filter(session: Session): boolean
   }
 }

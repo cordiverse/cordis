@@ -26,7 +26,7 @@ export namespace Context {
 
     export interface Mixin {
       type: 'mixin'
-      service: keyof any
+      service: string
     }
   }
 }
@@ -63,7 +63,7 @@ export class Context {
   }
 
   /** @deprecated */
-  static mixin(name: keyof any, options: string[] | Context.MixinOptions) {
+  static mixin(name: string, options: string[] | Context.MixinOptions) {
     const internal = Context.ensureInternal.call(this)
     if (!Array.isArray(options)) {
       options = [...options.accessors || [], ...options.methods || []]
@@ -74,7 +74,7 @@ export class Context {
   }
 
   /** @deprecated */
-  static service(name: keyof any, options: string[] | Context.MixinOptions = {}) {
+  static service(name: string, options: string[] | Context.MixinOptions = {}) {
     const internal = this.ensureInternal()
     if (name in internal) return
     const key = typeof name === 'symbol' ? name : Symbol(name)
@@ -85,22 +85,26 @@ export class Context {
     this.mixin(name, options)
   }
 
-  // prototype: for prototype detection
-  // then:      for async function return
-  static builtin = ['prototype', 'then', 'scope', 'registry', 'lifecycle']
-
   static handler: ProxyHandler<Context> = {
     get(target, name, ctx: Context) {
       if (typeof name !== 'string') return Reflect.get(target, name, ctx)
+
+      const checkInject = (name: string) => {
+        // Case 1: a normal property defined on `target`
+        if (Reflect.has(target, name)) return
+        // Case 2: built-in services and special properties
+        // - prototype: prototype detection
+        // - then: async function return
+        if (['prototype', 'then', 'registry', 'lifecycle'].includes(name)) return
+        // Case 3: declared as plugin injection
+        if (ctx.runtime.inject.has(name)) return
+        ctx.emit('internal/warning', new Error(`property ${name} is not registered, declare it as \`inject\` to suppress this warning`))
+      }
+
       const internal = ctx[Context.internal][name]
       if (!internal) {
-        if (Reflect.has(target, name) || Context.builtin.includes(name)) {
-          return Reflect.get(target, name, ctx)
-        }
-        if (!ctx.runtime.inject.has(name)) {
-          ctx.emit('internal/warning', new Error(`property ${name} is not registered, declare it as \`inject\` to suppress this warning`))
-        }
-        return undefined
+        checkInject(name)
+        return Reflect.get(target, name, ctx)
       }
 
       if (internal.type === 'mixin') {
@@ -110,6 +114,7 @@ export class Context {
         if (typeof value !== 'function') return value
         return value.bind(service)
       } else if (internal.type === 'service') {
+        checkInject(name)
         return ctx.get(name)
       }
     },
@@ -178,7 +183,15 @@ export class Context {
   }
 
   [Symbol.for('nodejs.util.inspect.custom')]() {
-    return `Context <${this.runtime.name}>`
+    return `Context <${this.name}>`
+  }
+
+  get name() {
+    let runtime = this.runtime
+    while (!runtime.name) {
+      runtime = runtime.parent.runtime
+    }
+    return runtime.name
   }
 
   get events() {
@@ -196,8 +209,6 @@ export class Context {
     const key = this[Context.shadow][name] || internal.key
     const value = this.root[key]
     if (!value || typeof value !== 'object') return value
-    // We cannot proxy these built-in types,
-    // fallback to the original value.
     if (isUnproxyable(value)) {
       defineProperty(value, Context.current, this)
       return value

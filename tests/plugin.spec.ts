@@ -60,13 +60,13 @@ describe('Plugin', () => {
     expect(callback.mock.calls).to.have.length(1)
   })
 
-  it('context inspect', () => {
+  it('context inspect', async () => {
     const root = new Context()
 
     expect(inspect(root)).to.equal('Context <root>')
 
     root.plugin((ctx) => {
-      expect(inspect(ctx)).to.equal('Context <anonymous>')
+      expect(inspect(ctx)).to.equal('Context <root>')
     })
 
     root.plugin(function foo(ctx) {
@@ -84,6 +84,12 @@ describe('Plugin', () => {
       constructor(ctx) {
         expect(inspect(ctx)).to.equal('Context <Qux>')
       }
+    })
+
+    await root.lifecycle.flush()
+    expect(root.registry.size).to.equal(5)
+    root.registry.forEach((scope) => {
+      if (scope.error) throw scope.error
     })
   })
 

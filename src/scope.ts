@@ -1,4 +1,4 @@
-import { deepEqual, defineProperty, remove } from 'cosmokit'
+import { deepEqual, defineProperty, isNullable, remove } from 'cosmokit'
 import { Context } from './context'
 import { Plugin, Registry } from './registry'
 import { getConstructor, isConstructor, resolveConfig } from './utils'
@@ -129,7 +129,7 @@ export abstract class EffectScope<C extends Context = Context> {
   }
 
   get ready() {
-    return this.runtime.using.every(name => this.ctx[name])
+    return this.runtime.using.every(name => !isNullable(this.ctx[name]))
   }
 
   reset() {
@@ -254,6 +254,7 @@ export class ForkScope<C extends Context = Context> extends EffectScope<C> {
 export class MainScope<C extends Context = Context> extends EffectScope<C> {
   runtime = this
   schema: any
+  name?: string
   using: string[] = []
   inject = new Set<string>()
   forkables: Function[] = []
@@ -267,18 +268,13 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
     if (plugin) {
       this.setup()
     } else {
+      this.name = 'root'
       this.isActive = true
     }
   }
 
   get isForkable() {
     return this.forkables.length > 0
-  }
-
-  get name() {
-    if (!this.plugin) return 'root'
-    const { name } = this.plugin
-    return !name || name === 'apply' ? 'anonymous' : name
   }
 
   fork(parent: Context, config: any) {
@@ -293,6 +289,8 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
   }
 
   setup() {
+    const { name } = this.plugin
+    if (name && name !== 'apply') this.name = name
     this.schema = this.plugin['Config'] || this.plugin['schema']
     const inject = this.plugin['using'] || this.plugin['inject'] || []
     if (Array.isArray(inject)) {
