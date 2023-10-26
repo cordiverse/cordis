@@ -144,8 +144,5 @@ describe('Fork', () => {
     const fork3 = root.plugin(callback1)
     expect(fork3.runtime.uid).to.equal(1)
     expect(fork3.uid).to.equal(5)
-
-    // make coverage happy
-    root.runtime = root.runtime
   })
 })

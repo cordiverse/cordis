@@ -15,8 +15,8 @@ declare module './context' {
 }
 
 export interface Inject {
-  readonly required: readonly string[]
-  readonly optional: readonly string[]
+  readonly required: string[]
+  readonly optional: string[]
 }
 
 export type Disposable = () => void
@@ -109,7 +109,7 @@ export abstract class EffectScope<C extends Context = Context> {
     this.context.events._tasks.add(task)
   }
 
-  cancel(reason: any) {
+  cancel(reason?: any) {
     this.error = reason
     this._updateStatus(() => this.hasError = true)
     this.reset()

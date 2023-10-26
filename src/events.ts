@@ -83,7 +83,7 @@ export class Lifecycle {
     if (name !== 'internal/event') {
       this.emit('internal/event', type, name, args, thisArg)
     }
-    return [this.getHooks(name, thisArg), thisArg] as const
+    return [this.getHooks(name, thisArg), thisArg ?? this[Context.current]] as const
   }
 
   async parallel(...args: any[]) {
@@ -182,7 +182,7 @@ export interface Events<C extends Context = Context> {
   'internal/fork'(fork: ForkScope<Context.Parameterized<C>>): void
   'internal/runtime'(runtime: MainScope<Context.Parameterized<C>>): void
   'internal/status'(scope: EffectScope<Context.Parameterized<C>>, oldValue: ScopeStatus): void
-  'internal/warning'(format: any, ...param: any[]): void
+  'internal/warning'(this: C, format: any, ...param: any[]): void
   'internal/before-service'(name: string, value: any): void
   'internal/service'(name: string, oldValue: any): void
   'internal/before-update'(fork: ForkScope<Context.Parameterized<C>>, config: any): void

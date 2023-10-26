@@ -7,40 +7,48 @@ export function isApplicable(object: Plugin) {
   return object && typeof object === 'object' && typeof object.apply === 'function'
 }
 
-export type Plugin<C extends Context = Context> =
-  | Plugin.Function<any, C>
-  | Plugin.Constructor<any, C>
-  | Plugin.Object<any, any, C>
+export type Plugin<C extends Context = Context, T = any> =
+  | Plugin.Function<C, T>
+  | Plugin.Constructor<C, T>
+  | Plugin.Object<C, T>
 
 export namespace Plugin {
-  export type Function<T = any, C extends Context = any> = (ctx: C, options: T) => void
-  export type Constructor<T = any, C extends Context = any> = new (ctx: C, options: T) => void
-
-  export interface Object<S = any, T = any, C extends Context = any> {
+  export interface Base {
     name?: string
-    apply: Function<T, C>
     reactive?: boolean
     reusable?: boolean
-    Config?: (config?: S) => T
-    schema?: (config?: S) => T
-    inject?: readonly string[] | Partial<Inject>
+    Config?: (config?: any) => any
+    inject?: string[] | Partial<Inject>
     /** @deprecated use `inject` instead */
-    using?: readonly string[] | Partial<Inject>
+    using?: string[] | Partial<Inject>
   }
 
-  export type Config<T extends Plugin<any>> =
-    | T extends Constructor<infer U> ? U
-    : T extends Function<infer U> ? U
-    : T extends Object<infer U> ? U
-    : never
+  export interface Function<C extends Context = Context, T = any> extends Base {
+    (ctx: C, options?: T): void
+  }
+
+  export interface Constructor<C extends Context = Context, T = any> extends Base {
+    new (ctx: C, options?: T): void
+  }
+
+  export interface Object<C extends Context = Context, T = any> extends Base {
+    apply: (ctx: C, options?: T) => void
+  }
 }
 
 declare module './context' {
   export interface Context {
-    using(deps: readonly string[], callback: Plugin.Function<void, Context.Parameterized<this>>): ForkScope<Context.Parameterized<this>>
-    plugin<S extends Plugin<Context.Parameterized<this>>, T extends Plugin.Config<S>>(plugin: S, config?: T): ForkScope<Context.Parameterized<this, T>>
+    /* eslint-disable max-len */
+    using(deps: readonly string[], callback: Plugin.Function<Context.Parameterized<this, void>, void>): ForkScope<Context.Parameterized<this, void>>
+    plugin<T, S = T>(plugin: Plugin.Function<Context.Parameterized<this, T>, T> & { schema?: true; Config: (config?: S) => T }, config?: S): ForkScope<Context.Parameterized<this, T>>
+    plugin<T, S = T>(plugin: Plugin.Constructor<Context.Parameterized<this, T>, T> & { schema?: true; Config: (config?: S) => T }, config?: S): ForkScope<Context.Parameterized<this, T>>
+    plugin<T, S = T>(plugin: Plugin.Object<Context.Parameterized<this, T>, T> & { schema?: true; Config: (config?: S) => T }, config?: S): ForkScope<Context.Parameterized<this, T>>
+    plugin<T>(plugin: Plugin.Function<Context.Parameterized<this, T>, T>, config?: T): ForkScope<Context.Parameterized<this, T>>
+    plugin<T>(plugin: Plugin.Constructor<Context.Parameterized<this, T>, T>, config?: T): ForkScope<Context.Parameterized<this, T>>
+    plugin<T>(plugin: Plugin.Object<Context.Parameterized<this, T>, T>, config?: T): ForkScope<Context.Parameterized<this, T>>
     /** @deprecated use `ctx.registry.delete()` instead */
     dispose(plugin?: Plugin<Context.Parameterized<this>>): boolean
+    /* eslint-enable max-len */
   }
 }
 
@@ -110,7 +118,7 @@ export class Registry<C extends Context = Context> {
     return this._internal.forEach(callback)
   }
 
-  using(inject: readonly string[] | Partial<Inject>, callback: Plugin.Function<void, C>) {
+  using(inject: string[] | Partial<Inject>, callback: Plugin.Function<C, void>) {
     return this.plugin({ inject, apply: callback, name: callback.name })
   }
 
