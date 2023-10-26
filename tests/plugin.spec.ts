@@ -2,7 +2,7 @@ import { Context } from '../src'
 import { expect } from 'chai'
 import * as jest from 'jest-mock'
 import { inspect } from 'util'
-import './utils'
+import { checkError } from './utils'
 
 describe('Plugin', () => {
   it('apply functional plugin', () => {
@@ -86,10 +86,7 @@ describe('Plugin', () => {
       }
     })
 
-    await root.lifecycle.flush()
-    root.registry.forEach((scope) => {
-      if (scope.error) throw scope.error
-    })
+    await checkError(root)
   })
 
   it('registry', () => {

@@ -61,3 +61,10 @@ export function getHookSnapshot(ctx: Context) {
   }
   return result
 }
+
+export async function checkError(ctx: Context) {
+  await ctx.lifecycle.flush()
+  ctx.registry.forEach((scope) => {
+    if (scope.error) throw scope.error
+  })
+}

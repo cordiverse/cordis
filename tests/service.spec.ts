@@ -2,7 +2,7 @@ import { Context, Service } from '../src'
 import { noop } from 'cosmokit'
 import { expect } from 'chai'
 import * as jest from 'jest-mock'
-import { getHookSnapshot } from './utils'
+import { checkError, getHookSnapshot } from './utils'
 
 describe('Service', () => {
   it('non-service access', async () => {
@@ -27,10 +27,7 @@ describe('Service', () => {
       expect(() => ctx.bar = new Set()).to.not.throw()
     })
 
-    await root.lifecycle.flush()
-    root.registry.forEach((scope) => {
-      if (scope.error) throw scope.error
-    })
+    await checkError(root)
   })
 
   it('service access', async () => {
@@ -52,10 +49,7 @@ describe('Service', () => {
       expect(() => ctx.foo = new Set()).to.throw()
     })
 
-    await root.lifecycle.flush()
-    root.registry.forEach((scope) => {
-      if (scope.error) throw scope.error
-    })
+    await checkError(root)
   })
 
   it('service injection', async () => {
@@ -76,10 +70,7 @@ describe('Service', () => {
       })
     })
 
-    await root.lifecycle.flush()
-    root.registry.forEach((scope) => {
-      if (scope.error) throw scope.error
-    })
+    await checkError(root)
   })
 
   it('normal service', async () => {

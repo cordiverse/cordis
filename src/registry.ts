@@ -125,23 +125,29 @@ export class Registry<C extends Context = Context> {
   plugin(plugin: Plugin<C>, config?: any) {
     // check if it's a valid plugin
     this.resolve(plugin)
+    const context = this[Context.current]
 
     // resolve plugin config
-    config = resolveConfig(plugin, config)
-    if (!config) return
+    let error: any
+    try {
+      config = resolveConfig(plugin, config)
+    } catch (reason) {
+      context.emit('internal/warning', reason)
+      error = reason
+      config = null
+    }
 
     // check duplication
-    const context = this[Context.current]
     let runtime = this.get(plugin)
     if (runtime) {
       if (!runtime.isForkable) {
         context.emit('internal/warning', new Error(`duplicate plugin detected: ${plugin.name}`))
       }
-      return runtime.fork(context, config)
+      return runtime.fork(context, config, error)
     }
 
-    runtime = new MainScope(this, plugin, config)
-    return runtime.fork(context, config)
+    runtime = new MainScope(this, plugin, config, error)
+    return runtime.fork(context, config, error)
   }
 
   dispose(plugin: Plugin<C>) {
