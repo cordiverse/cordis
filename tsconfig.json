@@ -4,6 +4,7 @@
     "outFile": "lib/index.d.ts",
     "target": "es2022",
     "module": "commonjs",
+    "sourceMap": true,
     "declaration": true,
     "emitDeclarationOnly": true,
     "skipLibCheck": true,

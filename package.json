@@ -1,7 +1,7 @@
 {
   "name": "cordis",
   "description": "AOP Framework for Modern JavaScript Applications",
-  "version": "3.0.0",
+  "version": "3.0.3",
   "sideEffects": false,
   "main": "lib/index.cjs",
   "module": "lib/index.mjs",
@@ -17,11 +17,12 @@
   "author": "Shigma <shigma10826@gmail.com>",
   "license": "MIT",
   "files": [
-    "lib"
+    "lib",
+    "src"
   ],
   "scripts": {
-    "compile:cjs": "esbuild src/index.ts --outfile=lib/index.cjs --bundle --sourcemap --platform=node --external:cosmokit --target=es2019",
-    "compile:esm": "esbuild src/index.ts --outfile=lib/index.mjs --bundle --sourcemap --platform=neutral --external:cosmokit --target=esnext",
+    "compile:cjs": "esbuild src/index.ts --outfile=lib/index.cjs --bundle --sourcemap --sources-content=false --platform=node --external:cosmokit --target=es2019",
+    "compile:esm": "esbuild src/index.ts --outfile=lib/index.mjs --bundle --sourcemap --sources-content=false --platform=neutral --external:cosmokit --target=esnext",
     "build": "yarn compile:cjs && yarn compile:esm && yarn dtsc",
     "test": "mocha -r esbuild-register tests/*.spec.ts",
     "test:text": "shx rm -rf coverage && c8 -r text yarn test",

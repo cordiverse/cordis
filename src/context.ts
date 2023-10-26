@@ -97,8 +97,14 @@ export class Context {
         // - prototype: prototype detection
         // - then: async function return
         if (['prototype', 'then', 'registry', 'lifecycle'].includes(name)) return
-        // Case 3: access from root or declared as `inject`
-        if (!ctx.runtime.plugin || ctx.runtime.inject.has(name)) return
+        // Case 3: access directly from root
+        if (!ctx.runtime.plugin) return
+        // Case 4: inject in ancestor contexts
+        let parent = ctx
+        while (parent.runtime.plugin) {
+          if (parent.runtime.inject.has(name)) return
+          parent = parent.scope.parent
+        }
         ctx.emit('internal/warning', new Error(`property ${name} is not registered, declare it as \`inject\` to suppress this warning`))
       }
 
@@ -116,7 +122,7 @@ export class Context {
         return value.bind(service)
       } else if (internal.type === 'service') {
         if (!internal.builtin) checkInject(name)
-        return ctx.get(name as any)
+        return ctx.get(name)
       }
     },
 
@@ -162,7 +168,7 @@ export class Context {
     const self: Context = new Proxy(this, Context.handler)
     config = resolveConfig(getConstructor(this), config)
     self[Context.shadow] = Object.create(null)
-    self.root = self as any
+    self.root = self
     self.realms = Object.create(null)
     self.mixin('scope', ['config', 'runtime', 'collect', 'accept', 'decline'])
     self.mixin('registry', ['using', 'plugin', 'dispose'])
@@ -190,10 +196,10 @@ export class Context {
 
   get name() {
     let runtime = this.runtime
-    while (!runtime.name) {
+    while (runtime && !runtime.name) {
       runtime = runtime.parent.runtime
     }
-    return runtime.name
+    return runtime?.name
   }
 
   get events() {
@@ -205,7 +211,9 @@ export class Context {
     return this.scope
   }
 
-  get<K extends string & keyof this>(name: K): undefined | this[K] {
+  get<K extends string & keyof this>(name: K): undefined | this[K]
+  get(name: string): any
+  get(name: string) {
     const internal = this[Context.internal][name]
     if (internal?.type !== 'service') return
     const key: symbol = this[Context.shadow][name] || internal.key
