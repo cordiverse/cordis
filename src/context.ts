@@ -1,4 +1,4 @@
-import { defineProperty } from 'cosmokit'
+import { defineProperty, isNullable } from 'cosmokit'
 import { Lifecycle } from './events'
 import { Registry } from './registry'
 import { getConstructor, isConstructor, isUnproxyable, resolveConfig } from './utils'
@@ -116,7 +116,7 @@ export class Context {
 
       if (internal.type === 'mixin') {
         const service = ctx[internal.service]
-        if (!service || typeof service !== 'object') return service
+        if (isNullable(service)) return service
         const value = Reflect.get(service, name)
         if (typeof value !== 'function') return value
         return value.bind(service)

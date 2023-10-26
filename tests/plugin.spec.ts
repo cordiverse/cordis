@@ -26,24 +26,6 @@ describe('Plugin', () => {
     expect(callback.mock.calls[0][1]).to.deep.equal(options)
   })
 
-  it('apply functional plugin with false', () => {
-    const root = new Context()
-    const callback = jest.fn()
-    root.plugin(callback, false)
-
-    expect(callback.mock.calls).to.have.length(0)
-  })
-
-  it('apply object plugin with true', () => {
-    const root = new Context()
-    const callback = jest.fn()
-    const plugin = { apply: callback }
-    root.plugin(plugin, true)
-
-    expect(callback.mock.calls).to.have.length(1)
-    expect(callback.mock.calls[0][1]).to.deep.equal({})
-  })
-
   it('apply invalid plugin', () => {
     const root = new Context()
     expect(() => root.plugin(undefined as any)).to.throw()

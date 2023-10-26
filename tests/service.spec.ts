@@ -56,16 +56,24 @@ describe('Service', () => {
     const root = new Context()
     const warn = jest.fn()
     root.on('internal/warning', warn)
-    root.provide('foo', {})
+    root.mixin('foo', ['bar'])
+    root.provide('foo', { bar: 1 })
 
-    root.using(['foo'], (ctx) => {
+    // bar is a mixin
+    expect(root.get('foo')).to.be.ok
+    // bar is a mixin
+    expect(root.get('bar')).to.be.undefined
+    // root is a property
+    expect(root.get('root')).to.be.undefined
+
+    root.using({ optional: ['foo'] }, (ctx) => {
       warn.mockClear()
-      ctx.foo
+      ctx.bar = 2
       expect(warn.mock.calls).to.have.length(0)
 
       ctx.plugin((ctx) => {
         warn.mockClear()
-        ctx.foo
+        expect(ctx.bar).to.equal(2)
         expect(warn.mock.calls).to.have.length(0)
       })
     })

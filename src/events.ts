@@ -176,7 +176,7 @@ export class Lifecycle {
 }
 
 export interface Events<C extends Context = Context> {
-  'fork': Plugin.Function<C['config'], C>
+  'fork': Plugin.Function<C, C['config']>
   'ready'(): Awaitable<void>
   'dispose'(): Awaitable<void>
   'internal/fork'(fork: ForkScope<Context.Parameterized<C>>): void

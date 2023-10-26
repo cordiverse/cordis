@@ -24,22 +24,22 @@ export namespace Plugin {
   }
 
   export interface Function<C extends Context = Context, T = any> extends Base {
-    (ctx: C, options?: T): void
+    (ctx: C, options: T): void
   }
 
   export interface Constructor<C extends Context = Context, T = any> extends Base {
-    new (ctx: C, options?: T): void
+    new (ctx: C, options: T): void
   }
 
   export interface Object<C extends Context = Context, T = any> extends Base {
-    apply: (ctx: C, options?: T) => void
+    apply: (ctx: C, options: T) => void
   }
 }
 
 declare module './context' {
   export interface Context {
     /* eslint-disable max-len */
-    using(deps: readonly string[], callback: Plugin.Function<Context.Parameterized<this, void>, void>): ForkScope<Context.Parameterized<this, void>>
+    using(deps: string[] | Partial<Inject>, callback: Plugin.Function<Context.Parameterized<this, void>, void>): ForkScope<Context.Parameterized<this, void>>
     plugin<T, S = T>(plugin: Plugin.Function<Context.Parameterized<this, T>, T> & { schema?: true; Config: (config?: S) => T }, config?: S): ForkScope<Context.Parameterized<this, T>>
     plugin<T, S = T>(plugin: Plugin.Constructor<Context.Parameterized<this, T>, T> & { schema?: true; Config: (config?: S) => T }, config?: S): ForkScope<Context.Parameterized<this, T>>
     plugin<T, S = T>(plugin: Plugin.Object<Context.Parameterized<this, T>, T> & { schema?: true; Config: (config?: S) => T }, config?: S): ForkScope<Context.Parameterized<this, T>>

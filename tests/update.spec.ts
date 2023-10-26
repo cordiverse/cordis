@@ -103,7 +103,7 @@ describe('Update', () => {
   it('nested update', () => {
     const root = new Context()
     const listener = jest.fn((value?: number) => {})
-    const inner = jest.fn((ctx: Context<Config>, config: Config) => {
+    const inner = jest.fn((ctx: Context, config: Config) => {
       // accept everything except bar
       ctx.decline(['bar'])
       ctx.on(event, () => listener(config.foo))
