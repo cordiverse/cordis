@@ -42,6 +42,21 @@ describe('Plugin', () => {
     expect(callback.mock.calls).to.have.length(1)
   })
 
+  it('apply plugin when dispose', () => {
+    const root = new Context()
+    const callback = jest.fn()
+    const warn = jest.fn()
+    root.on('internal/warning', warn)
+    const fork = root.plugin((ctx) => {
+      ctx.on('dispose', () => {
+        ctx.plugin(callback)
+      })
+    })
+    fork.dispose()
+    expect(callback.mock.calls).to.have.length(0)
+    expect(warn.mock.calls).to.have.length(1)
+  })
+
   it('context inspect', async () => {
     const root = new Context()
 
