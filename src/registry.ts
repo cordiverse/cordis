@@ -125,10 +125,10 @@ export class Registry<C extends Context = Context> {
   plugin(plugin: Plugin<C>, config?: any) {
     // check if it's a valid plugin
     this.resolve(plugin)
-    const context: Context = this[Context.current]
 
+    const context: Context = this[Context.current]
     if (context.scope.uid === null) {
-      context.emit('internal/warning' , new Error("try to plugin on a disposed scope"))
+      context.emit('internal/warning', new Error('try to plugin on a disposed scope'))
       return
     }
 
