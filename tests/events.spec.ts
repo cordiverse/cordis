@@ -86,7 +86,7 @@ describe('Events Emitter', () => {
   })
 
   it('context.prototype.emit', async () => {
-    const { root, warn } = setup()
+    const { root } = setup()
     root.emit(event)
     const callback = jest.fn()
     root.extend(new Filter(true)).on(event, callback)

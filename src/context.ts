@@ -1,4 +1,4 @@
-import { defineProperty, isNullable } from 'cosmokit'
+import { defineProperty, Dict, isNullable } from 'cosmokit'
 import { Lifecycle } from './events'
 import { Registry } from './registry'
 import { getConstructor, isConstructor, isUnproxyable, resolveConfig } from './utils'
@@ -34,8 +34,8 @@ export namespace Context {
 
 export interface Context<T = any> {
   [Context.config]: Context.Config
-  [Context.shadow]: Record<string | symbol, symbol>
-  [Context.internal]: Record<keyof any, Context.Internal>
+  [Context.shadow]: Dict<symbol>
+  [Context.internal]: Dict<Context.Internal>
   root: Context.Parameterized<this, this[typeof Context.config]>
   realms: Record<string, Record<string, symbol>>
   lifecycle: Lifecycle
@@ -140,18 +140,18 @@ export class Context {
       const oldValue = ctx.root[key]
       if (oldValue === value) return true
 
-      // setup filter for events
-      const self = Object.create(null)
-      self[Context.filter] = (ctx2: Context) => {
-        return ctx[Context.shadow][name] === ctx2[Context.shadow][name]
-      }
-
       // check override
       if (value && oldValue) {
         throw new Error(`service ${name} has been registered`)
       }
       if (isUnproxyable(value)) {
         ctx.emit('internal/warning', new Error(`service ${name} is an unproxyable object, which may lead to unexpected behavior`))
+      }
+
+      // setup filter for events
+      const self = Object.create(null)
+      self[Context.filter] = (ctx2: Context) => {
+        return ctx[Context.shadow][name] === ctx2[Context.shadow][name]
       }
 
       ctx.root.emit(self, 'internal/before-service', name, value)
@@ -179,7 +179,7 @@ export class Context {
     const attach = (internal: Context[typeof Context.internal]) => {
       if (!internal) return
       attach(Object.getPrototypeOf(internal))
-      for (const key of [...Object.getOwnPropertyNames(internal), ...Object.getOwnPropertySymbols(internal)]) {
+      for (const key of Object.getOwnPropertyNames(internal)) {
         const constructor = internal[key]['prototype']?.constructor
         if (!constructor) continue
         const name = constructor[Context.expose]

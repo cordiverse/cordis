@@ -1,7 +1,8 @@
-import { Context } from '../src'
+import { Context, Service } from '../src'
 import { expect } from 'chai'
 import * as jest from 'jest-mock'
 import './utils'
+import { event } from './utils'
 
 describe('Isolation', () => {
   it('isolated context', async () => {
@@ -97,5 +98,29 @@ describe('Isolation', () => {
     expect(dispose.mock.calls).to.have.length(2)
     ctx1.foo = null
     expect(dispose.mock.calls).to.have.length(4)
+  })
+
+  it('isolated event', async () => {
+    class Foo extends Service {
+      constructor(ctx: Context) {
+        super(ctx, 'foo', true)
+      }
+
+      start() {
+        this.ctx.emit(this, event)
+      }
+    }
+
+    const root = new Context()
+    const ctx = root.isolate(['foo'])
+    const outer = jest.fn()
+    const inner = jest.fn()
+    root.on(event, outer)
+    ctx.on(event, inner)
+    ctx.plugin(Foo)
+
+    await ctx.start()
+    expect(outer.mock.calls).to.have.length(0)
+    expect(inner.mock.calls).to.have.length(1)
   })
 })

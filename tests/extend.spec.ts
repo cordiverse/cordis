@@ -1,5 +1,5 @@
 import { expect } from 'chai'
-import { Context, Service } from '../src'
+import { Context } from '../src'
 
 describe('Extend', () => {
   it('basic support', () => {

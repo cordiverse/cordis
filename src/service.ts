@@ -6,7 +6,7 @@ export class Service<C extends Context = Context> {
   protected stop(): Awaitable<void> {}
   protected fork?(ctx: C, config: any): void
 
-  constructor(protected ctx: C, name: string, immediate?: boolean) {
+  constructor(protected ctx: C, public name: string, immediate?: boolean) {
     ctx.root.provide(name)
     defineProperty(this, Context.current, ctx)
 
@@ -29,5 +29,9 @@ export class Service<C extends Context = Context> {
 
   get caller() {
     return this[Context.current] as C
+  }
+
+  [Context.filter](ctx: Context) {
+    return ctx[Context.shadow][this.name] === this.ctx[Context.shadow][this.name]
   }
 }

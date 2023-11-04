@@ -42,7 +42,7 @@ export function filter(ctx: Context) {
 
 declare module '../src/events' {
   interface Events {
-    [event](this: Session): void
+    [event](): void
   }
 }
 
