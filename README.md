@@ -379,10 +379,10 @@ export function apply(ctx) {
 }
 ```
 
-However, If a plugin completely depends on the service, we cannot just check the service in the plugin callback, because when the plugin is loaded, the service may not be available yet. To make sure that the plugin is loaded only when the service is available, we can use a special property called `using`:
+However, If a plugin completely depends on the service, we cannot just check the service in the plugin callback, because when the plugin is loaded, the service may not be available yet. To make sure that the plugin is loaded only when the service is available, we can use a special property called `inject`:
 
 ```ts
-export const using = ['database']
+export const inject = ['database']
 
 export function apply(ctx) {
   // fetch data from the database
@@ -393,7 +393,7 @@ export function apply(ctx) {
 ```ts
 // for class plugins, simply use static property
 export default class MyPlugin {
-  static using = ['database']
+  static inject = ['database']
 
   constructor(ctx) {
     // fetch data from the database
@@ -402,22 +402,22 @@ export default class MyPlugin {
 }
 ```
 
-`using` is a list of service dependencies. If a service is a dependency of a plugin, it means:
+`inject` is a list of service dependencies. If a service is a dependency of a plugin, it means:
 
 - the plugin will not be loaded until the service becomes truthy
 - the plugin will be unloaded as soon as the service changes
 - if the changed value is still truthy, the plugin will be reloaded
 
-For plugins whose functions depend on a service, we also provide a syntactic sugar `ctx.using()`:
+For plugins whose functions depend on a service, we also provide a syntactic sugar `ctx.inject()`:
 
 ```ts
-ctx.using(['database'], (ctx) => {
+ctx.inject(['database'], (ctx) => {
   ctx.database.get(table, id)
 })
 
 // equivalent to
 ctx.plugin({
-  using: ['database'],
+  inject: ['database'],
   apply: (ctx) => {
     ctx.database.get(table, id)
   },
@@ -672,16 +672,16 @@ If any listener is fulfilled with a value other than `false`, `null` or `undefin
 
 Apply a plugin.
 
-#### ctx.using(names, callback)
+#### ctx.inject(deps, callback)
 
-- names: `string[]` service names
+- deps: `string[] | Inject` dependencies
 - callback: `Function` plugin function
 
 A syntax sugar of below code:
 
 ```ts
 ctx.plugin({
-  using: names,
+  inject: deps,
   plugin: callback,
 })
 ```

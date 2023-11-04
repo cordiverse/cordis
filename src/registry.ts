@@ -1,10 +1,15 @@
 import { defineProperty } from 'cosmokit'
 import { Context } from './context'
-import { ForkScope, Inject, MainScope } from './scope'
+import { ForkScope, MainScope } from './scope'
 import { resolveConfig } from './utils'
 
 export function isApplicable(object: Plugin) {
   return object && typeof object === 'object' && typeof object.apply === 'function'
+}
+
+export interface Inject {
+  readonly required?: string[]
+  readonly optional?: string[]
 }
 
 export type Plugin<C extends Context = Context, T = any> =
@@ -18,9 +23,9 @@ export namespace Plugin {
     reactive?: boolean
     reusable?: boolean
     Config?: (config?: any) => any
-    inject?: string[] | Partial<Inject>
+    inject?: string[] | Inject
     /** @deprecated use `inject` instead */
-    using?: string[] | Partial<Inject>
+    using?: string[] | Inject
   }
 
   export interface Function<C extends Context = Context, T = any> extends Base {
@@ -39,7 +44,9 @@ export namespace Plugin {
 declare module './context' {
   export interface Context {
     /* eslint-disable max-len */
-    using(deps: string[] | Partial<Inject>, callback: Plugin.Function<Context.Parameterized<this, void>, void>): ForkScope<Context.Parameterized<this, void>>
+    /** @deprecated use `ctx.inject()` instead */
+    using(deps: string[] | Inject, callback: Plugin.Function<Context.Parameterized<this, void>, void>): ForkScope<Context.Parameterized<this, void>>
+    inject(deps: string[] | Inject, callback: Plugin.Function<Context.Parameterized<this, void>, void>): ForkScope<Context.Parameterized<this, void>>
     plugin<T, S = T>(plugin: Plugin.Function<Context.Parameterized<this, T>, T> & { schema?: true; Config: (config?: S) => T }, config?: S): ForkScope<Context.Parameterized<this, T>>
     plugin<T, S = T>(plugin: Plugin.Constructor<Context.Parameterized<this, T>, T> & { schema?: true; Config: (config?: S) => T }, config?: S): ForkScope<Context.Parameterized<this, T>>
     plugin<T, S = T>(plugin: Plugin.Object<Context.Parameterized<this, T>, T> & { schema?: true; Config: (config?: S) => T }, config?: S): ForkScope<Context.Parameterized<this, T>>
@@ -118,7 +125,11 @@ export class Registry<C extends Context = Context> {
     return this._internal.forEach(callback)
   }
 
-  using(inject: string[] | Partial<Inject>, callback: Plugin.Function<C, void>) {
+  using(inject: string[] | Inject, callback: Plugin.Function<C, void>) {
+    return this.inject(inject, callback)
+  }
+
+  inject(inject: string[] | Inject, callback: Plugin.Function<C, void>) {
     return this.plugin({ inject, apply: callback, name: callback.name })
   }
 

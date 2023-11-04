@@ -14,11 +14,6 @@ declare module './context' {
   }
 }
 
-export interface Inject {
-  readonly required: string[]
-  readonly optional: string[]
-}
-
 export type Disposable = () => void
 
 export interface AcceptOptions {
