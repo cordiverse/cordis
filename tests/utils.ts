@@ -7,7 +7,7 @@ use(promised)
 
 Context.service('foo')
 
-export const event = Symbol('custom-event')
+export const event = 'custom-event'
 
 export class Session {
   constructor(public flag: boolean) {}

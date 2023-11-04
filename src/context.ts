@@ -182,8 +182,7 @@ export class Context {
       for (const key of Object.getOwnPropertyNames(internal)) {
         const constructor = internal[key]['prototype']?.constructor
         if (!constructor) continue
-        const name = constructor[Context.expose]
-        self[key] = new constructor(self, name ? config?.[name] : config)
+        self[key] = new constructor(self, config)
       }
     }
     attach(this[Context.internal])

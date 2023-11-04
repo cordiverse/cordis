@@ -46,20 +46,21 @@ export class Lifecycle {
 
   constructor(private root: Context) {
     defineProperty(this, Context.current, root)
-    defineProperty(this.on('internal/hook', function (name, listener, prepend) {
+    defineProperty(this.on('event/ready', (ctx, listener) => {
+      if (!this.isActive) return
+      ctx.scope.ensure(async () => listener())
+      return () => false
+    }), Context.static, root.scope)
+    defineProperty(this.on('event/dispose', (ctx, listener, prepend) => {
       const method = prepend ? 'unshift' : 'push'
-      const { scope } = this[Context.current]
-      const { runtime, disposables } = scope
-      if (name === 'ready' && this.isActive) {
-        scope.ensure(async () => listener())
-      } else if (name === 'dispose') {
-        disposables[method](listener as any)
-        defineProperty(listener, 'name', 'event <dispose>')
-        return () => remove(disposables, listener)
-      } else if (name === 'fork') {
-        runtime.forkables[method](listener as any)
-        return scope.collect('event <fork>', () => remove(runtime.forkables, listener))
-      }
+      ctx.scope.disposables[method](listener as any)
+      defineProperty(listener, 'name', 'event <dispose>')
+      return () => remove(ctx.scope.disposables, listener)
+    }), Context.static, root.scope)
+    defineProperty(this.on('event/fork', (ctx, listener, prepend) => {
+      const method = prepend ? 'unshift' : 'push'
+      ctx.scope.runtime.forkables[method](listener as any)
+      return ctx.scope.collect('event <fork>', () => remove(ctx.scope.runtime.forkables, listener))
     }), Context.static, root.scope)
   }
 
@@ -136,9 +137,9 @@ export class Lifecycle {
     }
   }
 
-  on(name: keyof any, listener: (...args: any) => any, prepend = false) {
+  on(name: string, listener: (...args: any) => any, prepend = false) {
     // handle special events
-    const result = this.bail(this, 'internal/hook', name, listener, prepend)
+    const result = this.bail(`event/${name}`, this[Context.current], listener, prepend)
     if (result) return result
 
     const hooks = this._hooks[name] ||= []
@@ -146,7 +147,7 @@ export class Lifecycle {
     return this.register(label, hooks, listener, prepend)
   }
 
-  once(name: keyof any, listener: (...args: any) => any, prepend = false) {
+  once(name: string, listener: (...args: any) => any, prepend = false) {
     const dispose = this.on(name, function (...args: any[]) {
       dispose()
       return listener.apply(this, args)
@@ -154,7 +155,7 @@ export class Lifecycle {
     return dispose
   }
 
-  off(name: keyof any, listener: (...args: any) => any) {
+  off(name: string, listener: (...args: any) => any) {
     return this.unregister(this._hooks[name] || [], listener)
   }
 
@@ -187,6 +188,6 @@ export interface Events<C extends Context = Context> {
   'internal/service'(name: string, oldValue: any): void
   'internal/before-update'(fork: ForkScope<Context.Parameterized<C>>, config: any): void
   'internal/update'(fork: ForkScope<Context.Parameterized<C>>, oldConfig: any): void
-  'internal/hook'(this: Lifecycle, name: string, listener: Function, prepend: boolean): () => boolean
   'internal/event'(type: 'emit' | 'parallel' | 'serial' | 'bail', name: string, args: any[], thisArg: any): void
+  [K: `event/${string}`]: (ctx: C, listener: Function, prepend: boolean) => undefined | (() => boolean)
 }
