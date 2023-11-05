@@ -182,7 +182,8 @@ export class Context {
       for (const key of Object.getOwnPropertyNames(internal)) {
         const constructor = internal[key]['prototype']?.constructor
         if (!constructor) continue
-        self[key] = new constructor(self, config)
+        self[internal[key]['key']] = new constructor(self, config)
+        self[internal[key]['key']][Context.source] = self
       }
     }
     attach(this[Context.internal])
@@ -224,7 +225,7 @@ export class Context {
     }
     return new Proxy(value, {
       get: (target, name, receiver) => {
-        if (name === Context.current) return this
+        if (name === Context.current || name === 'caller') return this
         return Reflect.get(target, name, receiver)
       },
     })

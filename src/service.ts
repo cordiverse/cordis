@@ -6,6 +6,8 @@ export class Service<C extends Context = Context> {
   protected stop(): Awaitable<void> {}
   protected fork?(ctx: C, config: any): void
 
+  protected [Context.current]!: C
+
   constructor(protected ctx: C, public name: string, immediate?: boolean) {
     ctx.root.provide(name)
     defineProperty(this, Context.current, ctx)
@@ -27,6 +29,7 @@ export class Service<C extends Context = Context> {
     })
   }
 
+  /** @deprecated use `Context.current` instead */
   get caller() {
     return this[Context.current] as C
   }

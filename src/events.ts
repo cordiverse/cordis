@@ -189,5 +189,4 @@ export interface Events<C extends Context = Context> {
   'internal/before-update'(fork: ForkScope<Context.Parameterized<C>>, config: any): void
   'internal/update'(fork: ForkScope<Context.Parameterized<C>>, oldConfig: any): void
   'internal/event'(type: 'emit' | 'parallel' | 'serial' | 'bail', name: string, args: any[], thisArg: any): void
-  [K: `event/${string}`]: (ctx: C, listener: Function, prepend: boolean) => undefined | (() => boolean)
 }

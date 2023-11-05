@@ -484,7 +484,7 @@ class ListService extends Service {
   addItem(item) {
     this.data.push(item)
     // return a dispose function
-    return this.caller.collect('list-item', () => {
+    return this[Context.current].collect('list-item', () => {
       return this.removeItem(item)
     })
   }
@@ -506,7 +506,7 @@ class ListService extends Service {
 - The `addItem` method adds an item to the list and returns a dispose function which can be used to remove the item from the list. When the caller context is disposed, the disposable function will be automatically called.
 - The `removeItem` method removes an item from the list and returns a boolean value indicating whether the item is successfully removed.
 
-In the above example, `addItem` is implemented as disposable via `this.caller.collect()`. `caller` is a special property which always points to the last context which access the service. `ctx.collect()` accepts two parameters: the first is the name of disposable, the second is the callback function.
+In the above example, `addItem` is implemented as disposable via `this[Context.current].collect()`. `caller` is a special property which always points to the last context which access the service. `ctx.collect()` accepts two parameters: the first is the name of disposable, the second is the callback function.
 
 #### Service isolation [↑](#contents)
 
