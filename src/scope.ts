@@ -134,7 +134,9 @@ export abstract class EffectScope<C extends Context = Context> {
     this.isActive = false
     this.disposables = this.disposables.splice(0).filter((dispose) => {
       if (this.uid !== null && dispose[Context.static] === this) return true
-      dispose()
+      ;(async () => dispose())().catch((reason) => {
+        this.context.emit('internal/warning', reason)
+      })
     })
   }
 

@@ -61,18 +61,38 @@ describe('Disposables', () => {
 
   it('dispose event', () => {
     const root = new Context()
-    const callback = jest.fn(noop)
+    const dispose = jest.fn(noop)
     const plugin = (ctx: Context) => {
-      ctx.on('dispose', callback)
+      ctx.on('dispose', dispose)
     }
 
     root.plugin(plugin)
-    expect(callback.mock.calls).to.have.length(0)
+    expect(dispose.mock.calls).to.have.length(0)
     expect(root.dispose(plugin)).to.be.ok
-    expect(callback.mock.calls).to.have.length(1)
+    expect(dispose.mock.calls).to.have.length(1)
     // callback should only be called once
     expect(root.dispose(plugin)).to.be.not.ok
-    expect(callback.mock.calls).to.have.length(1)
+    expect(dispose.mock.calls).to.have.length(1)
+  })
+
+  it('dispose event', async () => {
+    const root = new Context()
+    const warn = jest.fn()
+    const dispose = jest.fn(() => {
+      throw new Error('test')
+    })
+    root.on('internal/warning', warn)
+    const plugin = (ctx: Context) => {
+      ctx.on('dispose', dispose)
+    }
+
+    root.plugin(plugin)
+    expect(dispose.mock.calls).to.have.length(0)
+    expect(root.dispose(plugin)).to.be.ok
+    // warning is asynchronous
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(dispose.mock.calls).to.have.length(1)
+    expect(warn.mock.calls).to.have.length(1)
   })
 
   it('root dispose', async () => {
