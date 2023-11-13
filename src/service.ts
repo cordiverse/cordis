@@ -29,11 +29,6 @@ export class Service<C extends Context = Context> {
     })
   }
 
-  /** @deprecated use `Context.current` instead */
-  get caller() {
-    return this[Context.current] as C
-  }
-
   [Context.filter](ctx: Context) {
     return ctx[Context.shadow][this.name] === this.ctx[Context.shadow][this.name]
   }

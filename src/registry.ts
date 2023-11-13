@@ -86,7 +86,7 @@ export class Registry<C extends Context = Context> {
     if (plugin === null) return plugin
     if (typeof plugin === 'function') return plugin
     if (isApplicable(plugin)) return plugin.apply
-    throw new Error('invalid plugin, expect function or object with an "apply" method')
+    throw new Error('invalid plugin, expect function or object with an "apply" method, received ' + typeof plugin)
   }
 
   get(plugin: Plugin<C>) {
