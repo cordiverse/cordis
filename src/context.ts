@@ -30,6 +30,10 @@ export namespace Context {
       service: string
     }
   }
+
+  export type Associate<P extends string, C extends Context = Context> = {
+    readonly [K in keyof C as K extends `${P}.${infer R}` ? R : never]: C[K]
+  }
 }
 
 export interface Context<T = any> {
@@ -162,6 +166,17 @@ export class Context {
       ctx.root.emit(self, 'internal/service', name, oldValue)
       return true
     },
+  }
+
+  static associate<T extends {}>(object: T, name: string) {
+    return new Proxy(object, {
+      get(target, key, receiver) {
+        if (typeof key === 'symbol' || key in target) return Reflect.get(target, key, receiver)
+        const caller: Context = receiver[Context.current]
+        if (!caller[Context.internal][`${name}.${key}`]) return Reflect.get(target, key, receiver)
+        return caller.get(`${name}.${key}`)
+      },
+    })
   }
 
   constructor(config?: Context.Config) {

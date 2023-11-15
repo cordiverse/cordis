@@ -27,6 +27,8 @@ export class Service<C extends Context = Context> {
       ctx[name] = undefined
       await this.stop()
     })
+
+    return Context.associate(this, name)
   }
 
   [Context.filter](ctx: Context) {

@@ -93,7 +93,7 @@ describe('Service', () => {
     expect(root.foo).to.be.undefined
 
     await root.start()
-    expect(root.foo).to.be.instanceOf(Foo)
+    expect(root.foo).to.be.instanceof(Foo)
 
     root.registry.delete(Foo)
     expect(root.foo).to.be.undefined
@@ -111,14 +111,14 @@ describe('Service', () => {
     root.on('internal/service', callback)
 
     root.plugin(Foo)
-    expect(root.foo).to.be.instanceOf(Foo)
+    expect(root.foo).to.be.instanceof(Foo)
     expect(callback.mock.calls).to.have.length(1)
 
     await root.start()
     expect(callback.mock.calls).to.have.length(1)
   })
 
-  it('service caller', async () => {
+  it('Context.current', async () => {
     class Foo extends Service {
       constructor(ctx: Context) {
         super(ctx, 'foo', true)
@@ -127,10 +127,10 @@ describe('Service', () => {
 
     const root = new Context()
     root.plugin(Foo)
-    expect(root.foo.caller).to.equal(root)
+    expect(root.foo[Context.current]).to.equal(root)
 
     const ctx = root.extend()
-    expect(ctx.foo.caller).to.equal(ctx)
+    expect(ctx.foo[Context.current]).to.equal(ctx)
   })
 
   it('dependency update', async () => {
