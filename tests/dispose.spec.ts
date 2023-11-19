@@ -53,7 +53,7 @@ describe('Disposables', () => {
     const before = getHookSnapshot(root)
     root.plugin(plugin)
     const after = getHookSnapshot(root)
-    root.dispose(plugin)
+    root.registry.delete(plugin)
     expect(before).to.deep.equal(getHookSnapshot(root))
     root.plugin(plugin)
     expect(after).to.deep.equal(getHookSnapshot(root))
@@ -68,10 +68,10 @@ describe('Disposables', () => {
 
     root.plugin(plugin)
     expect(dispose.mock.calls).to.have.length(0)
-    expect(root.dispose(plugin)).to.be.ok
+    expect(root.registry.delete(plugin)).to.be.ok
     expect(dispose.mock.calls).to.have.length(1)
     // callback should only be called once
-    expect(root.dispose(plugin)).to.be.not.ok
+    expect(root.registry.delete(plugin)).to.be.not.ok
     expect(dispose.mock.calls).to.have.length(1)
   })
 
@@ -88,7 +88,7 @@ describe('Disposables', () => {
 
     root.plugin(plugin)
     expect(dispose.mock.calls).to.have.length(0)
-    expect(root.dispose(plugin)).to.be.ok
+    expect(root.registry.delete(plugin)).to.be.ok
     // warning is asynchronous
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(dispose.mock.calls).to.have.length(1)

@@ -53,8 +53,6 @@ declare module './context' {
     plugin<T>(plugin: Plugin.Function<Context.Parameterized<this, T>, T>, config?: T): ForkScope<Context.Parameterized<this, T>>
     plugin<T>(plugin: Plugin.Constructor<Context.Parameterized<this, T>, T>, config?: T): ForkScope<Context.Parameterized<this, T>>
     plugin<T>(plugin: Plugin.Object<Context.Parameterized<this, T>, T>, config?: T): ForkScope<Context.Parameterized<this, T>>
-    /** @deprecated use `ctx.registry.delete()` instead */
-    dispose(plugin?: Plugin<Context.Parameterized<this>>): boolean
     /* eslint-enable max-len */
   }
 }
@@ -164,9 +162,5 @@ export class Registry<C extends Context = Context> {
 
     runtime = new MainScope(this, plugin, config, error)
     return runtime.fork(context, config, error)
-  }
-
-  dispose(plugin: Plugin<C>) {
-    return this.delete(plugin)
   }
 }
