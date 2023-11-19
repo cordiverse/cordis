@@ -41,9 +41,10 @@ describe('Association', () => {
     class Foo extends Service {
       constructor(ctx: Context) {
         super(ctx, 'foo', true)
-        ctx.root.provide('session.bar', function (this: Session) {
+        ctx.provide('session.bar')
+        ctx['session.bar'] = function (this: Session) {
           return this
-        })
+        }
       }
     }
 

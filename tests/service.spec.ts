@@ -59,7 +59,7 @@ describe('Service', () => {
     root.mixin('foo', ['bar'])
     root.provide('foo', { bar: 1 })
 
-    // bar is a mixin
+    // foo is a service
     expect(root.get('foo')).to.be.ok
     // bar is a mixin
     expect(root.get('bar')).to.be.undefined

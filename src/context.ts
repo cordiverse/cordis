@@ -148,6 +148,7 @@ export class Context {
       if (value && oldValue) {
         throw new Error(`service ${name} has been registered`)
       }
+      ctx.on('dispose', () => ctx[name] = undefined)
       if (isUnproxyable(value)) {
         ctx.emit('internal/warning', new Error(`service ${name} is an unproxyable object, which may lead to unexpected behavior`))
       }
@@ -173,7 +174,7 @@ export class Context {
       get(target, key, receiver) {
         if (typeof key === 'symbol' || key in target) return Reflect.get(target, key, receiver)
         const caller: Context = receiver[Context.current]
-        if (!caller[Context.internal][`${name}.${key}`]) return Reflect.get(target, key, receiver)
+        if (!caller?.[Context.internal][`${name}.${key}`]) return Reflect.get(target, key, receiver)
         return caller.get(`${name}.${key}`)
       },
     })
@@ -247,10 +248,10 @@ export class Context {
   }
 
   provide(name: string, value?: any, builtin?: boolean) {
-    const internal = Context.ensureInternal.call(this)
+    const internal = Context.ensureInternal.call(this.root)
     const key = Symbol(name)
     internal[name] = { type: 'service', key, builtin }
-    this[key] = value
+    this.root[key] = value
   }
 
   mixin(name: string, mixins: string[]) {

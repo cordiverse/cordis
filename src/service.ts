@@ -1,6 +1,8 @@
 import { Awaitable, defineProperty } from 'cosmokit'
 import { Context } from './context'
 
+export interface Service extends Context.Associate<'service'> {}
+
 export class Service<C extends Context = Context> {
   protected start(): Awaitable<void> {}
   protected stop(): Awaitable<void> {}
@@ -9,7 +11,7 @@ export class Service<C extends Context = Context> {
   protected [Context.current]!: C
 
   constructor(protected ctx: C, public name: string, immediate?: boolean) {
-    ctx.root.provide(name)
+    ctx.provide(name)
     defineProperty(this, Context.current, ctx)
 
     if (immediate) {
@@ -23,12 +25,8 @@ export class Service<C extends Context = Context> {
       if (!immediate) ctx[name] = this
     })
 
-    ctx.on('dispose', async () => {
-      ctx[name] = undefined
-      await this.stop()
-    })
-
-    return Context.associate(this, name)
+    ctx.on('dispose', () => this.stop())
+    return Context.associate(Context.associate(this, 'service'), name)
   }
 
   [Context.filter](ctx: Context) {
