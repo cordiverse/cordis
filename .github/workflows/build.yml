@@ -21,7 +21,7 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
       - name: Install
-        run: yarn
+        run: yarn --no-immutable
       - name: Build
         run: yarn build
 
@@ -41,6 +41,6 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
       - name: Install
-        run: yarn
+        run: yarn --no-immutable
       - name: Unit Test
         run: yarn test:json

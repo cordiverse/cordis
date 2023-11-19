@@ -2,6 +2,14 @@ lib
 dist
 temp
 
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+
 todo.md
 yarn.lock
 coverage/
@@ -17,7 +25,6 @@ report.*.json
 .DS_Store
 .idea
 .vscode
-.yarn
 *.suo
 *.ntvs*
 *.njsproj
