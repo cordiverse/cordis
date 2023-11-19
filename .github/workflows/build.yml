@@ -1,7 +1,8 @@
-name: Test
+name: Build
 
 on:
   push:
+  pull_request:
 
 jobs:
   build:
@@ -10,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: [16, 18, 20]
+        node-version: [18, 20]
 
     steps:
       - name: Check out
@@ -23,10 +24,23 @@ jobs:
         run: yarn
       - name: Build
         run: yarn build
+
+  test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [18, 20]
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: Install
+        run: yarn
       - name: Unit Test
         run: yarn test:json
-      - name: Report Coverage
-        uses: codecov/codecov-action@v3
-        with:
-          files: ./coverage/coverage-final.json
-          name: codecov
