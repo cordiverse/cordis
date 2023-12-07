@@ -146,7 +146,7 @@ export class Registry<C extends Context = Context> {
     try {
       config = resolveConfig(plugin, config)
     } catch (reason) {
-      context.emit('internal/warning', reason)
+      context.emit('internal/error', reason)
       error = reason
       config = null
     }

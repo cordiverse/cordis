@@ -96,7 +96,7 @@ export abstract class EffectScope<C extends Context = Context> {
   ensure(callback: () => Promise<void>) {
     const task = callback()
       .catch((reason) => {
-        this.context.emit('internal/warning', reason)
+        this.context.emit('internal/error', reason)
         this.cancel(reason)
       })
       .finally(() => {
@@ -135,7 +135,7 @@ export abstract class EffectScope<C extends Context = Context> {
     this.disposables = this.disposables.splice(0).filter((dispose) => {
       if (this.uid !== null && dispose[Context.static] === this) return true
       ;(async () => dispose())().catch((reason) => {
-        this.context.emit('internal/warning', reason)
+        this.context.emit('internal/error', reason)
       })
     })
   }

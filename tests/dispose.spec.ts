@@ -77,11 +77,11 @@ describe('Disposables', () => {
 
   it('dispose event', async () => {
     const root = new Context()
-    const warn = jest.fn()
+    const error = jest.fn()
     const dispose = jest.fn(() => {
       throw new Error('test')
     })
-    root.on('internal/warning', warn)
+    root.on('internal/error', error)
     const plugin = (ctx: Context) => {
       ctx.on('dispose', dispose)
     }
@@ -89,10 +89,10 @@ describe('Disposables', () => {
     root.plugin(plugin)
     expect(dispose.mock.calls).to.have.length(0)
     expect(root.registry.delete(plugin)).to.be.ok
-    // warning is asynchronous
+    // error is asynchronous
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(dispose.mock.calls).to.have.length(1)
-    expect(warn.mock.calls).to.have.length(1)
+    expect(error.mock.calls).to.have.length(1)
   })
 
   it('root dispose', async () => {
