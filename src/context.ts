@@ -15,7 +15,7 @@ export namespace Context {
     prototype?: {}
   }
 
-  export type Internal = Internal.Service | Internal.Mixin | Internal.Alias
+  export type Internal = Internal.Service | Internal.Accessor | Internal.Alias
 
   export namespace Internal {
     export interface Service {
@@ -25,14 +25,15 @@ export namespace Context {
       prototype?: {}
     }
 
-    export interface Mixin {
-      type: 'mixin'
-      service: string
+    export interface Accessor {
+      type: 'accessor'
+      get: () => any
+      set: (value: any) => boolean
     }
 
     export interface Alias {
       type: 'alias'
-      service: string
+      name: string
     }
   }
 
@@ -73,17 +74,6 @@ export class Context {
   }
 
   /** @deprecated */
-  static mixin(name: string, options: string[] | Context.MixinOptions) {
-    const internal = Context.ensureInternal.call(this)
-    if (!Array.isArray(options)) {
-      options = [...options.accessors || [], ...options.methods || []]
-    }
-    for (const key of options) {
-      internal[key] = { type: 'mixin', service: name }
-    }
-  }
-
-  /** @deprecated */
   static service(name: string, options: string[] | Context.MixinOptions = {}) {
     const internal = this.ensureInternal()
     if (name in internal) return
@@ -92,12 +82,20 @@ export class Context {
     if (isConstructor(options)) {
       internal[name]['prototype'] = options.prototype
     }
-    this.mixin(name, options)
+  }
+
+  static resolveInject(ctx: Context, name: string) {
+    let internal = ctx[Context.internal][name]
+    while (internal?.type === 'alias') {
+      name = internal.name
+      internal = ctx[Context.internal][name]
+    }
+    return [name, internal] as const
   }
 
   static handler: ProxyHandler<Context> = {
-    get(target, name, ctx: Context) {
-      if (typeof name !== 'string') return Reflect.get(target, name, ctx)
+    get(target, prop, ctx: Context) {
+      if (typeof prop !== 'string') return Reflect.get(target, prop, ctx)
 
       const checkInject = (name: string) => {
         // Case 1: a normal property defined on context
@@ -111,45 +109,35 @@ export class Context {
         // Case 4: inject in ancestor contexts
         let parent = ctx
         while (parent.runtime.plugin) {
-          if (parent.runtime.inject.has(name)) return
+          for (const key of parent.runtime.inject) {
+            if (name === Context.resolveInject(parent, key)[0]) return
+          }
           parent = parent.scope.parent
         }
         ctx.emit('internal/warning', new Error(`property ${name} is not registered, declare it as \`inject\` to suppress this warning`))
       }
 
-      let internal = ctx[Context.internal][name]
-      while (internal?.type === 'alias') {
-        name = internal.service
-        internal = ctx[Context.internal][name]
-      }
+      const [name, internal] = Context.resolveInject(ctx, prop)
       if (!internal) {
         checkInject(name)
         return Reflect.get(target, name, ctx)
       }
 
-      if (internal.type === 'mixin') {
-        const service = ctx[internal.service]
-        if (isNullable(service)) return service
-        const value = Reflect.get(service, name)
-        if (typeof value !== 'function') return value
-        return value.bind(service)
+      if (internal.type === 'accessor') {
+        return internal.get.call(ctx)
       } else if (internal.type === 'service') {
         if (!internal.builtin) checkInject(name)
         return ctx.get(name)
       }
     },
 
-    set(target, name, value, ctx: Context) {
-      if (typeof name !== 'string') return Reflect.set(target, name, value, ctx)
+    set(target, prop, value, ctx: Context) {
+      if (typeof prop !== 'string') return Reflect.set(target, prop, value, ctx)
 
-      let internal = ctx[Context.internal][name]
-      while (internal?.type === 'alias') {
-        name = internal.service
-        internal = ctx[Context.internal][name]
-      }
+      const [name, internal] = Context.resolveInject(ctx, prop)
       if (!internal) return Reflect.set(target, name, value, ctx)
-      if (internal.type === 'mixin') {
-        return Reflect.set(ctx[internal.service], name, value)
+      if (internal.type === 'accessor') {
+        return internal.set.call(ctx, value)
       }
 
       // service
@@ -268,15 +256,33 @@ export class Context {
     this.root[key] = value
   }
 
+  accessor(name: string, options: Omit<Context.Internal.Accessor, 'type'>) {
+    const internal = Context.ensureInternal.call(this.root)
+    internal[name] = { type: 'accessor', ...options }
+  }
+
   alias(name: string, aliases: string[]) {
     const internal = Context.ensureInternal.call(this.root)
     for (const key of aliases) {
-      internal[key] = { type: 'alias', service: name }
+      internal[key] = { type: 'alias', name }
     }
   }
 
   mixin(name: string, mixins: string[]) {
-    return Context.mixin.call(this, name, mixins)
+    for (const key of mixins) {
+      this.accessor(key, {
+        get() {
+          const service = this[name]
+          if (isNullable(service)) return service
+          const value = Reflect.get(service, key)
+          if (typeof value !== 'function') return value
+          return value.bind(service)
+        },
+        set(value) {
+          return Reflect.set(this[name], key, value)
+        },
+      })
+    }
   }
 
   extend(meta = {}): this {
