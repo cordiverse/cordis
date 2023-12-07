@@ -15,7 +15,7 @@ export namespace Context {
     prototype?: {}
   }
 
-  export type Internal = Internal.Service | Internal.Mixin
+  export type Internal = Internal.Service | Internal.Mixin | Internal.Alias
 
   export namespace Internal {
     export interface Service {
@@ -27,6 +27,11 @@ export namespace Context {
 
     export interface Mixin {
       type: 'mixin'
+      service: string
+    }
+
+    export interface Alias {
+      type: 'alias'
       service: string
     }
   }
@@ -112,7 +117,11 @@ export class Context {
         ctx.emit('internal/warning', new Error(`property ${name} is not registered, declare it as \`inject\` to suppress this warning`))
       }
 
-      const internal = ctx[Context.internal][name]
+      let internal = ctx[Context.internal][name]
+      while (internal?.type === 'alias') {
+        name = internal.service
+        internal = ctx[Context.internal][name]
+      }
       if (!internal) {
         checkInject(name)
         return Reflect.get(target, name, ctx)
@@ -133,7 +142,11 @@ export class Context {
     set(target, name, value, ctx: Context) {
       if (typeof name !== 'string') return Reflect.set(target, name, value, ctx)
 
-      const internal = ctx[Context.internal][name]
+      let internal = ctx[Context.internal][name]
+      while (internal?.type === 'alias') {
+        name = internal.service
+        internal = ctx[Context.internal][name]
+      }
       if (!internal) return Reflect.set(target, name, value, ctx)
       if (internal.type === 'mixin') {
         return Reflect.set(ctx[internal.service], name, value)
@@ -156,7 +169,8 @@ export class Context {
       // setup filter for events
       const self = Object.create(null)
       self[Context.filter] = (ctx2: Context) => {
-        return ctx[Context.shadow][name] === ctx2[Context.shadow][name]
+        // TypeScript is not smart enough to infer the type of `name` here
+        return ctx[Context.shadow][name as string] === ctx2[Context.shadow][name as string]
       }
 
       ctx.root.emit(self, 'internal/before-service', name, value)
@@ -252,6 +266,13 @@ export class Context {
     const key = Symbol(name)
     internal[name] = { type: 'service', key, builtin }
     this.root[key] = value
+  }
+
+  alias(name: string, aliases: string[]) {
+    const internal = Context.ensureInternal.call(this.root)
+    for (const key of aliases) {
+      internal[key] = { type: 'alias', service: name }
+    }
   }
 
   mixin(name: string, mixins: string[]) {

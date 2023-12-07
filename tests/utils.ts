@@ -50,6 +50,7 @@ declare module '../src/context' {
   interface Context {
     foo: any
     bar: any
+    baz: any
     filter(session: Session): boolean
   }
 }

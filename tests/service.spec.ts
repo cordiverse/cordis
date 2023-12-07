@@ -56,6 +56,7 @@ describe('Service', () => {
     const root = new Context()
     const warn = jest.fn()
     root.on('internal/warning', warn)
+    root.alias('bar', ['baz'])
     root.mixin('foo', ['bar'])
     root.provide('foo', { bar: 1 })
 
@@ -68,12 +69,12 @@ describe('Service', () => {
 
     root.using({ optional: ['foo'] }, (ctx) => {
       warn.mockClear()
-      ctx.bar = 2
+      ctx.baz = 2
       expect(warn.mock.calls).to.have.length(0)
 
       ctx.plugin((ctx) => {
         warn.mockClear()
-        expect(ctx.bar).to.equal(2)
+        expect(ctx.baz).to.equal(2)
         expect(warn.mock.calls).to.have.length(0)
       })
     })
