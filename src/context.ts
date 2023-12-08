@@ -28,7 +28,7 @@ export namespace Context {
     export interface Accessor {
       type: 'accessor'
       get: () => any
-      set: (value: any) => boolean
+      set?: (value: any) => boolean
     }
 
     export interface Alias {
@@ -137,6 +137,7 @@ export class Context {
       const [name, internal] = Context.resolveInject(ctx, prop)
       if (!internal) return Reflect.set(target, name, value, ctx)
       if (internal.type === 'accessor') {
+        if (!internal.set) return false
         return internal.set.call(ctx, value)
       }
 
@@ -178,6 +179,13 @@ export class Context {
         const caller: Context = receiver[Context.current]
         if (!caller?.[Context.internal][`${name}.${key}`]) return Reflect.get(target, key, receiver)
         return caller.get(`${name}.${key}`)
+      },
+      set(target, key, value, receiver) {
+        if (typeof key === 'symbol' || key in target) return Reflect.set(target, key, value, receiver)
+        const caller: Context = receiver[Context.current]
+        if (!caller?.[Context.internal][`${name}.${key}`]) return Reflect.set(target, key, value, receiver)
+        caller[`${name}.${key}`] = value
+        return true
       },
     })
   }
