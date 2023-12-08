@@ -38,7 +38,7 @@ export namespace Context {
   }
 
   export type Associate<P extends string, C extends Context = Context> = {
-    readonly [K in keyof C as K extends `${P}.${infer R}` ? R : never]: C[K]
+    [K in keyof C as K extends `${P}.${infer R}` ? R : never]: C[K]
   }
 }
 

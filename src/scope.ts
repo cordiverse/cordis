@@ -26,14 +26,20 @@ export interface Acceptor extends AcceptOptions {
   callback?: (config: any) => void | boolean
 }
 
-export type ScopeStatus = 'pending' | 'loading' | 'active' | 'failed' | 'disposed'
+export enum ScopeStatus {
+  PENDING,
+  LOADING,
+  ACTIVE,
+  FAILED,
+  DISPOSED,
+}
 
 export abstract class EffectScope<C extends Context = Context> {
   public uid: number | null
   public ctx: C
   public disposables: Disposable[] = []
   public error: any
-  public status: ScopeStatus = 'pending'
+  public status = ScopeStatus.PENDING
 
   // Same as `this.ctx`, but with a more specific type.
   protected context: Context
@@ -72,16 +78,16 @@ export abstract class EffectScope<C extends Context = Context> {
     this.reset()
     this.error = null
     this.hasError = false
-    this.status = 'pending'
+    this.status = ScopeStatus.PENDING
     this.start()
   }
 
   protected _getStatus() {
-    if (this.uid === null) return 'disposed'
-    if (this.hasError) return 'failed'
-    if (this.tasks.size) return 'loading'
-    if (this.ready) return 'active'
-    return 'pending'
+    if (this.uid === null) return ScopeStatus.DISPOSED
+    if (this.hasError) return ScopeStatus.FAILED
+    if (this.tasks.size) return ScopeStatus.LOADING
+    if (this.ready) return ScopeStatus.ACTIVE
+    return ScopeStatus.PENDING
   }
 
   protected _updateStatus(callback?: () => void) {
