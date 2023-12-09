@@ -8,18 +8,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    strategy:
-      fail-fast: false
-      matrix:
-        node-version: [18, 20]
-
     steps:
       - name: Check out
         uses: actions/checkout@v4
       - name: Set up Node
         uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node-version }}
       - name: Install
         run: yarn --no-immutable
       - name: Build
