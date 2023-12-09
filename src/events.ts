@@ -46,21 +46,20 @@ export class Lifecycle {
 
   constructor(private root: Context) {
     defineProperty(this, Context.current, root)
-    defineProperty(this.on('event/ready', (ctx, listener) => {
-      if (!this.isActive) return
-      ctx.scope.ensure(async () => listener())
-      return () => false
-    }), Context.static, root.scope)
-    defineProperty(this.on('event/dispose', (ctx, listener, prepend) => {
+    defineProperty(this.on('internal/listener', function (this: Context, name, listener, prepend) {
       const method = prepend ? 'unshift' : 'push'
-      ctx.scope.disposables[method](listener as any)
-      defineProperty(listener, 'name', 'event <dispose>')
-      return () => remove(ctx.scope.disposables, listener)
-    }), Context.static, root.scope)
-    defineProperty(this.on('event/fork', (ctx, listener, prepend) => {
-      const method = prepend ? 'unshift' : 'push'
-      ctx.scope.runtime.forkables[method](listener as any)
-      return ctx.scope.collect('event <fork>', () => remove(ctx.scope.runtime.forkables, listener))
+      if (name === 'ready') {
+        if (!this.lifecycle.isActive) return
+        this.scope.ensure(async () => listener())
+        return () => false
+      } else if (name === 'dispose') {
+        this.scope.disposables[method](listener as any)
+        defineProperty(listener, 'name', 'event <dispose>')
+        return () => remove(this.scope.disposables, listener)
+      } else if (name === 'fork') {
+        this.scope.runtime.forkables[method](listener as any)
+        return this.scope.collect('event <fork>', () => remove(this.scope.runtime.forkables, listener))
+      }
     }), Context.static, root.scope)
   }
 
@@ -139,7 +138,8 @@ export class Lifecycle {
 
   on(name: string, listener: (...args: any) => any, prepend = false) {
     // handle special events
-    const result = this.bail(`event/${name}`, this[Context.current], listener, prepend)
+    const caller = this[Context.current]
+    const result = this.bail(caller, 'internal/listener', name, listener, prepend)
     if (result) return result
 
     const hooks = this._hooks[name] ||= []
@@ -189,5 +189,6 @@ export interface Events<C extends Context = Context> {
   'internal/service'(name: string, oldValue: any): void
   'internal/before-update'(fork: ForkScope<Context.Parameterized<C>>, config: any): void
   'internal/update'(fork: ForkScope<Context.Parameterized<C>>, oldConfig: any): void
+  'internal/listener'(this: C, name: string, listener: any, prepend: boolean): void
   'internal/event'(type: 'emit' | 'parallel' | 'serial' | 'bail', name: string, args: any[], thisArg: any): void
 }
