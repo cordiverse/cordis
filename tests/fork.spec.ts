@@ -1,12 +1,12 @@
 import { Context } from '../src'
 import { noop } from 'cosmokit'
 import { expect } from 'chai'
+import { describe, mock, test } from 'node:test'
 import { event, Filter, Session, filter } from './utils'
-import * as jest from 'jest-mock'
 
 describe('Fork', () => {
-  it('basic support', () => {
-    const callback = jest.fn()
+  test('basic support', () => {
+    const callback = mock.fn()
     const reusable = (ctx: Context) => {
       let foo = 0
       ctx.on(event, () => callback(foo))
@@ -32,33 +32,33 @@ describe('Fork', () => {
     expect(callback.mock.calls).to.have.length(0)
     root.emit(new Session(true), event)
     expect(callback.mock.calls).to.have.length(1)
-    expect(callback.mock.calls[0]).to.deep.equal([1])
+    expect(callback.mock.calls[0].arguments).to.deep.equal([1])
 
-    callback.mockClear()
+    callback.mock.resetCalls()
     root.extend(new Filter(false)).plugin(pluginB)
     root.emit(new Session(false), event)
     expect(callback.mock.calls).to.have.length(1)
-    expect(callback.mock.calls[0]).to.deep.equal([3])
+    expect(callback.mock.calls[0].arguments).to.deep.equal([3])
     root.emit(new Session(true), event)
     expect(callback.mock.calls).to.have.length(2)
-    expect(callback.mock.calls[1]).to.deep.equal([3])
+    expect(callback.mock.calls[1].arguments).to.deep.equal([3])
 
-    callback.mockClear()
+    callback.mock.resetCalls()
     root.registry.delete(pluginA)
     root.emit(new Session(true), event)
     expect(callback.mock.calls).to.have.length(0)
     root.emit(new Session(false), event)
     expect(callback.mock.calls).to.have.length(1)
-    expect(callback.mock.calls[0]).to.deep.equal([2])
+    expect(callback.mock.calls[0].arguments).to.deep.equal([2])
 
-    callback.mockClear()
+    callback.mock.resetCalls()
     root.registry.delete(pluginB)
     root.emit(event)
     expect(callback.mock.calls).to.have.length(0)
   })
 
-  it('shorthand syntax', () => {
-    const callback = jest.fn()
+  test('shorthand syntax', () => {
+    const callback = mock.fn()
     const reusable = {
       reusable: true,
       apply(ctx: Context, config: { foo: number }) {
@@ -74,23 +74,25 @@ describe('Fork', () => {
 
     root.emit(new Session(true), event)
     expect(callback.mock.calls).to.have.length(2)
-    expect(callback.mock.calls).to.deep.equal([[0], [1]])
+    expect(callback.mock.calls[0].arguments).to.deep.equal([0])
+    expect(callback.mock.calls[1].arguments).to.deep.equal([1])
 
-    callback.mockClear()
+    callback.mock.resetCalls()
     root.emit(new Session(false), event)
     expect(callback.mock.calls).to.have.length(2)
-    expect(callback.mock.calls).to.deep.equal([[0], [2]])
+    expect(callback.mock.calls[0].arguments).to.deep.equal([0])
+    expect(callback.mock.calls[1].arguments).to.deep.equal([2])
 
-    callback.mockClear()
+    callback.mock.resetCalls()
     root.registry.delete(reusable)
     root.emit(event)
     expect(callback.mock.calls).to.have.length(0)
   })
 
-  it('deferred execution', () => {
+  test('deferred execution', () => {
     const root = new Context()
-    const listener = jest.fn()
-    const callback = jest.fn((ctx: Context) => {
+    const listener = mock.fn()
+    const callback = mock.fn((ctx: Context) => {
       ctx.on(event, listener)
     })
     const plugin = {
@@ -112,25 +114,25 @@ describe('Fork', () => {
     root.emit(event)
     expect(listener.mock.calls).to.have.length(2)
 
-    callback.mockClear()
+    callback.mock.resetCalls()
     root.plugin(plugin)
     expect(callback.mock.calls).to.have.length(1)
-    listener.mockClear()
+    listener.mock.resetCalls()
     root.emit(event)
     expect(listener.mock.calls).to.have.length(3)
 
-    callback.mockClear()
+    callback.mock.resetCalls()
     root.foo = null
     root.foo = { bar: 200 }
     expect(callback.mock.calls).to.have.length(3)
-    listener.mockClear()
+    listener.mock.resetCalls()
     root.emit(event)
     expect(listener.mock.calls).to.have.length(3)
   })
 
-  it('state.uid', () => {
+  test('state.uid', () => {
     const root = new Context()
-    const callback1 = jest.fn()
+    const callback1 = mock.fn()
     expect(root.state.uid).to.equal(0)
 
     const fork1 = root.plugin(callback1)

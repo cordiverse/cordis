@@ -1,11 +1,11 @@
 import { Context } from '../src'
 import { expect } from 'chai'
-import * as jest from 'jest-mock'
+import { describe, mock, test } from 'node:test'
 import { noop } from 'cosmokit'
 import { event, getHookSnapshot } from './utils'
 
 describe('Disposables', () => {
-  it('fork.dispose', () => {
+  test('fork.dispose', () => {
     const plugin = (ctx: Context) => {
       ctx.on(event, callback)
       ctx.plugin((ctx) => {
@@ -17,7 +17,7 @@ describe('Disposables', () => {
     }
 
     const root = new Context()
-    const callback = jest.fn()
+    const callback = mock.fn()
     root.on(event, callback)
     const fork = root.plugin(plugin)
 
@@ -28,21 +28,21 @@ describe('Disposables', () => {
     expect(callback.mock.calls).to.have.length(4)
 
     // only 1 handler left
-    callback.mockClear()
+    callback.mock.resetCalls()
     expect(fork.dispose()).to.be.true
     expect(root.registry.size).to.equal(1)
     root.emit(event)
     expect(callback.mock.calls).to.have.length(1)
 
     // subsequent calls should be noop
-    callback.mockClear()
+    callback.mock.resetCalls()
     expect(fork.dispose()).to.be.false
     expect(root.registry.size).to.equal(1)
     root.emit(event)
     expect(callback.mock.calls).to.have.length(1)
   })
 
-  it('memory leak test', async () => {
+  test('memory leak test', async () => {
     function plugin(ctx: Context) {
       ctx.on('ready', noop)
       ctx.on(event, noop)
@@ -59,9 +59,9 @@ describe('Disposables', () => {
     expect(after).to.deep.equal(getHookSnapshot(root))
   })
 
-  it('dispose event', () => {
+  test('dispose event', () => {
     const root = new Context()
-    const dispose = jest.fn(noop)
+    const dispose = mock.fn(noop)
     const plugin = (ctx: Context) => {
       ctx.on('dispose', dispose)
     }
@@ -75,10 +75,10 @@ describe('Disposables', () => {
     expect(dispose.mock.calls).to.have.length(1)
   })
 
-  it('dispose event', async () => {
+  test('dispose event', async () => {
     const root = new Context()
-    const error = jest.fn()
-    const dispose = jest.fn(() => {
+    const error = mock.fn()
+    const dispose = mock.fn(() => {
       throw new Error('test')
     })
     root.on('internal/error', error)
@@ -95,9 +95,9 @@ describe('Disposables', () => {
     expect(error.mock.calls).to.have.length(1)
   })
 
-  it('root dispose', async () => {
+  test('root dispose', async () => {
     const root = new Context()
-    const callback = jest.fn(noop)
+    const callback = mock.fn(noop)
     const { length } = root.state.disposables
 
     root.on('ready', callback)

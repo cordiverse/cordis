@@ -1,13 +1,13 @@
 import { Context, Service } from '../src'
 import { noop } from 'cosmokit'
 import { expect } from 'chai'
-import * as jest from 'jest-mock'
+import { describe, mock, test } from 'node:test'
 import { checkError, getHookSnapshot } from './utils'
 
 describe('Service', () => {
-  it('non-service access', async () => {
+  test('non-service access', async () => {
     const root = new Context()
-    const warn = jest.fn()
+    const warn = mock.fn()
     root.on('internal/warning', warn)
 
     root.plugin((ctx) => {
@@ -30,9 +30,9 @@ describe('Service', () => {
     await checkError(root)
   })
 
-  it('service access', async () => {
+  test('service access', async () => {
     const root = new Context()
-    const warn = jest.fn()
+    const warn = mock.fn()
     root.on('internal/warning', warn)
     root.provide('foo')
 
@@ -52,9 +52,9 @@ describe('Service', () => {
     await checkError(root)
   })
 
-  it('service injection', async () => {
+  test('service injection', async () => {
     const root = new Context()
-    const warn = jest.fn()
+    const warn = mock.fn()
     root.on('internal/warning', warn)
     root.alias('bar', ['baz'])
     root.mixin('foo', ['bar'])
@@ -68,12 +68,12 @@ describe('Service', () => {
     expect(root.get('root')).to.be.undefined
 
     root.using({ optional: ['foo'] }, (ctx) => {
-      warn.mockClear()
+      warn.mock.resetCalls()
       ctx.baz = 2
       expect(warn.mock.calls).to.have.length(0)
 
       ctx.plugin((ctx) => {
-        warn.mockClear()
+        warn.mock.resetCalls()
         expect(ctx.baz).to.equal(2)
         expect(warn.mock.calls).to.have.length(0)
       })
@@ -82,7 +82,7 @@ describe('Service', () => {
     await checkError(root)
   })
 
-  it('normal service', async () => {
+  test('normal service', async () => {
     class Foo extends Service {
       constructor(ctx: Context) {
         super(ctx, 'foo')
@@ -100,7 +100,7 @@ describe('Service', () => {
     expect(root.foo).to.be.undefined
   })
 
-  it('immediate service', async () => {
+  test('immediate service', async () => {
     class Foo extends Service {
       constructor(ctx: Context) {
         super(ctx, 'foo', true)
@@ -108,7 +108,7 @@ describe('Service', () => {
     }
 
     const root = new Context()
-    const callback = jest.fn(noop)
+    const callback = mock.fn(noop)
     root.on('internal/service', callback)
 
     root.plugin(Foo)
@@ -119,7 +119,7 @@ describe('Service', () => {
     expect(callback.mock.calls).to.have.length(1)
   })
 
-  it('Context.current', async () => {
+  test('Context.current', async () => {
     class Foo extends Service {
       constructor(ctx: Context) {
         super(ctx, 'foo', true)
@@ -134,10 +134,10 @@ describe('Service', () => {
     expect(ctx.foo[Context.current]).to.equal(ctx)
   })
 
-  it('dependency update', async () => {
-    const callback = jest.fn((foo: any) => {})
-    const dispose = jest.fn((foo: any) => {})
-    const plugin = jest.fn((ctx: Context) => {
+  test('dependency update', async () => {
+    const callback = mock.fn((foo: any) => {})
+    const dispose = mock.fn((foo: any) => {})
+    const plugin = mock.fn((ctx: Context) => {
       ctx.on('ready', () => callback(ctx.foo))
       ctx.on('dispose', () => dispose(ctx.foo))
     })
@@ -151,7 +151,7 @@ describe('Service', () => {
 
     const old = root.foo = { bar: 100 }
     expect(callback.mock.calls).to.have.length(1)
-    expect(callback.mock.calls[0][0]).to.have.property('bar', 100)
+    expect(callback.mock.calls[0].arguments[0]).to.have.property('bar', 100)
     expect(dispose.mock.calls).to.have.length(0)
 
     // do not trigger event if reference has not changed
@@ -163,20 +163,20 @@ describe('Service', () => {
     root.foo = null
     root.foo = { bar: 300 }
     expect(callback.mock.calls).to.have.length(2)
-    expect(callback.mock.calls[1][0]).to.have.property('bar', 300)
+    expect(callback.mock.calls[1].arguments[0]).to.have.property('bar', 300)
     expect(dispose.mock.calls).to.have.length(1)
-    expect(dispose.mock.calls[0][0]).to.have.property('bar', 200)
+    expect(dispose.mock.calls[0].arguments[0]).to.have.property('bar', 200)
 
     root.foo = null
     expect(callback.mock.calls).to.have.length(2)
     expect(dispose.mock.calls).to.have.length(2)
-    expect(dispose.mock.calls[1][0]).to.have.property('bar', 300)
+    expect(dispose.mock.calls[1].arguments[0]).to.have.property('bar', 300)
   })
 
-  it('lifecycle methods', async () => {
-    const start = jest.fn(noop)
-    const stop = jest.fn(noop)
-    const fork = jest.fn(noop)
+  test('lifecycle methods', async () => {
+    const start = mock.fn(noop)
+    const stop = mock.fn(noop)
+    const fork = mock.fn(noop)
 
     class Foo extends Service {
       constructor(ctx: Context) {
@@ -211,7 +211,7 @@ describe('Service', () => {
   })
 
   // https://github.com/koishijs/koishi/issues/1110
-  it('memory leak test', async () => {
+  test('memory leak test', async () => {
     class Test extends Service {
       constructor(ctx: Context) {
         super(ctx, 'test', true)
@@ -230,10 +230,10 @@ describe('Service', () => {
   })
 
   // https://github.com/koishijs/koishi/issues/1130
-  it('immediate + dependency', async () => {
-    const foo = jest.fn(noop)
-    const bar = jest.fn(noop)
-    const qux = jest.fn(noop)
+  test('immediate + dependency', async () => {
+    const foo = mock.fn(noop)
+    const bar = mock.fn(noop)
+    const qux = mock.fn(noop)
 
     class Foo extends Service {
       static inject = ['qux']

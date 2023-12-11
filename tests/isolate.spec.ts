@@ -1,16 +1,15 @@
 import { Context, Service } from '../src'
 import { expect } from 'chai'
-import * as jest from 'jest-mock'
-import './utils'
+import { describe, mock, test } from 'node:test'
 import { event } from './utils'
 
 describe('Isolation', () => {
-  it('isolated context', async () => {
+  test('isolated context', async () => {
     const root = new Context()
     const ctx = root.isolate(['foo'])
 
-    const outer = jest.fn()
-    const inner = jest.fn()
+    const outer = mock.fn()
+    const inner = mock.fn()
     root.on('internal/service', outer)
     ctx.on('internal/service', inner)
 
@@ -39,10 +38,10 @@ describe('Isolation', () => {
     expect(inner.mock.calls).to.have.length(2)
   })
 
-  it('isolated fork', () => {
+  test('isolated fork', () => {
     const root = new Context()
-    const callback = jest.fn(() => {})
-    const dispose = jest.fn(() => {})
+    const callback = mock.fn(() => {})
+    const dispose = mock.fn(() => {})
     const plugin = {
       reusable: true,
       inject: ['foo'],
@@ -67,10 +66,10 @@ describe('Isolation', () => {
     expect(dispose.mock.calls).to.have.length(0)
   })
 
-  it('shared service', () => {
+  test('shared service', () => {
     const root = new Context()
-    const callback = jest.fn(() => {})
-    const dispose = jest.fn(() => {})
+    const callback = mock.fn(() => {})
+    const dispose = mock.fn(() => {})
     const plugin = {
       reusable: true,
       inject: ['foo'],
@@ -100,7 +99,7 @@ describe('Isolation', () => {
     expect(dispose.mock.calls).to.have.length(4)
   })
 
-  it('isolated event', async () => {
+  test('isolated event', async () => {
     class Foo extends Service {
       constructor(ctx: Context) {
         super(ctx, 'foo', true)
@@ -113,8 +112,8 @@ describe('Isolation', () => {
 
     const root = new Context()
     const ctx = root.isolate(['foo'])
-    const outer = jest.fn()
-    const inner = jest.fn()
+    const outer = mock.fn()
+    const inner = mock.fn()
     root.on(event, outer)
     ctx.on(event, inner)
     ctx.plugin(Foo)

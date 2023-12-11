@@ -1,16 +1,16 @@
 import { Context, ScopeStatus } from '../src'
 import { expect } from 'chai'
-import * as jest from 'jest-mock'
+import { describe, mock, test } from 'node:test'
 import { checkError, event } from './utils'
 
 describe('Status', () => {
-  it('invalid config (main)', async () => {
+  test('invalid config (main)', async () => {
     const root = new Context()
-    const callback = jest.fn()
-    const apply = jest.fn((ctx: Context) => {
+    const callback = mock.fn()
+    const apply = mock.fn((ctx: Context) => {
       ctx.on(event, callback)
     })
-    const Config = jest.fn((config: { foo?: boolean } = {}) => {
+    const Config = mock.fn((config: { foo?: boolean } = {}) => {
       if (config.foo) return {}
       throw new Error('invalid config')
     })
@@ -30,13 +30,13 @@ describe('Status', () => {
     expect(callback.mock.calls).to.have.length(1)
   })
 
-  it('invalid plugin (fork)', async () => {
+  test('invalid plugin (fork)', async () => {
     const root = new Context()
-    const callback = jest.fn()
-    const apply = jest.fn((ctx: Context) => {
+    const callback = mock.fn()
+    const apply = mock.fn((ctx: Context) => {
       ctx.on(event, callback)
     })
-    const Config = jest.fn((config: { foo?: boolean } = {}) => {
+    const Config = mock.fn((config: { foo?: boolean } = {}) => {
       if (config.foo) return config
       throw new Error('invalid config')
     })
@@ -53,10 +53,10 @@ describe('Status', () => {
     expect(callback.mock.calls).to.have.length(1)
   })
 
-  it('plugin error (main)', async () => {
+  test('plugin error (main)', async () => {
     const root = new Context()
-    const callback = jest.fn()
-    const apply = jest.fn((ctx: Context) => {
+    const callback = mock.fn()
+    const apply = mock.fn((ctx: Context) => {
       ctx.on(event, callback)
       throw new Error('plugin error')
     })
@@ -71,10 +71,10 @@ describe('Status', () => {
     expect(callback.mock.calls).to.have.length(0)
   })
 
-  it('plugin error (fork)', async () => {
+  test('plugin error (fork)', async () => {
     const root = new Context()
-    const callback = jest.fn()
-    const apply = jest.fn((ctx: Context, config: { foo?: boolean }) => {
+    const callback = mock.fn()
+    const apply = mock.fn((ctx: Context, config: { foo?: boolean }) => {
       ctx.on(event, callback)
       if (!config.foo) throw new Error('plugin error')
     })

@@ -1,8 +1,9 @@
 import { expect } from 'chai'
+import { describe, test } from 'node:test'
 import { Context } from '../src'
 
 describe('Extend', () => {
-  it('basic support', () => {
+  test('basic support', () => {
     class S1 {}
     class S2 {}
     class S3 {}
@@ -36,7 +37,7 @@ describe('Extend', () => {
     expect(c3.s3).to.be.ok
   })
 
-  it('service isolation', () => {
+  test('service isolation', () => {
     class Temp {}
     class C1 extends Context {
       temp: Temp
