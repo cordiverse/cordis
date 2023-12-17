@@ -13,10 +13,10 @@ describe('Update', () => {
   test('update runtime', () => {
     const root = new Context()
     const dispose = mock.fn(noop)
-    const plugin = mock.fn((ctx: Context, config: Config) => {
+    const plugin = mock.fn((ctx: Context) => {
       ctx.on('dispose', dispose)
       ctx.on(event, () => {
-        ctx.state.update({ foo: 2 })
+        ctx.scope.update({ foo: 2 })
       })
       // make coverage happy
       ctx.on('fork', noop)
@@ -78,7 +78,7 @@ describe('Update', () => {
       ctx.decline(['foo'])
       ctx.accept(['bar'])
     })
-    const outer = mock.fn((ctx: Context, config: Config) => {
+    const outer = mock.fn((ctx: Context) => {
       ctx.on('fork', inner)
     })
 
@@ -199,17 +199,17 @@ describe('Update', () => {
   test('root update', async () => {
     const root = new Context()
     const callback = mock.fn(noop)
-    const { length } = root.state.disposables
+    const { length } = root.scope.disposables
 
     root.decline(['foo'])
     root.on('dispose', callback)
     expect(callback.mock.calls).to.have.length(0)
 
-    root.state.update({ maxListeners: 100 })
+    root.scope.update({ maxListeners: 100 })
     expect(callback.mock.calls).to.have.length(0)
 
-    root.state.update({ foo: 100 })
+    root.scope.update({ foo: 100 })
     expect(callback.mock.calls).to.have.length(1)
-    expect(root.state.disposables.length).to.equal(length)
+    expect(root.scope.disposables.length).to.equal(length)
   })
 })

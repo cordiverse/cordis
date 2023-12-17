@@ -53,7 +53,7 @@ export abstract class EffectScope<C extends Context = Context> {
   abstract dispose(): boolean
   abstract update(config: C['config'], forced?: boolean): void
 
-  constructor(public parent: C, public config: C['config']) {
+  protected constructor(public parent: C, public config: C['config']) {
     this.uid = parent.registry ? parent.registry.counter : 0
     this.ctx = this.context = parent.extend({ scope: this })
     this.proxy = new Proxy({}, {

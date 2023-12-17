@@ -19,7 +19,7 @@ export class Service<C extends Context = Context> {
     }
 
     ctx.on('ready', async () => {
-      // await until next tick because derived class has not been initialized yet
+      // wait until next tick because derived class has not been initialized yet
       await Promise.resolve()
       await this.start()
       if (!immediate) ctx[name] = this

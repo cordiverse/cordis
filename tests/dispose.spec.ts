@@ -98,7 +98,7 @@ describe('Disposables', () => {
   test('root dispose', async () => {
     const root = new Context()
     const callback = mock.fn(noop)
-    const { length } = root.state.disposables
+    const { length } = root.scope.disposables
 
     root.on('ready', callback)
     expect(callback.mock.calls).to.have.length(0)
@@ -113,6 +113,6 @@ describe('Disposables', () => {
 
     await root.start()
     expect(callback.mock.calls).to.have.length(2)
-    expect(root.state.disposables.length).to.equal(length)
+    expect(root.scope.disposables.length).to.equal(length)
   })
 })

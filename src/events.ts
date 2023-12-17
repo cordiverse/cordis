@@ -129,7 +129,7 @@ export class Lifecycle {
   }
 
   unregister(hooks: [Context, any][], listener: any) {
-    const index = hooks.findIndex(([context, callback]) => callback === listener)
+    const index = hooks.findIndex(([, callback]) => callback === listener)
     if (index >= 0) {
       hooks.splice(index, 1)
       return true
@@ -143,7 +143,7 @@ export class Lifecycle {
     if (result) return result
 
     const hooks = this._hooks[name] ||= []
-    const label = typeof name === 'string' ? `event <${name}>` : 'event (Symbol)'
+    const label = `event <${name}>`
     return this.register(label, hooks, listener, prepend)
   }
 

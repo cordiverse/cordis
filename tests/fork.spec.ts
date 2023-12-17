@@ -133,7 +133,7 @@ describe('Fork', () => {
   test('state.uid', () => {
     const root = new Context()
     const callback1 = mock.fn()
-    expect(root.state.uid).to.equal(0)
+    expect(root.scope.uid).to.equal(0)
 
     const fork1 = root.plugin(callback1)
     expect(fork1.runtime.uid).to.equal(1)

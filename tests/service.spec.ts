@@ -67,7 +67,7 @@ describe('Service', () => {
     // root is a property
     expect(root.get('root')).to.be.undefined
 
-    root.using({ optional: ['foo'] }, (ctx) => {
+    root.inject({ optional: ['foo'] }, (ctx) => {
       warn.mock.resetCalls()
       ctx.baz = 2
       expect(warn.mock.calls).to.have.length(0)
@@ -144,7 +144,7 @@ describe('Service', () => {
 
     const root = new Context()
     await root.start()
-    root.using(['foo'], plugin)
+    root.inject(['foo'], plugin)
 
     expect(callback.mock.calls).to.have.length(0)
     expect(dispose.mock.calls).to.have.length(0)
@@ -215,7 +215,7 @@ describe('Service', () => {
     class Test extends Service {
       constructor(ctx: Context) {
         super(ctx, 'test', true)
-        ctx.using(['test'], () => {})
+        ctx.inject(['test'], () => {})
       }
     }
 
