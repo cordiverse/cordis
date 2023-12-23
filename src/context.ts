@@ -196,7 +196,7 @@ export class Context {
     self[Context.shadow] = Object.create(null)
     self.root = self
     self.realms = Object.create(null)
-    self.mixin('scope', ['config', 'runtime', 'collect', 'accept', 'decline'])
+    self.mixin('scope', ['config', 'runtime', 'effect', 'collect', 'accept', 'decline'])
     self.mixin('registry', ['using', 'inject', 'plugin', 'dispose'])
     self.mixin('lifecycle', ['on', 'once', 'off', 'after', 'parallel', 'emit', 'serial', 'bail', 'start', 'stop'])
     self.provide('registry', new Registry(self, config!), true)

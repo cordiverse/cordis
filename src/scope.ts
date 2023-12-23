@@ -7,6 +7,7 @@ declare module './context' {
   export interface Context {
     scope: EffectScope<this>
     runtime: MainScope<this>
+    effect(callback: () => () => void): () => void
     collect(label: string, callback: () => void): () => void
     accept(callback?: (config: this['config']) => void | boolean, options?: AcceptOptions): () => boolean
     accept(keys: (keyof this['config'])[], callback?: (config: this['config']) => void | boolean, options?: AcceptOptions): () => boolean
@@ -63,6 +64,17 @@ export abstract class EffectScope<C extends Context = Context> {
 
   protected get _config() {
     return this.runtime.isReactive ? this.proxy : this.config
+  }
+
+  effect(callback: () => () => void) {
+    if (this.uid === null) return () => {}
+    const disposeRaw = callback()
+    const dispose = () => {
+      remove(this.disposables, dispose)
+      disposeRaw()
+    }
+    this.disposables.push(dispose)
+    return dispose
   }
 
   collect(label: string, callback: () => any) {
@@ -165,9 +177,11 @@ export abstract class EffectScope<C extends Context = Context> {
   accept(...args: any[]) {
     const keys = Array.isArray(args[0]) ? args.shift() : null
     const acceptor: Acceptor = { keys, callback: args[0], ...args[1] }
-    this.acceptors.push(acceptor)
-    if (acceptor.immediate) acceptor.callback?.(this.config)
-    return this.collect(`accept <${keys?.join(', ') || '*'}>`, () => remove(this.acceptors, acceptor))
+    return this.effect(() => {
+      this.acceptors.push(acceptor)
+      if (acceptor.immediate) acceptor.callback?.(this.config)
+      return () => remove(this.acceptors, acceptor)
+    })
   }
 
   decline(keys: string[]) {
