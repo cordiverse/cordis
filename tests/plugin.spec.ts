@@ -47,8 +47,8 @@ describe('Plugin', () => {
     const callback = mock.fn()
     const fork = root.plugin((ctx) => {
       ctx.on('dispose', () => {
-        expect(() => ctx.plugin(callback)).to.throw('disposed context')
-        expect(() => ctx.on('ready', () => {})).to.throw('disposed context')
+        expect(() => ctx.plugin(callback)).to.throw('inactive context')
+        expect(() => ctx.on('ready', () => {})).to.throw('inactive context')
       })
     })
     fork.dispose()

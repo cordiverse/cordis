@@ -46,7 +46,7 @@ export namespace CordisError {
   export type Code = keyof typeof Code
 
   export const Code = {
-    DISPOSED_EFFECT: 'cannot create effect on disposed context',
+    INACTIVE_EFFECT: 'cannot create effect on inactive context',
   } as const
 }
 
@@ -56,6 +56,7 @@ export abstract class EffectScope<C extends Context = Context> {
   public disposables: Disposable[] = []
   public error: any
   public status = ScopeStatus.PENDING
+  public isActive = false
 
   // Same as `this.ctx`, but with a more specific type.
   protected context: Context
@@ -63,7 +64,6 @@ export abstract class EffectScope<C extends Context = Context> {
   protected acceptors: Acceptor[] = []
   protected tasks = new Set<Promise<void>>()
   protected hasError = false
-  protected isActive = false
 
   abstract runtime: MainScope<C>
   abstract dispose(): boolean
@@ -81,14 +81,13 @@ export abstract class EffectScope<C extends Context = Context> {
     return this.runtime.isReactive ? this.proxy : this.config
   }
 
-  assertEffectSafe() {
-    if (this.uid === null) {
-      throw new CordisError('DISPOSED_EFFECT')
-    }
+  assertActive() {
+    if (this.uid !== null || this.isActive) return
+    throw new CordisError('INACTIVE_EFFECT')
   }
 
   effect(callback: () => () => void) {
-    this.assertEffectSafe()
+    this.assertActive()
     const disposeRaw = callback()
     const dispose = () => {
       remove(this.disposables, dispose)

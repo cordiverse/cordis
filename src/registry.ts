@@ -137,7 +137,7 @@ export class Registry<C extends Context = Context> {
     this.resolve(plugin)
 
     const context: Context = this[Context.current]
-    context.scope.assertEffectSafe()
+    context.scope.assertActive()
 
     // resolve plugin config
     let error: any
