@@ -45,16 +45,14 @@ describe('Plugin', () => {
   test('apply plugin when dispose', () => {
     const root = new Context()
     const callback = mock.fn()
-    const warn = mock.fn()
-    root.on('internal/warning', warn)
     const fork = root.plugin((ctx) => {
       ctx.on('dispose', () => {
-        ctx.plugin(callback)
+        expect(() => ctx.plugin(callback)).to.throw('disposed context')
+        expect(() => ctx.on('ready', () => {})).to.throw('disposed context')
       })
     })
     fork.dispose()
     expect(callback.mock.calls).to.have.length(0)
-    expect(warn.mock.calls).to.have.length(1)
   })
 
   test('context inspect', async () => {

@@ -8,6 +8,7 @@ declare module './context' {
     scope: EffectScope<this>
     runtime: MainScope<this>
     effect(callback: () => () => void): () => void
+    /** @deprecated use `ctx.effect()` instead */
     collect(label: string, callback: () => void): () => void
     accept(callback?: (config: this['config']) => void | boolean, options?: AcceptOptions): () => boolean
     accept(keys: (keyof this['config'])[], callback?: (config: this['config']) => void | boolean, options?: AcceptOptions): () => boolean
@@ -33,6 +34,20 @@ export enum ScopeStatus {
   ACTIVE,
   FAILED,
   DISPOSED,
+}
+
+export class CordisError extends Error {
+  constructor(public code: CordisError.Code, message?: string) {
+    super(message ?? CordisError.Code[code])
+  }
+}
+
+export namespace CordisError {
+  export type Code = keyof typeof Code
+
+  export const Code = {
+    DISPOSED_EFFECT: 'cannot create effect on disposed context',
+  } as const
 }
 
 export abstract class EffectScope<C extends Context = Context> {
@@ -66,8 +81,14 @@ export abstract class EffectScope<C extends Context = Context> {
     return this.runtime.isReactive ? this.proxy : this.config
   }
 
+  assertEffectSafe() {
+    if (this.uid === null) {
+      throw new CordisError('DISPOSED_EFFECT')
+    }
+  }
+
   effect(callback: () => () => void) {
-    if (this.uid === null) return () => {}
+    this.assertEffectSafe()
     const disposeRaw = callback()
     const dispose = () => {
       remove(this.disposables, dispose)

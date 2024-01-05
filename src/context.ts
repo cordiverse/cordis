@@ -150,7 +150,9 @@ export class Context {
       if (value && oldValue) {
         throw new Error(`service ${name} has been registered`)
       }
-      ctx.on('dispose', () => ctx[name] = undefined)
+      if (value) {
+        ctx.on('dispose', () => ctx[name] = undefined)
+      }
       if (isUnproxyable(value)) {
         ctx.emit('internal/warning', new Error(`service ${name} is an unproxyable object, which may lead to unexpected behavior`))
       }

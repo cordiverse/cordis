@@ -138,7 +138,8 @@ export class Lifecycle {
 
   on(name: string, listener: (...args: any) => any, prepend = false) {
     // handle special events
-    const caller = this[Context.current]
+    const caller: Context = this[Context.current]
+    caller.scope.assertEffectSafe()
     const result = this.bail(caller, 'internal/listener', name, listener, prepend)
     if (result) return result
 

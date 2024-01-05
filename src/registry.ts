@@ -102,9 +102,10 @@ export class Registry<C extends Context = Context> {
   delete(plugin: Plugin<C>) {
     plugin = this.resolve(plugin)
     const runtime = this.get(plugin)
-    if (!runtime) return false
+    if (!runtime) return
     this._internal.delete(plugin)
-    return runtime.dispose()
+    runtime.dispose()
+    return runtime
   }
 
   keys() {
@@ -136,10 +137,7 @@ export class Registry<C extends Context = Context> {
     this.resolve(plugin)
 
     const context: Context = this[Context.current]
-    if (context.scope.uid === null) {
-      context.emit('internal/warning', new Error('try to plugin on a disposed scope'))
-      return
-    }
+    context.scope.assertEffectSafe()
 
     // resolve plugin config
     let error: any
