@@ -261,6 +261,7 @@ export class Context {
 
   provide(name: string, value?: any, builtin?: boolean) {
     const internal = Context.ensureInternal.call(this.root)
+    if (name in internal) return
     const key = Symbol(name)
     internal[name] = { type: 'service', key, builtin }
     this.root[key] = value
@@ -268,13 +269,13 @@ export class Context {
 
   accessor(name: string, options: Omit<Context.Internal.Accessor, 'type'>) {
     const internal = Context.ensureInternal.call(this.root)
-    internal[name] = { type: 'accessor', ...options }
+    internal[name] ||= { type: 'accessor', ...options }
   }
 
   alias(name: string, aliases: string[]) {
     const internal = Context.ensureInternal.call(this.root)
     for (const key of aliases) {
-      internal[key] = { type: 'alias', name }
+      internal[key] ||= { type: 'alias', name }
     }
   }
 

@@ -58,7 +58,8 @@ describe('Service', () => {
     root.on('internal/warning', warn)
     root.alias('bar', ['baz'])
     root.mixin('foo', ['bar'])
-    root.provide('foo', { bar: 1 })
+    root.provide('foo')
+    root.foo = { bar: 1 }
 
     // foo is a service
     expect(root.get('foo')).to.be.ok
