@@ -58,9 +58,10 @@ export class Context {
   static readonly events = Symbol.for('cordis.events')
   static readonly static = Symbol.for('cordis.static')
   static readonly filter = Symbol.for('cordis.filter')
-  static readonly source = Symbol.for('cordis.source')
   static readonly expose = Symbol.for('cordis.expose')
   static readonly shadow = Symbol.for('cordis.shadow')
+  /** @deprecated use `Context.current` instead */
+  static readonly source = Symbol.for('cordis.current')
   static readonly current = Symbol.for('cordis.current')
   static readonly internal = Symbol.for('cordis.internal')
 
@@ -166,8 +167,8 @@ export class Context {
 
       ctx.root.emit(self, 'internal/before-service', name, value)
       ctx.root[key] = value
-      if (value && typeof value === 'object') {
-        defineProperty(value, Context.source, ctx)
+      if (value instanceof Object) {
+        defineProperty(value, Context.current, ctx)
       }
       ctx.root.emit(self, 'internal/service', name, oldValue)
       return true
@@ -211,7 +212,7 @@ export class Context {
         const constructor = internal[key]['prototype']?.constructor
         if (!constructor) continue
         self[internal[key]['key']] = new constructor(self, config)
-        self[internal[key]['key']][Context.source] = self
+        defineProperty(self[internal[key]['key']], Context.current, self)
       }
     }
     attach(this[Context.internal])
