@@ -1,7 +1,7 @@
 import { Context } from '../src'
 import { expect } from 'chai'
 import { describe, mock, test } from 'node:test'
-import { noop } from 'cosmokit'
+import { noop, remove } from 'cosmokit'
 import { event, getHookSnapshot } from './utils'
 
 describe('Disposables', () => {
@@ -114,5 +114,41 @@ describe('Disposables', () => {
     await root.start()
     expect(callback.mock.calls).to.have.length(2)
     expect(root.state.disposables.length).to.equal(length)
+  })
+
+  test('ctx.effect()', async () => {
+    const root = new Context()
+    const dispose = mock.fn(noop)
+    const items: Item[] = []
+
+    class Item {
+      constructor() {
+        items.push(this)
+      }
+
+      dispose() {
+        dispose()
+        remove(items, this)
+      }
+    }
+
+    const item1 = root.effect(() => new Item())
+    const item2 = root.effect(() => new Item())
+    expect(item1).instanceof(Item)
+    expect(item2).instanceof(Item)
+    expect(dispose.mock.calls).to.have.length(0)
+    expect(items).to.have.length(2)
+
+    item1.dispose()
+    expect(dispose.mock.calls).to.have.length(1)
+    expect(items).to.have.length(1)
+
+    item1.dispose()
+    expect(dispose.mock.calls).to.have.length(1)
+    expect(items).to.have.length(1)
+
+    item2.dispose()
+    expect(dispose.mock.calls).to.have.length(2)
+    expect(items).to.have.length(0)
   })
 })

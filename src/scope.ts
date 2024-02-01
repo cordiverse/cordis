@@ -7,7 +7,7 @@ declare module './context' {
   export interface Context {
     scope: EffectScope<this>
     runtime: MainScope<this>
-    effect(callback: () => () => void): () => void
+    effect<T extends DisposableLike>(callback: () => T): T
     /** @deprecated use `ctx.effect()` instead */
     collect(label: string, callback: () => void): () => void
     accept(callback?: (config: this['config']) => void | boolean, options?: AcceptOptions): () => boolean
@@ -17,6 +17,8 @@ declare module './context' {
 }
 
 export type Disposable = () => void
+
+export type DisposableLike = Disposable | { dispose: Disposable }
 
 export interface AcceptOptions {
   passive?: boolean
@@ -86,15 +88,19 @@ export abstract class EffectScope<C extends Context = Context> {
     throw new CordisError('INACTIVE_EFFECT')
   }
 
-  effect(callback: () => () => void) {
+  effect(callback: () => DisposableLike) {
     this.assertActive()
-    const disposeRaw = callback()
-    const dispose = () => {
-      remove(this.disposables, dispose)
-      disposeRaw()
+    const result = callback()
+    const original = typeof result === 'function' ? result : result.dispose.bind(result)
+    const wrapped = () => {
+      // make sure the original callback is not called twice
+      if (!remove(this.disposables, wrapped)) return
+      return original()
     }
-    this.disposables.push(dispose)
-    return dispose
+    this.disposables.push(wrapped)
+    if (typeof result === 'function') return wrapped
+    result.dispose = wrapped
+    return result
   }
 
   collect(label: string, callback: () => any) {
