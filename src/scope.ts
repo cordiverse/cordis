@@ -30,7 +30,7 @@ export interface Acceptor extends AcceptOptions {
   callback?: (config: any) => void | boolean
 }
 
-export enum ScopeStatus {
+export const enum ScopeStatus {
   PENDING,
   LOADING,
   ACTIVE,
