@@ -258,11 +258,11 @@ export class ForkScope<C extends Context = Context> extends EffectScope<C> {
     this.dispose = defineProperty(parent.scope.collect(`fork <${parent.runtime.name}>`, () => {
       this.uid = null
       this.reset()
+      this.context.emit('internal/fork', this)
       const result = remove(runtime.disposables, this.dispose)
       if (remove(runtime.children, this) && !runtime.children.length) {
         parent.registry.delete(runtime.plugin)
       }
-      this.context.emit('internal/fork', this)
       return result
     }), Context.static, runtime)
 

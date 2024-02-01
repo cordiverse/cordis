@@ -61,6 +61,14 @@ export class Lifecycle {
         return this.scope.collect('event <fork>', () => remove(this.scope.runtime.forkables, listener))
       }
     }), Context.static, root.scope)
+    defineProperty(this.on('internal/error', (error) => {
+      if (this._hooks['internal/error'].length > 1) return
+      console.error(error)
+    }), Context.static, root.scope)
+    defineProperty(this.on('internal/warning', (error) => {
+      if (this._hooks['internal/warning'].length > 1) return
+      console.warn(error)
+    }), Context.static, root.scope)
   }
 
   async flush() {
