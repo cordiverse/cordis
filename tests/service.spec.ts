@@ -11,6 +11,10 @@ describe('Service', () => {
     root.on('internal/warning', warn)
 
     root.plugin((ctx) => {
+      // `$bar` is `$`-prefixed
+      ctx['$bar']
+      expect(warn.mock.calls).to.have.length(0)
+
       // `bar` is neither defined on context nor declared as injection
       ctx.bar
       expect(warn.mock.calls).to.have.length(1)

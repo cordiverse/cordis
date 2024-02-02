@@ -105,9 +105,11 @@ export class Context {
         // - prototype: prototype detection
         // - then: async function return
         if (['prototype', 'then', 'registry', 'lifecycle'].includes(name)) return
-        // Case 3: access directly from root
+        // Case 3: `$` or `_` prefix
+        if (name[0] === '$' || name[0] === '_') return
+        // Case 4: access directly from root
         if (!ctx.runtime.plugin) return
-        // Case 4: inject in ancestor contexts
+        // Case 5: inject in ancestor contexts
         let parent = ctx
         while (parent.runtime.plugin) {
           for (const key of parent.runtime.inject) {
