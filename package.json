@@ -9,8 +9,8 @@
   ],
   "license": "MIT",
   "scripts": {
-    "yakumo": "node --import tsx node_modules/yakumo/lib/cli.js",
-    "build": "tsc -b",
+    "yakumo": "node --import tsx scripts/yakumo.js",
+    "build": "yarn yakumo build",
     "bump": "yarn yakumo version",
     "dep": "yarn yakumo upgrade",
     "pub": "yarn yakumo publish",
@@ -23,9 +23,11 @@
   "devDependencies": {
     "@cordisjs/eslint-config": "^1.0.4",
     "@types/chai": "^4.3.11",
+    "@types/chai-as-promised": "^7.1.8",
     "@types/node": "^20.10.2",
     "c8": "^7.14.0",
     "chai": "^4.3.10",
+    "chai-as-promised": "^7.1.1",
     "esbuild": "^0.18.20",
     "esbuild-register": "^3.5.0",
     "eslint": "^8.55.0",
