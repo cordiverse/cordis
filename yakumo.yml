@@ -1,0 +1,8 @@
+- name: yakumo
+  config:
+    pipeline:
+      build:
+        - tsc
+        - esbuild
+- name: yakumo-tsc
+- name: yakumo-esbuild

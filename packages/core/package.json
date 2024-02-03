@@ -1,0 +1,57 @@
+{
+  "name": "cordis",
+  "description": "AOP Framework for Modern JavaScript Applications",
+  "version": "3.7.1",
+  "sideEffects": false,
+  "type": "module",
+  "main": "lib/index.cjs",
+  "module": "lib/index.mjs",
+  "typings": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "require": "./lib/index.cjs",
+      "import": "./lib/index.mjs",
+      "types": "./lib/index.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shigma/cordis.git"
+  },
+  "bugs": {
+    "url": "https://github.com/shigma/cordis/issues"
+  },
+  "homepage": "https://github.com/shigma/cordis",
+  "author": "Shigma <shigma10826@gmail.com>",
+  "license": "MIT",
+  "files": [
+    "lib",
+    "src"
+  ],
+  "scripts": {
+    "compile:cjs": "esbuild src/index.ts --outfile=lib/index.cjs --bundle --sourcemap --sources-content=false --platform=node --external:cosmokit --target=es2022",
+    "compile:esm": "esbuild src/index.ts --outfile=lib/index.mjs --bundle --sourcemap --sources-content=false --platform=neutral --external:cosmokit --target=es2022",
+    "build": "yarn compile:cjs && yarn compile:esm && yarn dtsc",
+    "test": "node --import tsx --test tests/*.spec.ts",
+    "test:text": "shx rm -rf coverage && c8 -r text yarn test",
+    "test:json": "shx rm -rf coverage && c8 -r json yarn test",
+    "test:html": "shx rm -rf coverage && c8 -r html yarn test"
+  },
+  "devDependencies": {
+    "@types/chai": "^4.3.11",
+    "@types/chai-as-promised": "^7.1.8",
+    "@types/node": "^20.10.2",
+    "c8": "^7.14.0",
+    "chai": "^4.3.10",
+    "chai-as-promised": "^7.1.1",
+    "dtsc": "^3.0.1",
+    "esbuild": "^0.18.20",
+    "shx": "^0.3.4",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.2"
+  },
+  "dependencies": {
+    "cosmokit": "^1.5.2"
+  }
+}

@@ -192,6 +192,7 @@ export interface Events<C extends Context = Context> {
   'internal/fork'(fork: ForkScope<Context.Parameterized<C>>): void
   'internal/runtime'(runtime: MainScope<Context.Parameterized<C>>): void
   'internal/status'(scope: EffectScope<Context.Parameterized<C>>, oldValue: ScopeStatus): void
+  'internal/info'(this: C, format: any, ...param: any[]): void
   'internal/error'(this: C, format: any, ...param: any[]): void
   'internal/warning'(this: C, format: any, ...param: any[]): void
   'internal/before-service'(name: string, value: any): void

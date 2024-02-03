@@ -1,6 +1,7 @@
 lib
 dist
-temp
+
+/external
 
 .pnp.*
 .yarn/*
@@ -10,14 +11,18 @@ temp
 !.yarn/sdks
 !.yarn/versions
 
-todo.md
 yarn.lock
+package-lock.json
+pnpm-lock.yaml
+
+todo.md
 coverage/
 node_modules/
 npm-debug.log
 yarn-debug.log
 yarn-error.log
 package-lock.json
+tsconfig.temp.json
 tsconfig.tsbuildinfo
 report.*.json
 

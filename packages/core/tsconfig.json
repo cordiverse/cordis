@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outFile": "lib/index.d.ts",
+    "noImplicitAny": false,
+    "noImplicitThis": false,
+    "strictFunctionTypes": false,
+  },
+  "include": [
+    "src",
+  ],
+}
