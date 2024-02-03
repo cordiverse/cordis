@@ -17,12 +17,13 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/shigma/cordis.git"
+    "url": "git+https://github.com/cordisjs/cordis.git",
+    "directory": "packages/core"
   },
   "bugs": {
-    "url": "https://github.com/shigma/cordis/issues"
+    "url": "https://github.com/cordisjs/cordis/issues"
   },
-  "homepage": "https://github.com/shigma/cordis",
+  "homepage": "https://github.com/cordisjs/cordis",
   "author": "Shigma <shigma10826@gmail.com>",
   "license": "MIT",
   "files": [

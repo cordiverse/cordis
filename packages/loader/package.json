@@ -1,0 +1,50 @@
+{
+  "name": "@cordisjs/loader",
+  "description": "Loader for cordis",
+  "version": "0.3.3",
+  "type": "module",
+  "module": "lib/index.js",
+  "typings": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "node": "./lib/index.js",
+      "browser": "./lib/shared.js",
+      "types": "./lib/index.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "src"
+  ],
+  "author": "Shigma <shigma10826@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cordisjs/cordis.git",
+    "directory": "packages/loader"
+  },
+  "bugs": {
+    "url": "https://github.com/cordisjs/cordis/issues"
+  },
+  "homepage": "https://github.com/cordisjs/cordis",
+  "keywords": [
+    "cordis",
+    "loader",
+    "config",
+    "bootstrap",
+    "service"
+  ],
+  "devDependencies": {
+    "@cordisjs/logger": "^0.1.4",
+    "cordis": "^3.7.1"
+  },
+  "peerDependencies": {
+    "cordis": "^3.7.1"
+  },
+  "dependencies": {
+    "cosmokit": "^1.5.2",
+    "dotenv": "^16.3.1",
+    "js-yaml": "^4.1.0"
+  }
+}

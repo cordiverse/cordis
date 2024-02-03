@@ -1,0 +1,56 @@
+{
+  "name": "@cordisjs/plugin-hmr",
+  "description": "Hot Module Replacement Plugin for Cordis",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "lib/index.js",
+  "typings": "lib/index.d.ts",
+  "files": [
+    "lib",
+    "src"
+  ],
+  "author": "Shigma <shigma10826@gmail.com>",
+  "license": "MIT",
+  "scripts": {
+    "lint": "eslint src --ext .ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cordisjs/cordis.git",
+    "directory": "packages/hmr"
+  },
+  "bugs": {
+    "url": "https://github.com/cordisjs/cordis/issues"
+  },
+  "homepage": "https://cordis.moe/",
+  "keywords": [
+    "cordis",
+    "plugin",
+    "hmr",
+    "hot",
+    "module",
+    "replacement",
+    "reload",
+    "watch",
+    "development"
+  ],
+  "cordis": {
+    "description": {
+      "en": "Hot Module Replacement",
+      "zh": "模块热替换"
+    }
+  },
+  "peerDependencies": {
+    "cordis": "^3.7.1"
+  },
+  "devDependencies": {
+    "@types/babel__code-frame": "^7.0.6",
+    "cordis": "^3.7.1",
+    "esbuild": "^0.18.20"
+  },
+  "dependencies": {
+    "@babel/code-frame": "^7.23.5",
+    "chokidar": "^3.5.3",
+    "schemastery": "^3.14.3"
+  }
+}

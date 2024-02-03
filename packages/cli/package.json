@@ -1,0 +1,49 @@
+{
+  "name": "@cordisjs/cli",
+  "description": "CLI for cordis loader",
+  "type": "module",
+  "version": "0.3.4",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "bin": {
+    "cordis": "lib/cli.js"
+  },
+  "exports": {
+    ".": "./lib/index.js",
+    "./worker": "./lib/worker/index.js",
+    "./worker/main": "./lib/worker/main.js",
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "src"
+  ],
+  "engines": {
+    "node": "^18.0.0 || >=20.0.0"
+  },
+  "author": "Shigma <shigma10826@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cordisjs/cordis.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/cordisjs/cordis/issues"
+  },
+  "homepage": "https://github.com/cordisjs/cordis",
+  "keywords": [
+    "cordis",
+    "loader",
+    "cli"
+  ],
+  "dependencies": {
+    "@cordisjs/loader": "0.3.3",
+    "@cordisjs/logger": "^0.1.4",
+    "cac": "^6.7.14",
+    "cordis": "^3.7.1",
+    "cosmokit": "^1.5.2",
+    "kleur": "^4.1.5"
+  }
+}
