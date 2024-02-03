@@ -1,5 +1,4 @@
 import { apply as logger, Logger } from '@cordisjs/logger'
-import Timer from '@cordisjs/timer'
 import { Context } from 'cordis'
 
 declare module '@cordisjs/loader' {
@@ -28,7 +27,6 @@ export function apply(ctx: Context, config: Config = {}) {
   ctx.provide('timer', undefined, true)
 
   ctx.plugin(logger)
-  ctx.plugin(Timer)
 
   function handleException(error: any) {
     new Logger('app').error(error)
