@@ -1,4 +1,3 @@
-import {} from '@cordisjs/logger'
 import Loader from './shared.ts'
 import { promises as fs } from 'fs'
 import * as dotenv from 'dotenv'
@@ -54,8 +53,8 @@ class NodeLoader extends Loader<NodeLoader.Options> {
   fullReload(code = Loader.exitCode) {
     const body = JSON.stringify(this.envData)
     process.send?.({ type: 'shared', body }, (err: any) => {
-      if (err) this.app.logger('loader').error('failed to send shared data')
-      this.app.logger('loader').info('trigger full reload')
+      if (err) this.app.emit('internal/error', 'failed to send shared data')
+      this.app.emit('internal/info', 'trigger full reload')
       process.exit(code)
     })
   }

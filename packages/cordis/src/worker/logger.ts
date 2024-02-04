@@ -1,4 +1,4 @@
-import { apply as logger, Logger } from '@cordisjs/logger'
+import { apply as logger, Logger } from '../logger.js'
 import { Context } from '@cordisjs/core'
 
 declare module '@cordisjs/loader' {
@@ -37,10 +37,6 @@ export function apply(ctx: Context, config: Config = {}) {
 
   process.on('unhandledRejection', (error) => {
     new Logger('app').warn(error)
-  })
-
-  ctx.on('loader/update', (type, entry) => {
-    new Logger('loader').info('%s plugin %c', type, entry.name)
   })
 
   ctx.loader.prolog = []

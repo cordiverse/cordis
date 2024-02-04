@@ -9,7 +9,6 @@ declare module '@cordisjs/core' {
   interface Events {
     'config'(): void
     'exit'(signal: NodeJS.Signals): Promise<void>
-    'loader/update'(this: Context, type: string, entry: Entry): void
   }
 
   interface Context {
@@ -218,7 +217,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> {
       state.fork.update(entry.config)
     } else {
       if (!this.isTruthyLike(entry.when)) return
-      parent.emit('loader/update', 'apply', entry)
+      parent.emit('internal/info', 'apply plugin %c', entry.name)
       const plugin = await this.resolve(entry.name)
       if (!plugin) return
       const ctx = parent.extend()
@@ -234,7 +233,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> {
   unload(parent: Context, entry: Entry) {
     const state = this.states[entry.id]
     if (state?.fork) {
-      parent.emit('loader/update', 'unload', entry)
+      parent.emit('internal/info', 'unload plugin %c', entry.name)
       state.fork.dispose()
     }
   }
@@ -264,7 +263,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> {
     this.app.on('internal/update', (fork) => {
       const state = this.states[fork.id!]
       if (!state) return
-      fork.parent.emit('loader/update', 'reload', state.entry)
+      fork.parent.emit('internal/info', 'reload plugin %c', state.entry.name)
     })
 
     this.app.on('internal/before-update', (fork, config) => {

@@ -5,7 +5,7 @@ import Schema from 'schemastery'
 import { FSWatcher, watch, WatchOptions } from 'chokidar'
 import { relative, resolve } from 'path'
 import { handleError } from './error.js'
-import { Logger } from '@cordisjs/logger'
+import { Logger } from 'cordis/logger'
 import {} from '@cordisjs/timer'
 import { fileURLToPath, pathToFileURL } from 'url'
 

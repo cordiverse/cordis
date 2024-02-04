@@ -22,9 +22,11 @@
   },
   "devDependencies": {
     "@cordisjs/eslint-config": "^1.0.4",
+    "@sinonjs/fake-timers": "^6.0.1",
     "@types/chai": "^4.3.11",
     "@types/chai-as-promised": "^7.1.8",
     "@types/node": "^20.10.2",
+    "@types/sinonjs__fake-timers": "^6.0.4",
     "c8": "^7.14.0",
     "chai": "^4.3.10",
     "chai-as-promised": "^7.1.1",

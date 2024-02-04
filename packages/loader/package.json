@@ -37,8 +37,7 @@
     "service"
   ],
   "devDependencies": {
-    "@cordisjs/core": "^3.8.0",
-    "@cordisjs/logger": "^0.1.4"
+    "@cordisjs/core": "^3.8.0"
   },
   "peerDependencies": {
     "@cordisjs/core": "^3.8.0"
