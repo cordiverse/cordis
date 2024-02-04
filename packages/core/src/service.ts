@@ -1,5 +1,5 @@
 import { Awaitable, defineProperty } from 'cosmokit'
-import { Context } from './context'
+import { Context } from './context.ts'
 
 export interface Service extends Context.Associate<'service'> {}
 

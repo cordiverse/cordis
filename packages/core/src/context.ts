@@ -1,7 +1,7 @@
 import { defineProperty, Dict, isNullable } from 'cosmokit'
-import { Lifecycle } from './events'
-import { Registry } from './registry'
-import { getConstructor, isConstructor, isUnproxyable, resolveConfig } from './utils'
+import { Lifecycle } from './events.ts'
+import { Registry } from './registry.ts'
+import { getConstructor, isConstructor, isUnproxyable, resolveConfig } from './utils.ts'
 
 export namespace Context {
   export type Parameterized<C, T = any> = Omit<C, 'config'> & { config: T }

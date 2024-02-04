@@ -1,7 +1,7 @@
 import { Context, EffectScope, ForkScope } from '@cordisjs/core'
 import { Dict, isNullable, valueMap } from 'cosmokit'
 import { constants, promises as fs } from 'fs'
-import { interpolate } from './utils.js'
+import { interpolate } from './utils.ts'
 import * as yaml from 'js-yaml'
 import * as path from 'path'
 

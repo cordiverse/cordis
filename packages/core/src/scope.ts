@@ -1,9 +1,9 @@
 import { deepEqual, defineProperty, isNullable, remove } from 'cosmokit'
-import { Context } from './context'
-import { Plugin, Registry } from './registry'
-import { getConstructor, isConstructor, resolveConfig } from './utils'
+import { Context } from './context.ts'
+import { Plugin, Registry } from './registry.ts'
+import { getConstructor, isConstructor, resolveConfig } from './utils.ts'
 
-declare module './context' {
+declare module './context.ts' {
   export interface Context {
     scope: EffectScope<this>
     runtime: MainScope<this>
@@ -317,7 +317,7 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
   isReusable?: boolean = false
   isReactive?: boolean = false
 
-  constructor(registry: Registry<C>, public plugin: Plugin, config: any, error?: any) {
+  constructor(registry: Registry<C>, public plugin: Plugin<C>, config: any, error?: any) {
     super(registry[Context.current] as C, config)
     registry.set(plugin, this)
     if (!plugin) {
@@ -367,7 +367,7 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
     }
   }
 
-  private apply = (context: Context, config: any) => {
+  private apply = (context: C, config: any) => {
     if (typeof this.plugin !== 'function') {
       return this.plugin.apply(context, config)
     } else if (isConstructor(this.plugin)) {
@@ -395,7 +395,7 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
   start() {
     if (super.start()) return true
     if (!this.isReusable && this.plugin) {
-      this.ensure(async () => this.apply(this.context, this._config))
+      this.ensure(async () => this.apply(this.ctx, this._config))
     }
     for (const fork of this.children) {
       fork.start()

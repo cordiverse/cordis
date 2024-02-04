@@ -1,7 +1,7 @@
 import { Awaitable, defineProperty, Promisify, remove } from 'cosmokit'
-import { Context } from './context'
-import { EffectScope, ForkScope, MainScope, ScopeStatus } from './scope'
-import { Plugin } from './registry'
+import { Context } from './context.ts'
+import { EffectScope, ForkScope, MainScope, ScopeStatus } from './scope.ts'
+import { Plugin } from './registry.ts'
 
 export function isBailed(value: any) {
   return value !== null && value !== false && value !== undefined
@@ -12,7 +12,7 @@ export type ReturnType<F> = F extends (...args: any) => infer R ? R : never
 export type ThisType<F> = F extends (this: infer T, ...args: any) => any ? T : never
 export type GetEvents<C extends Context> = C[typeof Context.events]
 
-declare module './context' {
+declare module './context.ts' {
   export interface Context {
     /* eslint-disable max-len */
     [Context.events]: Events<this>
@@ -185,7 +185,7 @@ export class Lifecycle {
   }
 }
 
-export interface Events<C extends Context = Context> {
+export interface Events<in C extends Context = Context> {
   'fork': Plugin.Function<C, C['config']>
   'ready'(): Awaitable<void>
   'dispose'(): Awaitable<void>

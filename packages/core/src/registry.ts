@@ -1,7 +1,7 @@
 import { defineProperty } from 'cosmokit'
-import { Context } from './context'
-import { ForkScope, MainScope } from './scope'
-import { resolveConfig } from './utils'
+import { Context } from './context.ts'
+import { ForkScope, MainScope } from './scope.ts'
+import { resolveConfig } from './utils.ts'
 
 export function isApplicable(object: Plugin) {
   return object && typeof object === 'object' && typeof object.apply === 'function'
@@ -41,7 +41,7 @@ export namespace Plugin {
   }
 }
 
-declare module './context' {
+declare module './context.ts' {
   export interface Context {
     /* eslint-disable max-len */
     /** @deprecated use `ctx.inject()` instead */

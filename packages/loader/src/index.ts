@@ -1,10 +1,10 @@
 import {} from '@cordisjs/logger'
-import Loader from './shared.js'
+import Loader from './shared.ts'
 import { promises as fs } from 'fs'
 import * as dotenv from 'dotenv'
 import * as path from 'path'
 
-export * from './shared.js'
+export * from './shared.ts'
 
 const oldEnv = { ...process.env }
 
@@ -47,7 +47,7 @@ class NodeLoader extends Loader<NodeLoader.Options> {
     try {
       return await import(name)
     } catch (err: any) {
-      this.app.logger('loader').error(err)
+      this.app.emit('internal/error', err)
     }
   }
 
