@@ -3,6 +3,7 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
+      "cordis/cli": ["packages/cordis/src/cli.ts"],
       "cordis": ["packages/cordis/src"],
       "@cordisjs/plugin-*": ["packages/*/src"],
       "@cordisjs/*": ["packages/*/src"],

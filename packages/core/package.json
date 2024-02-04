@@ -1,7 +1,7 @@
 {
   "name": "@cordisjs/core",
   "description": "AOP Framework for Modern JavaScript Applications",
-  "version": "3.7.1",
+  "version": "3.8.0",
   "sideEffects": false,
   "type": "module",
   "main": "lib/index.cjs",
@@ -13,6 +13,7 @@
       "import": "./lib/index.mjs",
       "types": "./lib/index.d.ts"
     },
+    "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [

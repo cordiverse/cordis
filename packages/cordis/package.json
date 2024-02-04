@@ -2,7 +2,7 @@
   "name": "cordis",
   "description": "CLI for cordis loader",
   "type": "module",
-  "version": "3.7.1",
+  "version": "3.8.0",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "bin": "lib/bin/cordis.js",
@@ -38,8 +38,8 @@
     "cli"
   ],
   "dependencies": {
-    "@cordisjs/core": "^3.7.1",
-    "@cordisjs/loader": "0.3.3",
+    "@cordisjs/core": "^3.8.0",
+    "@cordisjs/loader": "0.4.0",
     "@cordisjs/logger": "^0.1.4",
     "cac": "^6.7.14",
     "cosmokit": "^1.5.2",
