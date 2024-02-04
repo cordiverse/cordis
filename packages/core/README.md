@@ -1,9 +1,9 @@
 # Cordis
 
-[![Codecov](https://img.shields.io/codecov/c/github/shigma/cordis?style=flat-square)](https://codecov.io/gh/shigma/cordis)
+[![Codecov](https://img.shields.io/codecov/c/github/cordisjs/cordis?style=flat-square)](https://codecov.io/gh/cordisjs/cordis)
 [![downloads](https://img.shields.io/npm/dm/cordis?style=flat-square)](https://www.npmjs.com/package/cordis)
 [![npm](https://img.shields.io/npm/v/cordis?style=flat-square)](https://www.npmjs.com/package/cordis)
-[![GitHub](https://img.shields.io/github/license/shigma/cordis?style=flat-square)](https://github.com/shigma/cordis/blob/master/LICENSE)
+[![GitHub](https://img.shields.io/github/license/cordisjs/cordis?style=flat-square)](https://github.com/cordisjs/cordis/blob/master/LICENSE)
 
 Cordis is an AOP framework for modern JavaScript applications. You can think of it as a kind of meta-framework as developers can build their own frameworks on top of it.
 

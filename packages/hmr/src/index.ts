@@ -1,6 +1,6 @@
 import { Context, ForkScope, MainScope, Plugin } from 'cordis'
 import { Dict, makeArray } from 'cosmokit'
-import { ModuleJob } from '@cordisjs/cli/worker'
+import { ModuleJob } from 'cordis/worker'
 import Schema from 'schemastery'
 import { FSWatcher, watch, WatchOptions } from 'chokidar'
 import { relative, resolve } from 'path'
@@ -96,7 +96,7 @@ class Watcher {
     })
 
     // files independent from any plugins will trigger a full reload
-    const mainJob = await loader.internal!.getModuleJob('@cordisjs/cli/worker', this.initialURL, {})!
+    const mainJob = await loader.internal!.getModuleJob('cordis/worker', this.initialURL, {})!
     this.externals = await loadDependencies(mainJob)
     const triggerLocalReload = this.ctx.debounce(() => this.triggerLocalReload(), this.config.debounce)
 

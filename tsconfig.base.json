@@ -4,6 +4,7 @@
     "module": "nodenext",
     "sourceMap": true,
     "declaration": true,
+    "emitDeclarationOnly": true,
     "composite": true,
     "incremental": true,
     "skipLibCheck": true,

@@ -1,11 +1,11 @@
-import { Context, EffectScope, ForkScope } from 'cordis'
+import { Context, EffectScope, ForkScope } from '@cordisjs/core'
 import { Dict, isNullable, valueMap } from 'cosmokit'
 import { constants, promises as fs } from 'fs'
 import { interpolate } from './utils.js'
 import * as yaml from 'js-yaml'
 import * as path from 'path'
 
-declare module 'cordis' {
+declare module '@cordisjs/core' {
   interface Events {
     'config'(): void
     'exit'(signal: NodeJS.Signals): Promise<void>

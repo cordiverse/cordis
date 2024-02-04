@@ -2,7 +2,9 @@
   "extends": "../../tsconfig.base",
   "compilerOptions": {
     "rootDir": "src",
-    "outFile": "lib/index.d.ts",
+    "outDir": "lib",
+    "module": "commonjs",
+    "moduleResolution": "node",
     "noImplicitAny": false,
     "noImplicitThis": false,
     "strictFunctionTypes": false,

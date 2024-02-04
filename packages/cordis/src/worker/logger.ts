@@ -1,5 +1,5 @@
 import { apply as logger, Logger } from '@cordisjs/logger'
-import { Context } from 'cordis'
+import { Context } from '@cordisjs/core'
 
 declare module '@cordisjs/loader' {
   interface Loader {

@@ -36,11 +36,11 @@
     "service"
   ],
   "devDependencies": {
-    "@cordisjs/logger": "^0.1.4",
-    "cordis": "^3.7.1"
+    "@cordisjs/core": "^3.7.1",
+    "@cordisjs/logger": "^0.1.4"
   },
   "peerDependencies": {
-    "cordis": "^3.7.1"
+    "@cordisjs/core": "^3.7.1"
   },
   "dependencies": {
     "cosmokit": "^1.5.2",

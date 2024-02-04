@@ -2,9 +2,9 @@
 
 import { cac } from 'cac'
 import kleur from 'kleur'
-import { start } from './index.js'
+import { start } from '../cli.js'
 import { Dict, hyphenate } from 'cosmokit'
-import { version } from '../package.json'
+import { version } from '../../package.json'
 
 export function isInteger(source: any) {
   return typeof source === 'number' && Math.floor(source) === source
