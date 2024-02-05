@@ -7,7 +7,8 @@ declare module './context.ts' {
   export interface Context {
     scope: EffectScope<this>
     runtime: MainScope<this>
-    effect<T extends DisposableLike>(callback: () => T): T
+    effect<T extends DisposableLike>(callback: Callable<T, [ctx: this]>): T
+    effect<T extends DisposableLike, R>(callback: Callable<T, [ctx: this, config: R]>, config: R): T
     /** @deprecated use `ctx.effect()` instead */
     collect(label: string, callback: () => void): () => void
     accept(callback?: (config: this['config']) => void | boolean, options?: AcceptOptions): () => boolean
@@ -19,6 +20,8 @@ declare module './context.ts' {
 export type Disposable = () => void
 
 export type DisposableLike = Disposable | { dispose: Disposable }
+
+export type Callable<T, R extends unknown[]> = ((...args: R) => T) | (new (...args: R) => T)
 
 export interface AcceptOptions {
   passive?: boolean
@@ -88,9 +91,12 @@ export abstract class EffectScope<C extends Context = Context> {
     throw new CordisError('INACTIVE_EFFECT')
   }
 
-  effect(callback: () => DisposableLike) {
+  effect(callback: Callable<DisposableLike, [ctx: C, config: any]>, config?: any) {
     this.assertActive()
-    const result = callback()
+    const result = isConstructor(callback)
+      // eslint-disable-next-line new-cap
+      ? new callback(this.ctx, config)
+      : callback(this.ctx, config)
     const original = typeof result === 'function' ? result : result.dispose.bind(result)
     const wrapped = () => {
       // make sure the original callback is not called twice
@@ -317,7 +323,7 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
   isReusable?: boolean = false
   isReactive?: boolean = false
 
-  constructor(registry: Registry<C>, public plugin: Plugin<C>, config: any, error?: any) {
+  constructor(registry: Registry<C>, public plugin: Plugin, config: any, error?: any) {
     super(registry[Context.current] as C, config)
     registry.set(plugin, this)
     if (!plugin) {

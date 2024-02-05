@@ -18,48 +18,53 @@ export type Plugin<C extends Context = Context, T = any> =
   | Plugin.Object<C, T>
 
 export namespace Plugin {
-  export interface Base {
+  export interface Base<T = any> {
     name?: string
     reactive?: boolean
     reusable?: boolean
-    Config?: (config?: any) => any
+    Config?: (config: any) => T
     inject?: string[] | Inject
     /** @deprecated use `inject` instead */
     using?: string[] | Inject
   }
 
-  export interface Function<C extends Context = Context, T = any> extends Base {
-    (ctx: C, options: T): void
+  export interface Transform<S, T> {
+    schema?: true
+    Config: (config: S) => T
   }
 
-  export interface Constructor<C extends Context = Context, T = any> extends Base {
-    new (ctx: C, options: T): void
+  export interface Function<C extends Context = Context, T = any> extends Base<T> {
+    (ctx: C, config: T): void
   }
 
-  export interface Object<C extends Context = Context, T = any> extends Base {
-    apply: (ctx: C, options: T) => void
+  export interface Constructor<C extends Context = Context, T = any> extends Base<T> {
+    new (ctx: C, config: T): void
+  }
+
+  export interface Object<C extends Context = Context, T = any> extends Base<T> {
+    apply: (ctx: C, config: T) => void
   }
 }
 
+export type Spread<T> = undefined extends T ? [config?: T] : [config: T]
+
 declare module './context.ts' {
   export interface Context {
-    /* eslint-disable max-len */
     /** @deprecated use `ctx.inject()` instead */
-    using(deps: string[] | Inject, callback: Plugin.Function<Context.Parameterized<this, void>, void>): ForkScope<Context.Parameterized<this, void>>
-    inject(deps: string[] | Inject, callback: Plugin.Function<Context.Parameterized<this, void>, void>): ForkScope<Context.Parameterized<this, void>>
-    plugin<T, S = T>(plugin: Plugin.Function<Context.Parameterized<this, T>, T> & { schema?: true; Config: (config?: S) => T }, config?: S): ForkScope<Context.Parameterized<this, T>>
-    plugin<T, S = T>(plugin: Plugin.Constructor<Context.Parameterized<this, T>, T> & { schema?: true; Config: (config?: S) => T }, config?: S): ForkScope<Context.Parameterized<this, T>>
-    plugin<T, S = T>(plugin: Plugin.Object<Context.Parameterized<this, T>, T> & { schema?: true; Config: (config?: S) => T }, config?: S): ForkScope<Context.Parameterized<this, T>>
-    plugin<T>(plugin: Plugin.Function<Context.Parameterized<this, T>, T>, config?: T): ForkScope<Context.Parameterized<this, T>>
-    plugin<T>(plugin: Plugin.Constructor<Context.Parameterized<this, T>, T>, config?: T): ForkScope<Context.Parameterized<this, T>>
-    plugin<T>(plugin: Plugin.Object<Context.Parameterized<this, T>, T>, config?: T): ForkScope<Context.Parameterized<this, T>>
-    /* eslint-enable max-len */
+    using(deps: string[] | Inject, callback: Plugin.Function<this, void>): ForkScope<this>
+    inject(deps: string[] | Inject, callback: Plugin.Function<this, void>): ForkScope<this>
+    plugin<T = undefined, S = T>(plugin: Plugin.Constructor<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): ForkScope<this>
+    plugin<T = undefined, S = T>(plugin: Plugin.Function<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): ForkScope<this>
+    plugin<T = undefined, S = T>(plugin: Plugin.Object<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): ForkScope<this>
+    plugin<T = undefined>(plugin: Plugin.Constructor<this, T>, ...args: Spread<T>): ForkScope<this>
+    plugin<T = undefined>(plugin: Plugin.Function<this, T>, ...args: Spread<T>): ForkScope<this>
+    plugin<T = undefined>(plugin: Plugin.Object<this, T>, ...args: Spread<T>): ForkScope<this>
   }
 }
 
 export class Registry<C extends Context = Context> {
   private _counter = 0
-  private _internal = new Map<Plugin<C>, MainScope<C>>()
+  private _internal = new Map<Plugin, MainScope<C>>()
 
   constructor(private root: Context, config: any) {
     defineProperty(this, Context.current, root)
@@ -83,19 +88,21 @@ export class Registry<C extends Context = Context> {
     throw new Error('invalid plugin, expect function or object with an "apply" method, received ' + typeof plugin)
   }
 
-  get(plugin: Plugin<C>) {
+  get(plugin: Plugin) {
     return this._internal.get(this.resolve(plugin))
   }
 
-  has(plugin: Plugin<C>) {
+  has(plugin: Plugin) {
     return this._internal.has(this.resolve(plugin))
   }
 
-  set(plugin: Plugin<C>, state: MainScope<C>) {
-    return this._internal.set(this.resolve(plugin), state)
+  set(plugin: Plugin, state: MainScope<C>) {
+    const oldValue = this._internal.get(this.resolve(plugin))
+    this._internal.set(this.resolve(plugin), state)
+    return oldValue
   }
 
-  delete(plugin: Plugin<C>) {
+  delete(plugin: Plugin) {
     plugin = this.resolve(plugin)
     const runtime = this.get(plugin)
     if (!runtime) return
@@ -116,7 +123,7 @@ export class Registry<C extends Context = Context> {
     return this._internal.entries()
   }
 
-  forEach(callback: (value: MainScope<C>, key: Plugin<C>, map: Map<Plugin<C>, MainScope<C>>) => void) {
+  forEach(callback: (value: MainScope<C>, key: Plugin, map: Map<Plugin, MainScope<C>>) => void) {
     return this._internal.forEach(callback)
   }
 

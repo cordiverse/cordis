@@ -1,7 +1,6 @@
 import { Awaitable, defineProperty, Promisify, remove } from 'cosmokit'
 import { Context } from './context.ts'
 import { EffectScope, ForkScope, MainScope, ScopeStatus } from './scope.ts'
-import { Plugin } from './registry.ts'
 
 export function isBailed(value: any) {
   return value !== null && value !== false && value !== undefined
@@ -175,7 +174,7 @@ export class Lifecycle {
 }
 
 export interface Events<in C extends Context = Context> {
-  'fork': Plugin.Function<C, C['config']>
+  'fork'(ctx: C, config: C['config']): void
   'ready'(): Awaitable<void>
   'dispose'(): Awaitable<void>
   'internal/fork'(fork: ForkScope<C>): void

@@ -1,6 +1,6 @@
 import * as core from '@cordisjs/core'
 import * as logger from '@cordisjs/logger'
-import timer from '@cordisjs/timer'
+import { TimerService } from '@cordisjs/timer'
 
 export * from '@cordisjs/core'
 
@@ -25,6 +25,10 @@ export namespace Context {
   export type Associate<P extends string, C extends Context = Context> = core.Context.Associate<P, C>
 }
 
+export interface Context {
+  [Context.events]: Events<this>
+}
+
 export class Context extends core.Context {
   baseDir: string
 
@@ -36,7 +40,7 @@ export class Context extends core.Context {
     this.provide('timer', undefined, true)
 
     this.plugin(logger)
-    this.plugin(timer)
+    this.plugin(TimerService)
   }
 }
 
