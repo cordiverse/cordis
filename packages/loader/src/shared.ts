@@ -75,7 +75,6 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> {
     env: process.env,
   }
 
-  public app: Context
   public config!: Entry[]
   public suspend = false
   public writable = false
@@ -89,9 +88,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> {
   abstract import(name: string): Promise<any>
   abstract fullReload(code?: number): void
 
-  constructor(public options: T) {
-    this.app = new Context()
-  }
+  constructor(public app: Context, public options: T) {}
 
   async init(filename?: string) {
     if (filename) {

@@ -17,6 +17,10 @@
       "default": "./lib/cli.mjs",
       "types": "./lib/cli.d.ts"
     },
+    "./group": {
+      "default": "./lib/group.mjs",
+      "types": "./lib/group.d.ts"
+    },
     "./worker": {
       "default": "./lib/worker/index.mjs",
       "types": "./lib/worker/index.d.ts"
