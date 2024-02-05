@@ -1,5 +1,6 @@
 {
   "exclude": [
-    ".yarn/**"
+    ".yarn/**",
+    "scripts"
   ]
 }

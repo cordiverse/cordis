@@ -15,6 +15,8 @@ interface LoggerService {
 }
 
 export function apply(ctx: Context) {
+  ctx.on('fork', () => {})
+
   ctx.root.baseDir = globalThis.process?.cwd() || ''
 
   ctx.provide('logger', undefined, true)

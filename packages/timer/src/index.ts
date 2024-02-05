@@ -1,7 +1,7 @@
-import { Context, Service } from 'cordis'
+import { Context, Service } from '@cordisjs/core'
 import { remove } from 'cosmokit'
 
-declare module 'cordis' {
+declare module '@cordisjs/core' {
   interface Context {
     timer: TimerService
     setTimeout(callback: () => void, delay: number): () => void

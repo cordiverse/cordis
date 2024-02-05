@@ -1,7 +1,7 @@
 {
   "name": "@cordisjs/timer",
   "description": "Timer service for cordis",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "type": "module",
   "main": "lib/index.cjs",
   "module": "lib/index.mjs",
@@ -22,13 +22,13 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/cordisjs/std.git",
+    "url": "git+https://github.com/cordiverse/cordis.git",
     "directory": "packages/timer"
   },
   "bugs": {
-    "url": "https://github.com/cordisjs/std/issues"
+    "url": "https://github.com/cordiverse/cordis/issues"
   },
-  "homepage": "https://github.com/cordisjs/std",
+  "homepage": "https://github.com/cordiverse/cordis",
   "keywords": [
     "cordis",
     "timer",
@@ -36,9 +36,9 @@
     "plugin"
   ],
   "devDependencies": {
-    "cordis": "^3.8.0"
+    "@cordisjs/core": "^3.8.2"
   },
   "peerDependencies": {
-    "cordis": "^3.8.0"
+    "@cordisjs/core": "^3.8.2"
   }
 }

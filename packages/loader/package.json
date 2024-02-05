@@ -1,7 +1,7 @@
 {
   "name": "@cordisjs/loader",
   "description": "Loader for cordis",
-  "version": "0.4.0",
+  "version": "0.4.2",
   "type": "module",
   "module": "lib/index.js",
   "typings": "lib/index.d.ts",
@@ -22,13 +22,13 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/cordisjs/cordis.git",
+    "url": "git+https://github.com/cordiverse/cordis.git",
     "directory": "packages/loader"
   },
   "bugs": {
-    "url": "https://github.com/cordisjs/cordis/issues"
+    "url": "https://github.com/cordiverse/cordis/issues"
   },
-  "homepage": "https://github.com/cordisjs/cordis",
+  "homepage": "https://github.com/cordiverse/cordis",
   "keywords": [
     "cordis",
     "loader",
@@ -37,10 +37,10 @@
     "service"
   ],
   "devDependencies": {
-    "@cordisjs/core": "^3.8.0"
+    "@cordisjs/core": "^3.8.2"
   },
   "peerDependencies": {
-    "@cordisjs/core": "^3.8.0"
+    "@cordisjs/core": "^3.8.2"
   },
   "dependencies": {
     "cosmokit": "^1.5.2",

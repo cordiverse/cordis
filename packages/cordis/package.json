@@ -1,17 +1,21 @@
 {
   "name": "cordis",
   "description": "CLI for cordis loader",
+  "version": "3.8.2",
   "type": "module",
-  "version": "3.8.0",
-  "main": "lib/index.js",
+  "main": "lib/index.cjs",
+  "module": "lib/index.mjs",
   "types": "lib/index.d.ts",
-  "bin": "lib/bin/cordis.js",
+  "bin": "lib/bin/cordis.mjs",
   "exports": {
-    ".": "./lib/index.js",
-    "./cli": "./lib/cli.js",
-    "./logger": "./lib/logger.js",
-    "./worker": "./lib/worker/index.js",
-    "./worker/main": "./lib/worker/main.js",
+    ".": {
+      "require": "./lib/index.cjs",
+      "import": "./lib/index.mjs",
+      "types": "./lib/index.d.ts"
+    },
+    "./cli": "./lib/cli.mjs",
+    "./worker": "./lib/worker/index.mjs",
+    "./worker/main": "./lib/worker/main.mjs",
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
@@ -26,21 +30,23 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/cordisjs/cordis.git",
+    "url": "git+https://github.com/cordiverse/cordis.git",
     "directory": "packages/cli"
   },
   "bugs": {
-    "url": "https://github.com/cordisjs/cordis/issues"
+    "url": "https://github.com/cordiverse/cordis/issues"
   },
-  "homepage": "https://github.com/cordisjs/cordis",
+  "homepage": "https://github.com/cordiverse/cordis",
   "keywords": [
     "cordis",
     "loader",
     "cli"
   ],
   "dependencies": {
-    "@cordisjs/core": "3.8.0",
-    "@cordisjs/loader": "^0.4.0",
+    "@cordisjs/core": "3.8.2",
+    "@cordisjs/loader": "^0.4.2",
+    "@cordisjs/logger": "^0.2.0",
+    "@cordisjs/timer": "^0.3.0",
     "cac": "^6.7.14",
     "cosmokit": "^1.5.2",
     "kleur": "^4.1.5",

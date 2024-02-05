@@ -1,4 +1,4 @@
-import { apply as logger, Logger } from '../logger.js'
+import { Logger } from '@cordisjs/logger'
 import { Context } from '@cordisjs/core'
 
 declare module '@cordisjs/loader' {
@@ -23,11 +23,6 @@ export interface Config {
 }
 
 export function apply(ctx: Context, config: Config = {}) {
-  ctx.provide('logger', undefined, true)
-  ctx.provide('timer', undefined, true)
-
-  ctx.plugin(logger)
-
   function handleException(error: any) {
     new Logger('app').error(error)
     process.exit(1)

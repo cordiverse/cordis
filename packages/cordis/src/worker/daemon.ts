@@ -1,4 +1,4 @@
-import { Context } from '@cordisjs/core'
+import { Context } from '../index.ts'
 
 export interface Config {
   execArgv?: string[]
