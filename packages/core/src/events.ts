@@ -33,12 +33,6 @@ declare module './context.ts' {
   }
 }
 
-export namespace Lifecycle {
-  export interface Config {
-    maxListeners?: number
-  }
-}
-
 export class Lifecycle {
   isActive = false
   _tasks = new Set<Promise<void>>()
@@ -125,11 +119,6 @@ export class Lifecycle {
   }
 
   register(label: string, hooks: [Context, any][], listener: any, prepend?: boolean) {
-    const maxListeners = this.root.config.maxListeners!
-    if (hooks.length >= maxListeners!) {
-      this.root.emit('internal/warning', new Error(`max listener count (${maxListeners!}) for ${label} exceeded, which may be caused by a memory leak`))
-    }
-
     const caller = this[Context.current]
     const method = prepend ? 'unshift' : 'push'
     hooks[method]([caller, listener])
@@ -189,16 +178,16 @@ export interface Events<in C extends Context = Context> {
   'fork': Plugin.Function<C, C['config']>
   'ready'(): Awaitable<void>
   'dispose'(): Awaitable<void>
-  'internal/fork'(fork: ForkScope<Context.Parameterized<C>>): void
-  'internal/runtime'(runtime: MainScope<Context.Parameterized<C>>): void
-  'internal/status'(scope: EffectScope<Context.Parameterized<C>>, oldValue: ScopeStatus): void
+  'internal/fork'(fork: ForkScope<C>): void
+  'internal/runtime'(runtime: MainScope<C>): void
+  'internal/status'(scope: EffectScope<C>, oldValue: ScopeStatus): void
   'internal/info'(this: C, format: any, ...param: any[]): void
   'internal/error'(this: C, format: any, ...param: any[]): void
   'internal/warning'(this: C, format: any, ...param: any[]): void
   'internal/before-service'(name: string, value: any): void
   'internal/service'(name: string, oldValue: any): void
-  'internal/before-update'(fork: ForkScope<Context.Parameterized<C>>, config: any): void
-  'internal/update'(fork: ForkScope<Context.Parameterized<C>>, oldConfig: any): void
+  'internal/before-update'(fork: ForkScope<C>, config: any): void
+  'internal/update'(fork: ForkScope<C>, oldConfig: any): void
   'internal/listener'(this: C, name: string, listener: any, prepend: boolean): void
   'internal/event'(type: 'emit' | 'parallel' | 'serial' | 'bail', name: string, args: any[], thisArg: any): void
 }

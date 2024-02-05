@@ -4,9 +4,7 @@ import { Registry } from './registry.ts'
 import { getConstructor, isConstructor, isUnproxyable, resolveConfig } from './utils.ts'
 
 export namespace Context {
-  export type Parameterized<C, T = any> = Omit<C, 'config'> & { config: T }
-
-  export interface Config extends Lifecycle.Config, Registry.Config {}
+  export type Parameterized<C, T = any> = C & { config: T }
 
   /** @deprecated use `string[]` instead */
   export interface MixinOptions {
@@ -42,15 +40,14 @@ export namespace Context {
   }
 }
 
-export interface Context<T = any> {
-  [Context.config]: Context.Config
+export interface Context {
   [Context.shadow]: Dict<symbol>
   [Context.internal]: Dict<Context.Internal>
-  root: Context.Parameterized<this, this[typeof Context.config]>
+  root: this
   realms: Record<string, Record<string, symbol>>
   lifecycle: Lifecycle
   registry: Registry<this>
-  config: T
+  config: any
 }
 
 export class Context {
@@ -195,7 +192,7 @@ export class Context {
     })
   }
 
-  constructor(config?: Context.Config) {
+  constructor(config?: any) {
     const self: Context = new Proxy(this, Context.handler)
     config = resolveConfig(getConstructor(this), config)
     self[Context.shadow] = Object.create(null)

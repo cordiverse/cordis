@@ -13,8 +13,14 @@
       "import": "./lib/index.mjs",
       "types": "./lib/index.d.ts"
     },
-    "./cli": "./lib/cli.mjs",
-    "./worker": "./lib/worker/index.mjs",
+    "./cli": {
+      "default": "./lib/cli.mjs",
+      "types": "./lib/cli.d.ts"
+    },
+    "./worker": {
+      "default": "./lib/worker/index.mjs",
+      "types": "./lib/worker/index.d.ts"
+    },
     "./worker/main": "./lib/worker/main.mjs",
     "./src/*": "./src/*",
     "./package.json": "./package.json"

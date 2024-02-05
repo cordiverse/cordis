@@ -1,8 +1,6 @@
 import { Awaitable, defineProperty } from 'cosmokit'
 import { Context } from './context.ts'
 
-export interface Service extends Context.Associate<'service'> {}
-
 export class Service<C extends Context = Context> {
   protected start(): Awaitable<void> {}
   protected stop(): Awaitable<void> {}
@@ -26,7 +24,7 @@ export class Service<C extends Context = Context> {
     })
 
     ctx.on('dispose', () => this.stop())
-    return Context.associate(Context.associate(this, 'service'), name)
+    return Context.associate(this, name)
   }
 
   [Context.filter](ctx: Context) {

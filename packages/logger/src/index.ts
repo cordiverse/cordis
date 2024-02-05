@@ -5,7 +5,6 @@ export { Logger }
 
 declare module '@cordisjs/core' {
   interface Context {
-    baseDir: string
     logger: LoggerService
   }
 }
@@ -15,12 +14,6 @@ interface LoggerService {
 }
 
 export function apply(ctx: Context) {
-  ctx.on('fork', () => {})
-
-  ctx.root.baseDir = globalThis.process?.cwd() || ''
-
-  ctx.provide('logger', undefined, true)
-
   ctx.logger = function (name: string) {
     return new Logger(name, { [Context.current]: this })
   }

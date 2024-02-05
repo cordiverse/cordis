@@ -45,7 +45,7 @@ describe('Update', () => {
     const root = new Context()
     const listener = mock.fn((value?: number) => {})
     const updater = mock.fn(() => {})
-    const plugin = mock.fn((ctx: Context<Config>) => {
+    const plugin = mock.fn((ctx: Context) => {
       ctx.on(event, () => listener(ctx.config.foo))
       // accept only foo
       ctx.accept(['foo'], updater, { immediate: true })

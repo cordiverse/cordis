@@ -6,6 +6,12 @@ export * from '@cordisjs/core'
 
 export { Logger } from '@cordisjs/logger'
 
+export type EffectScope<C extends Context = Context> = core.EffectScope<C>
+export type ForkScope<C extends Context = Context> = core.ForkScope<C>
+export type MainScope<C extends Context = Context> = core.MainScope<C>
+
+export interface Events<C extends Context = Context> extends core.Events<C> {}
+
 export class Service<C extends Context = Context> extends core.Service<C> {
   public logger: logger.Logger
 
@@ -15,9 +21,16 @@ export class Service<C extends Context = Context> extends core.Service<C> {
   }
 }
 
+export namespace Context {
+  export type Associate<P extends string, C extends Context = Context> = core.Context.Associate<P, C>
+}
+
 export class Context extends core.Context {
-  constructor() {
-    super()
+  baseDir: string
+
+  constructor(config?: any) {
+    super(config)
+    this.baseDir = globalThis.process?.cwd() || ''
 
     this.provide('logger', undefined, true)
     this.provide('timer', undefined, true)

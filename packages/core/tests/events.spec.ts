@@ -9,23 +9,13 @@ export function createArray<T>(length: number, create: (index: number) => T) {
 }
 
 function setup() {
-  const root = new Context({ maxListeners: 64 })
-  expect(root.config).to.deep.equal({ maxListeners: 64 })
+  const root = new Context()
   const warn = mock.fn()
   root.on('internal/warning', warn)
   return { root, warn }
 }
 
 describe('Event Listener', () => {
-  const extraCalls = 7
-
-  test('max appended hooks', async () => {
-    const { root, warn } = setup()
-    createArray(64 + extraCalls, () => root.on(event, noop))
-    expect(root.events._hooks[event].length).to.equal(64 + extraCalls)
-    expect(warn.mock.calls).to.have.length(extraCalls)
-  })
-
   test('context.prototype.on', () => {
     const { root } = setup()
     const callback = mock.fn()

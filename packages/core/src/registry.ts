@@ -57,15 +57,11 @@ declare module './context.ts' {
   }
 }
 
-export namespace Registry {
-  export interface Config {}
-}
-
 export class Registry<C extends Context = Context> {
   private _counter = 0
   private _internal = new Map<Plugin<C>, MainScope<C>>()
 
-  constructor(private root: Context, config: Registry.Config) {
+  constructor(private root: Context, config: any) {
     defineProperty(this, Context.current, root)
     root.scope = new MainScope(this, null!, config)
     root.scope.runtime.isReactive = true
