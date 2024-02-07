@@ -116,39 +116,53 @@ describe('Disposables', () => {
     expect(root.state.disposables.length).to.equal(length)
   })
 
-  test('ctx.effect()', async () => {
-    const root = new Context()
-    const dispose = mock.fn(noop)
-    const items: Item[] = []
-
-    class Item {
-      constructor() {
-        items.push(this)
+  describe('ctx.effect()', () => {
+    test('manual dispose', async () => {
+      const root = new Context()
+      const dispose = mock.fn(noop)
+      const items: Item[] = []
+  
+      class Item {
+        constructor() {
+          items.push(this)
+        }
+  
+        dispose() {
+          dispose()
+          remove(items, this)
+        }
       }
+  
+      const item1 = root.effect(() => new Item())
+      const item2 = root.effect(() => new Item())
+      expect(item1).instanceof(Item)
+      expect(item2).instanceof(Item)
+      expect(dispose.mock.calls).to.have.length(0)
+      expect(items).to.have.length(2)
+  
+      item1.dispose()
+      expect(dispose.mock.calls).to.have.length(1)
+      expect(items).to.have.length(1)
+  
+      item1.dispose()
+      expect(dispose.mock.calls).to.have.length(1)
+      expect(items).to.have.length(1)
+  
+      item2.dispose()
+      expect(dispose.mock.calls).to.have.length(2)
+      expect(items).to.have.length(0)
+    })
 
-      dispose() {
-        dispose()
-        remove(items, this)
-      }
-    }
-
-    const item1 = root.effect(() => new Item())
-    const item2 = root.effect(() => new Item())
-    expect(item1).instanceof(Item)
-    expect(item2).instanceof(Item)
-    expect(dispose.mock.calls).to.have.length(0)
-    expect(items).to.have.length(2)
-
-    item1.dispose()
-    expect(dispose.mock.calls).to.have.length(1)
-    expect(items).to.have.length(1)
-
-    item1.dispose()
-    expect(dispose.mock.calls).to.have.length(1)
-    expect(items).to.have.length(1)
-
-    item2.dispose()
-    expect(dispose.mock.calls).to.have.length(2)
-    expect(items).to.have.length(0)
+    test('plugin dispose', () => {
+      const root = new Context()
+      const dispose = mock.fn(noop)
+  
+      const fork = root.plugin((ctx: Context) => {
+        ctx.effect(() => dispose)
+      })
+  
+      fork.dispose()
+      expect(dispose.mock.calls).to.have.length(1)
+    })
   })
 })

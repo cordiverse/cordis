@@ -97,10 +97,13 @@ export abstract class EffectScope<C extends Context = Context> {
       // eslint-disable-next-line new-cap
       ? new callback(this.ctx, config)
       : callback(this.ctx, config)
+    let disposed = false
     const original = typeof result === 'function' ? result : result.dispose.bind(result)
     const wrapped = () => {
       // make sure the original callback is not called twice
-      if (!remove(this.disposables, wrapped)) return
+      if (disposed) return
+      disposed = true
+      remove(this.disposables, wrapped)
       return original()
     }
     this.disposables.push(wrapped)
@@ -313,6 +316,8 @@ export class ForkScope<C extends Context = Context> extends EffectScope<C> {
 }
 
 export class MainScope<C extends Context = Context> extends EffectScope<C> {
+  public value: any
+
   runtime = this
   schema: any
   name?: string
@@ -386,6 +391,7 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
       if (instance['fork']) {
         this.forkables.push(instance['fork'].bind(instance))
       }
+      return instance
     } else {
       return this.plugin(context, config)
     }
@@ -401,7 +407,7 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
   start() {
     if (super.start()) return true
     if (!this.isReusable && this.plugin) {
-      this.ensure(async () => this.apply(this.ctx, this._config))
+      this.ensure(async () => this.value = this.apply(this.ctx, this._config))
     }
     for (const fork of this.children) {
       fork.start()
