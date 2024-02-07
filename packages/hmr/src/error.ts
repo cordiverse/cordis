@@ -1,4 +1,4 @@
-import { Logger } from 'cordis/logger'
+import { Logger } from 'cordis'
 import { BuildFailure } from 'esbuild'
 import { codeFrameColumns } from '@babel/code-frame'
 import { readFileSync } from 'fs'

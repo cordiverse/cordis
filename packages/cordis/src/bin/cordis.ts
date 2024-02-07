@@ -4,8 +4,10 @@ import { cac } from 'cac'
 import kleur from 'kleur'
 import { start } from '../cli.js'
 import { Dict, hyphenate } from 'cosmokit'
-// @ts-ignore
-import { version } from '../../package.json'
+import { createRequire } from 'module'
+
+const require = createRequire(import.meta.url)
+const { version } = require('../../package.json')
 
 function isInteger(source: any) {
   return typeof source === 'number' && Math.floor(source) === source

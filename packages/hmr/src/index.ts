@@ -1,11 +1,10 @@
-import { Context, ForkScope, MainScope, Plugin } from 'cordis'
+import { Context, ForkScope, Logger, MainScope, Plugin } from 'cordis'
 import { Dict, makeArray } from 'cosmokit'
 import { ModuleJob } from 'cordis/worker'
 import Schema from 'schemastery'
 import { FSWatcher, watch, WatchOptions } from 'chokidar'
 import { relative, resolve } from 'path'
 import { handleError } from './error.js'
-import { Logger } from 'cordis/logger'
 import {} from '@cordisjs/timer'
 import { fileURLToPath, pathToFileURL } from 'url'
 
@@ -37,7 +36,7 @@ interface Reload {
 }
 
 class Watcher {
-  static inject = ['loader']
+  static inject = ['loader', 'timer']
 
   private base: string
   private watcher!: FSWatcher
