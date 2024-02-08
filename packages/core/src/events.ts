@@ -58,7 +58,7 @@ export class Lifecycle {
 
     for (const level of ['info', 'error', 'warning']) {
       defineProperty(this.on(`internal/${level}`, (format, ...param) => {
-        if (this._hooks['internal/info'].length > 1) return
+        if (this._hooks[`internal/${level}`].length > 1) return
         console.info(format, ...param)
       }), Context.static, root.scope)
     }

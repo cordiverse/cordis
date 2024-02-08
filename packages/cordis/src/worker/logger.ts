@@ -34,6 +34,10 @@ export function apply(ctx: Context, config: Config = {}) {
     new Logger('app').warn(error)
   })
 
+  ctx.on('loader/entry', (type, entry) => {
+    ctx.logger('loader').info('%s plugin %c', type, entry.name)
+  })
+
   ctx.loader.prolog = []
 
   Logger.targets.push({

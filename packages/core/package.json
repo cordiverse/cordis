@@ -1,7 +1,7 @@
 {
   "name": "@cordisjs/core",
-  "description": "AOP Framework for Modern JavaScript Applications",
-  "version": "3.8.2",
+  "description": "Meta-Framework for Modern JavaScript Applications",
+  "version": "3.9.1",
   "sideEffects": false,
   "type": "module",
   "main": "lib/index.cjs",

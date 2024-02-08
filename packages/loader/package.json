@@ -1,7 +1,7 @@
 {
   "name": "@cordisjs/loader",
   "description": "Loader for cordis",
-  "version": "0.4.2",
+  "version": "0.4.7",
   "type": "module",
   "module": "lib/index.js",
   "typings": "lib/index.d.ts",
