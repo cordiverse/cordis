@@ -39,6 +39,7 @@ export class Lifecycle {
 
   constructor(private root: Context) {
     defineProperty(this, Context.current, root)
+
     defineProperty(this.on('internal/listener', function (this: Context, name, listener, prepend) {
       const method = prepend ? 'unshift' : 'push'
       if (name === 'ready') {
@@ -54,14 +55,13 @@ export class Lifecycle {
         return this.scope.collect('event <fork>', () => remove(this.scope.runtime.forkables, listener))
       }
     }), Context.static, root.scope)
-    defineProperty(this.on('internal/error', (error) => {
-      if (this._hooks['internal/error'].length > 1) return
-      console.error(error)
-    }), Context.static, root.scope)
-    defineProperty(this.on('internal/warning', (error) => {
-      if (this._hooks['internal/warning'].length > 1) return
-      console.warn(error)
-    }), Context.static, root.scope)
+
+    for (const level of ['info', 'error', 'warning']) {
+      defineProperty(this.on(`internal/${level}`, (format, ...param) => {
+        if (this._hooks['internal/info'].length > 1) return
+        console.info(format, ...param)
+      }), Context.static, root.scope)
+    }
   }
 
   async flush() {

@@ -57,8 +57,6 @@ export class Context {
   static readonly filter = Symbol.for('cordis.filter')
   static readonly expose = Symbol.for('cordis.expose')
   static readonly shadow = Symbol.for('cordis.shadow')
-  /** @deprecated use `Context.current` instead */
-  static readonly source = Symbol.for('cordis.current')
   static readonly current = Symbol.for('cordis.current')
   static readonly internal = Symbol.for('cordis.internal')
 

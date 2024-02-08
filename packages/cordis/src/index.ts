@@ -1,8 +1,11 @@
 import * as core from '@cordisjs/core'
 import * as logger from '@cordisjs/logger'
 import { TimerService } from '@cordisjs/timer'
+import Schema from 'schemastery'
 
 export * from '@cordisjs/core'
+
+export { Schema }
 
 export { Logger } from '@cordisjs/logger'
 
@@ -11,15 +14,6 @@ export type ForkScope<C extends Context = Context> = core.ForkScope<C>
 export type MainScope<C extends Context = Context> = core.MainScope<C>
 
 export interface Events<C extends Context = Context> extends core.Events<C> {}
-
-export class Service<C extends Context = Context> extends core.Service<C> {
-  public logger: logger.Logger
-
-  constructor(ctx: C, name: string, immediate?: boolean) {
-    super(ctx, name, immediate)
-    this.logger = ctx.logger(name)
-  }
-}
 
 export namespace Context {
   export type Associate<P extends string, C extends Context = Context> = core.Context.Associate<P, C>
@@ -41,6 +35,17 @@ export class Context extends core.Context {
 
     this.plugin(logger)
     this.plugin(TimerService)
+  }
+}
+
+export class Service<C extends Context = Context> extends core.Service<C> {
+  static Context = Context
+
+  public logger: logger.Logger
+
+  constructor(ctx: C | undefined, name: string, immediate?: boolean) {
+    super(ctx, name, immediate)
+    this.logger = this.ctx.logger(name)
   }
 }
 

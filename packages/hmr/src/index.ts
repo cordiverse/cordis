@@ -1,7 +1,6 @@
-import { Context, ForkScope, Logger, MainScope, Plugin } from 'cordis'
+import { Context, ForkScope, MainScope, Plugin, Schema, Service } from 'cordis'
 import { Dict, makeArray } from 'cosmokit'
 import { ModuleJob } from 'cordis/worker'
-import Schema from 'schemastery'
 import { FSWatcher, watch, WatchOptions } from 'chokidar'
 import { relative, resolve } from 'path'
 import { handleError } from './error.js'
@@ -10,7 +9,7 @@ import { fileURLToPath, pathToFileURL } from 'url'
 
 declare module 'cordis' {
   interface Context {
-    watcher: Watcher
+    hmr: Watcher
   }
 
   interface Events {
@@ -35,8 +34,8 @@ interface Reload {
   children: ForkScope[]
 }
 
-class Watcher {
-  static inject = ['loader', 'timer']
+class Watcher extends Service {
+  static inject = ['loader']
 
   private base: string
   private watcher!: FSWatcher
@@ -67,17 +66,13 @@ class Watcher {
   /** stashed changes */
   private stashed = new Set<string>()
 
-  private logger: Logger
-
   private initialURL!: string
 
-  constructor(private ctx: Context, private config: Watcher.Config) {
+  constructor(ctx: Context, private config: Watcher.Config) {
+    super(ctx, 'hmr')
     this.base = resolve(ctx.baseDir, config.base || '')
     this.logger = ctx.logger('hmr')
     this.initialURL = pathToFileURL(ctx.loader.filename).href
-    ctx.provide('watcher', this)
-    ctx.on('ready', () => this.start())
-    ctx.on('dispose', () => this.stop())
   }
 
   relative(filename: string) {
