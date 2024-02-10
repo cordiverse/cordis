@@ -1,0 +1,4 @@
+base: 用户显示路径的根目录，默认为当前工作路径。
+root: 要监听的文件或目录列表，相对于 `base` 路径。
+ignored: 要忽略的文件或目录。支持 [Glob Patterns](https://github.com/micromatch/micromatch) 语法。
+debounce: 延迟触发更新的等待时间。

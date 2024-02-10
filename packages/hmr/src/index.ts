@@ -6,6 +6,8 @@ import { relative, resolve } from 'path'
 import { handleError } from './error.js'
 import {} from '@cordisjs/timer'
 import { fileURLToPath, pathToFileURL } from 'url'
+import enUS from './locales/en-US.yml'
+import zhCN from './locales/zh-CN.yml'
 
 declare module 'cordis' {
   interface Context {
@@ -364,8 +366,8 @@ namespace Watcher {
     ]),
     debounce: Schema.natural().role('ms').default(100),
   }).i18n({
-    // TODO: i18n
-    // 'zh-CN': require('./locales/zh-CN'),
+    'en-US': enUS,
+    'zh-CN': zhCN,
   })
 }
 

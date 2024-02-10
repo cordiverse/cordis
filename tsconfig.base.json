@@ -11,5 +11,9 @@
     "esModuleInterop": true,
     "allowImportingTsExtensions": true,
     "strict": true,
+    "types": [
+      "@types/node",
+      "yml-register/types",
+    ],
   },
 }

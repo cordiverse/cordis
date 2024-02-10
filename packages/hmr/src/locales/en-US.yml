@@ -1,0 +1,4 @@
+base: The root directory of the displayed path, defaults to the current working directory.
+root: List of files or directories to listen to, relative to the `base` path.
+ignored: Files or directories to ignore. Supports [Glob Patterns](https://github.com/micromatch/micromatch) syntax.
+debounce: Debounce updates in milliseconds.
