@@ -278,11 +278,11 @@ describe('Service', () => {
     interface Config {}
 
     class Foo extends FunctionalService {
-      constructor(ctx: Context, public config: Config, standalone?: boolean) {
+      constructor(ctx: Context, public config?: Config, standalone?: boolean) {
         super(ctx, 'foo', { immediate: true, standalone })
       }
 
-      apply(ctx: Context, args: [init?: Config]) {
+      call(ctx: Context, init?: Config) {
         expect(ctx).to.be.instanceof(Context)
         let result = { ...this.config }
         let intercept = ctx[Context.intercept]
@@ -290,7 +290,7 @@ describe('Service', () => {
           Object.assign(result, intercept.foo)
           intercept = Object.getPrototypeOf(intercept)
         }
-        Object.assign(result, args[0])
+        Object.assign(result, init)
         return result
       }
 

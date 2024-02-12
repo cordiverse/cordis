@@ -43,7 +43,7 @@ export abstract class Service<C extends Context = Context> {
   protected ctx!: C
   protected [Context.current]!: C
 
-  constructor(ctx: C | undefined, public name: string, options?: boolean | Service.Options) {
+  constructor(ctx: C | undefined, public readonly name: string, options?: boolean | Service.Options) {
     return this[kSetup](ctx, name, options)
   }
 
@@ -53,13 +53,13 @@ export abstract class Service<C extends Context = Context> {
 }
 
 export interface FunctionalService {
-  (...args: Parameters<this['apply']>[1]): ReturnType<this['apply']>
+  (...args: this['call'] extends (thisArg: any, ...rest: infer R) => any ? R : never): ReturnType<this['call']>
 }
 
 export abstract class FunctionalService<C extends Context = Context> extends Function {
   static Context = Context
 
-  abstract apply(ctx: C, args: any[]): any
+  abstract call(ctx: C, ...args: any[]): any
 
   protected start(): Awaitable<void> {}
   protected stop(): Awaitable<void> {}
@@ -68,12 +68,13 @@ export abstract class FunctionalService<C extends Context = Context> extends Fun
   protected ctx!: C
   protected [Context.current]!: C
 
-  constructor(ctx: C, name: string, options?: boolean | Service.Options) {
+  constructor(ctx: C | undefined, name: string, options?: boolean | Service.Options) {
     super()
-    const foo = function (this: C, ...args: any[]) {
-      return foo.apply(ctx, args)
+    const self = function (this: C, ...args: any[]) {
+      return self.call(ctx, ...args)
     }
-    Object.setPrototypeOf(foo, Object.getPrototypeOf(this))
-    return Service.prototype[kSetup].call(foo, ctx, name, options) as any
+    defineProperty(self, 'name', name)
+    Object.setPrototypeOf(self, Object.getPrototypeOf(this))
+    return Service.prototype[kSetup].call(self, ctx, name, options) as any
   }
 }

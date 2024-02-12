@@ -183,7 +183,7 @@ export class Context {
         if (typeof key === 'symbol' || key in target) return Reflect.get(target, key, receiver)
         const caller: Context = receiver[Context.current]
         if (!caller?.[Context.internal][`${name}.${key}`]) return Reflect.get(target, key, receiver)
-        return caller.get(`${name}.${key}`)
+        return caller.get(`${name}.${key}`, receiver)
       },
       set(target, key, value, receiver) {
         if (typeof key === 'symbol' || key in target) return Reflect.set(target, key, value, receiver)
@@ -244,8 +244,8 @@ export class Context {
   }
 
   get<K extends string & keyof this>(name: K): undefined | this[K]
-  get(name: string): any
-  get(name: string) {
+  get(name: string, receiver?: any): any
+  get(name: string, receiver?: any) {
     const internal = this[Context.internal][name]
     if (internal?.type !== 'service') return
     const key: symbol = this[Context.shadow][name] || internal.key
@@ -255,17 +255,15 @@ export class Context {
       defineProperty(value, Context.current, this)
       return value
     }
-    const proxy = new Proxy(value, {
+    return new Proxy(value, {
       get: (target, name, receiver) => {
         if (name === Context.current || name === 'caller') return this
         return Reflect.get(target, name, receiver)
       },
-      apply: (target, thisArg, args) => {
-        // `handler.apply()` does not have a `receiver`
-        return proxy.apply(this, args)
+      apply: receiver ? undefined : (target, thisArg, args) => {
+        return target.call(this, ...args)
       },
     })
-    return proxy
   }
 
   provide(name: string, value?: any, builtin?: boolean) {

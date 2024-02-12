@@ -31,13 +31,24 @@ export class Context extends core.Context {
   }
 }
 
-export class Service<C extends Context = Context> extends core.Service<C> {
+export abstract class Service<C extends Context = Context> extends core.Service<C> {
   static Context = Context
 
   public logger: logger.Logger
 
-  constructor(ctx: C | undefined, name: string, immediate?: boolean) {
-    super(ctx, name, immediate)
+  constructor(ctx: C | undefined, name: string, options?: boolean | core.Service.Options) {
+    super(ctx, name, options)
+    this.logger = this.ctx.logger(name)
+  }
+}
+
+export abstract class FunctionalService<C extends Context = Context> extends core.FunctionalService<C> {
+  static Context = Context
+
+  public logger: logger.Logger
+
+  constructor(ctx: C | undefined, name: string, options?: boolean | core.Service.Options) {
+    super(ctx, name, options)
     this.logger = this.ctx.logger(name)
   }
 }
