@@ -113,7 +113,7 @@ describe('Update', () => {
       reactive: true,
       apply: inner,
     }
-    const outer = mock.fn((ctx: Context, config: Config & { qux?: Config }) => {
+    const outer = mock.fn((ctx: Context, config: Config & { qux: Config }) => {
       const fork1 = ctx.plugin(plugin, config)
       const fork2 = ctx.plugin(plugin, config.qux)
       ctx.accept((config) => {

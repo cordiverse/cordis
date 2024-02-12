@@ -244,17 +244,22 @@ export class Context {
     if (internal?.type !== 'service') return
     const key: symbol = this[Context.shadow][name] || internal.key
     const value = this.root[key]
-    if (!value || typeof value !== 'object') return value
+    if (!value || typeof value !== 'object' && typeof value !== 'function') return value
     if (isUnproxyable(value)) {
       defineProperty(value, Context.current, this)
       return value
     }
-    return new Proxy(value, {
+    const proxy = new Proxy(value, {
       get: (target, name, receiver) => {
         if (name === Context.current || name === 'caller') return this
         return Reflect.get(target, name, receiver)
       },
+      apply: (target, thisArg, args) => {
+        // `handler.apply()` does not have a `receiver`
+        return proxy.apply(this, args)
+      },
     })
+    return proxy
   }
 
   provide(name: string, value?: any, builtin?: boolean) {
