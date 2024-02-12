@@ -1,5 +1,5 @@
-import { Context, Service } from '../src'
-import { noop } from 'cosmokit'
+import { Context, FunctionalService, Service } from '../src'
+import { defineProperty, noop } from 'cosmokit'
 import { expect } from 'chai'
 import { describe, mock, test } from 'node:test'
 import { checkError, getHookSnapshot } from './utils'
@@ -272,5 +272,49 @@ describe('Service', () => {
     expect(foo.mock.calls).to.have.length(1)
     expect(bar.mock.calls).to.have.length(1)
     expect(qux.mock.calls).to.have.length(1)
+  })
+
+  test('functional service', async () => {
+    interface Config {}
+
+    class Foo extends FunctionalService {
+      constructor(ctx: Context, public config: Config, standalone?: boolean) {
+        super(ctx, 'foo', { immediate: true, standalone })
+      }
+
+      apply(ctx: Context, args: [init?: Config]) {
+        expect(ctx).to.be.instanceof(Context)
+        let result = { ...this.config }
+        let intercept = ctx[Context.intercept]
+        while (intercept) {
+          Object.assign(result, intercept.foo)
+          intercept = Object.getPrototypeOf(intercept)
+        }
+        Object.assign(result, args[0])
+        return result
+      }
+
+      extend(config?: Config) {
+        return new Foo(this[Context.current], { ...this.config, ...config }, true)
+      }
+    }
+
+    const root = new Context()
+    root.plugin(Foo, { a: 1 })
+
+    // access from context
+    expect(root.foo()).to.deep.equal({ a: 1 })
+    const ctx1 = root.intercept('foo', { b: 2 })
+    expect(ctx1.foo()).to.deep.equal({ a: 1, b: 2 })
+    const foo1 = ctx1.foo
+
+    // create extension
+    const foo2 = root.foo.extend({ c: 3 })
+    expect(foo2()).to.deep.equal({ a: 1, c: 3 })
+    const foo3 = foo1.extend({ d: 4 })
+    expect(foo3()).to.deep.equal({ a: 1, b: 2, d: 4 })
+
+    // context tracibility
+    expect(foo1()).to.deep.equal({ a: 1, b: 2 })
   })
 })

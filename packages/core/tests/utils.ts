@@ -53,6 +53,10 @@ declare module '../src/context' {
     baz: any
     filter(session: Session): boolean
   }
+
+  interface Intercept {
+    foo: any
+  }
 }
 
 export function getHookSnapshot(ctx: Context) {

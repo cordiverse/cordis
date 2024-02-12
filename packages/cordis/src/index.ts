@@ -6,10 +6,6 @@ export * from '@cordisjs/core'
 export { default as Schema, default as z } from 'schemastery'
 export { Logger } from '@cordisjs/logger'
 
-export interface EffectScope<C extends Context = Context> extends core.EffectScope<C> {}
-export interface ForkScope<C extends Context = Context> extends core.ForkScope<C> {}
-export interface MainScope<C extends Context = Context> extends core.MainScope<C> {}
-
 export interface Events<C extends Context = Context> extends core.Events<C> {}
 
 export namespace Context {

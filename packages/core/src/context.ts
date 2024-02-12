@@ -40,8 +40,12 @@ export namespace Context {
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export interface Intercept<C extends Context = Context> {}
+
 export interface Context {
   [Context.shadow]: Dict<symbol>
+  [Context.intercept]: Intercept<this>
   [Context.internal]: Dict<Context.Internal>
   root: this
   realms: Record<string, Record<string, symbol>>
@@ -59,6 +63,7 @@ export class Context {
   static readonly shadow = Symbol.for('cordis.shadow')
   static readonly current = Symbol.for('cordis.current')
   static readonly internal = Symbol.for('cordis.internal')
+  static readonly intercept = Symbol.for('cordis.intercept')
 
   private static ensureInternal(): Context[typeof Context.internal] {
     const ctx = this.prototype || this
@@ -194,6 +199,7 @@ export class Context {
     const self: Context = new Proxy(this, Context.handler)
     config = resolveConfig(getConstructor(this), config)
     self[Context.shadow] = Object.create(null)
+    self[Context.intercept] = Object.create(null)
     self.root = self
     self.realms = Object.create(null)
     self.mixin('scope', ['config', 'runtime', 'effect', 'collect', 'accept', 'decline'])
@@ -310,6 +316,12 @@ export class Context {
       self[Context.shadow][name] = label ? ((this.realms[label] ??= Object.create(null))[name] ??= Symbol(name)) : Symbol(name)
     }
     return self
+  }
+
+  intercept<K extends keyof Intercept>(name: K, config: Intercept[K]) {
+    const intercept = Object.create(this[Context.intercept])
+    intercept[name] = config
+    return this.extend({ [Context.intercept]: intercept })
   }
 }
 
