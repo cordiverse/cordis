@@ -1,4 +1,4 @@
-import { Context, FunctionalService, Service } from '../src'
+import { Context, Service } from '../src'
 import { defineProperty, noop } from 'cosmokit'
 import { expect } from 'chai'
 import { describe, mock, test } from 'node:test'
@@ -277,21 +277,30 @@ describe('Service', () => {
   test('functional service', async () => {
     interface Config {}
 
-    class Foo extends FunctionalService {
+    interface Foo {
+      (init?: Config): Config
+    }
+
+    class Foo extends Service {
       constructor(ctx: Context, public config?: Config, standalone?: boolean) {
         super(ctx, 'foo', { immediate: true, standalone })
       }
 
-      call(ctx: Context, init?: Config) {
-        expect(ctx).to.be.instanceof(Context)
+      [Context.invoke](init?: Config) {
+        const caller = this[Context.current]
+        expect(caller).to.be.instanceof(Context)
         let result = { ...this.config }
-        let intercept = ctx[Context.intercept]
+        let intercept = caller[Context.intercept]
         while (intercept) {
           Object.assign(result, intercept.foo)
           intercept = Object.getPrototypeOf(intercept)
         }
         Object.assign(result, init)
         return result
+      }
+
+      reflect() {
+        return this()
       }
 
       extend(config?: Config) {
@@ -312,9 +321,9 @@ describe('Service', () => {
     const foo2 = root.foo.extend({ c: 3 })
     expect(foo2()).to.deep.equal({ a: 1, c: 3 })
     const foo3 = foo1.extend({ d: 4 })
-    expect(foo3()).to.deep.equal({ a: 1, b: 2, d: 4 })
+    expect(foo3.reflect()).to.deep.equal({ a: 1, b: 2, d: 4 })
 
     // context tracibility
-    expect(foo1()).to.deep.equal({ a: 1, b: 2 })
+    expect(foo1.reflect()).to.deep.equal({ a: 1, b: 2 })
   })
 })

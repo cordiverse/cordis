@@ -55,6 +55,7 @@ export interface Context {
 }
 
 export class Context {
+  static readonly invoke = Symbol.for('cordis.invoke')
   static readonly config = Symbol.for('cordis.config')
   static readonly events = Symbol.for('cordis.events')
   static readonly static = Symbol.for('cordis.static')
@@ -64,6 +65,24 @@ export class Context {
   static readonly current = Symbol.for('cordis.current')
   static readonly internal = Symbol.for('cordis.internal')
   static readonly intercept = Symbol.for('cordis.intercept')
+
+  static createProxy(ctx: any, value: any) {
+    const proxy = new Proxy(value, {
+      get: (target, name, receiver) => {
+        if (name === Context.current || name === 'caller') return ctx
+        return Reflect.get(target, name, receiver)
+      },
+      apply: (target, thisArg, args) => {
+        return Context.applyProxy(proxy, target, thisArg, args)
+      },
+    })
+    return proxy
+  }
+
+  static applyProxy(proxy: any, value: any, thisArg: any, args: any[]) {
+    if (!value[Context.invoke]) return Reflect.apply(value, thisArg, args)
+    return value[Context.invoke].apply(proxy, args)
+  }
 
   private static ensureInternal(): Context[typeof Context.internal] {
     const ctx = this.prototype || this
@@ -183,7 +202,7 @@ export class Context {
         if (typeof key === 'symbol' || key in target) return Reflect.get(target, key, receiver)
         const caller: Context = receiver[Context.current]
         if (!caller?.[Context.internal][`${name}.${key}`]) return Reflect.get(target, key, receiver)
-        return caller.get(`${name}.${key}`, receiver)
+        return caller.get(`${name}.${key}`)
       },
       set(target, key, value, receiver) {
         if (typeof key === 'symbol' || key in target) return Reflect.set(target, key, value, receiver)
@@ -244,8 +263,8 @@ export class Context {
   }
 
   get<K extends string & keyof this>(name: K): undefined | this[K]
-  get(name: string, receiver?: any): any
-  get(name: string, receiver?: any) {
+  get(name: string): any
+  get(name: string) {
     const internal = this[Context.internal][name]
     if (internal?.type !== 'service') return
     const key: symbol = this[Context.shadow][name] || internal.key
@@ -255,15 +274,7 @@ export class Context {
       defineProperty(value, Context.current, this)
       return value
     }
-    return new Proxy(value, {
-      get: (target, name, receiver) => {
-        if (name === Context.current || name === 'caller') return this
-        return Reflect.get(target, name, receiver)
-      },
-      apply: receiver ? undefined : (target, thisArg, args) => {
-        return target.call(this, ...args)
-      },
-    })
+    return Context.createProxy(this, value)
   }
 
   provide(name: string, value?: any, builtin?: boolean) {

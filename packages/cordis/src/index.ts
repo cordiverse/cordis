@@ -42,15 +42,4 @@ export abstract class Service<C extends Context = Context> extends core.Service<
   }
 }
 
-export abstract class FunctionalService<C extends Context = Context> extends core.FunctionalService<C> {
-  static Context = Context
-
-  public logger: logger.Logger
-
-  constructor(ctx: C | undefined, name: string, options?: boolean | core.Service.Options) {
-    super(ctx, name, options)
-    this.logger = this.ctx.logger(name)
-  }
-}
-
 export default function () {}
