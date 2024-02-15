@@ -37,7 +37,7 @@
     "tsx": "patch:tsx@npm%3A4.7.0#./.yarn/patches/tsx-npm-4.7.0-86d7b66640.patch",
     "typescript": "^5.3.2",
     "yakumo": "^1.0.0-beta.6",
-    "yakumo-esbuild": "^1.0.0-beta.2",
+    "yakumo-esbuild": "^1.0.0-beta.3",
     "yakumo-tsc": "^1.0.0-beta.3",
     "yml-register": "^1.2.3"
   }

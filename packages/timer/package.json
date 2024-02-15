@@ -36,9 +36,9 @@
     "plugin"
   ],
   "devDependencies": {
-    "@cordisjs/core": "^3.8.2"
+    "@cordisjs/core": "^3.10.3"
   },
   "peerDependencies": {
-    "@cordisjs/core": "^3.8.2"
+    "@cordisjs/core": "^3.10.3"
   }
 }

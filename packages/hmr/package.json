@@ -1,7 +1,7 @@
 {
   "name": "@cordisjs/plugin-hmr",
   "description": "Hot Module Replacement Plugin for Cordis",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
@@ -38,15 +38,16 @@
     }
   },
   "peerDependencies": {
-    "cordis": "^3.8.2"
+    "cordis": "^3.10.3"
   },
   "devDependencies": {
     "@types/babel__code-frame": "^7.0.6",
-    "cordis": "^3.8.2",
+    "cordis": "^3.10.3",
     "esbuild": "^0.18.20"
   },
   "dependencies": {
     "@babel/code-frame": "^7.23.5",
-    "chokidar": "^3.5.3"
+    "chokidar": "^3.5.3",
+    "cosmokit": "^1.5.2"
   }
 }
