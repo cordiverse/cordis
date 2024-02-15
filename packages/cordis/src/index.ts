@@ -1,5 +1,5 @@
 import * as core from '@cordisjs/core'
-import * as logger from '@cordisjs/logger'
+import { Logger, LoggerService } from '@cordisjs/logger'
 import { TimerService } from '@cordisjs/timer'
 
 export * from '@cordisjs/core'
@@ -26,7 +26,7 @@ export class Context extends core.Context {
     this.provide('logger', undefined, true)
     this.provide('timer', undefined, true)
 
-    this.plugin(logger)
+    this.plugin(LoggerService)
     this.plugin(TimerService)
   }
 }
@@ -34,7 +34,7 @@ export class Context extends core.Context {
 export abstract class Service<C extends Context = Context> extends core.Service<C> {
   static Context = Context
 
-  public logger: logger.Logger
+  public logger: Logger
 
   constructor(ctx: C | undefined, name: string, options?: boolean | core.Service.Options) {
     super(ctx, name, options)

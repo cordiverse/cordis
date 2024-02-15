@@ -39,6 +39,7 @@ describe('Association', () => {
     }
 
     root.provide('foo.bar')
+    root.provide('foo.baz')
     root.plugin(Foo)
     expect(root.foo).to.be.instanceof(Foo)
     root.foo.qux = 2
@@ -47,6 +48,11 @@ describe('Association', () => {
     expect(root.foo.bar).to.equal(3)
     expect(root[`foo.qux`]).to.be.undefined
     expect(root[`foo.bar`]).to.equal(3)
+
+    root.foo.baz = function () {
+      return this
+    }
+    expect(root.foo.baz()).to.be.instanceof(Foo)
   })
 
   test('associated type', async () => {

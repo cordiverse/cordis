@@ -37,6 +37,7 @@ interface Reload {
 }
 
 class Watcher extends Service {
+  static name = 'hmr'
   static inject = ['loader']
 
   private base: string
@@ -73,7 +74,6 @@ class Watcher extends Service {
   constructor(ctx: Context, private config: Watcher.Config) {
     super(ctx, 'hmr')
     this.base = resolve(ctx.baseDir, config.base || '')
-    this.logger = ctx.logger('hmr')
     this.initialURL = pathToFileURL(ctx.loader.filename).href
   }
 
@@ -104,7 +104,7 @@ class Watcher extends Service {
         return
       }
 
-      this.logger.debug('change detected:', path)
+      this.ctx.logger.debug('change detected:', path)
 
       if (isEntry) {
         if (this.ctx.loader.internal!.loadCache.has(filename)) {
@@ -220,7 +220,7 @@ class Watcher extends Service {
         pending.set(job, [plugin, runtime])
         this.declined.add(url)
       } catch (err) {
-        this.logger.warn(err)
+        this.ctx.logger.warn(err)
       }
     }
 
@@ -287,7 +287,7 @@ class Watcher extends Service {
         attempts[filename] = this.ctx.loader.unwrapExports(await import(filename))
       }
     } catch (e) {
-      handleError(e, this.logger)
+      handleError(this.ctx, e)
       return rollback()
     }
 
@@ -301,8 +301,8 @@ class Watcher extends Service {
         try {
           this.ctx.registry.delete(plugin)
         } catch (err) {
-          this.logger.warn('failed to dispose plugin at %c', path)
-          this.logger.warn(err)
+          this.ctx.logger.warn('failed to dispose plugin at %c', path)
+          this.ctx.logger.warn(err)
         }
 
         // replace loader cache for `keyFor` method
@@ -313,10 +313,10 @@ class Watcher extends Service {
             const fork = oldFork.parent.plugin(attempts[filename], oldFork.config)
             fork.id = oldFork.id
           }
-          this.logger.info('reload plugin at %c', path)
+          this.ctx.logger.info('reload plugin at %c', path)
         } catch (err) {
-          this.logger.warn('failed to reload plugin at %c', path)
-          this.logger.warn(err)
+          this.ctx.logger.warn('failed to reload plugin at %c', path)
+          this.ctx.logger.warn(err)
           throw err
         }
       }
@@ -331,7 +331,7 @@ class Watcher extends Service {
             fork.id = oldFork.id
           }
         } catch (err) {
-          this.logger.warn(err)
+          this.ctx.logger.warn(err)
         }
       }
       return

@@ -332,7 +332,7 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
     super(registry[Context.current] as C, config)
     registry.set(plugin, this)
     if (!plugin) {
-      this.name = 'root'
+      this.name = 'app'
       this.isActive = true
     } else {
       this.setup()

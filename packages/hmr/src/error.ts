@@ -1,4 +1,4 @@
-import { Logger } from 'cordis'
+import { Context } from 'cordis'
 import { BuildFailure } from 'esbuild'
 import { codeFrameColumns } from '@babel/code-frame'
 import { readFileSync } from 'fs'
@@ -7,15 +7,15 @@ function isBuildFailure(e: any): e is BuildFailure {
   return Array.isArray(e?.errors) && e.errors.every((error: any) => error.text)
 }
 
-export function handleError(e: any, logger: Logger) {
+export function handleError(ctx: Context, e: any) {
   if (!isBuildFailure(e)) {
-    logger.warn(e)
+    ctx.logger.warn(e)
     return
   }
 
   for (const error of e.errors) {
     if (!error.location) {
-      logger.warn(error.text)
+      ctx.logger.warn(error.text)
       continue
     }
     try {
@@ -27,9 +27,9 @@ export function handleError(e: any, logger: Logger) {
         highlightCode: true,
         message: error.text,
       })
-      logger.warn(`File: ${file}:${line}:${column}\n` + formatted)
+      ctx.logger.warn(`File: ${file}:${line}:${column}\n` + formatted)
     } catch (e) {
-      logger.warn(e)
+      ctx.logger.warn(e)
     }
   }
 }

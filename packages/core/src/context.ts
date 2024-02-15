@@ -250,7 +250,7 @@ export class Context {
     while (runtime && !runtime.name) {
       runtime = runtime.parent.runtime
     }
-    return runtime?.name
+    return runtime?.name!
   }
 
   get events() {

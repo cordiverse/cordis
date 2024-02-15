@@ -8,8 +8,6 @@ declare module '@cordisjs/loader' {
 }
 
 interface LogLevelConfig {
-  // a little different from @koishijs/utils
-  // we don't enforce user to provide a base here
   base?: number
   [K: string]: LogLevel | undefined
 }
