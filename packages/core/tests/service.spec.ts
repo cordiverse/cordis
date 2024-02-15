@@ -316,11 +316,14 @@ describe('Service', () => {
     const ctx1 = root.intercept('foo', { b: 2 })
     expect(ctx1.foo()).to.deep.equal({ a: 1, b: 2 })
     const foo1 = ctx1.foo
+    expect(foo1).to.be.instanceof(Foo)
 
     // create extension
     const foo2 = root.foo.extend({ c: 3 })
+    expect(foo2).to.be.instanceof(Foo)
     expect(foo2()).to.deep.equal({ a: 1, c: 3 })
     const foo3 = foo1.extend({ d: 4 })
+    expect(foo3).to.be.instanceof(Foo)
     expect(foo3.reflect()).to.deep.equal({ a: 1, b: 2, d: 4 })
 
     // context tracibility
