@@ -56,7 +56,7 @@ export interface Context {
 
 export class Context {
   static readonly invoke = Symbol.for('cordis.invoke')
-  static readonly config = Symbol.for('cordis.config')
+  static readonly extend = Symbol.for('cordis.extend')
   static readonly events = Symbol.for('cordis.events')
   static readonly static = Symbol.for('cordis.static')
   static readonly filter = Symbol.for('cordis.filter')
@@ -66,20 +66,20 @@ export class Context {
   static readonly internal = Symbol.for('cordis.internal')
   static readonly intercept = Symbol.for('cordis.intercept')
 
-  static createProxy(ctx: any, value: any) {
+  static createTraceable(ctx: any, value: any) {
     const proxy = new Proxy(value, {
       get: (target, name, receiver) => {
         if (name === Context.current || name === 'caller') return ctx
         return Reflect.get(target, name, receiver)
       },
       apply: (target, thisArg, args) => {
-        return Context.applyProxy(proxy, target, thisArg, args)
+        return Context.applyTraceable(proxy, target, thisArg, args)
       },
     })
     return proxy
   }
 
-  static applyProxy(proxy: any, value: any, thisArg: any, args: any[]) {
+  static applyTraceable(proxy: any, value: any, thisArg: any, args: any[]) {
     if (!value[Context.invoke]) return Reflect.apply(value, thisArg, args)
     return value[Context.invoke].apply(proxy, args)
   }
@@ -274,7 +274,7 @@ export class Context {
       defineProperty(value, Context.current, this)
       return value
     }
-    return Context.createProxy(this, value)
+    return Context.createTraceable(this, value)
   }
 
   provide(name: string, value?: any, builtin?: boolean) {

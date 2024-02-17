@@ -282,8 +282,8 @@ describe('Service', () => {
     }
 
     class Foo extends Service {
-      constructor(ctx: Context, public config?: Config, standalone?: boolean) {
-        super(ctx, 'foo', { immediate: true, standalone })
+      constructor(ctx: Context, public config?: Config) {
+        super(ctx, 'foo', true)
       }
 
       [Context.invoke](init?: Config) {
@@ -304,7 +304,9 @@ describe('Service', () => {
       }
 
       extend(config?: Config) {
-        return new Foo(this[Context.current], { ...this.config, ...config }, true)
+        return this[Context.extend]({
+          config: { ...this.config, ...config },
+        })
       }
     }
 

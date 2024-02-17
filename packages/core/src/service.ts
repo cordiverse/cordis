@@ -5,20 +5,28 @@ export namespace Service {
   export interface Options {
     name?: string
     immediate?: boolean
-    standalone?: boolean
   }
 }
 
-function makeFunctional(proto: {}) {
+function makeCallableProto(proto: {}) {
   if (proto === Object.prototype) return Function.prototype
-  const result = Object.create(makeFunctional(Object.getPrototypeOf(proto)))
+  const result = Object.create(makeCallableProto(Object.getPrototypeOf(proto)))
   for (const key of Reflect.ownKeys(proto)) {
     Object.defineProperty(result, key, Object.getOwnPropertyDescriptor(proto, key)!)
   }
   return result
 }
 
-export abstract class Service<C extends Context = Context> {
+function makeCallable(ctx: Context, name: string, proto: {}) {
+  const self = function (...args: any[]) {
+    const proxy = Context.createTraceable(ctx, self)
+    return Context.applyTraceable(proxy, self, this, args)
+  }
+  defineProperty(self, 'name', name)
+  return Object.setPrototypeOf(self, proto)
+}
+
+export abstract class Service<C extends Context = Context, T = unknown> {
   static immediate = false
   static Context = Context
 
@@ -29,24 +37,20 @@ export abstract class Service<C extends Context = Context> {
   protected ctx!: C
   protected [Context.current]!: C
 
-  constructor(ctx: C | undefined, public readonly name: string, options?: boolean | Service.Options) {
+  constructor(ctx: C | undefined, public readonly name: string, options?: boolean) {
     let self = this
     if (self[Context.invoke]) {
-      // functional service
-      self = function (...args: any[]) {
-        const proxy = Context.createProxy(ctx, self)
-        return Context.applyProxy(proxy, self, this, args)
-      } as any
-      defineProperty(self, 'name', name)
-      Object.setPrototypeOf(self, makeFunctional(Object.getPrototypeOf(this)))
+      // FIXME ctx!
+      self = makeCallable(ctx!, name, makeCallableProto(Object.getPrototypeOf(this)))
     }
 
     self.ctx = ctx ?? new (self.constructor as any).Context()
-    self.ctx.provide(name)
     defineProperty(self, Context.current, ctx)
 
     const resolved = typeof options === 'boolean' ? { immediate: options } : options ?? {}
-    if (!resolved.standalone && resolved.immediate) {
+    if (resolved.immediate) {
+      self.ctx.provide(name)
+      self.ctx.runtime.name = name
       if (ctx) self[Context.expose] = name
       else self.ctx[name] = self
     }
@@ -55,7 +59,7 @@ export abstract class Service<C extends Context = Context> {
       // await until next tick because derived class has not been initialized yet
       await Promise.resolve()
       await self.start()
-      if (!resolved.standalone && !resolved.immediate) self.ctx[name] = self
+      if (!resolved.immediate) self.ctx[name] = self
     })
 
     self.ctx.on('dispose', () => self.stop())
@@ -64,6 +68,18 @@ export abstract class Service<C extends Context = Context> {
 
   [Context.filter](ctx: Context) {
     return ctx[Context.shadow][this.name] === this.ctx[Context.shadow][this.name]
+  }
+
+  [Context.extend](props?: any) {
+    const caller = this[Context.current]
+    let self: typeof this
+    if (this[Context.invoke]) {
+      self = makeCallable(caller, this.name, this)
+    } else {
+      self = Object.create(this)
+    }
+    defineProperty(self, Context.current, caller)
+    return Context.associate(Object.assign(self, props), this.name)
   }
 
   static [Symbol.hasInstance](instance: any) {
