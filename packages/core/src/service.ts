@@ -1,57 +1,61 @@
 import { Awaitable, defineProperty } from 'cosmokit'
 import { Context } from './context.ts'
+import { appendFunctionPrototype, createCallable, kInvoke } from './index.ts'
 
-export namespace Service {
-  export interface Options {
-    name?: string
-    immediate?: boolean
-  }
-}
-
-function makeCallableProto(proto: {}) {
-  if (proto === Object.prototype) return Function.prototype
-  const result = Object.create(makeCallableProto(Object.getPrototypeOf(proto)))
-  for (const key of Reflect.ownKeys(proto)) {
-    Object.defineProperty(result, key, Object.getOwnPropertyDescriptor(proto, key)!)
-  }
-  return result
-}
-
-function makeCallable(ctx: Context, name: string, proto: {}) {
-  const self = function (...args: any[]) {
-    const proxy = Context.createTraceable(ctx, self)
-    return Context.applyTraceable(proxy, self, this, args)
-  }
-  defineProperty(self, 'name', name)
-  return Object.setPrototypeOf(self, proto)
+export interface Service {
+  [Service.setup](): void
+  [Service.extend](props?: any): this
 }
 
 export abstract class Service<C extends Context = Context, T = unknown> {
-  static immediate = false
-  static Context = Context
+  static readonly setup = Symbol.for('cordis.setup')
+  static readonly invoke: unique symbol = kInvoke as any
+  static readonly extend = Symbol.for('cordis.extend')
+  static readonly provide = Symbol.for('cordis.provide')
+  static readonly immediate = Symbol.for('cordis.immediate')
 
   protected start(): Awaitable<void> {}
   protected stop(): Awaitable<void> {}
   protected fork?(ctx: C, config: any): void
 
   protected ctx!: C
-  protected [Context.current]!: C
+  protected [Context.trace]!: C
 
-  constructor(ctx: C | undefined, public readonly name: string, options?: boolean) {
-    let self = this
-    if (self[Context.invoke]) {
-      // FIXME ctx!
-      self = makeCallable(ctx!, name, makeCallableProto(Object.getPrototypeOf(this)))
+  public name!: string
+  public config!: T
+
+  constructor(config: T)
+  constructor(ctx: C | undefined, config: T)
+  constructor(ctx: C | undefined, name: string, immediate?: boolean)
+  constructor(...args: any[]) {
+    let _ctx: C | undefined, name: string | undefined, immediate: boolean | undefined, config: any
+    if (Context.is<C>(args[0])) {
+      _ctx = args[0]
+      if (typeof args[1] === 'string') {
+        name = args[1]
+        immediate = args[2]
+      } else {
+        config = args[1]
+      }
+    } else {
+      config = args[0]
     }
+    name ??= this.constructor[Service.provide] as string
+    immediate ??= this.constructor[Service.immediate]
 
-    self.ctx = ctx ?? new (self.constructor as any).Context()
-    defineProperty(self, Context.current, ctx)
+    let self = this
+    if (self[Service.invoke]) {
+      self = createCallable(name, appendFunctionPrototype(Object.getPrototypeOf(this)))
+    }
+    self.ctx = _ctx!
+    self.name = name
+    self.config = config
+    self[Service.setup]()
 
-    const resolved = typeof options === 'boolean' ? { immediate: options } : options ?? {}
-    if (resolved.immediate) {
-      self.ctx.provide(name)
-      self.ctx.runtime.name = name
-      if (ctx) self[Context.expose] = name
+    self.ctx.provide(name)
+    self.ctx.runtime.name = name
+    if (immediate) {
+      if (_ctx) self[Context.expose] = name
       else self.ctx[name] = self
     }
 
@@ -59,7 +63,7 @@ export abstract class Service<C extends Context = Context, T = unknown> {
       // await until next tick because derived class has not been initialized yet
       await Promise.resolve()
       await self.start()
-      if (!resolved.immediate) self.ctx[name] = self
+      if (!immediate) self.ctx[name!] = self
     })
 
     self.ctx.on('dispose', () => self.stop())
@@ -70,18 +74,6 @@ export abstract class Service<C extends Context = Context, T = unknown> {
     return ctx[Context.shadow][this.name] === this.ctx[Context.shadow][this.name]
   }
 
-  [Context.extend](props?: any) {
-    const caller = this[Context.current]
-    let self: typeof this
-    if (this[Context.invoke]) {
-      self = makeCallable(caller, this.name, this)
-    } else {
-      self = Object.create(this)
-    }
-    defineProperty(self, Context.current, caller)
-    return Context.associate(Object.assign(self, props), this.name)
-  }
-
   static [Symbol.hasInstance](instance: any) {
     let constructor = instance.constructor
     while (constructor) {
@@ -89,5 +81,24 @@ export abstract class Service<C extends Context = Context, T = unknown> {
       constructor = Object.getPrototypeOf(constructor)
     }
     return false
+  }
+
+  static {
+    Service.prototype[Service.extend] = function (props?: any) {
+      const caller = this[Context.trace]
+      let self: any
+      if (this[Service.invoke]) {
+        self = createCallable(this.name, this)
+      } else {
+        self = Object.create(this)
+      }
+      defineProperty(self, Context.trace, caller)
+      return Context.associate(Object.assign(self, props), this.name)
+    }
+
+    Service.prototype[Service.setup] = function (this: Service) {
+      this.ctx ??= new Context()
+      defineProperty(this, Context.trace, this.ctx)
+    }
   }
 }

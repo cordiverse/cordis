@@ -1,7 +1,7 @@
 import { defineProperty, Dict, isNullable } from 'cosmokit'
 import { Lifecycle } from './events.ts'
 import { Registry } from './registry.ts'
-import { getConstructor, isConstructor, isUnproxyable, resolveConfig } from './utils.ts'
+import { createTraceable, isConstructor, isUnproxyable, kTrace, resolveConfig } from './utils.ts'
 
 export namespace Context {
   export type Parameterized<C, T = any> = C & { config: T }
@@ -55,33 +55,23 @@ export interface Context {
 }
 
 export class Context {
-  static readonly invoke = Symbol.for('cordis.invoke')
-  static readonly extend = Symbol.for('cordis.extend')
+  static readonly trace: unique symbol = kTrace as any
   static readonly events = Symbol.for('cordis.events')
   static readonly static = Symbol.for('cordis.static')
   static readonly filter = Symbol.for('cordis.filter')
   static readonly expose = Symbol.for('cordis.expose')
   static readonly shadow = Symbol.for('cordis.shadow')
-  static readonly current = Symbol.for('cordis.current')
   static readonly internal = Symbol.for('cordis.internal')
   static readonly intercept = Symbol.for('cordis.intercept')
+  static readonly current: typeof Context.trace = Context.trace
 
-  static createTraceable(ctx: any, value: any) {
-    const proxy = new Proxy(value, {
-      get: (target, name, receiver) => {
-        if (name === Context.current || name === 'caller') return ctx
-        return Reflect.get(target, name, receiver)
-      },
-      apply: (target, thisArg, args) => {
-        return Context.applyTraceable(proxy, target, thisArg, args)
-      },
-    })
-    return proxy
+  static is<C extends Context>(value: any): value is C {
+    return !!value?.[Context.is as any]
   }
 
-  static applyTraceable(proxy: any, value: any, thisArg: any, args: any[]) {
-    if (!value[Context.invoke]) return Reflect.apply(value, thisArg, args)
-    return value[Context.invoke].apply(proxy, args)
+  static {
+    Context.is[Symbol.toPrimitive] = () => Symbol.for('cordis.is')
+    Context.prototype[Context.is as any] = true
   }
 
   private static ensureInternal(): Context[typeof Context.internal] {
@@ -189,7 +179,7 @@ export class Context {
       ctx.root.emit(self, 'internal/before-service', name, value)
       ctx.root[key] = value
       if (value instanceof Object) {
-        defineProperty(value, Context.current, ctx)
+        defineProperty(value, Context.trace, ctx)
       }
       ctx.root.emit(self, 'internal/service', name, oldValue)
       return true
@@ -200,13 +190,13 @@ export class Context {
     return new Proxy(object, {
       get(target, key, receiver) {
         if (typeof key === 'symbol' || key in target) return Reflect.get(target, key, receiver)
-        const caller: Context = receiver[Context.current]
+        const caller: Context = receiver[Context.trace]
         if (!caller?.[Context.internal][`${name}.${key}`]) return Reflect.get(target, key, receiver)
         return caller.get(`${name}.${key}`)
       },
       set(target, key, value, receiver) {
         if (typeof key === 'symbol' || key in target) return Reflect.set(target, key, value, receiver)
-        const caller: Context = receiver[Context.current]
+        const caller: Context = receiver[Context.trace]
         if (!caller?.[Context.internal][`${name}.${key}`]) return Reflect.set(target, key, value, receiver)
         caller[`${name}.${key}`] = value
         return true
@@ -216,7 +206,7 @@ export class Context {
 
   constructor(config?: any) {
     const self: Context = new Proxy(this, Context.handler)
-    config = resolveConfig(getConstructor(this), config)
+    config = resolveConfig(this.constructor, config)
     self[Context.shadow] = Object.create(null)
     self[Context.intercept] = Object.create(null)
     self.root = self
@@ -234,7 +224,7 @@ export class Context {
         const constructor = internal[key]['prototype']?.constructor
         if (!constructor) continue
         self[internal[key]['key']] = new constructor(self, config)
-        defineProperty(self[internal[key]['key']], Context.current, self)
+        defineProperty(self[internal[key]['key']], Context.trace, self)
       }
     }
     attach(this[Context.internal])
@@ -271,10 +261,10 @@ export class Context {
     const value = this.root[key]
     if (!value || typeof value !== 'object' && typeof value !== 'function') return value
     if (isUnproxyable(value)) {
-      defineProperty(value, Context.current, this)
+      defineProperty(value, Context.trace, this)
       return value
     }
-    return Context.createTraceable(this, value)
+    return createTraceable(this, value)
   }
 
   provide(name: string, value?: any, builtin?: boolean) {

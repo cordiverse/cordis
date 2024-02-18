@@ -1,7 +1,7 @@
 import { deepEqual, defineProperty, isNullable, remove } from 'cosmokit'
 import { Context } from './context.ts'
 import { Plugin, Registry } from './registry.ts'
-import { getConstructor, isConstructor, resolveConfig } from './utils.ts'
+import { isConstructor, resolveConfig } from './utils.ts'
 
 declare module './context.ts' {
   export interface Context {
@@ -329,7 +329,7 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
   isReactive?: boolean = false
 
   constructor(registry: Registry<C>, public plugin: Plugin, config: any, error?: any) {
-    super(registry[Context.current] as C, config)
+    super(registry[Context.trace] as C, config)
     registry.set(plugin, this)
     if (!plugin) {
       this.name = 'root'
@@ -419,7 +419,7 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
       this.context.emit('internal/warning', new Error(`attempting to update forkable plugin "${this.plugin.name}", which may lead to unexpected behavior`))
     }
     const oldConfig = this.config
-    const resolved = resolveConfig(this.runtime.plugin || getConstructor(this.context), config)
+    const resolved = resolveConfig(this.runtime.plugin || this.context.constructor, config)
     const [hasUpdate, shouldRestart] = this.checkUpdate(resolved, forced)
     const state = this.children.find(fork => fork.config === oldConfig)
     this.config = resolved

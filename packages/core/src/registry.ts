@@ -67,7 +67,7 @@ export class Registry<C extends Context = Context> {
   private _internal = new Map<Plugin, MainScope<C>>()
 
   constructor(private root: Context, config: any) {
-    defineProperty(this, Context.current, root)
+    defineProperty(this, Context.trace, root)
     root.scope = new MainScope(this, null!, config)
     root.scope.runtime.isReactive = true
   }
@@ -139,7 +139,7 @@ export class Registry<C extends Context = Context> {
     // check if it's a valid plugin
     this.resolve(plugin)
 
-    const context: Context = this[Context.current]
+    const context: Context = this[Context.trace]
     context.scope.assertActive()
 
     // resolve plugin config

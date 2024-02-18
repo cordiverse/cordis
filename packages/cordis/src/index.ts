@@ -1,6 +1,7 @@
 import * as core from '@cordisjs/core'
 import { Logger, LoggerService } from '@cordisjs/logger'
 import { TimerService } from '@cordisjs/timer'
+import { defineProperty } from 'cosmokit'
 
 export * from '@cordisjs/core'
 export { default as Schema, default as z } from 'schemastery'
@@ -34,11 +35,12 @@ export class Context extends core.Context {
 export abstract class Service<C extends Context = Context> extends core.Service<C> {
   static Context = Context
 
-  public logger: Logger
+  public logger!: Logger
 
-  constructor(ctx: C | undefined, name: string, options?: boolean | core.Service.Options) {
-    super(ctx, name, options)
-    this.logger = this.ctx.logger(name)
+  [core.Service.setup]() {
+    this.ctx ??= new Context() as C
+    defineProperty(this, Context.trace, this.ctx)
+    this.logger = this.ctx.logger(this.name)
   }
 }
 

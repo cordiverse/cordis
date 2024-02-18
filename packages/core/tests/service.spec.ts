@@ -133,10 +133,10 @@ describe('Service', () => {
 
     const root = new Context()
     root.plugin(Foo)
-    expect(root.foo[Context.current]).to.equal(root)
+    expect(root.foo[Context.trace]).to.equal(root)
 
     const ctx = root.extend()
-    expect(ctx.foo[Context.current]).to.equal(ctx)
+    expect(ctx.foo[Context.trace]).to.equal(ctx)
   })
 
   test('dependency update', async () => {
@@ -281,13 +281,12 @@ describe('Service', () => {
       (init?: Config): Config
     }
 
-    class Foo extends Service {
-      constructor(ctx: Context, public config?: Config) {
-        super(ctx, 'foo', true)
-      }
+    class Foo extends Service<Context, Config> {
+      static [Service.provide] = 'foo'
+      static [Service.immediate] = true
 
-      [Context.invoke](init?: Config) {
-        const caller = this[Context.current]
+      protected [Service.invoke](init?: Config) {
+        const caller = this[Context.trace]
         expect(caller).to.be.instanceof(Context)
         let result = { ...this.config }
         let intercept = caller[Context.intercept]
@@ -304,7 +303,7 @@ describe('Service', () => {
       }
 
       extend(config?: Config) {
-        return this[Context.extend]({
+        return this[Service.extend]({
           config: { ...this.config, ...config },
         })
       }
