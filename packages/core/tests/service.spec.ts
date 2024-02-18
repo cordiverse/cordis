@@ -124,7 +124,7 @@ describe('Service', () => {
     expect(callback.mock.calls).to.have.length(1)
   })
 
-  test('Context.current', async () => {
+  test('Context.trace', async () => {
     class Foo extends Service {
       constructor(ctx: Context) {
         super(ctx, 'foo', true)
@@ -281,7 +281,7 @@ describe('Service', () => {
       (init?: Config): Config
     }
 
-    class Foo extends Service<Context, Config> {
+    class Foo extends Service<Config> {
       static [Service.provide] = 'foo'
       static [Service.immediate] = true
 

@@ -62,7 +62,7 @@ describe('Association', () => {
 
     class Session {
       constructor(ctx: Context) {
-        this[Context.current] = ctx
+        this[Context.trace] = ctx
         return Context.associate(this, 'session')
       }
     }

@@ -1,7 +1,7 @@
 import { defineProperty, Dict, isNullable } from 'cosmokit'
 import { Lifecycle } from './events.ts'
 import { Registry } from './registry.ts'
-import { createTraceable, isConstructor, isUnproxyable, kTrace, resolveConfig } from './utils.ts'
+import { createTraceable, isConstructor, isUnproxyable, resolveConfig, symbols } from './utils.ts'
 
 export namespace Context {
   export type Parameterized<C, T = any> = C & { config: T }
@@ -55,14 +55,15 @@ export interface Context {
 }
 
 export class Context {
-  static readonly trace: unique symbol = kTrace as any
-  static readonly events = Symbol.for('cordis.events')
-  static readonly static = Symbol.for('cordis.static')
-  static readonly filter = Symbol.for('cordis.filter')
-  static readonly expose = Symbol.for('cordis.expose')
-  static readonly shadow = Symbol.for('cordis.shadow')
-  static readonly internal = Symbol.for('cordis.internal')
-  static readonly intercept = Symbol.for('cordis.intercept')
+  static readonly trace: unique symbol = symbols.trace as any
+  static readonly events: unique symbol = symbols.events as any
+  static readonly static: unique symbol = symbols.static as any
+  static readonly filter: unique symbol = symbols.filter as any
+  static readonly expose: unique symbol = symbols.expose as any
+  static readonly shadow: unique symbol = symbols.shadow as any
+  static readonly internal: unique symbol = symbols.internal as any
+  static readonly intercept: unique symbol = symbols.intercept as any
+  /** @deprecated use `Context.trace` instead */
   static readonly current: typeof Context.trace = Context.trace
 
   static is<C extends Context>(value: any): value is C {

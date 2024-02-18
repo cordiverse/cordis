@@ -17,7 +17,7 @@ export class LoggerService extends Service {
   static name = 'logger'
 
   constructor(ctx: Context) {
-    super(ctx, 'logger', { immediate: true })
+    super(ctx, 'logger', true)
 
     ctx.on('internal/info', function (format, ...args) {
       this.logger('app').info(format, ...args)
@@ -32,14 +32,14 @@ export class LoggerService extends Service {
     })
   }
 
-  [Context.invoke](name: string) {
-    return new Logger(name, { [Context.current]: this })
+  [Service.invoke](name: string) {
+    return new Logger(name, { [Context.trace]: this })
   }
 
   static {
     for (const type of ['success', 'error', 'info', 'warn', 'debug', 'extend'] as const) {
       LoggerService.prototype[type] = function (this: any, ...args: any[]) {
-        const caller = this[Context.current]
+        const caller: Context = this[Context.trace]
         return this(caller.name)[type](...args)
       }
     }
