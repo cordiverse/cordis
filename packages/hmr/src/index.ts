@@ -37,11 +37,11 @@ interface Reload {
 }
 
 class Watcher extends Service {
-  static name = 'hmr'
   static inject = ['loader']
 
   private base: string
   private watcher!: FSWatcher
+  private initialURL!: string
 
   /**
    * changes from externals E will always trigger a full reload
@@ -69,9 +69,7 @@ class Watcher extends Service {
   /** stashed changes */
   private stashed = new Set<string>()
 
-  private initialURL!: string
-
-  constructor(ctx: Context, private config: Watcher.Config) {
+  constructor(ctx: Context, public config: Watcher.Config) {
     super(ctx, 'hmr')
     this.base = resolve(ctx.baseDir, config.base || '')
     this.initialURL = pathToFileURL(ctx.loader.filename).href

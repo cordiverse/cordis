@@ -32,7 +32,16 @@ export class Context extends core.Context {
 }
 
 export abstract class Service<T = unknown, C extends Context = Context> extends core.Service<T, C> {
-  public logger!: Logger
+  /** @deprecated use `this.ctx.logger` instead */
+  public logger: Logger
+
+  constructor(config: T)
+  constructor(ctx: C, config: T)
+  constructor(ctx: C, name: string, immediate?: boolean)
+  constructor(...args: any[]) {
+    super(args[0], args[1], args[2])
+    this.logger = this.ctx.logger(this.name)
+  }
 
   [core.Service.setup]() {
     this.ctx = new Context() as C

@@ -13,7 +13,6 @@ export const symbols = {
   intercept: Symbol.for('cordis.intercept') as typeof Context.intercept,
 
   // service symbols
-  init: Symbol.for('cordis.init') as typeof Service.init,
   setup: Symbol.for('cordis.setup') as typeof Service.setup,
   invoke: Symbol.for('cordis.invoke') as typeof Service.invoke,
   extend: Symbol.for('cordis.extend') as typeof Service.extend,
