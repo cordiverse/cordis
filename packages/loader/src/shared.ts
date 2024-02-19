@@ -63,8 +63,6 @@ export namespace Loader {
   }
 }
 
-  static readonly exitCode = 51
-
 export abstract class Loader<T extends Loader.Options = Loader.Options> extends Service<Entry[]> {
   // process
   public baseDir = process.cwd()
@@ -86,7 +84,6 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
   private store = new WeakMap<any, string>()
 
   abstract import(name: string): Promise<any>
-  abstract fullReload(code?: number): void
 
   constructor(public app: Context, public options: T) {
     super(app, 'loader', true)
@@ -278,6 +275,8 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
   unwrapExports(module: any) {
     return module?.default || module
   }
+
+  exit() {}
 }
 
 export function group(ctx: Context, config: Entry[]) {

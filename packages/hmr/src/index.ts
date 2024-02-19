@@ -106,7 +106,7 @@ class Watcher extends Service {
 
       if (isEntry) {
         if (this.ctx.loader.internal!.loadCache.has(filename)) {
-          this.ctx.loader.fullReload()
+          this.ctx.loader.exit()
         } else {
           const config = await loader.readConfig()
           this.ctx.root.state.update(config)
@@ -114,7 +114,7 @@ class Watcher extends Service {
         }
       } else {
         if (this.externals.has(filename)) {
-          this.ctx.loader.fullReload()
+          this.ctx.loader.exit()
         } else if (this.ctx.loader.internal!.loadCache.has(filename)) {
           this.stashed.add(filename)
           triggerLocalReload()

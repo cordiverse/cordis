@@ -14,6 +14,8 @@ namespace NodeLoader {
 }
 
 class NodeLoader extends Loader<NodeLoader.Options> {
+  static readonly exitCode = 51
+
   async readConfig() {
     // restore process.env
     for (const key in process.env) {
@@ -50,7 +52,7 @@ class NodeLoader extends Loader<NodeLoader.Options> {
     }
   }
 
-  fullReload(code = Loader.exitCode) {
+  exit(code = NodeLoader.exitCode) {
     const body = JSON.stringify(this.envData)
     process.send?.({ type: 'shared', body }, (err: any) => {
       if (err) this.app.emit('internal/error', 'failed to send shared data')
