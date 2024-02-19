@@ -1,5 +1,5 @@
 import { Context, EffectScope, ForkScope } from '@cordisjs/core'
-import { Dict, isNullable, valueMap } from 'cosmokit'
+import { defineProperty, Dict, isNullable, valueMap } from 'cosmokit'
 import { constants, promises as fs } from 'fs'
 import { interpolate } from './utils.ts'
 import * as yaml from 'js-yaml'
@@ -250,9 +250,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> {
   }
 
   async start() {
-    for (const entry of this.config) {
-      this.reload(this.app, entry)
-    }
+    this.app.plugin(group, this.config)
 
     this.app.on('dispose', () => {
       this.fullReload()
@@ -283,5 +281,29 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> {
     return module?.default || module
   }
 }
+
+export function group(ctx: Context, config: Entry[]) {
+  for (const entry of config) {
+    ctx.loader.reload(ctx, entry)
+  }
+
+  ctx.accept((neo: Entry[]) => {
+    // update config reference
+    const old = ctx.scope.config as Entry[]
+    const oldMap = Object.fromEntries(old.map(entry => [entry.id, entry]))
+    const neoMap = Object.fromEntries(neo.map(entry => [entry.id, entry]))
+
+    // update inner plugins
+    for (const id in { ...oldMap, ...neoMap }) {
+      if (!neoMap[id]) {
+        ctx.loader.unload(ctx, oldMap[id])
+      } else {
+        ctx.loader.reload(ctx, neoMap[id])
+      }
+    }
+  }, { passive: true })
+}
+
+defineProperty(group, 'inject', ['loader'])
 
 export default Loader
