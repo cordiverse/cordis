@@ -20,6 +20,8 @@ export interface Config {
   showTime?: string | boolean
 }
 
+export const inject = ['loader']
+
 export function apply(ctx: Context, config: Config = {}) {
   function handleException(error: any) {
     new Logger('app').error(error)

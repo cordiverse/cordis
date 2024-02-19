@@ -1,4 +1,4 @@
-import { Context, EffectScope, ForkScope } from '@cordisjs/core'
+import { Context, EffectScope, ForkScope, Service } from '@cordisjs/core'
 import { defineProperty, Dict, isNullable, valueMap } from 'cosmokit'
 import { constants, promises as fs } from 'fs'
 import { interpolate } from './utils.ts'
@@ -30,7 +30,7 @@ declare module '@cordisjs/core' {
 export interface Entry {
   id: string
   name: string
-  config: any
+  config?: any
   when?: any
 }
 
@@ -63,9 +63,9 @@ export namespace Loader {
   }
 }
 
-export abstract class Loader<T extends Loader.Options = Loader.Options> {
   static readonly exitCode = 51
 
+export abstract class Loader<T extends Loader.Options = Loader.Options> extends Service<Entry[]> {
   // process
   public baseDir = process.cwd()
   public envData = process.env.CORDIS_SHARED
@@ -76,7 +76,6 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> {
     env: process.env,
   }
 
-  public config!: Entry[]
   public suspend = false
   public writable = false
   public mimeType!: string
@@ -89,7 +88,9 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> {
   abstract import(name: string): Promise<any>
   abstract fullReload(code?: number): void
 
-  constructor(public app: Context, public options: T) {}
+  constructor(public app: Context, public options: T) {
+    super(app, 'loader', true)
+  }
 
   async init(filename?: string) {
     if (filename) {
@@ -116,7 +117,6 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> {
         this.writable = true
       } catch {}
     }
-    this.app.provide('loader', this, true)
     this.app.provide('baseDir', this.baseDir, true)
   }
 
@@ -253,7 +253,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> {
     this.app.plugin(group, this.config)
 
     this.app.on('dispose', () => {
-      this.fullReload()
+      this.exit()
     })
 
     this.app.on('internal/update', (fork) => {
@@ -273,8 +273,6 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> {
     while (this.tasks.size) {
       await Promise.all(this.tasks)
     }
-
-    return this.app.start()
   }
 
   unwrapExports(module: any) {
@@ -305,5 +303,6 @@ export function group(ctx: Context, config: Entry[]) {
 }
 
 defineProperty(group, 'inject', ['loader'])
+defineProperty(group, 'reusable', true)
 
 export default Loader
