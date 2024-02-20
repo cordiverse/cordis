@@ -5,6 +5,7 @@ import { TimerService } from '@cordisjs/timer'
 export * from '@cordisjs/core'
 export { default as Schema, default as z } from 'schemastery'
 export { Logger } from '@cordisjs/logger'
+export { TimerService } from '@cordisjs/timer'
 
 export interface Events<C extends Context = Context> extends core.Events<C> {}
 
@@ -35,11 +36,11 @@ export abstract class Service<T = unknown, C extends Context = Context> extends 
   /** @deprecated use `this.ctx.logger` instead */
   public logger: Logger
 
-  constructor(config: T)
-  constructor(ctx: C, config: T)
+  constructor(...args: core.Spread<T>)
+  constructor(ctx: C, ...args: core.Spread<T>)
   constructor(ctx: C, name: string, immediate?: boolean)
-  constructor(...args: any[]) {
-    super(args[0], args[1], args[2])
+  constructor(...args: any) {
+    super(...args)
     this.logger = this.ctx.logger(this.name)
   }
 

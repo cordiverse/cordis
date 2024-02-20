@@ -1,6 +1,7 @@
 import { Awaitable, defineProperty } from 'cosmokit'
 import { Context } from './context.ts'
 import { createCallable, joinPrototype, symbols } from './utils.ts'
+import { Spread } from './registry.ts'
 
 export abstract class Service<T = unknown, C extends Context = Context> {
   static readonly setup: unique symbol = symbols.setup as any
@@ -19,8 +20,8 @@ export abstract class Service<T = unknown, C extends Context = Context> {
   public name!: string
   public config!: T
 
-  constructor(config: T)
-  constructor(ctx: C, config: T)
+  constructor(...args: Spread<T>)
+  constructor(ctx: C, ...args: Spread<T>)
   constructor(ctx: C, name: string, immediate?: boolean)
   constructor(...args: any[]) {
     let _ctx: C | undefined, name: string | undefined, immediate: boolean | undefined, config: any
