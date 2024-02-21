@@ -74,6 +74,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     env: process.env,
   }
 
+  public entry!: ForkScope<Context>
   public suspend = false
   public writable = false
   public mimeType!: string
@@ -247,7 +248,8 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
   }
 
   async start() {
-    this.app.plugin(group, this.config)
+    await this.readConfig()
+    this.entry = this.app.plugin(group, this.config)
 
     this.app.on('dispose', () => {
       this.exit()
@@ -263,7 +265,9 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
       if (fork[kUpdate]) return delete fork[kUpdate]
       if (!fork.id) return
       const { schema } = fork.runtime
-      fork.parent.scope.config = schema ? schema.simplify(config) : config
+      const entry = fork.parent.scope.config?.find((entry: Entry) => entry.id === fork.id)
+      if (!entry) return
+      entry.config = schema ? schema.simplify(config) : config
       this.writeConfig()
     })
 

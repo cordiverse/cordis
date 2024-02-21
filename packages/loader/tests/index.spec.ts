@@ -8,7 +8,16 @@ describe('@cordisjs/loader', () => {
   root.plugin(MockLoader)
   root.loader.writable = true
 
-  test('loader.createApp()', async () => {
+  const foo = mock.fn((ctx: Context) => {
+    ctx.accept()
+  })
+  const bar = mock.fn((ctx: Context) => {
+    ctx.accept()
+  })
+  root.loader.register('foo', foo)
+  root.loader.register('bar', bar)
+
+  test('basic support', async () => {
     root.loader.config = [{
       id: '1',
       name: 'foo',
@@ -24,16 +33,37 @@ describe('@cordisjs/loader', () => {
       }],
     }]
 
-    const foo = mock.fn()
-    const bar = mock.fn()
-    root.loader.register('foo', foo)
-    root.loader.register('bar', bar)
-
     await root.start()
-
     expect(root.registry.get(foo)).to.be.ok
     expect(root.registry.get(foo)?.config).to.deep.equal({})
+    expect(foo.mock.calls).to.have.length(1)
     expect(root.registry.get(bar)).to.be.ok
     expect(root.registry.get(bar)?.config).to.deep.equal({ a: 1 })
+    expect(bar.mock.calls).to.have.length(1)
+  })
+
+  test('entry update', async () => {
+    root.loader.config = [{
+      id: '1',
+      name: 'foo',
+    }]
+
+    root.loader.entry.update(root.loader.config)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(root.registry.get(foo)).to.be.ok
+    expect(root.registry.get(bar)).to.be.not.ok
+    expect(foo.mock.calls).to.have.length(1)
+    expect(bar.mock.calls).to.have.length(1)
+  })
+
+  test('plugin update', async () => {
+    const runtime = root.registry.get(foo)
+    runtime?.update({ a: 3 })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(root.loader.config).to.deep.equal([{
+      id: '1',
+      name: 'foo',
+      config: { a: 3 },
+    }])
   })
 })

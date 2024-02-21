@@ -20,13 +20,12 @@ export interface Options extends Loader.Options {
 export async function start(options: Options) {
   const ctx = new Context()
   ctx.plugin(Loader, options)
+  await ctx.loader.init(process.env.CORDIS_LOADER_ENTRY)
   if (process.execArgv.includes('--expose-internals')) {
     const { internal } = await import('./internal.js')
     ctx.loader.internal = internal
   }
-  await ctx.loader.init(process.env.CORDIS_LOADER_ENTRY)
   if (options.logger) ctx.plugin(logger, options.logger)
   if (options.daemon) ctx.plugin(daemon, options.daemon)
-  await ctx.loader.readConfig()
   await ctx.start()
 }

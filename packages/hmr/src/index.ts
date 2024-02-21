@@ -109,7 +109,7 @@ class Watcher extends Service {
           this.ctx.loader.exit()
         } else {
           const config = await loader.readConfig()
-          this.ctx.root.state.update(config)
+          loader.entry.update(config)
           this.ctx.emit('config')
         }
       } else {
