@@ -183,8 +183,8 @@ export interface Events<in C extends Context = Context> {
   'internal/info'(this: C, format: any, ...param: any[]): void
   'internal/error'(this: C, format: any, ...param: any[]): void
   'internal/warning'(this: C, format: any, ...param: any[]): void
-  'internal/before-service'(name: string, value: any): void
-  'internal/service'(name: string, oldValue: any): void
+  'internal/before-service'(name: string): void
+  'internal/service'(name: string): void
   'internal/before-update'(fork: ForkScope<C>, config: any): void
   'internal/update'(fork: ForkScope<C>, oldConfig: any): void
   'internal/listener'(this: C, name: string, listener: any, prepend: boolean): void

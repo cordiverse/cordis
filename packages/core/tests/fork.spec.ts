@@ -91,6 +91,7 @@ describe('Fork', () => {
 
   test('deferred execution', () => {
     const root = new Context()
+    root.provide('foo')
     const listener = mock.fn()
     const callback = mock.fn((ctx: Context) => {
       ctx.on(event, listener)

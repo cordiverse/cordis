@@ -71,7 +71,7 @@ export abstract class Service<T = unknown, C extends Context = Context> {
   }
 
   protected [symbols.filter](ctx: Context) {
-    return ctx[symbols.shadow][this.name] === this.ctx[symbols.shadow][this.name]
+    return ctx[symbols.isolate][this.name] === this.ctx[symbols.isolate][this.name]
   }
 
   protected [symbols.setup]() {

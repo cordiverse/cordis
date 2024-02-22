@@ -1,7 +1,7 @@
 import { defineProperty, Dict, isNullable } from 'cosmokit'
 import { Lifecycle } from './events.ts'
 import { Registry } from './registry.ts'
-import { createTraceable, isConstructor, isUnproxyable, resolveConfig, symbols } from './utils.ts'
+import { createTraceable, isUnproxyable, resolveConfig, symbols } from './utils.ts'
 
 export namespace Context {
   export type Parameterized<C, T = any> = C & { config: T }
@@ -18,7 +18,6 @@ export namespace Context {
   export namespace Internal {
     export interface Service {
       type: 'service'
-      key: symbol
       builtin?: boolean
       prototype?: {}
     }
@@ -44,11 +43,10 @@ export namespace Context {
 export interface Intercept<C extends Context = Context> {}
 
 export interface Context {
-  [Context.shadow]: Dict<symbol>
+  [Context.isolate]: Dict<symbol>
   [Context.intercept]: Intercept<this>
   [Context.internal]: Dict<Context.Internal>
   root: this
-  realms: Record<string, Record<string, symbol>>
   lifecycle: Lifecycle
   registry: Registry<this>
   config: any
@@ -60,7 +58,7 @@ export class Context {
   static readonly static: unique symbol = symbols.static as any
   static readonly filter: unique symbol = symbols.filter as any
   static readonly expose: unique symbol = symbols.expose as any
-  static readonly shadow: unique symbol = symbols.shadow as any
+  static readonly isolate: unique symbol = symbols.isolate as any
   static readonly internal: unique symbol = symbols.internal as any
   static readonly intercept: unique symbol = symbols.intercept as any
   /** @deprecated use `Context.trace` instead */
@@ -75,31 +73,20 @@ export class Context {
     Context.prototype[Context.is as any] = true
   }
 
-  private static ensureInternal(): Context[typeof Context.internal] {
+  private static ensureInternal(): Context[typeof symbols.internal] {
     const ctx = this.prototype || this
-    if (Object.prototype.hasOwnProperty.call(ctx, Context.internal)) {
-      return ctx[Context.internal]
+    if (Object.prototype.hasOwnProperty.call(ctx, symbols.internal)) {
+      return ctx[symbols.internal]
     }
     const parent = Context.ensureInternal.call(Object.getPrototypeOf(this))
-    return ctx[Context.internal] = Object.create(parent)
-  }
-
-  /** @deprecated */
-  static service(name: string, options: string[] | Context.MixinOptions = {}) {
-    const internal = this.ensureInternal()
-    if (name in internal) return
-    const key = typeof name === 'symbol' ? name : Symbol(name)
-    internal[name] = { type: 'service', key }
-    if (isConstructor(options)) {
-      internal[name]['prototype'] = options.prototype
-    }
+    return ctx[symbols.internal] = Object.create(parent)
   }
 
   static resolveInject(ctx: Context, name: string) {
-    let internal = ctx[Context.internal][name]
+    let internal = ctx[symbols.internal][name]
     while (internal?.type === 'alias') {
       name = internal.name
-      internal = ctx[Context.internal][name]
+      internal = ctx[symbols.internal][name]
     }
     return [name, internal] as const
   }
@@ -155,7 +142,7 @@ export class Context {
       }
 
       // service
-      const key = ctx[Context.shadow][name] || internal.key
+      const key = ctx[symbols.isolate][name]
       const oldValue = ctx.root[key]
       if (oldValue === value) return true
 
@@ -172,15 +159,15 @@ export class Context {
 
       // setup filter for events
       const self = Object.create(null)
-      self[Context.filter] = (ctx2: Context) => {
+      self[symbols.filter] = (ctx2: Context) => {
         // TypeScript is not smart enough to infer the type of `name` here
-        return ctx[Context.shadow][name as string] === ctx2[Context.shadow][name as string]
+        return ctx[symbols.isolate][name as string] === ctx2[symbols.isolate][name as string]
       }
 
       ctx.root.emit(self, 'internal/before-service', name, value)
       ctx.root[key] = value
       if (value instanceof Object) {
-        defineProperty(value, Context.trace, ctx)
+        defineProperty(value, symbols.trace, ctx)
       }
       ctx.root.emit(self, 'internal/service', name, oldValue)
       return true
@@ -191,14 +178,14 @@ export class Context {
     return new Proxy(object, {
       get(target, key, receiver) {
         if (typeof key === 'symbol' || key in target) return Reflect.get(target, key, receiver)
-        const caller: Context = receiver[Context.trace]
-        if (!caller?.[Context.internal][`${name}.${key}`]) return Reflect.get(target, key, receiver)
+        const caller: Context = receiver[symbols.trace]
+        if (!caller?.[symbols.internal][`${name}.${key}`]) return Reflect.get(target, key, receiver)
         return caller.get(`${name}.${key}`)
       },
       set(target, key, value, receiver) {
         if (typeof key === 'symbol' || key in target) return Reflect.set(target, key, value, receiver)
-        const caller: Context = receiver[Context.trace]
-        if (!caller?.[Context.internal][`${name}.${key}`]) return Reflect.set(target, key, value, receiver)
+        const caller: Context = receiver[symbols.trace]
+        if (!caller?.[symbols.internal][`${name}.${key}`]) return Reflect.set(target, key, value, receiver)
         caller[`${name}.${key}`] = value
         return true
       },
@@ -208,27 +195,26 @@ export class Context {
   constructor(config?: any) {
     const self: Context = new Proxy(this, Context.handler)
     config = resolveConfig(this.constructor, config)
-    self[Context.shadow] = Object.create(null)
-    self[Context.intercept] = Object.create(null)
+    self[symbols.isolate] = Object.create(null)
+    self[symbols.intercept] = Object.create(null)
     self.root = self
-    self.realms = Object.create(null)
     self.mixin('scope', ['config', 'runtime', 'effect', 'collect', 'accept', 'decline'])
     self.mixin('registry', ['using', 'inject', 'plugin', 'dispose'])
     self.mixin('lifecycle', ['on', 'once', 'off', 'after', 'parallel', 'emit', 'serial', 'bail', 'start', 'stop'])
     self.provide('registry', new Registry(self, config!), true)
     self.provide('lifecycle', new Lifecycle(self), true)
 
-    const attach = (internal: Context[typeof Context.internal]) => {
+    const attach = (internal: Context[typeof symbols.internal]) => {
       if (!internal) return
       attach(Object.getPrototypeOf(internal))
       for (const key of Object.getOwnPropertyNames(internal)) {
         const constructor = internal[key]['prototype']?.constructor
         if (!constructor) continue
         self[internal[key]['key']] = new constructor(self, config)
-        defineProperty(self[internal[key]['key']], Context.trace, self)
+        defineProperty(self[internal[key]['key']], symbols.trace, self)
       }
     }
-    attach(this[Context.internal])
+    attach(this[symbols.internal])
     return self
   }
 
@@ -256,13 +242,12 @@ export class Context {
   get<K extends string & keyof this>(name: K): undefined | this[K]
   get(name: string): any
   get(name: string) {
-    const internal = this[Context.internal][name]
+    const internal = this[symbols.internal][name]
     if (internal?.type !== 'service') return
-    const key: symbol = this[Context.shadow][name] || internal.key
-    const value = this.root[key]
+    const value = this.root[this[symbols.isolate][name]]
     if (!value || typeof value !== 'object' && typeof value !== 'function') return value
     if (isUnproxyable(value)) {
-      defineProperty(value, Context.trace, this)
+      defineProperty(value, symbols.trace, this)
       return value
     }
     return createTraceable(this, value)
@@ -272,8 +257,9 @@ export class Context {
     const internal = Context.ensureInternal.call(this.root)
     if (name in internal) return
     const key = Symbol(name)
-    internal[name] = { type: 'service', key, builtin }
+    internal[name] = { type: 'service', builtin }
     this.root[key] = value
+    this.root[Context.isolate][name] = key
   }
 
   accessor(name: string, options: Omit<Context.Internal.Accessor, 'type'>) {
@@ -309,19 +295,16 @@ export class Context {
     return Object.assign(Object.create(this), meta)
   }
 
-  isolate(names: string[], label?: string) {
-    const self = this.extend()
-    self[Context.shadow] = Object.create(this[Context.shadow])
-    for (const name of names) {
-      self[Context.shadow][name] = label ? ((this.realms[label] ??= Object.create(null))[name] ??= Symbol(name)) : Symbol(name)
-    }
-    return self
+  isolate(name: string, label?: symbol) {
+    const shadow = Object.create(this[symbols.isolate])
+    shadow[name] = label ?? Symbol(name)
+    return this.extend({ [symbols.isolate]: shadow })
   }
 
   intercept<K extends keyof Intercept>(name: K, config: Intercept[K]) {
-    const intercept = Object.create(this[Context.intercept])
+    const intercept = Object.create(this[symbols.intercept])
     intercept[name] = config
-    return this.extend({ [Context.intercept]: intercept })
+    return this.extend({ [symbols.intercept]: intercept })
   }
 }
 

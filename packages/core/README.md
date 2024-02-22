@@ -527,8 +527,8 @@ ctx.custom                      // undefined
 Registering multiple services will only override themselves. In order to limit the scope of a service (so that multiple services may exist at the same time), simply create an isolated scope:
 
 ```ts
-const ctx1 = ctx.isolate(['foo'])
-const ctx2 = ctx.isolate(['bar'])
+const ctx1 = ctx.isolate('foo')
+const ctx2 = ctx.isolate('bar')
 
 ctx.foo = { value: 1 }
 ctx1.foo                        // undefined
@@ -539,7 +539,7 @@ ctx.bar                         // { value: 2 }
 ctx2.bar                        // undefined
 ```
 
-`ctx.isolate()` accepts a parameter `keys` and returns a new context. Services included in `keys` will be isolated in the new context, while services not included in `keys` are still shared with the parent context.
+`ctx.isolate()` accepts a parameter `key` and returns a new context. Service named `key` will be isolated in the new context, while other services are still shared with the parent context.
 
 > Note: there is an edge case when using service isolation, service dependencies and `fork` events at the same time. Forks from a partially reusable plugin are **not** responsive to isolated service changes, because it may cause unexpected reloading across forks. If you want to write reusable plugin with service dependencies, just use `reusable` property instead of listening to `fork` event.
 
@@ -587,14 +587,14 @@ Mixins from services will still support service features such as [disposable](#w
 
 Create a new context with the current context as the prototype. Properties specified in `meta` will be assigned to the new context.
 
-#### ctx.isolate(keys)
+#### ctx.isolate(key)
 
 > Note: this is an experimental API and may be changed in the future.
 
-- keys: `string[]` service names
+- key: `string` service name
 - returns: `Context`
 
-Create a new context with the current context as the prototype. Services included in `keys` will be isolated in the new context, while services not included in `keys` are still shared with the parent context.
+Create a new context with the current context as the prototype. Service named `key` will be isolated in the new context, while other services are still shared with the parent context.
 
 See: [Service isolation](#service-isolation-)
 

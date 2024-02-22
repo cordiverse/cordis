@@ -149,6 +149,7 @@ describe('Service', () => {
 
     const root = new Context()
     await root.start()
+    root.provide('foo')
     root.using(['foo'], plugin)
 
     expect(callback.mock.calls).to.have.length(0)

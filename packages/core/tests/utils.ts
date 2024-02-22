@@ -5,8 +5,6 @@ import { Dict } from 'cosmokit'
 
 use(promised)
 
-Context.service('foo')
-
 export const event = 'custom-event'
 
 export class Session {

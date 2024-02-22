@@ -6,7 +6,8 @@ import { event } from './utils'
 describe('Isolation', () => {
   test('isolated context', async () => {
     const root = new Context()
-    const ctx = root.isolate(['foo'])
+    root.provide('foo')
+    const ctx = root.isolate('foo')
 
     const outer = mock.fn()
     const inner = mock.fn()
@@ -40,6 +41,7 @@ describe('Isolation', () => {
 
   test('isolated fork', () => {
     const root = new Context()
+    root.provide('foo')
     const callback = mock.fn(() => {})
     const dispose = mock.fn(() => {})
     const plugin = {
@@ -51,9 +53,9 @@ describe('Isolation', () => {
       },
     }
 
-    const ctx1 = root.isolate(['foo'])
+    const ctx1 = root.isolate('foo')
     ctx1.plugin(plugin)
-    const ctx2 = root.isolate(['foo'])
+    const ctx2 = root.isolate('foo')
     ctx2.plugin(plugin)
     expect(callback.mock.calls).to.have.length(0)
 
@@ -66,8 +68,9 @@ describe('Isolation', () => {
     expect(dispose.mock.calls).to.have.length(0)
   })
 
-  test('shared service', () => {
+  test('shared label', () => {
     const root = new Context()
+    root.provide('foo')
     const callback = mock.fn(() => {})
     const dispose = mock.fn(() => {})
     const plugin = {
@@ -79,9 +82,10 @@ describe('Isolation', () => {
       },
     }
 
-    const ctx1 = root.isolate(['foo'], 'test')
+    const label = Symbol('test')
+    const ctx1 = root.isolate('foo', label)
     ctx1.plugin(plugin)
-    const ctx2 = root.isolate(['foo'], 'test')
+    const ctx2 = root.isolate('foo', label)
     ctx2.plugin(plugin)
     expect(callback.mock.calls).to.have.length(0)
 
@@ -111,7 +115,7 @@ describe('Isolation', () => {
     }
 
     const root = new Context()
-    const ctx = root.isolate(['foo'])
+    const ctx = root.isolate('foo')
     const outer = mock.fn()
     const inner = mock.fn()
     root.on(event, outer)

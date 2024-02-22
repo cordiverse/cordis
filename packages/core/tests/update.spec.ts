@@ -170,6 +170,7 @@ describe('Update', () => {
 
   test('deferred update', () => {
     const root = new Context()
+    root.provide('foo')
     const callback = mock.fn()
     const plugin = {
       inject: ['foo'],
