@@ -49,8 +49,18 @@ export namespace Entry {
     config?: any
     disabled?: boolean
     intercept?: Dict
+    isolate?: Dict<boolean | string>
     when?: any
   }
+}
+
+function swapAssign<T extends {}>(target: T, source?: T): T {
+  const result = { ...target }
+  for (const key in result) {
+    delete target[key]
+  }
+  Object.assign(target, source)
+  return result
 }
 
 export class Entry {
@@ -60,10 +70,32 @@ export class Entry {
   constructor(public loader: Loader, public parent: Context, public options: Entry.Options) {}
 
   amend(ctx: Context) {
-    for (const key of Reflect.ownKeys(ctx[Context.intercept])) {
-      delete ctx[Context.intercept][key]
+    swapAssign(ctx[Context.intercept], this.options.intercept)
+    const neoMap: Dict<symbol> = Object.create(Object.getPrototypeOf(ctx[Context.isolate]))
+    for (const [key, label] of Object.entries(this.options.isolate ?? {})) {
+      if (typeof label === 'string') {
+        neoMap[key] = (this.loader.realms[label] ??= Object.create(null))[key] ??= Symbol(key)
+      } else if (label) {
+        neoMap[key] = Symbol(key)
+      }
     }
-    Object.assign(ctx[Context.intercept], this.options.intercept)
+    for (const key in { ...ctx[Context.isolate], ...neoMap }) {
+      if (neoMap[key] === ctx[Context.isolate][key]) continue
+      const self = Object.create(null)
+      self[Context.filter] = (ctx2: Context) => {
+        return ctx[Context.isolate][key] === ctx2[Context.isolate][key]
+      }
+      ctx.emit(self, 'internal/before-service', key)
+    }
+    const oldMap = swapAssign(ctx[Context.isolate], neoMap)
+    for (const key in { ...oldMap, ...ctx[Context.isolate] }) {
+      if (oldMap[key] === ctx[Context.isolate][key]) continue
+      const self = Object.create(null)
+      self[Context.filter] = (ctx2: Context) => {
+        return ctx[Context.isolate][key] === ctx2[Context.isolate][key]
+      }
+      ctx.emit(self, 'internal/service', key)
+    }
   }
 
   // TODO: handle parent change
@@ -85,9 +117,9 @@ export class Entry {
       this.parent.emit('loader/entry', 'apply', this)
       const plugin = await this.loader.resolve(this.options.name)
       if (!plugin) return
-      const intercept = Object.create(this.parent[Context.intercept])
       const ctx = this.parent.extend({
-        [Context.intercept]: intercept,
+        [Context.intercept]: Object.create(this.parent[Context.intercept]),
+        [Context.isolate]: Object.create(this.parent[Context.isolate]),
       })
       this.amend(ctx)
       this.fork = ctx.plugin(plugin, this.loader.interpolate(this.options.config))
@@ -127,6 +159,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
   public mimeType!: string
   public filename!: string
   public entries: Dict<Entry> = Object.create(null)
+  public realms: Dict<Dict<symbol>> = Object.create(null)
 
   private tasks = new Set<Promise<any>>()
 
@@ -134,6 +167,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
 
   constructor(public app: Context, public options: T) {
     super(app, 'loader', true)
+    this.realms.root = app.root[Context.isolate]
   }
 
   async init(filename?: string) {

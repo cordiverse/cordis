@@ -1,12 +1,12 @@
 import { describe, mock, test } from 'node:test'
 import { expect } from 'chai'
-import { Context } from '@cordisjs/core'
+import { Context, Service } from '@cordisjs/core'
+import { defineProperty } from 'cosmokit'
 import MockLoader from './utils'
 
 describe('@cordisjs/loader', () => {
   const root = new Context()
   root.plugin(MockLoader)
-  root.loader.writable = true
 
   const foo = mock.fn((ctx: Context) => {
     ctx.accept()
@@ -99,5 +99,100 @@ describe('@cordisjs/loader', () => {
       id: '4',
       name: 'qux',
     }])
+  })
+
+  describe('service isolation', async () => {
+    const root = new Context()
+    root.plugin(MockLoader)
+
+    const dispose = mock.fn()
+    const foo = mock.fn((ctx: Context) => {
+      ctx.on('dispose', dispose)
+    })
+    defineProperty(foo, 'inject', ['bar'])
+    class Bar extends Service {
+      static [Service.provide] = 'bar'
+      static [Service.immediate] = true
+    }
+    class Qux extends Service {
+      static [Service.provide] = 'qux'
+      static [Service.immediate] = true
+    }
+    root.loader.register('foo', foo)
+    root.loader.register('bar', Bar)
+    root.loader.register('qux', Qux)
+
+    test('basic support', async () => {
+      root.loader.config = [{
+        id: '1',
+        name: 'bar',
+      }, {
+        id: '2',
+        name: 'qux',
+      }, {
+        id: '3',
+        name: 'group',
+        config: [{
+          id: '4',
+          name: 'foo',
+        }],
+      }]
+
+      await root.start()
+      expect(root.registry.get(foo)).to.be.ok
+      expect(root.registry.get(Bar)).to.be.ok
+      expect(root.registry.get(Qux)).to.be.ok
+      expect(foo.mock.calls).to.have.length(1)
+    })
+
+    test('isolate', async () => {
+      root.loader.config = [{
+        id: '1',
+        name: 'bar',
+      }, {
+        id: '2',
+        name: 'qux',
+      }, {
+        id: '3',
+        name: 'group',
+        isolate: {
+          bar: true,
+        },
+        config: [{
+          id: '4',
+          name: 'foo',
+        }],
+      }]
+
+      expect(dispose.mock.calls).to.have.length(0)
+      root.loader.entryFork.update(root.loader.config)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(foo.mock.calls).to.have.length(1)
+      expect(dispose.mock.calls).to.have.length(1)
+
+      root.loader.config = [{
+        id: '1',
+        name: 'bar',
+      }, {
+        id: '2',
+        name: 'qux',
+      }, {
+        id: '3',
+        name: 'group',
+        isolate: {
+          bar: false,
+          qux: true,
+        },
+        config: [{
+          id: '4',
+          name: 'foo',
+        }],
+      }]
+
+      root.loader.entryFork.update(root.loader.config)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(foo.mock.calls).to.have.length(2)
+      expect(dispose.mock.calls).to.have.length(1)
+    })
   })
 })

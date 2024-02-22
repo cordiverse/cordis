@@ -14,6 +14,7 @@ export default class MockLoader extends Loader {
   constructor(ctx: Context) {
     super(ctx, { name: 'cordis' })
     this.register('group', group)
+    this.writable = true
   }
 
   register(name: string, plugin: any) {
