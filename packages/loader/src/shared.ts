@@ -23,18 +23,9 @@ declare module '@cordisjs/core' {
   // Theoretically, these properties will only appear on `ForkScope`.
   // We define them directly on `EffectScope` for typing convenience.
   interface EffectScope {
-    id?: string
+    entry?: Entry
   }
 }
-
-export interface Entry {
-  id: string
-  name: string
-  config?: any
-  when?: any
-}
-
-const kUpdate = Symbol('update')
 
 const writable = {
   '.json': 'application/json',
@@ -51,9 +42,42 @@ if (typeof require !== 'undefined') {
   }
 }
 
-interface State {
-  entry: Entry
-  fork?: ForkScope
+export namespace Entry {
+  export interface Options {
+    id: string
+    name: string
+    config?: any
+    disabled?: boolean
+    when?: any
+  }
+}
+
+export class Entry {
+  public fork: ForkScope | null = null
+  public isUpdate = false
+
+  constructor(public loader: Loader, public parent: Context, public options: Entry.Options) {}
+
+  stop() {
+    if (!this.fork) return
+    this.parent.emit('loader/entry', 'unload', this)
+    this.fork.dispose()
+    this.fork = null
+  }
+
+  async start() {
+    if (this.fork) {
+      this.isUpdate = true
+      this.fork.update(this.options.config)
+    } else {
+      this.parent.emit('loader/entry', 'apply', this)
+      const plugin = await this.loader.resolve(this.options.name)
+      if (!plugin) return
+      const ctx = this.parent.extend()
+      this.fork = ctx.plugin(plugin, this.loader.interpolate(this.options.config))
+      this.fork.entry = this
+    }
+  }
 }
 
 export namespace Loader {
@@ -63,7 +87,7 @@ export namespace Loader {
   }
 }
 
-export abstract class Loader<T extends Loader.Options = Loader.Options> extends Service<Entry[]> {
+export abstract class Loader<T extends Loader.Options = Loader.Options> extends Service<Entry.Options[]> {
   // process
   public baseDir = process.cwd()
   public envData = process.env.CORDIS_SHARED
@@ -74,12 +98,12 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     env: process.env,
   }
 
-  public entry!: ForkScope<Context>
+  public entryFork!: ForkScope<Context>
   public suspend = false
   public writable = false
   public mimeType!: string
   public filename!: string
-  public states: Dict<State> = Object.create(null)
+  public entries: Dict<Entry> = Object.create(null)
 
   private tasks = new Set<Promise<any>>()
   private store = new WeakMap<any, string>()
@@ -157,6 +181,12 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     if (!silent) this.app.emit('config')
   }
 
+  async reload() {
+    const config = await this.readConfig()
+    this.entryFork.update(config)
+    this.app.emit('config')
+  }
+
   interpolate(source: any) {
     if (typeof source === 'string') {
       return interpolate(source, this.params, /\$\{\{(.+?)\}\}/g)
@@ -196,42 +226,27 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     return !!this.interpolate(`\${{ ${expr} }}`)
   }
 
-  async reload(parent: Context, entry: Entry) {
-    if (!entry.id) {
+  async updateEntry(parent: Context, options: Entry.Options) {
+    if (!options.id) {
       do {
-        entry.id = Math.random().toString(36).slice(2, 8)
-      } while (this.states[entry.id])
+        options.id = Math.random().toString(36).slice(2, 8)
+      } while (this.entries[options.id])
     }
 
-    let state = this.states[entry.id]
-    if (state?.fork) {
-      if (!this.isTruthyLike(entry.when)) {
-        this.unload(parent, entry)
-        return
-      }
-      state.fork[kUpdate] = true
-      state.fork.update(entry.config)
+    const entry = this.entries[options.id] ??= new Entry(this, parent, options)
+    entry.options = options
+    if (!this.isTruthyLike(options.when) || options.disabled) {
+      entry.stop()
     } else {
-      if (!this.isTruthyLike(entry.when)) return
-      parent.emit('loader/entry', 'apply', entry)
-      const plugin = await this.resolve(entry.name)
-      if (!plugin) return
-      const ctx = parent.extend()
-      state = {
-        entry,
-        fork: ctx.plugin(plugin, this.interpolate(entry.config)),
-      }
-      state.fork!.id = entry.id
-      this.states[entry.id] = state
+      entry.start()
     }
   }
 
-  unload(parent: Context, entry: Entry) {
-    const state = this.states[entry.id]
-    if (state?.fork) {
-      parent.emit('loader/entry', 'unload', entry)
-      state.fork.dispose()
-    }
+  removeEntry(parent: Context, options: Entry.Options) {
+    const entry = this.entries[options.id]
+    if (!entry) return
+    entry.stop()
+    delete this.entries[options.id]
   }
 
   paths(scope: EffectScope): string[] {
@@ -243,31 +258,42 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
       return ([] as string[]).concat(...scope.runtime.children.map(child => this.paths(child)))
     }
 
-    if (scope.id) return [scope.id]
+    if (scope.entry) return [scope.entry.options.id]
     return this.paths(scope.parent.scope)
   }
 
   async start() {
     await this.readConfig()
-    this.entry = this.app.plugin(group, this.config)
+    this.entryFork = this.app.plugin(group, this.config)
 
     this.app.on('dispose', () => {
       this.exit()
     })
 
     this.app.on('internal/update', (fork) => {
-      const state = this.states[fork.id!]
-      if (!state) return
-      fork.parent.emit('loader/entry', 'reload', state.entry)
+      const entry = this.entries[fork.entry?.options.id!]
+      if (!entry) return
+      fork.parent.emit('loader/entry', 'reload', entry)
     })
 
     this.app.on('internal/before-update', (fork, config) => {
-      if (fork[kUpdate]) return delete fork[kUpdate]
-      if (!fork.id) return
+      if (!fork.entry) return
+      if (fork.entry.isUpdate) return fork.entry.isUpdate = false
       const { schema } = fork.runtime
-      const entry = fork.parent.scope.config?.find((entry: Entry) => entry.id === fork.id)
-      if (!entry) return
-      entry.config = schema ? schema.simplify(config) : config
+      fork.entry.options.config = schema ? schema.simplify(config) : config
+      this.writeConfig()
+    })
+
+    this.app.on('internal/fork', (fork) => {
+      // fork.uid: fork is created (we only care about fork dispose event)
+      // fork.parent.runtime.plugin !== group: fork is not tracked by loader
+      if (fork.uid || !fork.entry) return
+      fork.parent.emit('loader/entry', 'unload', fork.entry)
+      // fork is disposed by main scope (e.g. hmr plugin)
+      // normal: ctx.dispose() -> fork / runtime dispose -> delete(plugin)
+      // hmr: delete(plugin) -> runtime dispose -> fork dispose
+      if (!this.app.registry.has(fork.runtime.plugin)) return
+      fork.entry.options.disabled = true
       this.writeConfig()
     })
 
@@ -283,26 +309,32 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
   exit() {}
 }
 
-export function group(ctx: Context, config: Entry[]) {
+export function group(ctx: Context, config: Entry.Options[]) {
   for (const entry of config) {
-    ctx.loader.reload(ctx, entry)
+    ctx.loader.updateEntry(ctx, entry)
   }
 
-  ctx.accept((neo: Entry[]) => {
+  ctx.accept((neo: Entry.Options[]) => {
     // update config reference
-    const old = ctx.scope.config as Entry[]
+    const old = ctx.scope.config as Entry.Options[]
     const oldMap = Object.fromEntries(old.map(entry => [entry.id, entry]))
     const neoMap = Object.fromEntries(neo.map(entry => [entry.id, entry]))
 
     // update inner plugins
     for (const id in { ...oldMap, ...neoMap }) {
       if (!neoMap[id]) {
-        ctx.loader.unload(ctx, oldMap[id])
+        ctx.loader.removeEntry(ctx, oldMap[id])
       } else {
-        ctx.loader.reload(ctx, neoMap[id])
+        ctx.loader.updateEntry(ctx, neoMap[id])
       }
     }
   }, { passive: true })
+
+  ctx.on('dispose', () => {
+    for (const entry of ctx.scope.config as Entry.Options[]) {
+      ctx.loader.removeEntry(ctx, entry)
+    }
+  })
 }
 
 defineProperty(group, 'inject', ['loader'])

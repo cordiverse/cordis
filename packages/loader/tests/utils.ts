@@ -1,6 +1,6 @@
 import { Dict } from 'cosmokit'
 import { Context, Plugin } from '@cordisjs/core'
-import { Entry, group, Loader } from '../src/shared'
+import { group, Loader } from '../src/shared'
 
 declare module '../src/shared' {
   interface Loader {

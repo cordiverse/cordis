@@ -96,7 +96,7 @@ class Watcher extends Service {
 
     this.watcher.on('change', async (path) => {
       const filename = pathToFileURL(resolve(this.base, path)).href
-      const isEntry = filename === this.initialURL // || loader.envFiles.includes(filename)
+      const isEntry = filename === this.initialURL
       if (loader.suspend && isEntry) {
         loader.suspend = false
         return
@@ -105,17 +105,15 @@ class Watcher extends Service {
       this.ctx.logger.debug('change detected:', path)
 
       if (isEntry) {
-        if (this.ctx.loader.internal!.loadCache.has(filename)) {
-          this.ctx.loader.exit()
+        if (loader.internal!.loadCache.has(filename)) {
+          loader.exit()
         } else {
-          const config = await loader.readConfig()
-          loader.entry.update(config)
-          this.ctx.emit('config')
+          await loader.reload()
         }
       } else {
         if (this.externals.has(filename)) {
-          this.ctx.loader.exit()
-        } else if (this.ctx.loader.internal!.loadCache.has(filename)) {
+          loader.exit()
+        } else if (loader.internal!.loadCache.has(filename)) {
           this.stashed.add(filename)
           triggerLocalReload()
         }
@@ -206,7 +204,7 @@ class Watcher extends Service {
 
     // Plugin entry files should be "atomic".
     // Which means, reloading them will not cause any other reloads.
-    const names = new Set(Object.values(this.ctx.loader.states).map(state => state.entry.name))
+    const names = new Set(Object.values(this.ctx.loader.entries).map(entry => entry.options.name))
     for (const name of names) {
       try {
         const { url } = await this.ctx.loader.internal!.resolve(name, this.initialURL, {})
@@ -246,15 +244,15 @@ class Watcher extends Service {
             isMarked = true
             break
           }
-          for (const state of runtime.children) {
-            queued.push(state.runtime)
+          for (const fork of runtime.children) {
+            queued.push(fork.runtime)
           }
         }
         if (!isMarked) {
           const children: ForkScope[] = []
           reloads.set(plugin, { filename: job.url, children })
-          for (const state of runtime.children) {
-            children.push(state)
+          for (const fork of runtime.children) {
+            children.push(fork)
           }
         }
       } else {
@@ -309,7 +307,8 @@ class Watcher extends Service {
         try {
           for (const oldFork of children) {
             const fork = oldFork.parent.plugin(attempts[filename], oldFork.config)
-            fork.id = oldFork.id
+            fork.entry = oldFork.entry
+            fork.entry.fork = fork
           }
           this.ctx.logger.info('reload plugin at %c', path)
         } catch (err) {
@@ -326,7 +325,8 @@ class Watcher extends Service {
           this.ctx.registry.delete(attempts[filename])
           for (const oldFork of children) {
             const fork = oldFork.parent.plugin(plugin, oldFork.config)
-            fork.id = oldFork.id
+            fork.entry = oldFork.entry
+            fork.entry.fork = fork
           }
         } catch (err) {
           this.ctx.logger.warn(err)

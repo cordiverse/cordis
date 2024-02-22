@@ -48,7 +48,7 @@ describe('@cordisjs/loader', () => {
       name: 'foo',
     }]
 
-    root.loader.entry.update(root.loader.config)
+    root.loader.entryFork.update(root.loader.config)
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(root.registry.get(foo)).to.be.ok
     expect(root.registry.get(bar)).to.be.not.ok
@@ -58,11 +58,23 @@ describe('@cordisjs/loader', () => {
 
   test('plugin update', async () => {
     const runtime = root.registry.get(foo)
-    runtime?.update({ a: 3 })
+    runtime!.update({ a: 3 })
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(root.loader.config).to.deep.equal([{
       id: '1',
       name: 'foo',
+      config: { a: 3 },
+    }])
+  })
+
+  test('plugin dispose', async () => {
+    const runtime = root.registry.get(foo)
+    runtime!.dispose()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(root.loader.config).to.deep.equal([{
+      id: '1',
+      name: 'foo',
+      disabled: true,
       config: { a: 3 },
     }])
   })
