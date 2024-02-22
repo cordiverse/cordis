@@ -48,6 +48,7 @@ export namespace Entry {
     name: string
     config?: any
     disabled?: boolean
+    intercept?: Dict
     when?: any
   }
 }
@@ -58,25 +59,47 @@ export class Entry {
 
   constructor(public loader: Loader, public parent: Context, public options: Entry.Options) {}
 
-  stop() {
-    if (!this.fork) return
-    this.parent.emit('loader/entry', 'unload', this)
-    this.fork.dispose()
-    this.fork = null
+  amend(ctx: Context) {
+    for (const key of Reflect.ownKeys(ctx[Context.intercept])) {
+      delete ctx[Context.intercept][key]
+    }
+    Object.assign(ctx[Context.intercept], this.options.intercept)
+  }
+
+  // TODO: handle parent change
+  update(parent: Context, options: Entry.Options) {
+    this.options = options
+    if (!this.loader.isTruthyLike(options.when) || options.disabled) {
+      this.stop()
+    } else {
+      this.start()
+    }
   }
 
   async start() {
     if (this.fork) {
       this.isUpdate = true
+      this.amend(this.fork.parent)
       this.fork.update(this.options.config)
     } else {
       this.parent.emit('loader/entry', 'apply', this)
       const plugin = await this.loader.resolve(this.options.name)
       if (!plugin) return
-      const ctx = this.parent.extend()
+      const intercept = Object.create(this.parent[Context.intercept])
+      const ctx = this.parent.extend({
+        [Context.intercept]: intercept,
+      })
+      this.amend(ctx)
       this.fork = ctx.plugin(plugin, this.loader.interpolate(this.options.config))
       this.fork.entry = this
     }
+  }
+
+  stop() {
+    if (!this.fork) return
+    this.parent.emit('loader/entry', 'unload', this)
+    this.fork.dispose()
+    this.fork = null
   }
 }
 
@@ -106,7 +129,6 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
   public entries: Dict<Entry> = Object.create(null)
 
   private tasks = new Set<Promise<any>>()
-  private store = new WeakMap<any, string>()
 
   abstract import(name: string): Promise<any>
 
@@ -203,22 +225,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     const task = this.import(name)
     this.tasks.add(task)
     task.finally(() => this.tasks.delete(task))
-    const plugin = this.unwrapExports(await task)
-    if (plugin) this.store.set(this.app.registry.resolve(plugin), name)
-    return plugin
-  }
-
-  keyFor(plugin: any) {
-    return this.store.get(this.app.registry.resolve(plugin))
-  }
-
-  replace(oldKey: any, newKey: any) {
-    oldKey = this.app.registry.resolve(oldKey)
-    newKey = this.app.registry.resolve(newKey)
-    const name = this.store.get(oldKey)
-    if (!name) return
-    this.store.set(newKey, name)
-    this.store.delete(oldKey)
+    return this.unwrapExports(await task)
   }
 
   isTruthyLike(expr: any) {
@@ -226,7 +233,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     return !!this.interpolate(`\${{ ${expr} }}`)
   }
 
-  async updateEntry(parent: Context, options: Entry.Options) {
+  async update(parent: Context, options: Entry.Options) {
     if (!options.id) {
       do {
         options.id = Math.random().toString(36).slice(2, 8)
@@ -234,15 +241,10 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     }
 
     const entry = this.entries[options.id] ??= new Entry(this, parent, options)
-    entry.options = options
-    if (!this.isTruthyLike(options.when) || options.disabled) {
-      entry.stop()
-    } else {
-      entry.start()
-    }
+    entry.update(parent, options)
   }
 
-  removeEntry(parent: Context, options: Entry.Options) {
+  remove(parent: Context, options: Entry.Options) {
     const entry = this.entries[options.id]
     if (!entry) return
     entry.stop()
@@ -311,7 +313,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
 
 export function group(ctx: Context, config: Entry.Options[]) {
   for (const entry of config) {
-    ctx.loader.updateEntry(ctx, entry)
+    ctx.loader.update(ctx, entry)
   }
 
   ctx.accept((neo: Entry.Options[]) => {
@@ -323,16 +325,16 @@ export function group(ctx: Context, config: Entry.Options[]) {
     // update inner plugins
     for (const id in { ...oldMap, ...neoMap }) {
       if (!neoMap[id]) {
-        ctx.loader.removeEntry(ctx, oldMap[id])
+        ctx.loader.remove(ctx, oldMap[id])
       } else {
-        ctx.loader.updateEntry(ctx, neoMap[id])
+        ctx.loader.update(ctx, neoMap[id])
       }
     }
   }, { passive: true })
 
   ctx.on('dispose', () => {
     for (const entry of ctx.scope.config as Entry.Options[]) {
-      ctx.loader.removeEntry(ctx, entry)
+      ctx.loader.remove(ctx, entry)
     }
   })
 }

@@ -14,8 +14,12 @@ describe('@cordisjs/loader', () => {
   const bar = mock.fn((ctx: Context) => {
     ctx.accept()
   })
+  const qux = mock.fn((ctx: Context) => {
+    ctx.accept()
+  })
   root.loader.register('foo', foo)
   root.loader.register('bar', bar)
+  root.loader.register('qux', qux)
 
   test('basic support', async () => {
     root.loader.config = [{
@@ -30,6 +34,10 @@ describe('@cordisjs/loader', () => {
         config: {
           a: 1,
         },
+      }, {
+        id: '4',
+        disabled: true,
+        name: 'qux',
       }],
     }]
 
@@ -40,20 +48,28 @@ describe('@cordisjs/loader', () => {
     expect(root.registry.get(bar)).to.be.ok
     expect(root.registry.get(bar)?.config).to.deep.equal({ a: 1 })
     expect(bar.mock.calls).to.have.length(1)
+    expect(root.registry.get(qux)).to.be.not.ok
   })
 
   test('entry update', async () => {
     root.loader.config = [{
       id: '1',
       name: 'foo',
+    }, {
+      id: '4',
+      name: 'qux',
     }]
 
+    foo.mock.resetCalls()
+    bar.mock.resetCalls()
     root.loader.entryFork.update(root.loader.config)
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(root.registry.get(foo)).to.be.ok
     expect(root.registry.get(bar)).to.be.not.ok
-    expect(foo.mock.calls).to.have.length(1)
-    expect(bar.mock.calls).to.have.length(1)
+    expect(root.registry.get(qux)).to.be.ok
+    expect(foo.mock.calls).to.have.length(0)
+    expect(bar.mock.calls).to.have.length(0)
+    expect(qux.mock.calls).to.have.length(1)
   })
 
   test('plugin update', async () => {
@@ -64,6 +80,9 @@ describe('@cordisjs/loader', () => {
       id: '1',
       name: 'foo',
       config: { a: 3 },
+    }, {
+      id: '4',
+      name: 'qux',
     }])
   })
 
@@ -76,6 +95,9 @@ describe('@cordisjs/loader', () => {
       name: 'foo',
       disabled: true,
       config: { a: 3 },
+    }, {
+      id: '4',
+      name: 'qux',
     }])
   })
 })

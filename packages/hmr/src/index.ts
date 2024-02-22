@@ -301,9 +301,6 @@ class Watcher extends Service {
           this.ctx.logger.warn(err)
         }
 
-        // replace loader cache for `keyFor` method
-        this.ctx.loader.replace(plugin, attempts[filename])
-
         try {
           for (const oldFork of children) {
             const fork = oldFork.parent.plugin(attempts[filename], oldFork.config)
