@@ -15,7 +15,7 @@ export abstract class Service<T = unknown, C extends Context = Context> {
   protected fork?(ctx: C, config: any): void
 
   protected ctx!: C
-  protected [symbols.trace]!: C
+  protected [symbols.origin]!: C
 
   public name!: string
   public config!: T
@@ -50,7 +50,7 @@ export abstract class Service<T = unknown, C extends Context = Context> {
     }
     self.name = name
     self.config = config
-    defineProperty(self, symbols.trace, self.ctx)
+    defineProperty(self, symbols.origin, self.ctx)
 
     self.ctx.provide(name)
     self.ctx.runtime.name = name
@@ -79,14 +79,14 @@ export abstract class Service<T = unknown, C extends Context = Context> {
   }
 
   protected [symbols.extend](props?: any) {
-    const caller = this[symbols.trace]
+    const caller = this[symbols.origin]
     let self: any
     if (this[Service.invoke]) {
       self = createCallable(this.name, this)
     } else {
       self = Object.create(this)
     }
-    defineProperty(self, symbols.trace, caller)
+    defineProperty(self, symbols.origin, caller)
     return Context.associate(Object.assign(self, props), this.name)
   }
 

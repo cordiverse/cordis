@@ -3,7 +3,7 @@ import type { Context, Service } from './index.ts'
 
 export const symbols = {
   // context symbols
-  trace: Symbol.for('cordis.trace') as typeof Context.trace,
+  origin: Symbol.for('cordis.origin') as typeof Context.origin,
   events: Symbol.for('cordis.events') as typeof Context.events,
   static: Symbol.for('cordis.static') as typeof Context.static,
   filter: Symbol.for('cordis.filter') as typeof Context.filter,
@@ -50,7 +50,7 @@ export function joinPrototype(proto1: {}, proto2: {}) {
 export function createTraceable(ctx: any, value: any) {
   const proxy = new Proxy(value, {
     get: (target, name, receiver) => {
-      if (name === symbols.trace || name === 'caller') return ctx
+      if (name === symbols.origin || name === 'caller') return ctx
       return Reflect.get(target, name, receiver)
     },
     apply: (target, thisArg, args) => {
@@ -67,7 +67,7 @@ export function applyTraceable(proxy: any, value: any, thisArg: any, args: any[]
 
 export function createCallable(name: string, proto: {}) {
   const self = function (...args: any[]) {
-    const proxy = createTraceable(self[symbols.trace], self)
+    const proxy = createTraceable(self[symbols.origin], self)
     return applyTraceable(proxy, self, this, args)
   }
   defineProperty(self, 'name', name)

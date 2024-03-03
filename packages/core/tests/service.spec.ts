@@ -124,7 +124,7 @@ describe('Service', () => {
     expect(callback.mock.calls).to.have.length(1)
   })
 
-  test('Context.trace', async () => {
+  test('Context.origin', async () => {
     class Foo extends Service {
       constructor(ctx: Context) {
         super(ctx, 'foo', true)
@@ -133,10 +133,10 @@ describe('Service', () => {
 
     const root = new Context()
     root.plugin(Foo)
-    expect(root.foo[Context.trace]).to.equal(root)
+    expect(root.foo[Context.origin]).to.equal(root)
 
     const ctx = root.extend()
-    expect(ctx.foo[Context.trace]).to.equal(ctx)
+    expect(ctx.foo[Context.origin]).to.equal(ctx)
   })
 
   test('dependency update', async () => {
@@ -287,7 +287,7 @@ describe('Service', () => {
       static [Service.immediate] = true
 
       protected [Service.invoke](init?: Config) {
-        const caller = this[Context.trace]
+        const caller = this[Context.origin]
         expect(caller).to.be.instanceof(Context)
         let result = { ...this.config }
         let intercept = caller[Context.intercept]

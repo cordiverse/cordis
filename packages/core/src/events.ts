@@ -38,7 +38,7 @@ export class Lifecycle {
   _hooks: Record<keyof any, [Context, (...args: any[]) => any][]> = {}
 
   constructor(private root: Context) {
-    defineProperty(this, Context.trace, root)
+    defineProperty(this, Context.origin, root)
 
     defineProperty(this.on('internal/listener', function (this: Context, name, listener, prepend) {
       const method = prepend ? 'unshift' : 'push'
@@ -84,7 +84,7 @@ export class Lifecycle {
     if (name !== 'internal/event') {
       this.emit('internal/event', type, name, args, thisArg)
     }
-    return [this.getHooks(name, thisArg), thisArg ?? this[Context.trace]] as const
+    return [this.getHooks(name, thisArg), thisArg ?? this[Context.origin]] as const
   }
 
   async parallel(...args: any[]) {
@@ -118,7 +118,7 @@ export class Lifecycle {
   }
 
   register(label: string, hooks: [Context, any][], listener: any, prepend?: boolean) {
-    const caller = this[Context.trace]
+    const caller = this[Context.origin]
     const method = prepend ? 'unshift' : 'push'
     hooks[method]([caller, listener])
     return caller.state.collect(label, () => this.unregister(hooks, listener))
@@ -134,7 +134,7 @@ export class Lifecycle {
 
   on(name: string, listener: (...args: any) => any, prepend = false) {
     // handle special events
-    const caller: Context = this[Context.trace]
+    const caller: Context = this[Context.origin]
     caller.scope.assertActive()
     const result = this.bail(caller, 'internal/listener', name, listener, prepend)
     if (result) return result

@@ -329,7 +329,7 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
   isReactive?: boolean = false
 
   constructor(registry: Registry<C>, public plugin: Plugin, config: any, error?: any) {
-    super(registry[Context.trace] as C, config)
+    super(registry[Context.origin] as C, config)
     registry.set(plugin, this)
     if (!plugin) {
       this.name = 'root'

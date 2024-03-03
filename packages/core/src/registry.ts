@@ -24,8 +24,6 @@ export namespace Plugin {
     reusable?: boolean
     Config?: (config: any) => T
     inject?: string[] | Inject
-    /** @deprecated use `inject` instead */
-    using?: string[] | Inject
   }
 
   export interface Transform<S, T> {
@@ -67,7 +65,7 @@ export class Registry<C extends Context = Context> {
   private _internal = new Map<Plugin, MainScope<C>>()
 
   constructor(private root: Context, config: any) {
-    defineProperty(this, Context.trace, root)
+    defineProperty(this, Context.origin, root)
     root.scope = new MainScope(this, null!, config)
     root.scope.runtime.isReactive = true
   }
@@ -139,7 +137,7 @@ export class Registry<C extends Context = Context> {
     // check if it's a valid plugin
     this.resolve(plugin)
 
-    const context: Context = this[Context.trace]
+    const context: Context = this[Context.origin]
     context.scope.assertActive()
 
     // resolve plugin config

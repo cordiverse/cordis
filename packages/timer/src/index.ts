@@ -21,7 +21,7 @@ export class TimerService extends Service {
   }
 
   setTimeout(callback: () => void, delay: number) {
-    const dispose = this[Context.trace].effect(() => {
+    const dispose = this[Context.origin].effect(() => {
       const timer = setTimeout(() => {
         dispose()
         callback()
@@ -32,14 +32,14 @@ export class TimerService extends Service {
   }
 
   setInterval(callback: () => void, delay: number) {
-    return this[Context.trace].effect(() => {
+    return this[Context.origin].effect(() => {
       const timer = setInterval(callback, delay)
       return () => clearInterval(timer)
     })
   }
 
   sleep(delay: number) {
-    const caller = this[Context.trace]
+    const caller = this[Context.origin]
     return new Promise<void>((resolve, reject) => {
       const dispose1 = this.setTimeout(() => {
         dispose1()
@@ -55,7 +55,7 @@ export class TimerService extends Service {
   }
 
   private createWrapper(callback: (args: any[], check: () => boolean) => any, isDisposed = false) {
-    const caller = this[Context.trace]
+    const caller = this[Context.origin]
     caller.scope.assertActive()
 
     let timer: number | NodeJS.Timeout | undefined

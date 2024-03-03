@@ -53,7 +53,7 @@ export interface Context {
 }
 
 export class Context {
-  static readonly trace: unique symbol = symbols.trace as any
+  static readonly origin: unique symbol = symbols.origin as any
   static readonly events: unique symbol = symbols.events as any
   static readonly static: unique symbol = symbols.static as any
   static readonly filter: unique symbol = symbols.filter as any
@@ -61,8 +61,8 @@ export class Context {
   static readonly isolate: unique symbol = symbols.isolate as any
   static readonly internal: unique symbol = symbols.internal as any
   static readonly intercept: unique symbol = symbols.intercept as any
-  /** @deprecated use `Context.trace` instead */
-  static readonly current: typeof Context.trace = Context.trace
+  /** @deprecated use `Context.origin` instead */
+  static readonly current: typeof Context.origin = Context.origin
 
   static is<C extends Context>(value: any): value is C {
     return !!value?.[Context.is as any]
@@ -167,7 +167,7 @@ export class Context {
       ctx.root.emit(self, 'internal/before-service', name, value)
       ctx.root[key] = value
       if (value instanceof Object) {
-        defineProperty(value, symbols.trace, ctx)
+        defineProperty(value, symbols.origin, ctx)
       }
       ctx.root.emit(self, 'internal/service', name, oldValue)
       return true
@@ -178,13 +178,13 @@ export class Context {
     return new Proxy(object, {
       get(target, key, receiver) {
         if (typeof key === 'symbol' || key in target) return Reflect.get(target, key, receiver)
-        const caller: Context = receiver[symbols.trace]
+        const caller: Context = receiver[symbols.origin]
         if (!caller?.[symbols.internal][`${name}.${key}`]) return Reflect.get(target, key, receiver)
         return caller.get(`${name}.${key}`)
       },
       set(target, key, value, receiver) {
         if (typeof key === 'symbol' || key in target) return Reflect.set(target, key, value, receiver)
-        const caller: Context = receiver[symbols.trace]
+        const caller: Context = receiver[symbols.origin]
         if (!caller?.[symbols.internal][`${name}.${key}`]) return Reflect.set(target, key, value, receiver)
         caller[`${name}.${key}`] = value
         return true
@@ -211,7 +211,7 @@ export class Context {
         const constructor = internal[key]['prototype']?.constructor
         if (!constructor) continue
         self[internal[key]['key']] = new constructor(self, config)
-        defineProperty(self[internal[key]['key']], symbols.trace, self)
+        defineProperty(self[internal[key]['key']], symbols.origin, self)
       }
     }
     attach(this[symbols.internal])
@@ -247,7 +247,7 @@ export class Context {
     const value = this.root[this[symbols.isolate][name]]
     if (!value || typeof value !== 'object' && typeof value !== 'function') return value
     if (isUnproxyable(value)) {
-      defineProperty(value, symbols.trace, this)
+      defineProperty(value, symbols.origin, this)
       return value
     }
     return createTraceable(this, value)
