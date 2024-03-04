@@ -139,6 +139,12 @@ export namespace Loader {
   export interface Options {
     name: string
     immutable?: boolean
+    fallback?: Fallback
+  }
+
+  export interface Fallback {
+    extension?: string
+    config: Omit<Entry.Options, 'id'>[]
   }
 }
 
@@ -153,7 +159,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     env: process.env,
   }
 
-  public entryFork!: ForkScope<Context>
+  public entryFork: ForkScope<Context>
   public suspend = false
   public writable = false
   public mimeType!: string
@@ -167,7 +173,39 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
 
   constructor(public app: Context, public options: T) {
     super(app, 'loader', true)
+    this.entryFork = this.app.plugin(group, [])
     this.realms.root = app.root[Context.isolate]
+
+    this.app.on('dispose', () => {
+      this.exit()
+    })
+
+    this.app.on('internal/update', (fork) => {
+      const entry = this.entries[fork.entry?.options.id!]
+      if (!entry) return
+      fork.parent.emit('loader/entry', 'reload', entry)
+    })
+
+    this.app.on('internal/before-update', (fork, config) => {
+      if (!fork.entry) return
+      if (fork.entry.isUpdate) return fork.entry.isUpdate = false
+      const { schema } = fork.runtime
+      fork.entry.options.config = schema ? schema.simplify(config) : config
+      this.writeConfig()
+    })
+
+    this.app.on('internal/fork', (fork) => {
+      // fork.uid: fork is created (we only care about fork dispose event)
+      // fork.parent.runtime.plugin !== group: fork is not tracked by loader
+      if (fork.uid || !fork.entry) return
+      fork.parent.emit('loader/entry', 'unload', fork.entry)
+      // fork is disposed by main scope (e.g. hmr plugin)
+      // normal: ctx.dispose() -> fork / runtime dispose -> delete(plugin)
+      // hmr: delete(plugin) -> runtime dispose -> fork dispose
+      if (!this.app.registry.has(fork.runtime.plugin)) return
+      fork.entry.options.disabled = true
+      this.writeConfig()
+    })
   }
 
   async init(filename?: string) {
@@ -200,13 +238,20 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
 
   private async findConfig() {
     const files = await fs.readdir(this.baseDir)
-    for (const extname of supported) {
-      const filename = this.options.name + extname
+    for (const extension of supported) {
+      const filename = this.options.name + extension
       if (files.includes(filename)) {
-        this.mimeType = writable[extname]
+        this.mimeType = writable[extension]
         this.filename = path.resolve(this.baseDir, filename)
         return
       }
+    }
+    if (this.options.fallback) {
+      const { config, extension = '.yml' } = this.options.fallback
+      this.config = config as any
+      this.mimeType = writable[extension]
+      this.filename = path.resolve(this.baseDir, this.options.name + extension)
+      return this.writeConfig(true)
     }
     throw new Error('config file not found')
   }
@@ -235,12 +280,6 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
       await fs.writeFile(this.filename, JSON.stringify(this.config, null, 2))
     }
     if (!silent) this.app.emit('config')
-  }
-
-  async reload() {
-    const config = await this.readConfig()
-    this.entryFork.update(config)
-    this.app.emit('config')
   }
 
   interpolate(source: any) {
@@ -300,38 +339,8 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
 
   async start() {
     await this.readConfig()
-    this.entryFork = this.app.plugin(group, this.config)
-
-    this.app.on('dispose', () => {
-      this.exit()
-    })
-
-    this.app.on('internal/update', (fork) => {
-      const entry = this.entries[fork.entry?.options.id!]
-      if (!entry) return
-      fork.parent.emit('loader/entry', 'reload', entry)
-    })
-
-    this.app.on('internal/before-update', (fork, config) => {
-      if (!fork.entry) return
-      if (fork.entry.isUpdate) return fork.entry.isUpdate = false
-      const { schema } = fork.runtime
-      fork.entry.options.config = schema ? schema.simplify(config) : config
-      this.writeConfig()
-    })
-
-    this.app.on('internal/fork', (fork) => {
-      // fork.uid: fork is created (we only care about fork dispose event)
-      // fork.parent.runtime.plugin !== group: fork is not tracked by loader
-      if (fork.uid || !fork.entry) return
-      fork.parent.emit('loader/entry', 'unload', fork.entry)
-      // fork is disposed by main scope (e.g. hmr plugin)
-      // normal: ctx.dispose() -> fork / runtime dispose -> delete(plugin)
-      // hmr: delete(plugin) -> runtime dispose -> fork dispose
-      if (!this.app.registry.has(fork.runtime.plugin)) return
-      fork.entry.options.disabled = true
-      this.writeConfig()
-    })
+    this.entryFork.update(this.config)
+    this.app.emit('config')
 
     while (this.tasks.size) {
       await Promise.all(this.tasks)

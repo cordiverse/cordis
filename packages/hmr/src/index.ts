@@ -108,7 +108,7 @@ class Watcher extends Service {
         if (loader.internal!.loadCache.has(filename)) {
           loader.exit()
         } else {
-          await loader.reload()
+          await loader.start()
         }
       } else {
         if (this.externals.has(filename)) {
@@ -290,6 +290,14 @@ class Watcher extends Service {
     // emit reload event before replacing loader cache
     this.ctx.emit('hmr/reload', reloads)
 
+    const reload = (plugin: any, children: ForkScope[]) => {
+      for (const oldFork of children) {
+        const fork = oldFork.parent.plugin(plugin, oldFork.config)
+        fork.entry = oldFork.entry
+        if (fork.entry) fork.entry.fork = fork
+      }
+    }
+
     try {
       for (const [plugin, { filename, children }] of reloads) {
         const path = this.relative(filename)
@@ -302,11 +310,7 @@ class Watcher extends Service {
         }
 
         try {
-          for (const oldFork of children) {
-            const fork = oldFork.parent.plugin(attempts[filename], oldFork.config)
-            fork.entry = oldFork.entry
-            fork.entry.fork = fork
-          }
+          reload(attempts[filename], children)
           this.ctx.logger.info('reload plugin at %c', path)
         } catch (err) {
           this.ctx.logger.warn('failed to reload plugin at %c', path)
@@ -320,11 +324,7 @@ class Watcher extends Service {
       for (const [plugin, { filename, children }] of reloads) {
         try {
           this.ctx.registry.delete(attempts[filename])
-          for (const oldFork of children) {
-            const fork = oldFork.parent.plugin(plugin, oldFork.config)
-            fork.entry = oldFork.entry
-            fork.entry.fork = fork
-          }
+          reload(plugin, children)
         } catch (err) {
           this.ctx.logger.warn(err)
         }
