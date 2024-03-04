@@ -1,7 +1,7 @@
 {
   "name": "@cordisjs/core",
   "description": "Meta-Framework for Modern JavaScript Applications",
-  "version": "3.12.0",
+  "version": "3.13.0",
   "sideEffects": false,
   "type": "module",
   "main": "lib/index.cjs",
