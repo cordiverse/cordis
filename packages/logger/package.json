@@ -36,10 +36,10 @@
     "plugin"
   ],
   "devDependencies": {
-    "@cordisjs/core": "^3.13.0"
+    "@cordisjs/core": "^3.13.1"
   },
   "peerDependencies": {
-    "@cordisjs/core": "^3.13.0"
+    "@cordisjs/core": "^3.13.1"
   },
   "dependencies": {
     "reggol": "^1.6.3"
