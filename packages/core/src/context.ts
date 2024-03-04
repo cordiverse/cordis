@@ -121,11 +121,9 @@ export class Context {
       if (!internal) {
         checkInject(name)
         return Reflect.get(target, name, ctx)
-      }
-
-      if (internal.type === 'accessor') {
+      } else if (internal.type === 'accessor') {
         return internal.get.call(ctx)
-      } else if (internal.type === 'service') {
+      } else {
         if (!internal.builtin) checkInject(name)
         return ctx.get(name)
       }
@@ -139,38 +137,11 @@ export class Context {
       if (internal.type === 'accessor') {
         if (!internal.set) return false
         return internal.set.call(ctx, value)
+      } else {
+        ctx.emit('internal/warning', new Error(`Assigning to service ${name} is not recommended, please use \`ctx.set()\` method instead`))
+        ctx.set(name, value)
+        return true
       }
-
-      // service
-      const key = ctx[symbols.isolate][name]
-      const oldValue = ctx.root[key]
-      if (oldValue === value) return true
-
-      // check override
-      if (value && oldValue) {
-        throw new Error(`service ${name} has been registered`)
-      }
-      if (value) {
-        ctx.on('dispose', () => ctx[name] = undefined)
-      }
-      if (isUnproxyable(value)) {
-        ctx.emit('internal/warning', new Error(`service ${name} is an unproxyable object, which may lead to unexpected behavior`))
-      }
-
-      // setup filter for events
-      const self = Object.create(null)
-      self[symbols.filter] = (ctx2: Context) => {
-        // TypeScript is not smart enough to infer the type of `name` here
-        return ctx[symbols.isolate][name as string] === ctx2[symbols.isolate][name as string]
-      }
-
-      ctx.root.emit(self, 'internal/before-service', name, value)
-      ctx.root[key] = value
-      if (value instanceof Object) {
-        defineProperty(value, symbols.origin, ctx)
-      }
-      ctx.root.emit(self, 'internal/service', name, oldValue)
-      return true
     },
   }
 
@@ -251,6 +222,39 @@ export class Context {
       return value
     }
     return createTraceable(this, value)
+  }
+
+  set(name: string, value: any) {
+    this.provide(name)
+    const key = this[symbols.isolate][name]
+    const oldValue = this.root[key]
+    value ??= undefined
+    if (oldValue === value) return
+
+    // check override
+    if (!isNullable(value) && !isNullable(oldValue)) {
+      throw new Error(`service ${name} has been registered`)
+    }
+    const ctx: Context = this
+    if (!isNullable(value)) {
+      ctx.on('dispose', () => ctx.set(name, undefined))
+    }
+    if (isUnproxyable(value)) {
+      ctx.emit('internal/warning', new Error(`service ${name} is an unproxyable object, which may lead to unexpected behavior`))
+    }
+
+    // setup filter for events
+    const self = Object.create(null)
+    self[symbols.filter] = (ctx2: Context) => {
+      return ctx[symbols.isolate][name] === ctx2[symbols.isolate][name]
+    }
+
+    ctx.emit(self, 'internal/before-service', name, value)
+    ctx.root[key] = value
+    if (value instanceof Object) {
+      defineProperty(value, symbols.origin, ctx)
+    }
+    ctx.emit(self, 'internal/service', name, oldValue)
   }
 
   provide(name: string, value?: any, builtin?: boolean) {

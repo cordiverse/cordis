@@ -56,14 +56,14 @@ export abstract class Service<T = unknown, C extends Context = Context> {
     self.ctx.runtime.name = name
     if (immediate) {
       if (_ctx) self[symbols.expose] = name
-      else self.ctx[name] = self
+      else self.ctx.set(name, self)
     }
 
     self.ctx.on('ready', async () => {
       // await until next tick because derived class has not been initialized yet
       await Promise.resolve()
       await self.start()
-      if (!immediate) self.ctx[name!] = self
+      if (!immediate) self.ctx.set(name!, self)
     })
 
     self.ctx.on('dispose', () => self.stop())

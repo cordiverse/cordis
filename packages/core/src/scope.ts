@@ -386,7 +386,7 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
       const instance = new this.plugin(context, config)
       const name = instance[Context.expose]
       if (name) {
-        context[name] = instance
+        context.set(name, instance)
       }
       if (instance['fork']) {
         this.forkables.push(instance['fork'].bind(instance))
