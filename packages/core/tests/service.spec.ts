@@ -41,13 +41,17 @@ describe('Service', () => {
     root.provide('foo')
 
     root.plugin((ctx) => {
-      // service should be proxyable
-      ctx.foo = new Set()
+      // direct assignment is not recommended
+      ctx.foo = undefined
       expect(warn.mock.calls).to.have.length(1)
+
+      // service should be proxyable
+      ctx.set('foo', new Set())
+      expect(warn.mock.calls).to.have.length(2)
 
       // `foo` is not declared as injection
       ctx.foo.add(1)
-      expect(warn.mock.calls).to.have.length(2)
+      expect(warn.mock.calls).to.have.length(3)
 
       // service cannot be overwritten
       expect(() => ctx.foo = new Set()).to.throw()
@@ -63,7 +67,7 @@ describe('Service', () => {
     root.alias('bar', ['baz'])
     root.mixin('foo', ['bar'])
     root.provide('foo')
-    root.foo = { bar: 1 }
+    root.set('foo', { bar: 1 })
 
     // foo is a service
     expect(root.get('foo')).to.be.ok
@@ -155,25 +159,26 @@ describe('Service', () => {
     expect(callback.mock.calls).to.have.length(0)
     expect(dispose.mock.calls).to.have.length(0)
 
-    const old = root.foo = { bar: 100 }
+    const old = { bar: 100 }
+    root.set('foo', old)
     expect(callback.mock.calls).to.have.length(1)
     expect(callback.mock.calls[0].arguments[0]).to.have.property('bar', 100)
     expect(dispose.mock.calls).to.have.length(0)
 
     // do not trigger event if reference has not changed
     old.bar = 200
-    root.foo = old
+    root.set('foo', old)
     expect(callback.mock.calls).to.have.length(1)
     expect(dispose.mock.calls).to.have.length(0)
 
-    root.foo = null
-    root.foo = { bar: 300 }
+    root.set('foo', null)
+    root.set('foo', { bar: 300 })
     expect(callback.mock.calls).to.have.length(2)
     expect(callback.mock.calls[1].arguments[0]).to.have.property('bar', 300)
     expect(dispose.mock.calls).to.have.length(1)
     expect(dispose.mock.calls[0].arguments[0]).to.have.property('bar', 200)
 
-    root.foo = null
+    root.set('foo', null)
     expect(callback.mock.calls).to.have.length(2)
     expect(dispose.mock.calls).to.have.length(2)
     expect(dispose.mock.calls[1].arguments[0]).to.have.property('bar', 300)

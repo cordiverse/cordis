@@ -138,7 +138,7 @@ export class Context {
         if (!internal.set) return false
         return internal.set.call(ctx, value)
       } else {
-        ctx.emit('internal/warning', new Error(`Assigning to service ${name} is not recommended, please use \`ctx.set()\` method instead`))
+        ctx.emit('internal/warning', new Error(`assigning to service ${name} is not recommended, please use \`ctx.set()\` method instead`))
         ctx.set(name, value)
         return true
       }
@@ -229,7 +229,8 @@ export class Context {
     const key = this[symbols.isolate][name]
     const oldValue = this.root[key]
     value ??= undefined
-    if (oldValue === value) return
+    let dispose = () => {}
+    if (oldValue === value) return dispose
 
     // check override
     if (!isNullable(value) && !isNullable(oldValue)) {
@@ -237,7 +238,9 @@ export class Context {
     }
     const ctx: Context = this
     if (!isNullable(value)) {
-      ctx.on('dispose', () => ctx.set(name, undefined))
+      dispose = ctx.effect(() => () => {
+        ctx.set(name, undefined)
+      })
     }
     if (isUnproxyable(value)) {
       ctx.emit('internal/warning', new Error(`service ${name} is an unproxyable object, which may lead to unexpected behavior`))
@@ -255,6 +258,7 @@ export class Context {
       defineProperty(value, symbols.origin, ctx)
     }
     ctx.emit(self, 'internal/service', name, oldValue)
+    return dispose
   }
 
   provide(name: string, value?: any, builtin?: boolean) {
