@@ -7,6 +7,8 @@ export { default as Schema, default as z } from 'schemastery'
 export { Logger } from '@cordisjs/logger'
 export { TimerService } from '@cordisjs/timer'
 
+import { paramCase } from 'cosmokit'
+
 export interface Events<C extends Context = Context> extends core.Events<C> {}
 
 export namespace Context {
@@ -41,7 +43,7 @@ export abstract class Service<T = unknown, C extends Context = Context> extends 
   constructor(ctx: C, name: string, immediate?: boolean)
   constructor(...args: any) {
     super(...args)
-    this.logger = this.ctx.logger(this.name)
+    this.logger = this.ctx.logger(paramCase(this.name))
   }
 
   [core.Service.setup]() {
