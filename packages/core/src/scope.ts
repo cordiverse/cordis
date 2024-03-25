@@ -99,12 +99,12 @@ export abstract class EffectScope<C extends Context = Context> {
       : callback(this.ctx, config)
     let disposed = false
     const original = typeof result === 'function' ? result : result.dispose.bind(result)
-    const wrapped = () => {
+    const wrapped = (...args: []) => {
       // make sure the original callback is not called twice
       if (disposed) return
       disposed = true
       remove(this.disposables, wrapped)
-      return original()
+      return original(...args)
     }
     this.disposables.push(wrapped)
     if (typeof result === 'function') return wrapped

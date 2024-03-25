@@ -224,6 +224,8 @@ export class Context {
     return createTraceable(this, value)
   }
 
+  set<K extends string & keyof this>(name: K, value: undefined | this[K]): () => void
+  set(name: string, value: any): () => void
   set(name: string, value: any) {
     this.provide(name)
     const key = this[symbols.isolate][name]
