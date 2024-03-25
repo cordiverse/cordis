@@ -36,10 +36,10 @@
     "plugin"
   ],
   "devDependencies": {
-    "@cordisjs/core": "^3.13.1"
+    "@cordisjs/core": "^3.13.4"
   },
   "peerDependencies": {
-    "@cordisjs/core": "^3.13.1"
+    "@cordisjs/core": "^3.13.4"
   },
   "dependencies": {
     "cosmokit": "^1.5.2"
