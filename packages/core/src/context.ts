@@ -284,9 +284,10 @@ export class Context {
     }
   }
 
-  mixin(name: string, mixins: string[]) {
-    for (const key of mixins) {
-      this.accessor(key, {
+  mixin(name: string, mixins: string[] | Dict<string>) {
+    const entries = Array.isArray(mixins) ? mixins.map(key => [key, key]) : Object.entries(mixins)
+    for (const [key, value] of entries) {
+      this.accessor(value, {
         get() {
           const service = this[name]
           if (isNullable(service)) return service

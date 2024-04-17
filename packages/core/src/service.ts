@@ -87,7 +87,7 @@ export abstract class Service<T = unknown, C extends Context = Context> {
       self = Object.create(this)
     }
     defineProperty(self, symbols.origin, caller)
-    return Context.associate(Object.assign(self, props), this.name)
+    return Context.associate<this>(Object.assign(self, props), this.name)
   }
 
   static [Symbol.hasInstance](instance: any) {
