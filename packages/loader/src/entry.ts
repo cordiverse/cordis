@@ -23,11 +23,41 @@ function swapAssign<T extends {}>(target: T, source?: T): T {
   return result
 }
 
+function takeEntries(object: {}, keys: string[]) {
+  const result: [string, any][] = []
+  for (const key of keys) {
+    result.push([key, object[key]])
+    delete object[key]
+  }
+  return result
+}
+
+function sortKeys(object: {}, prepend = ['id', 'name'], append = ['config']) {
+  const part1 = takeEntries(object, prepend)
+  const part2 = takeEntries(object, append)
+  const rest = takeEntries(object, Object.keys(object)).sort(([a], [b]) => a.localeCompare(b))
+  Object.assign(object, Object.fromEntries([...part1, ...rest, ...part2]))
+}
+
+const kEntry = Symbol('cordis.entry')
+
 export class Entry {
+  static for(ctx: Context) {
+    return ctx[kEntry] as Entry | undefined
+  }
+
   public fork: ForkScope | null = null
   public isUpdate = false
 
-  constructor(public loader: Loader, public parent: Context, public options: Entry.Options) {}
+  constructor(public loader: Loader, public parent: Context, public options: Entry.Options) {
+    sortKeys(this.options)
+  }
+
+  unlink() {
+    const config = this.parent.config as Entry.Options[]
+    const index = config.indexOf(this.options)
+    if (index >= 0) config.splice(index, 1)
+  }
 
   amend(ctx: Context) {
     swapAssign(ctx[Context.intercept], this.options.intercept)
@@ -59,16 +89,17 @@ export class Entry {
   }
 
   // TODO: handle parent change
-  update(parent: Context, options: Entry.Options) {
+  async update(parent: Context, options: Entry.Options) {
     this.options = options
+    sortKeys(this.options)
     if (!this.loader.isTruthyLike(options.when) || options.disabled) {
       this.stop()
     } else {
-      this.start()
+      await this.resume()
     }
   }
 
-  async start() {
+  async resume() {
     if (this.fork) {
       this.isUpdate = true
       this.amend(this.fork.parent)
@@ -78,11 +109,12 @@ export class Entry {
       const plugin = await this.loader.resolve(this.options.name)
       if (!plugin) return
       const ctx = this.parent.extend({
+        [kEntry]: this,
         [Context.intercept]: Object.create(this.parent[Context.intercept]),
         [Context.isolate]: Object.create(this.parent[Context.isolate]),
       })
       this.amend(ctx)
-      this.fork = ctx.plugin(plugin, this.loader.interpolate(this.options.config))
+      this.fork = ctx.plugin(plugin, this.options.config)
       this.fork.entry = this
     }
   }
@@ -93,4 +125,19 @@ export class Entry {
     this.fork.dispose()
     this.fork = null
   }
+
+  // modification
+
+  meta(options: any) {
+    for (const key of Object.keys(options)) {
+      delete this.options[key]
+      if (options[key] === null) {
+        delete options[key]
+      }
+    }
+    sortKeys(this.options)
+    // await this.loader.writeConfig(true)
+  }
 }
+
+Error.stackTraceLimit = 100

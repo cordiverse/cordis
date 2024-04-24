@@ -48,7 +48,7 @@ class NodeLoader extends Loader<NodeLoader.Options> {
     try {
       return await import(name)
     } catch (err: any) {
-      this.app.emit('internal/error', err)
+      this.app.emit('internal/error', new Error(`Cannot find package "${name}"`))
     }
   }
 

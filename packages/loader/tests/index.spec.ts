@@ -27,7 +27,7 @@ describe('@cordisjs/loader', () => {
       name: 'foo',
     }, {
       id: '2',
-      name: 'group',
+      name: 'cordis/group',
       config: [{
         id: '3',
         name: 'bar',
@@ -62,7 +62,7 @@ describe('@cordisjs/loader', () => {
 
     foo.mock.resetCalls()
     bar.mock.resetCalls()
-    root.loader.entryFork.update(root.loader.config)
+    await root.loader.start()
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(root.registry.get(foo)).to.be.ok
     expect(root.registry.get(bar)).to.be.not.ok
@@ -131,7 +131,7 @@ describe('@cordisjs/loader', () => {
         name: 'qux',
       }, {
         id: '3',
-        name: 'group',
+        name: 'cordis/group',
         config: [{
           id: '4',
           name: 'foo',
@@ -154,7 +154,7 @@ describe('@cordisjs/loader', () => {
         name: 'qux',
       }, {
         id: '3',
-        name: 'group',
+        name: 'cordis/group',
         isolate: {
           bar: true,
         },
@@ -165,7 +165,7 @@ describe('@cordisjs/loader', () => {
       }]
 
       expect(dispose.mock.calls).to.have.length(0)
-      root.loader.entryFork.update(root.loader.config)
+      await root.loader.start()
       await new Promise((resolve) => setTimeout(resolve, 0))
       expect(foo.mock.calls).to.have.length(1)
       expect(dispose.mock.calls).to.have.length(1)
@@ -178,7 +178,7 @@ describe('@cordisjs/loader', () => {
         name: 'qux',
       }, {
         id: '3',
-        name: 'group',
+        name: 'cordis/group',
         isolate: {
           bar: false,
           qux: true,
@@ -189,7 +189,7 @@ describe('@cordisjs/loader', () => {
         }],
       }]
 
-      root.loader.entryFork.update(root.loader.config)
+      await root.loader.start()
       await new Promise((resolve) => setTimeout(resolve, 0))
       expect(foo.mock.calls).to.have.length(2)
       expect(dispose.mock.calls).to.have.length(1)

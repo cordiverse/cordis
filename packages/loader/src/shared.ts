@@ -1,4 +1,4 @@
-import { Context, EffectScope, ForkScope, Service } from '@cordisjs/core'
+import { Context, EffectScope, Service } from '@cordisjs/core'
 import { defineProperty, Dict, isNullable, valueMap } from 'cosmokit'
 import { constants, promises as fs } from 'fs'
 import { interpolate } from './utils.ts'
@@ -47,12 +47,7 @@ export namespace Loader {
   export interface Options {
     name: string
     immutable?: boolean
-    fallback?: Fallback
-  }
-
-  export interface Fallback {
-    extension?: string
-    config: Omit<Entry.Options, 'id'>[]
+    initial?: Omit<Entry.Options, 'id'>[]
   }
 }
 
@@ -67,7 +62,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     env: process.env,
   }
 
-  public entryFork: ForkScope<Context>
+  public root: Entry
   public suspend = false
   public writable = false
   public mimeType!: string
@@ -81,7 +76,12 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
 
   constructor(public app: Context, public options: T) {
     super(app, 'loader', true)
-    this.entryFork = this.app.plugin(group, [])
+    this.root = new Entry(this, app, {
+      id: '',
+      name: 'cordis/group',
+      config: [],
+    })
+    this.entries[''] = this.root
     this.realms.root = app.root[Context.isolate]
 
     this.app.on('dispose', () => {
@@ -154,11 +154,10 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
         return
       }
     }
-    if (this.options.fallback) {
-      const { config, extension = '.yml' } = this.options.fallback
-      this.config = config as any
-      this.mimeType = writable[extension]
-      this.filename = path.resolve(this.baseDir, this.options.name + extension)
+    if (this.options.initial) {
+      this.config = this.options.initial as any
+      this.mimeType = writable['.yml']
+      this.filename = path.resolve(this.baseDir, this.options.name + '.yml')
       return this.writeConfig(true)
     }
     throw new Error('config file not found')
@@ -222,14 +221,41 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     }
 
     const entry = this.entries[options.id] ??= new Entry(this, parent, options)
-    entry.update(parent, options)
+    return entry.update(parent, options)
   }
 
-  remove(parent: Context, options: Entry.Options) {
-    const entry = this.entries[options.id]
+  async add(options: Omit<Entry.Options, 'id'>, target = '', index = Infinity) {
+    const entry = this.entries[target]
+    if (!entry) throw new Error('cannot locate parent entry')
+    entry.options.config.splice(index, 0, options)
+    await entry.resume()
+    this.writeConfig()
+    return entry.options.id
+  }
+
+  remove(id: string, passive = false) {
+    const entry = this.entries[id]
     if (!entry) return
     entry.stop()
-    delete this.entries[options.id]
+    delete this.entries[id]
+    if (!passive && entry.parent.scope.isActive) {
+      entry.unlink()
+      this.writeConfig()
+    }
+  }
+
+  teleport(id: string, target: string, index = Infinity) {
+    const entry = this.entries[id]
+    const sourceEntry = entry.parent.scope.entry!
+    const targetEntry = this.entries[target]
+    if (!targetEntry) throw new Error('cannot locate target entry')
+    entry.unlink()
+    targetEntry.options.config.splice(index, 0, entry.options)
+    if (sourceEntry !== targetEntry) {
+      entry.parent = targetEntry.fork!.ctx
+      entry.amend(entry.parent) // refresh parent only?
+    }
+    this.writeConfig()
   }
 
   paths(scope: EffectScope): string[] {
@@ -247,7 +273,8 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
 
   async start() {
     await this.readConfig()
-    this.entryFork.update(this.config)
+    this.root.options.config = this.config
+    this.root.resume()
     this.app.emit('config')
 
     while (this.tasks.size) {
@@ -262,35 +289,51 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
   exit() {}
 }
 
-export function group(ctx: Context, config: Entry.Options[]) {
-  for (const entry of config) {
-    ctx.loader.update(ctx, entry)
-  }
+export const kGroup = Symbol('cordis.group')
 
-  ctx.accept((neo: Entry.Options[]) => {
-    // update config reference
-    const old = ctx.scope.config as Entry.Options[]
-    const oldMap: any = Object.fromEntries(old.map(entry => [entry.id || Symbol('anonymous'), entry]))
-    const neoMap: any = Object.fromEntries(neo.map(entry => [entry.id || Symbol('anonymous'), entry]))
-
-    // update inner plugins
-    for (const id of Reflect.ownKeys({ ...oldMap, ...neoMap })) {
-      if (!neoMap[id]) {
-        ctx.loader.remove(ctx, oldMap[id])
-      } else {
-        ctx.loader.update(ctx, neoMap[id])
-      }
-    }
-  }, { passive: true })
-
-  ctx.on('dispose', () => {
-    for (const entry of ctx.scope.config as Entry.Options[]) {
-      ctx.loader.remove(ctx, entry)
-    }
-  })
+export interface GroupOptions {
+  initial?: Omit<Entry.Options, 'id'>[]
+  allowed?: string[]
 }
 
-defineProperty(group, 'inject', ['loader'])
-defineProperty(group, 'reusable', true)
+export function createGroup(config?: Entry.Options[], options: GroupOptions = {}) {
+  options.initial = config
+
+  function group(ctx: Context, config: Entry.Options[]) {
+    for (const entry of config) {
+      ctx.loader.update(ctx, entry)
+    }
+
+    ctx.accept((neo: Entry.Options[]) => {
+      // update config reference
+      const old = ctx.scope.config as Entry.Options[]
+      const oldMap: any = Object.fromEntries(old.map(entry => [entry.id, entry]))
+      const neoMap: any = Object.fromEntries(neo.map(entry => [entry.id, entry]))
+
+      // update inner plugins
+      for (const id in { ...oldMap, ...neoMap }) {
+        if (!neoMap[id]) {
+          ctx.loader.remove(id, true)
+        } else {
+          ctx.loader.update(ctx, neoMap[id])
+        }
+      }
+    }, { passive: true })
+
+    ctx.on('dispose', () => {
+      for (const entry of ctx.scope.config as Entry.Options[]) {
+        ctx.loader.remove(entry.id, true)
+      }
+    })
+  }
+
+  defineProperty(group, 'inject', ['loader'])
+  defineProperty(group, 'reusable', true)
+  defineProperty(group, kGroup, options)
+
+  return group
+}
+
+export const group = createGroup()
 
 export default Loader
