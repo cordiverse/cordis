@@ -1,7 +1,6 @@
 import { Context } from '../src'
 import { expect } from 'chai'
-import { describe, mock, test } from 'node:test'
-import { noop } from 'cosmokit'
+import { mock } from 'node:test'
 import { event, Filter, Session } from './utils'
 
 export function createArray<T>(length: number, create: (index: number) => T) {
@@ -16,7 +15,7 @@ function setup() {
 }
 
 describe('Event Listener', () => {
-  test('context.prototype.on', () => {
+  it('context.prototype.on', () => {
     const { root } = setup()
     const callback = mock.fn()
     const dispose = root.on(event, callback)
@@ -29,7 +28,7 @@ describe('Event Listener', () => {
     expect(callback.mock.calls).to.have.length(2)
   })
 
-  test('context.prototype.once', () => {
+  it('context.prototype.once', () => {
     const { root } = setup()
     const callback = mock.fn()
     const dispose = root.once(event, callback)
@@ -42,7 +41,7 @@ describe('Event Listener', () => {
     expect(callback.mock.calls).to.have.length(1)
   })
 
-  test('context.prototype.off', () => {
+  it('context.prototype.off', () => {
     const { root } = setup()
     const callback = mock.fn()
     root.on(event, callback)
@@ -56,7 +55,7 @@ describe('Event Listener', () => {
 })
 
 describe('Events Emitter', () => {
-  test('context.prototype.parallel', async () => {
+  it('context.prototype.parallel', async () => {
     const { root } = setup()
     await root.parallel(event)
     const callback = mock.fn()
@@ -75,7 +74,7 @@ describe('Events Emitter', () => {
     await expect(root.parallel(event)).to.be.rejectedWith('test')
   })
 
-  test('context.prototype.emit', async () => {
+  it('context.prototype.emit', async () => {
     const { root } = setup()
     root.emit(event)
     const callback = mock.fn()
@@ -94,7 +93,7 @@ describe('Events Emitter', () => {
     expect(() => root.emit(event)).to.throw('test')
   })
 
-  test('context.prototype.serial', async () => {
+  it('context.prototype.serial', async () => {
     const { root } = setup()
     root.serial(event)
     const callback = mock.fn()
@@ -113,7 +112,7 @@ describe('Events Emitter', () => {
     await expect(root.serial(event)).to.be.rejectedWith('message')
   })
 
-  test('context.prototype.bail', async () => {
+  it('context.prototype.bail', async () => {
     const { root } = setup()
     root.bail(event)
     const callback = mock.fn()

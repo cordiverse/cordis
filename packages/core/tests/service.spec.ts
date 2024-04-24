@@ -1,11 +1,11 @@
 import { Context, Service } from '../src'
-import { defineProperty, noop } from 'cosmokit'
+import { noop } from 'cosmokit'
 import { expect } from 'chai'
-import { describe, mock, test } from 'node:test'
+import { mock } from 'node:test'
 import { checkError, getHookSnapshot } from './utils'
 
 describe('Service', () => {
-  test('non-service access', async () => {
+  it('non-service access', async () => {
     const root = new Context()
     const warn = mock.fn()
     root.on('internal/warning', warn)
@@ -34,7 +34,7 @@ describe('Service', () => {
     await checkError(root)
   })
 
-  test('service access', async () => {
+  it('service access', async () => {
     const root = new Context()
     const warn = mock.fn()
     root.on('internal/warning', warn)
@@ -60,7 +60,7 @@ describe('Service', () => {
     await checkError(root)
   })
 
-  test('service injection', async () => {
+  it('service injection', async () => {
     const root = new Context()
     const warn = mock.fn()
     root.on('internal/warning', warn)
@@ -91,7 +91,7 @@ describe('Service', () => {
     await checkError(root)
   })
 
-  test('normal service', async () => {
+  it('normal service', async () => {
     class Foo extends Service {
       constructor(ctx: Context) {
         super(ctx, 'foo')
@@ -109,7 +109,7 @@ describe('Service', () => {
     expect(root.foo).to.be.undefined
   })
 
-  test('immediate service', async () => {
+  it('immediate service', async () => {
     class Foo extends Service {
       constructor(ctx: Context) {
         super(ctx, 'foo', true)
@@ -128,7 +128,7 @@ describe('Service', () => {
     expect(callback.mock.calls).to.have.length(1)
   })
 
-  test('Context.origin', async () => {
+  it('Context.origin', async () => {
     class Foo extends Service {
       constructor(ctx: Context) {
         super(ctx, 'foo', true)
@@ -143,7 +143,7 @@ describe('Service', () => {
     expect(ctx.foo[Context.origin]).to.equal(ctx)
   })
 
-  test('dependency update', async () => {
+  it('dependency update', async () => {
     const callback = mock.fn((foo: any) => {})
     const dispose = mock.fn((foo: any) => {})
     const plugin = mock.fn((ctx: Context) => {
@@ -184,7 +184,7 @@ describe('Service', () => {
     expect(dispose.mock.calls[1].arguments[0]).to.have.property('bar', 300)
   })
 
-  test('lifecycle methods', async () => {
+  it('lifecycle methods', async () => {
     const start = mock.fn(noop)
     const stop = mock.fn(noop)
     const fork = mock.fn(noop)
@@ -222,7 +222,7 @@ describe('Service', () => {
   })
 
   // https://github.com/koishijs/koishi/issues/1110
-  test('memory leak test', async () => {
+  it('memory leak test', async () => {
     class Test extends Service {
       constructor(ctx: Context) {
         super(ctx, 'test', true)
@@ -241,7 +241,7 @@ describe('Service', () => {
   })
 
   // https://github.com/koishijs/koishi/issues/1130
-  test('immediate + dependency', async () => {
+  it('immediate + dependency', async () => {
     const foo = mock.fn(noop)
     const bar = mock.fn(noop)
     const qux = mock.fn(noop)
@@ -280,7 +280,7 @@ describe('Service', () => {
     expect(qux.mock.calls).to.have.length(1)
   })
 
-  test('functional service', async () => {
+  it('functional service', async () => {
     interface Config {}
 
     interface Foo {

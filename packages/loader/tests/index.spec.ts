@@ -1,4 +1,4 @@
-import { describe, mock, test } from 'node:test'
+import { mock } from 'node:test'
 import { expect } from 'chai'
 import { Context, Service } from '@cordisjs/core'
 import { defineProperty } from 'cosmokit'
@@ -21,7 +21,7 @@ describe('@cordisjs/loader', () => {
   root.loader.register('bar', bar)
   root.loader.register('qux', qux)
 
-  test('basic support', async () => {
+  it('basic support', async () => {
     root.loader.config = [{
       id: '1',
       name: 'foo',
@@ -51,7 +51,7 @@ describe('@cordisjs/loader', () => {
     expect(root.registry.get(qux)).to.be.not.ok
   })
 
-  test('entry update', async () => {
+  it('entry update', async () => {
     root.loader.config = [{
       id: '1',
       name: 'foo',
@@ -72,7 +72,7 @@ describe('@cordisjs/loader', () => {
     expect(qux.mock.calls).to.have.length(1)
   })
 
-  test('plugin update', async () => {
+  it('plugin update', async () => {
     const runtime = root.registry.get(foo)
     runtime!.update({ a: 3 })
     await new Promise((resolve) => setTimeout(resolve, 0))
@@ -86,7 +86,7 @@ describe('@cordisjs/loader', () => {
     }])
   })
 
-  test('plugin dispose', async () => {
+  it('plugin dispose', async () => {
     const runtime = root.registry.get(foo)
     runtime!.dispose()
     await new Promise((resolve) => setTimeout(resolve, 0))
@@ -122,7 +122,7 @@ describe('@cordisjs/loader', () => {
     root.loader.register('bar', Bar)
     root.loader.register('qux', Qux)
 
-    test('basic support', async () => {
+    it('basic support', async () => {
       root.loader.config = [{
         id: '1',
         name: 'bar',
@@ -145,7 +145,7 @@ describe('@cordisjs/loader', () => {
       expect(foo.mock.calls).to.have.length(1)
     })
 
-    test('isolate', async () => {
+    it('isolate', async () => {
       root.loader.config = [{
         id: '1',
         name: 'bar',

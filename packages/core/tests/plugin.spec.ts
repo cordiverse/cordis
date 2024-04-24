@@ -1,11 +1,11 @@
 import { Context } from '../src'
 import { expect } from 'chai'
-import { describe, mock, test } from 'node:test'
+import { mock } from 'node:test'
 import { inspect } from 'util'
 import { checkError } from './utils'
 
 describe('Plugin', () => {
-  test('apply functional plugin', () => {
+  it('apply functional plugin', () => {
     const root = new Context()
     const callback = mock.fn()
     const options = { foo: 'bar' }
@@ -15,7 +15,7 @@ describe('Plugin', () => {
     expect(callback.mock.calls[0].arguments[1]).to.deep.equal(options)
   })
 
-  test('apply object plugin', () => {
+  it('apply object plugin', () => {
     const root = new Context()
     const callback = mock.fn()
     const options = { bar: 'foo' }
@@ -26,14 +26,14 @@ describe('Plugin', () => {
     expect(callback.mock.calls[0].arguments[1]).to.deep.equal(options)
   })
 
-  test('apply invalid plugin', () => {
+  it('apply invalid plugin', () => {
     const root = new Context()
     expect(() => root.plugin(undefined as any)).to.throw()
     expect(() => root.plugin({} as any)).to.throw()
     expect(() => root.plugin({ apply: {} } as any)).to.throw()
   })
 
-  test('apply duplicate plugin', () => {
+  it('apply duplicate plugin', () => {
     const root = new Context()
     const callback = mock.fn()
     root.plugin({ apply: callback })
@@ -42,7 +42,7 @@ describe('Plugin', () => {
     expect(callback.mock.calls).to.have.length(1)
   })
 
-  test('apply plugin when dispose', () => {
+  it('apply plugin when dispose', () => {
     const root = new Context()
     const callback = mock.fn()
     const fork = root.plugin((ctx) => {
@@ -55,7 +55,7 @@ describe('Plugin', () => {
     expect(callback.mock.calls).to.have.length(0)
   })
 
-  test('context inspect', async () => {
+  it('context inspect', async () => {
     const root = new Context()
 
     expect(inspect(root)).to.equal('Context <root>')
@@ -84,7 +84,7 @@ describe('Plugin', () => {
     await checkError(root)
   })
 
-  test('registry', () => {
+  it('registry', () => {
     // make coverage happy
     const root = new Context()
     root.registry.keys()

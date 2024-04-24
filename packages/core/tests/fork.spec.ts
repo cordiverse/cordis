@@ -1,11 +1,11 @@
 import { Context } from '../src'
 import { noop } from 'cosmokit'
 import { expect } from 'chai'
-import { describe, mock, test } from 'node:test'
+import { mock } from 'node:test'
 import { event, Filter, Session, filter } from './utils'
 
 describe('Fork', () => {
-  test('basic support', () => {
+  it('basic support', () => {
     const callback = mock.fn()
     const reusable = (ctx: Context) => {
       let foo = 0
@@ -57,7 +57,7 @@ describe('Fork', () => {
     expect(callback.mock.calls).to.have.length(0)
   })
 
-  test('shorthand syntax', () => {
+  it('shorthand syntax', () => {
     const callback = mock.fn()
     const reusable = {
       reusable: true,
@@ -89,7 +89,7 @@ describe('Fork', () => {
     expect(callback.mock.calls).to.have.length(0)
   })
 
-  test('deferred execution', () => {
+  it('deferred execution', () => {
     const root = new Context()
     root.provide('foo')
     const listener = mock.fn()
@@ -131,7 +131,7 @@ describe('Fork', () => {
     expect(listener.mock.calls).to.have.length(3)
   })
 
-  test('state.uid', () => {
+  it('state.uid', () => {
     const root = new Context()
     const callback1 = mock.fn()
     expect(root.state.uid).to.equal(0)

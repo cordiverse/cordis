@@ -1,10 +1,10 @@
 import { Context, Service } from '../src'
 import { expect } from 'chai'
-import { describe, mock, test } from 'node:test'
+import { mock } from 'node:test'
 import { event } from './utils'
 
 describe('Isolation', () => {
-  test('isolated context', async () => {
+  it('isolated context', async () => {
     const root = new Context()
     root.provide('foo')
     const ctx = root.isolate('foo')
@@ -39,7 +39,7 @@ describe('Isolation', () => {
     expect(inner.mock.calls).to.have.length(2)
   })
 
-  test('isolated fork', () => {
+  it('isolated fork', () => {
     const root = new Context()
     root.provide('foo')
     const callback = mock.fn(() => {})
@@ -68,7 +68,7 @@ describe('Isolation', () => {
     expect(dispose.mock.calls).to.have.length(0)
   })
 
-  test('shared label', () => {
+  it('shared label', () => {
     const root = new Context()
     root.provide('foo')
     const callback = mock.fn(() => {})
@@ -103,7 +103,7 @@ describe('Isolation', () => {
     expect(dispose.mock.calls).to.have.length(4)
   })
 
-  test('isolated event', async () => {
+  it('isolated event', async () => {
     class Foo extends Service {
       constructor(ctx: Context) {
         super(ctx, 'foo', true)

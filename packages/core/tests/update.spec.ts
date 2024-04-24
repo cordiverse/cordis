@@ -2,7 +2,7 @@ import { Context } from '../src'
 import { expect } from 'chai'
 import { noop } from 'cosmokit'
 import { event } from './utils'
-import { describe, mock, test } from 'node:test'
+import { mock } from 'node:test'
 
 describe('Update', () => {
   interface Config {
@@ -10,7 +10,7 @@ describe('Update', () => {
     bar?: number
   }
 
-  test('update runtime', () => {
+  it('update runtime', () => {
     const root = new Context()
     const dispose = mock.fn(noop)
     const plugin = mock.fn((ctx: Context, config: Config) => {
@@ -41,7 +41,7 @@ describe('Update', () => {
     expect(plugin.mock.calls[1].arguments[1]).to.deep.equal({ foo: 2 })
   })
 
-  test('update fork (single)', () => {
+  it('update fork (single)', () => {
     const root = new Context()
     const listener = mock.fn((value?: number) => {})
     const updater = mock.fn(() => {})
@@ -72,7 +72,7 @@ describe('Update', () => {
     expect(updater.mock.calls).to.have.length(3)
   })
 
-  test('update fork (multiple)', () => {
+  it('update fork (multiple)', () => {
     const root = new Context()
     const inner = mock.fn((ctx: Context) => {
       ctx.decline(['foo'])
@@ -100,7 +100,7 @@ describe('Update', () => {
     expect(fork2.config).to.deep.equal({ foo: 2, bar: 1 })
   })
 
-  test('nested update', () => {
+  it('nested update', () => {
     const root = new Context()
     const listener = mock.fn((value?: number) => {})
     const inner = mock.fn((ctx: Context, config: Config) => {
@@ -168,7 +168,7 @@ describe('Update', () => {
     listener.mock.resetCalls()
   })
 
-  test('deferred update', () => {
+  it('deferred update', () => {
     const root = new Context()
     root.provide('foo')
     const callback = mock.fn()
@@ -197,7 +197,7 @@ describe('Update', () => {
     expect(fork.runtime.disposables).to.have.length(1)      // fork
   })
 
-  test('root update', async () => {
+  it('root update', async () => {
     const root = new Context()
     const callback = mock.fn(noop)
     const { length } = root.state.disposables

@@ -26,6 +26,7 @@ function swapAssign<T extends {}>(target: T, source?: T): T {
 function takeEntries(object: {}, keys: string[]) {
   const result: [string, any][] = []
   for (const key of keys) {
+    if (!(key in object)) continue
     result.push([key, object[key]])
     delete object[key]
   }

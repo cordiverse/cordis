@@ -1,11 +1,11 @@
 import { Context } from '../src'
 import { expect } from 'chai'
-import { describe, mock, test } from 'node:test'
+import { mock } from 'node:test'
 import { noop, remove } from 'cosmokit'
 import { event, getHookSnapshot } from './utils'
 
 describe('Disposables', () => {
-  test('fork.dispose', () => {
+  it('fork.dispose', () => {
     const plugin = (ctx: Context) => {
       ctx.on(event, callback)
       ctx.plugin((ctx) => {
@@ -42,7 +42,7 @@ describe('Disposables', () => {
     expect(callback.mock.calls).to.have.length(1)
   })
 
-  test('memory leak test', async () => {
+  it('memory leak test', async () => {
     function plugin(ctx: Context) {
       ctx.on('ready', noop)
       ctx.on(event, noop)
@@ -59,7 +59,7 @@ describe('Disposables', () => {
     expect(after).to.deep.equal(getHookSnapshot(root))
   })
 
-  test('dispose event', () => {
+  it('dispose event', () => {
     const root = new Context()
     const dispose = mock.fn(noop)
     const plugin = (ctx: Context) => {
@@ -75,7 +75,7 @@ describe('Disposables', () => {
     expect(dispose.mock.calls).to.have.length(1)
   })
 
-  test('dispose event', async () => {
+  it('dispose event', async () => {
     const root = new Context()
     const error = mock.fn()
     const dispose = mock.fn(() => {
@@ -95,7 +95,7 @@ describe('Disposables', () => {
     expect(error.mock.calls).to.have.length(1)
   })
 
-  test('root dispose', async () => {
+  it('root dispose', async () => {
     const root = new Context()
     const callback = mock.fn(noop)
     const { length } = root.state.disposables
@@ -117,7 +117,7 @@ describe('Disposables', () => {
   })
 
   describe('ctx.effect()', () => {
-    test('manual dispose', async () => {
+    it('manual dispose', async () => {
       const root = new Context()
       const dispose = mock.fn(noop)
       const items: Item[] = []
@@ -153,7 +153,7 @@ describe('Disposables', () => {
       expect(items).to.have.length(0)
     })
 
-    test('plugin dispose', () => {
+    it('plugin dispose', () => {
       const root = new Context()
       const dispose = mock.fn(noop)
   

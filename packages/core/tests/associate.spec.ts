@@ -1,10 +1,9 @@
 import { Context, Service } from '../src'
-import { describe, test } from 'node:test'
 import { expect } from 'chai'
 import {} from './utils'
 
 describe('Association', () => {
-  test('service injection', async () => {
+  it('service injection', async () => {
     const root = new Context()
 
     class Foo extends Service {
@@ -29,7 +28,7 @@ describe('Association', () => {
     expect(root.foo.bar).to.be.undefined
   })
 
-  test('property injection', async () => {
+  it('property injection', async () => {
     const root = new Context()
 
     class Foo extends Service {
@@ -55,7 +54,7 @@ describe('Association', () => {
     expect(root.foo.baz()).to.be.instanceof(Foo)
   })
 
-  test('associated type', async () => {
+  it('associated type', async () => {
     interface Session {
       bar(): this
     }

@@ -1,9 +1,8 @@
 import { expect } from 'chai'
-import { describe, test } from 'node:test'
 import { Context } from '../src'
 
 describe('Extend', () => {
-  test('basic support', () => {
+  it('basic support', () => {
     class S1 {}
     class S2 {}
     class S3 {}

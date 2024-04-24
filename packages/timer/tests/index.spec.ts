@@ -1,4 +1,4 @@
-import { describe, mock, test } from 'node:test'
+import { mock } from 'node:test'
 import { FakeTimerInstallOpts, install, InstalledClock } from '@sinonjs/fake-timers'
 import { Context } from 'cordis'
 import assert from 'node:assert'
@@ -22,7 +22,7 @@ function withContext(callback: (ctx: Context) => Promise<void>, config?: FakeTim
 }
 
 describe('ctx.setTimeout()', () => {
-  test('basic support', withContext(async (ctx) => {
+  it('basic support', withContext(async (ctx) => {
     const callback = mock.fn()
     ctx.setTimeout(callback, 1000)
     assert.strictEqual(callback.mock.calls.length, 0)
@@ -32,7 +32,7 @@ describe('ctx.setTimeout()', () => {
     assert.strictEqual(callback.mock.calls.length, 1)
   }))
 
-  test('dispose', withContext(async (ctx) => {
+  it('dispose', withContext(async (ctx) => {
     const callback = mock.fn()
     const dispose = ctx.setTimeout(callback, 1000)
     assert.strictEqual(callback.mock.calls.length, 0)
@@ -43,7 +43,7 @@ describe('ctx.setTimeout()', () => {
 })
 
 describe('ctx.setInterval()', () => {
-  test('basic support', withContext(async (ctx) => {
+  it('basic support', withContext(async (ctx) => {
     const callback = mock.fn()
     const dispose = ctx.setInterval(callback, 1000)
     assert.strictEqual(callback.mock.calls.length, 0)
@@ -58,7 +58,7 @@ describe('ctx.setInterval()', () => {
 })
 
 describe('ctx.sleep()', () => {
-  test('basic support', withContext(async (ctx) => {
+  it('basic support', withContext(async (ctx) => {
     const resolve = mock.fn()
     const reject = mock.fn()
     ctx.sleep(1000).then(resolve, reject)
@@ -76,7 +76,7 @@ describe('ctx.sleep()', () => {
 })
 
 describe('ctx.throttle()', () => {
-  test('basic support', withContext(async (ctx) => {
+  it('basic support', withContext(async (ctx) => {
     const callback = mock.fn()
     const throttled = ctx.throttle(callback, 1000)
     throttled()
@@ -91,7 +91,7 @@ describe('ctx.throttle()', () => {
     assert.strictEqual(callback.mock.calls.length, 3)
   }))
 
-  test('trailing mode', withContext(async (ctx) => {
+  it('trailing mode', withContext(async (ctx) => {
     const callback = mock.fn()
     const throttled = ctx.throttle(callback, 1000)
     throttled()
@@ -105,7 +105,7 @@ describe('ctx.throttle()', () => {
     assert.strictEqual(callback.mock.calls.length, 2)
   }))
 
-  test('disposed', withContext(async (ctx) => {
+  it('disposed', withContext(async (ctx) => {
     const callback = mock.fn()
     const throttled = ctx.throttle(callback, 1000)
     throttled.dispose()
@@ -119,7 +119,7 @@ describe('ctx.throttle()', () => {
 })
 
 describe('ctx.debounce()', () => {
-  test('basic support', withContext(async (ctx) => {
+  it('basic support', withContext(async (ctx) => {
     const callback = mock.fn()
     const debounced = ctx.debounce(callback, 1000)
     debounced()
@@ -134,7 +134,7 @@ describe('ctx.debounce()', () => {
     assert.strictEqual(callback.mock.calls.length, 1)
   }))
 
-  test('disposed', withContext(async (ctx) => {
+  it('disposed', withContext(async (ctx) => {
     const callback = mock.fn()
     const debounced = ctx.debounce(callback, 1000)
     debounced.dispose()

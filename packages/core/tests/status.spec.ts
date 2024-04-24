@@ -1,10 +1,10 @@
 import { Context, ScopeStatus } from '../src'
 import { expect } from 'chai'
-import { describe, mock, test } from 'node:test'
+import { mock } from 'node:test'
 import { checkError, event } from './utils'
 
 describe('Status', () => {
-  test('invalid config (main)', async () => {
+  it('invalid config (main)', async () => {
     const root = new Context()
     const callback = mock.fn()
     const apply = mock.fn((ctx: Context) => {
@@ -30,7 +30,7 @@ describe('Status', () => {
     expect(callback.mock.calls).to.have.length(1)
   })
 
-  test('invalid plugin (fork)', async () => {
+  it('invalid plugin (fork)', async () => {
     const root = new Context()
     const callback = mock.fn()
     const apply = mock.fn((ctx: Context) => {
@@ -53,7 +53,7 @@ describe('Status', () => {
     expect(callback.mock.calls).to.have.length(1)
   })
 
-  test('plugin error (main)', async () => {
+  it('plugin error (main)', async () => {
     const root = new Context()
     const callback = mock.fn()
     const apply = mock.fn((ctx: Context) => {
@@ -71,12 +71,12 @@ describe('Status', () => {
     expect(callback.mock.calls).to.have.length(0)
   })
 
-  test('plugin error (fork)', async () => {
+  it('plugin error (fork)', async () => {
     const root = new Context()
     const callback = mock.fn()
-    const apply = mock.fn((ctx: Context, config: { foo?: boolean }) => {
+    const apply = mock.fn((ctx: Context, config: { foo?: boolean } | undefined) => {
       ctx.on(event, callback)
-      if (!config.foo) throw new Error('plugin error')
+      if (!config?.foo) throw new Error('plugin error')
     })
 
     const fork1 = root.plugin({ reusable: true, apply })
