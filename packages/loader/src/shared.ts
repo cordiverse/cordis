@@ -71,6 +71,8 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
   public realms: Dict<Dict<symbol>> = Object.create(null)
 
   private tasks = new Set<Promise<any>>()
+  private writeTask?: Promise<void>
+  private writeSlient = true
 
   abstract import(name: string): Promise<any>
 
@@ -176,7 +178,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     return this.config
   }
 
-  async writeConfig(silent = false) {
+  private async _writeConfig(silent = false) {
     this.suspend = true
     if (!this.writable) {
       throw new Error(`cannot overwrite readonly config`)
@@ -187,6 +189,18 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
       await fs.writeFile(this.filename, JSON.stringify(this.config, null, 2))
     }
     if (!silent) this.app.emit('config')
+  }
+
+  writeConfig(silent = false) {
+    this.writeSlient &&= silent
+    if (this.writeTask) return this.writeTask
+    return this.writeTask = new Promise((resolve, reject) => {
+      setTimeout(() => {
+        this.writeSlient = true
+        this.writeTask = undefined
+        this._writeConfig(silent).then(resolve, reject)
+      }, 0)
+    })
   }
 
   interpolate(source: any) {
@@ -213,24 +227,30 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     return !!this.interpolate(`\${{ ${expr} }}`)
   }
 
-  async update(parent: Context, options: Entry.Options) {
+  private ensureId(options: Partial<Entry.Options>) {
     if (!options.id) {
       do {
         options.id = Math.random().toString(36).slice(2, 8)
       } while (this.entries[options.id])
     }
+    return options.id!
+  }
 
+  async update(parent: Context, options: Entry.Options) {
+    this.ensureId(options)
     const entry = this.entries[options.id] ??= new Entry(this, parent, options)
     return entry.update(parent, options)
   }
 
-  async add(options: Omit<Entry.Options, 'id'>, target = '', index = Infinity) {
-    const entry = this.entries[target]
-    if (!entry) throw new Error('cannot locate parent entry')
-    entry.options.config.splice(index, 0, options)
-    await entry.resume()
+  async create(options: Omit<Entry.Options, 'id'>, target = '', index = Infinity) {
+    const parentEntry = this.entries[target]
+    if (!parentEntry) throw new Error('cannot locate parent entry')
+    const id = this.ensureId(options)
+    parentEntry.options.config.splice(index, 0, options)
     this.writeConfig()
-    return entry.options.id
+    if (!parentEntry.fork) return id
+    await this.update(parentEntry.fork.ctx, options as Entry.Options)
+    return id
   }
 
   remove(id: string, passive = false) {
@@ -300,8 +320,8 @@ export function createGroup(config?: Entry.Options[], options: GroupOptions = {}
   options.initial = config
 
   function group(ctx: Context, config: Entry.Options[]) {
-    for (const entry of config) {
-      ctx.loader.update(ctx, entry)
+    for (const options of config) {
+      ctx.loader.update(ctx, options)
     }
 
     ctx.accept((neo: Entry.Options[]) => {
