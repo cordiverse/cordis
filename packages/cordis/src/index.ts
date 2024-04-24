@@ -9,10 +9,6 @@ export { TimerService } from '@cordisjs/timer'
 
 export interface Events<C extends Context = Context> extends core.Events<C> {}
 
-export namespace Context {
-  export type Associate<P extends string, C extends Context = Context> = core.Context.Associate<P, C>
-}
-
 export interface Context {
   [Context.events]: Events<this>
 }

@@ -47,6 +47,7 @@ function createWorker(options: worker.Options) {
     if (message.type === 'start') {
       started = true
       timer = options.daemon?.heartbeatTimeout && setTimeout(() => {
+        // eslint-disable-next-line no-console
         console.log(kleur.red('daemon: heartbeat timeout'))
         child.kill('SIGKILL')
       }, options.daemon?.heartbeatTimeout)

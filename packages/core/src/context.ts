@@ -33,10 +33,6 @@ export namespace Context {
       name: string
     }
   }
-
-  export type Associate<P extends string, C extends Context = Context> = {
-    [K in keyof C as K extends `${P}.${infer R}` ? R : never]: C[K]
-  }
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -148,13 +144,13 @@ export class Context {
   static associate<T extends {}>(object: T, name: string) {
     return new Proxy(object, {
       get(target, key, receiver) {
-        if (typeof key === 'symbol' || key in target) return Reflect.get(target, key, receiver)
+        if (typeof key === 'symbol') return Reflect.get(target, key, receiver)
         const caller: Context = receiver[symbols.origin]
         if (!caller?.[symbols.internal][`${name}.${key}`]) return Reflect.get(target, key, receiver)
-        return caller.get(`${name}.${key}`)
+        return caller[`${name}.${key}`]
       },
       set(target, key, value, receiver) {
-        if (typeof key === 'symbol' || key in target) return Reflect.set(target, key, value, receiver)
+        if (typeof key === 'symbol') return Reflect.set(target, key, value, receiver)
         const caller: Context = receiver[symbols.origin]
         if (!caller?.[symbols.internal][`${name}.${key}`]) return Reflect.set(target, key, value, receiver)
         caller[`${name}.${key}`] = value

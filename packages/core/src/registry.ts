@@ -1,4 +1,4 @@
-import { defineProperty } from 'cosmokit'
+import { Dict, defineProperty } from 'cosmokit'
 import { Context } from './context.ts'
 import { ForkScope, MainScope } from './scope.ts'
 import { resolveConfig } from './utils.ts'
@@ -24,6 +24,7 @@ export namespace Plugin {
     reusable?: boolean
     Config?: (config: any) => T
     inject?: string[] | Inject
+    intercept?: Dict<boolean>
   }
 
   export interface Transform<S, T> {
