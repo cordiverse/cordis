@@ -38,16 +38,16 @@
     }
   },
   "peerDependencies": {
-    "cordis": "^3.13.4"
+    "cordis": "^3.14.0"
   },
   "devDependencies": {
     "@types/babel__code-frame": "^7.0.6",
-    "cordis": "^3.13.4",
+    "cordis": "^3.14.0",
     "esbuild": "^0.18.20"
   },
   "dependencies": {
-    "@babel/code-frame": "^7.23.5",
-    "chokidar": "^3.5.3",
-    "cosmokit": "^1.5.2"
+    "@babel/code-frame": "^7.24.2",
+    "chokidar": "^3.6.0",
+    "cosmokit": "^1.6.2"
   }
 }

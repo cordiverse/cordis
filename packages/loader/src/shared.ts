@@ -71,8 +71,8 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
   public realms: Dict<Dict<symbol>> = Object.create(null)
 
   private tasks = new Set<Promise<any>>()
-  private writeTask?: Promise<void>
-  private writeSlient = true
+  private _writeTask?: Promise<void>
+  private _writeSlient = true
 
   abstract import(name: string): Promise<any>
 
@@ -192,12 +192,12 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
   }
 
   writeConfig(silent = false) {
-    this.writeSlient &&= silent
-    if (this.writeTask) return this.writeTask
-    return this.writeTask = new Promise((resolve, reject) => {
+    this._writeSlient &&= silent
+    if (this._writeTask) return this._writeTask
+    return this._writeTask = new Promise((resolve, reject) => {
       setTimeout(() => {
-        this.writeSlient = true
-        this.writeTask = undefined
+        this._writeSlient = true
+        this._writeTask = undefined
         this._writeConfig(silent).then(resolve, reject)
       }, 0)
     })
