@@ -59,6 +59,7 @@ export class Lifecycle {
     for (const level of ['info', 'error', 'warning']) {
       defineProperty(this.on(`internal/${level}`, (format, ...param) => {
         if (this._hooks[`internal/${level}`].length > 1) return
+        // eslint-disable-next-line no-console
         console.info(format, ...param)
       }), Context.static, root.scope)
     }

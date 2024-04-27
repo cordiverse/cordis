@@ -3,7 +3,8 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "cordis/cli": ["packages/cordis/src/cli.ts"],
+      // explicitly override subpath exports
+      "cordis/*": ["packages/cordis/src/*"],
       "cordis": ["packages/cordis/src"],
       "@cordisjs/plugin-*": ["packages/*/src"],
       "@cordisjs/*": ["packages/*/src"],

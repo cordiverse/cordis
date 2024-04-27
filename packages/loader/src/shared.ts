@@ -91,9 +91,8 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     })
 
     this.app.on('internal/update', (fork) => {
-      const entry = this.entries[fork.entry?.options.id!]
-      if (!entry) return
-      fork.parent.emit('loader/entry', 'reload', entry)
+      if (!fork.entry) return
+      fork.parent.emit('loader/entry', 'reload', fork.entry)
     })
 
     this.app.on('internal/before-update', (fork, config) => {
@@ -108,11 +107,11 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
       // fork.uid: fork is created (we only care about fork dispose event)
       // fork.parent.runtime.plugin !== group: fork is not tracked by loader
       if (fork.uid || !fork.entry) return
-      fork.parent.emit('loader/entry', 'unload', fork.entry)
       // fork is disposed by main scope (e.g. hmr plugin)
       // normal: ctx.dispose() -> fork / runtime dispose -> delete(plugin)
       // hmr: delete(plugin) -> runtime dispose -> fork dispose
       if (!this.app.registry.has(fork.runtime.plugin)) return
+      fork.parent.emit('loader/entry', 'unload', fork.entry)
       fork.entry.options.disabled = true
       this.writeConfig()
     })
@@ -309,7 +308,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
   exit() {}
 }
 
-export const kGroup = Symbol('cordis.group')
+export const kGroup = Symbol.for('cordis.group')
 
 export interface GroupOptions {
   initial?: Omit<Entry.Options, 'id'>[]

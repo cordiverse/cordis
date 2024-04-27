@@ -35,6 +35,7 @@ export namespace Context {
   }
 }
 
+// https://github.com/typescript-eslint/typescript-eslint/issues/6720
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export interface Intercept<C extends Context = Context> {}
 

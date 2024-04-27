@@ -33,11 +33,11 @@ function takeEntries(object: {}, keys: string[]) {
   return result
 }
 
-function sortKeys(object: {}, prepend = ['id', 'name'], append = ['config']) {
+function sortKeys<T extends {}>(object: T, prepend = ['id', 'name'], append = ['config']): T {
   const part1 = takeEntries(object, prepend)
   const part2 = takeEntries(object, append)
   const rest = takeEntries(object, Object.keys(object)).sort(([a], [b]) => a.localeCompare(b))
-  Object.assign(object, Object.fromEntries([...part1, ...rest, ...part2]))
+  return Object.assign(object, Object.fromEntries([...part1, ...rest, ...part2]))
 }
 
 const kEntry = Symbol('cordis.entry')
@@ -91,8 +91,7 @@ export class Entry {
 
   // TODO: handle parent change
   async update(parent: Context, options: Entry.Options) {
-    this.options = options
-    sortKeys(this.options)
+    this.options = sortKeys(options)
     if (!this.loader.isTruthyLike(options.when) || options.disabled) {
       this.stop()
     } else {
@@ -122,7 +121,6 @@ export class Entry {
 
   stop() {
     if (!this.fork) return
-    this.parent.emit('loader/entry', 'unload', this)
     this.fork.dispose()
     this.fork = null
   }

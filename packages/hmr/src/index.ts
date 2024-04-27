@@ -22,7 +22,7 @@ declare module 'cordis' {
 async function loadDependencies(job: ModuleJob, ignored = new Set<string>()) {
   const dependencies = new Set<string>()
   async function traverse(job: ModuleJob) {
-    if (ignored.has(job.url) || dependencies.has(job.url) || job.url.includes('/node_modules/')) return
+    if (ignored.has(job.url) || dependencies.has(job.url) || job.url.startsWith('node:') || job.url.includes('/node_modules/')) return
     dependencies.add(job.url)
     const children = await job.linked
     await Promise.all(Array.prototype.map.call(children, traverse))
@@ -300,7 +300,7 @@ class Watcher extends Service {
 
     try {
       for (const [plugin, { filename, children }] of reloads) {
-        const path = this.relative(filename)
+        const path = this.relative(fileURLToPath(filename))
 
         try {
           this.ctx.registry.delete(plugin)
