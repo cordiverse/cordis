@@ -3,6 +3,7 @@ import { promises as fs } from 'fs'
 import * as dotenv from 'dotenv'
 import * as path from 'path'
 
+export * from './entry.ts'
 export * from './shared.ts'
 
 const oldEnv = { ...process.env }
