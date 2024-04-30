@@ -11,6 +11,7 @@ declare module '@cordisjs/core' {
     'config'(): void
     'exit'(signal: NodeJS.Signals): Promise<void>
     'loader/entry'(type: string, entry: Entry): void
+    'loader/patch'(entry: Entry): void
   }
 
   interface Context {
@@ -78,11 +79,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
 
   constructor(public app: Context, public options: T) {
     super(app, 'loader', true)
-    this.root = new Entry(this, app, {
-      id: '',
-      name: 'cordis/group',
-      config: [],
-    })
+    this.root = new Entry(this)
     this.entries[''] = this.root
     this.realms.root = app.root[Context.isolate]
 
@@ -115,6 +112,8 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
       fork.entry.options.disabled = true
       this.writeConfig()
     })
+
+    this.app.on('loader/patch', (entry) => {})
   }
 
   async init(filename?: string) {
@@ -235,21 +234,33 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     return options.id!
   }
 
-  async update(parent: Context, options: Entry.Options) {
-    this.ensureId(options)
-    const entry = this.entries[options.id] ??= new Entry(this, parent, options)
-    return entry.update(parent, options)
+  async ensure(parent: Context, options: Omit<Entry.Options, 'id'>) {
+    const id = this.ensureId(options)
+    const entry = this.entries[id] ??= new Entry(this)
+    await entry.update(parent, options as Entry.Options)
+    return id
+  }
+
+  async update(id: string, options: Entry.Options) {
+    const entry = this.entries[id]
+    if (!entry) throw new Error(`entry ${id} not found`)
+    for (const [key, value] of Object.entries(options)) {
+      if (isNullable(value)) {
+        delete entry.options[key]
+      } else {
+        entry.options[key] = value
+      }
+    }
+    this.writeConfig()
+    return entry.update(entry.parent, entry.options)
   }
 
   async create(options: Omit<Entry.Options, 'id'>, target = '', index = Infinity) {
-    const parentEntry = this.entries[target]
-    if (!parentEntry) throw new Error('cannot locate parent entry')
-    const id = this.ensureId(options)
-    parentEntry.options.config.splice(index, 0, options)
+    const targetEntry = this.entries[target]
+    if (!targetEntry?.fork) throw new Error(`entry ${target} not found`)
+    targetEntry.options.config.splice(index, 0, options)
     this.writeConfig()
-    if (!parentEntry.fork) return id
-    await this.update(parentEntry.fork.ctx, options as Entry.Options)
-    return id
+    return this.ensure(targetEntry.fork.ctx, options)
   }
 
   remove(id: string, passive = false) {
@@ -265,16 +276,17 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
 
   teleport(id: string, target: string, index = Infinity) {
     const entry = this.entries[id]
+    if (!entry) throw new Error(`entry ${id} not found`)
     const sourceEntry = entry.parent.scope.entry!
     const targetEntry = this.entries[target]
-    if (!targetEntry) throw new Error('cannot locate target entry')
+    if (!targetEntry?.fork) throw new Error(`entry ${target} not found`)
     entry.unlink()
     targetEntry.options.config.splice(index, 0, entry.options)
-    if (sourceEntry !== targetEntry) {
-      entry.parent = targetEntry.fork!.ctx
-      entry.amend(entry.parent) // refresh parent only?
-    }
     this.writeConfig()
+    if (sourceEntry === targetEntry) return
+    entry.parent = targetEntry.fork.ctx
+    if (!entry.fork) return
+    entry.amend()
   }
 
   paths(scope: EffectScope): string[] {
@@ -293,7 +305,11 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
   async start() {
     await this.readConfig()
     this.root.options.config = this.config
-    this.root.resume()
+    this.root.update(this.app, {
+      id: '',
+      name: 'cordis/group',
+      config: [],
+    })
     this.app.emit('config')
 
     while (this.tasks.size) {
@@ -320,7 +336,7 @@ export function createGroup(config?: Entry.Options[], options: GroupOptions = {}
 
   function group(ctx: Context, config: Entry.Options[]) {
     for (const options of config) {
-      ctx.loader.update(ctx, options)
+      ctx.loader.ensure(ctx, options)
     }
 
     ctx.accept((neo: Entry.Options[]) => {
@@ -334,7 +350,7 @@ export function createGroup(config?: Entry.Options[], options: GroupOptions = {}
         if (!neoMap[id]) {
           ctx.loader.remove(id, true)
         } else {
-          ctx.loader.update(ctx, neoMap[id])
+          ctx.loader.ensure(ctx, neoMap[id])
         }
       }
     }, { passive: true })

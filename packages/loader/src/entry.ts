@@ -7,14 +7,14 @@ export namespace Entry {
     id: string
     name: string
     config?: any
-    disabled?: boolean
-    intercept?: Dict
+    disabled?: boolean | null
+    intercept?: Dict | null
     isolate?: Dict<boolean | string>
     when?: any
   }
 }
 
-function swapAssign<T extends {}>(target: T, source?: T): T {
+function swapAssign<T extends {}>(target: T, source?: T | null): T {
   const result = { ...target }
   for (const key in result) {
     delete target[key]
@@ -40,19 +40,13 @@ function sortKeys<T extends {}>(object: T, prepend = ['id', 'name'], append = ['
   return Object.assign(object, Object.fromEntries([...part1, ...rest, ...part2]))
 }
 
-const kEntry = Symbol('cordis.entry')
-
 export class Entry {
-  static for(ctx: Context) {
-    return ctx[kEntry] as Entry | undefined
-  }
-
-  public fork: ForkScope | null = null
+  public fork?: ForkScope
   public isUpdate = false
+  public parent!: Context
+  public options!: Entry.Options
 
-  constructor(public loader: Loader, public parent: Context, public options: Entry.Options) {
-    sortKeys(this.options)
-  }
+  constructor(public loader: Loader) {}
 
   unlink() {
     const config = this.parent.config as Entry.Options[]
@@ -60,7 +54,12 @@ export class Entry {
     if (index >= 0) config.splice(index, 1)
   }
 
-  amend(ctx: Context) {
+  amend(ctx?: Context) {
+    ctx ??= this.parent.extend({
+      [Context.intercept]: Object.create(this.parent[Context.intercept]),
+      [Context.isolate]: Object.create(this.parent[Context.isolate]),
+    })
+    ctx.emit('loader/patch', this)
     swapAssign(ctx[Context.intercept], this.options.intercept)
     const neoMap: Dict<symbol> = Object.create(Object.getPrototypeOf(ctx[Context.isolate]))
     for (const [key, label] of Object.entries(this.options.isolate ?? {})) {
@@ -87,20 +86,16 @@ export class Entry {
       }
       ctx.emit(self, 'internal/service', key)
     }
+    return ctx
   }
 
   // TODO: handle parent change
   async update(parent: Context, options: Entry.Options) {
+    this.parent = parent
     this.options = sortKeys(options)
     if (!this.loader.isTruthyLike(options.when) || options.disabled) {
       this.stop()
-    } else {
-      await this.resume()
-    }
-  }
-
-  async resume() {
-    if (this.fork) {
+    } else if (this.fork) {
       this.isUpdate = true
       this.amend(this.fork.parent)
       this.fork.update(this.options.config)
@@ -108,34 +103,15 @@ export class Entry {
       this.parent.emit('loader/entry', 'apply', this)
       const plugin = await this.loader.resolve(this.options.name)
       if (!plugin) return
-      const ctx = this.parent.extend({
-        [kEntry]: this,
-        [Context.intercept]: Object.create(this.parent[Context.intercept]),
-        [Context.isolate]: Object.create(this.parent[Context.isolate]),
-      })
-      this.amend(ctx)
+      const ctx = this.amend()
       this.fork = ctx.plugin(plugin, this.options.config)
       this.fork.entry = this
     }
   }
 
   stop() {
-    if (!this.fork) return
-    this.fork.dispose()
-    this.fork = null
-  }
-
-  // modification
-
-  meta(options: any) {
-    for (const key of Object.keys(options)) {
-      delete this.options[key]
-      if (options[key] === null) {
-        delete options[key]
-      }
-    }
-    sortKeys(this.options)
-    // await this.loader.writeConfig(true)
+    this.fork?.dispose()
+    this.fork = undefined
   }
 }
 
