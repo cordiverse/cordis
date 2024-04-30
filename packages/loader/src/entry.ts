@@ -54,7 +54,7 @@ export class Entry {
     if (index >= 0) config.splice(index, 1)
   }
 
-  amend(ctx?: Context) {
+  amend(ctx?: Context, initial = false) {
     ctx ??= this.parent.extend({
       [Context.intercept]: Object.create(this.parent[Context.intercept]),
       [Context.isolate]: Object.create(this.parent[Context.isolate]),
@@ -69,22 +69,27 @@ export class Entry {
         neoMap[key] = Symbol(key)
       }
     }
-    for (const key in { ...ctx[Context.isolate], ...neoMap }) {
-      if (neoMap[key] === ctx[Context.isolate][key]) continue
-      const self = Object.create(null)
-      self[Context.filter] = (ctx2: Context) => {
-        return ctx[Context.isolate][key] === ctx2[Context.isolate][key]
+    // FIXME
+    if (!initial) {
+      for (const key in { ...ctx[Context.isolate], ...neoMap }) {
+        if (neoMap[key] === ctx[Context.isolate][key]) continue
+        const self = Object.create(null)
+        self[Context.filter] = (ctx2: Context) => {
+          return ctx[Context.isolate][key] === ctx2[Context.isolate][key]
+        }
+        ctx.emit(self, 'internal/before-service', key)
       }
-      ctx.emit(self, 'internal/before-service', key)
     }
     const oldMap = swapAssign(ctx[Context.isolate], neoMap)
-    for (const key in { ...oldMap, ...ctx[Context.isolate] }) {
-      if (oldMap[key] === ctx[Context.isolate][key]) continue
-      const self = Object.create(null)
-      self[Context.filter] = (ctx2: Context) => {
-        return ctx[Context.isolate][key] === ctx2[Context.isolate][key]
+    if (!initial) {
+      for (const key in { ...oldMap, ...ctx[Context.isolate] }) {
+        if (oldMap[key] === ctx[Context.isolate][key]) continue
+        const self = Object.create(null)
+        self[Context.filter] = (ctx2: Context) => {
+          return ctx[Context.isolate][key] === ctx2[Context.isolate][key]
+        }
+        ctx.emit(self, 'internal/service', key)
       }
-      ctx.emit(self, 'internal/service', key)
     }
     return ctx
   }
@@ -103,7 +108,7 @@ export class Entry {
       this.parent.emit('loader/entry', 'apply', this)
       const plugin = await this.loader.resolve(this.options.name)
       if (!plugin) return
-      const ctx = this.amend()
+      const ctx = this.amend(undefined, true)
       this.fork = ctx.plugin(plugin, this.options.config)
       this.fork.entry = this
     }
