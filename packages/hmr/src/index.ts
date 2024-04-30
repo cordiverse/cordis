@@ -287,9 +287,6 @@ class Watcher extends Service {
       return rollback()
     }
 
-    // emit reload event before replacing loader cache
-    this.ctx.emit('hmr/reload', reloads)
-
     const reload = (plugin: any, children: ForkScope[]) => {
       for (const oldFork of children) {
         const fork = oldFork.parent.plugin(plugin, oldFork.config)
@@ -331,6 +328,9 @@ class Watcher extends Service {
       }
       return
     }
+
+    // emit reload event on success
+    this.ctx.emit('hmr/reload', reloads)
 
     // reset stashed files
     this.stashed = new Set()
