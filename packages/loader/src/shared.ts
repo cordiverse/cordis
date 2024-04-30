@@ -234,7 +234,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     return options.id!
   }
 
-  async ensure(parent: Context, options: Omit<Entry.Options, 'id'>) {
+  async _ensure(parent: Context, options: Omit<Entry.Options, 'id'>) {
     const id = this.ensureId(options)
     const entry = this.entries[id] ??= new Entry(this)
     await entry.update(parent, options as Entry.Options)
@@ -260,18 +260,22 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     if (!targetEntry?.fork) throw new Error(`entry ${target} not found`)
     targetEntry.options.config.splice(index, 0, options)
     this.writeConfig()
-    return this.ensure(targetEntry.fork.ctx, options)
+    return this._ensure(targetEntry.fork.ctx, options)
   }
 
-  remove(id: string, passive = false) {
+  _remove(id: string) {
     const entry = this.entries[id]
     if (!entry) return
     entry.stop()
+  }
+
+  remove(id: string) {
+    const entry = this.entries[id]
+    if (!entry) throw new Error(`entry ${id} not found`)
+    entry.stop()
+    entry.unlink()
     delete this.entries[id]
-    if (!passive && entry.parent.scope.isActive) {
-      entry.unlink()
-      this.writeConfig()
-    }
+    this.writeConfig()
   }
 
   teleport(id: string, target: string, index = Infinity) {
@@ -304,11 +308,10 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
 
   async start() {
     await this.readConfig()
-    this.root.options.config = this.config
     this.root.update(this.app, {
       id: '',
       name: 'cordis/group',
-      config: [],
+      config: this.config,
     })
     this.app.emit('config')
 
@@ -327,6 +330,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
 export const kGroup = Symbol.for('cordis.group')
 
 export interface GroupOptions {
+  name?: string
   initial?: Omit<Entry.Options, 'id'>[]
   allowed?: string[]
 }
@@ -336,7 +340,7 @@ export function createGroup(config?: Entry.Options[], options: GroupOptions = {}
 
   function group(ctx: Context, config: Entry.Options[]) {
     for (const options of config) {
-      ctx.loader.ensure(ctx, options)
+      ctx.loader._ensure(ctx, options)
     }
 
     ctx.accept((neo: Entry.Options[]) => {
@@ -348,16 +352,16 @@ export function createGroup(config?: Entry.Options[], options: GroupOptions = {}
       // update inner plugins
       for (const id in { ...oldMap, ...neoMap }) {
         if (!neoMap[id]) {
-          ctx.loader.remove(id, true)
+          ctx.loader._remove(id)
         } else {
-          ctx.loader.ensure(ctx, neoMap[id])
+          ctx.loader._ensure(ctx, neoMap[id])
         }
       }
     }, { passive: true })
 
     ctx.on('dispose', () => {
       for (const entry of ctx.scope.config as Entry.Options[]) {
-        ctx.loader.remove(entry.id, true)
+        ctx.loader._remove(entry.id)
       }
     })
   }
@@ -365,6 +369,7 @@ export function createGroup(config?: Entry.Options[], options: GroupOptions = {}
   defineProperty(group, 'inject', ['loader'])
   defineProperty(group, 'reusable', true)
   defineProperty(group, kGroup, options)
+  if (options.name) defineProperty(group, 'name', options.name)
 
   return group
 }

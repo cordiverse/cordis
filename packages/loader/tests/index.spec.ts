@@ -122,21 +122,20 @@ describe('@cordisjs/loader', () => {
     root.plugin(MockLoader)
 
     const dispose = mock.fn()
-    const foo = mock.fn((ctx: Context) => {
+
+    const foo = defineProperty(root.loader.mock('foo', (ctx: Context) => {
       ctx.on('dispose', dispose)
-    })
-    defineProperty(foo, 'inject', ['bar'])
-    class Bar extends Service {
+    }), 'inject', ['bar'])
+
+    const Bar = root.loader.mock('bar', class Bar extends Service {
       static [Service.provide] = 'bar'
       static [Service.immediate] = true
-    }
-    class Qux extends Service {
+    })
+
+    const Qux = root.loader.mock('qux', class Qux extends Service {
       static [Service.provide] = 'qux'
       static [Service.immediate] = true
-    }
-    root.loader.mock('foo', foo)
-    root.loader.mock('bar', Bar)
-    root.loader.mock('qux', Qux)
+    })
 
     it('basic support', async () => {
       await root.loader.restart([{
@@ -147,20 +146,19 @@ describe('@cordisjs/loader', () => {
         name: 'qux',
       }, {
         id: '3',
-        name: 'cordis/group',
-        config: [{
-          id: '4',
-          name: 'foo',
-        }],
+        name: 'foo',
       }])
       expect(root.registry.get(foo)).to.be.ok
       expect(root.registry.get(Bar)).to.be.ok
       expect(root.registry.get(Qux)).to.be.ok
       expect(foo.mock.calls).to.have.length(1)
+      expect(dispose.mock.calls).to.have.length(0)
     })
 
-    it('isolate', async () => {
-      root.loader.config = [{
+    it('add isolate on injector (relavent)', async () => {
+      foo.mock.resetCalls()
+      dispose.mock.resetCalls()
+      await root.loader.restart([{
         id: '1',
         name: 'bar',
       }, {
@@ -168,23 +166,21 @@ describe('@cordisjs/loader', () => {
         name: 'qux',
       }, {
         id: '3',
-        name: 'cordis/group',
+        name: 'foo',
         isolate: {
           bar: true,
         },
-        config: [{
-          id: '4',
-          name: 'foo',
-        }],
-      }]
+      }])
 
-      expect(dispose.mock.calls).to.have.length(0)
-      await root.loader.start()
       await new Promise((resolve) => setTimeout(resolve, 0))
-      expect(foo.mock.calls).to.have.length(1)
+      expect(foo.mock.calls).to.have.length(0)
       expect(dispose.mock.calls).to.have.length(1)
+    })
 
-      root.loader.config = [{
+    it('add isolate on injector (irrelavent)', async () => {
+      foo.mock.resetCalls()
+      dispose.mock.resetCalls()
+      await root.loader.restart([{
         id: '1',
         name: 'bar',
       }, {
@@ -192,21 +188,142 @@ describe('@cordisjs/loader', () => {
         name: 'qux',
       }, {
         id: '3',
-        name: 'cordis/group',
+        name: 'foo',
         isolate: {
-          bar: false,
+          bar: true,
           qux: true,
         },
-        config: [{
-          id: '4',
-          name: 'foo',
-        }],
-      }]
+      }])
 
-      await root.loader.start()
       await new Promise((resolve) => setTimeout(resolve, 0))
-      expect(foo.mock.calls).to.have.length(2)
+      expect(foo.mock.calls).to.have.length(0)
+      expect(dispose.mock.calls).to.have.length(0)
+    })
+
+    it('remove isolate on injector (relavent)', async () => {
+      foo.mock.resetCalls()
+      dispose.mock.resetCalls()
+      await root.loader.restart([{
+        id: '1',
+        name: 'bar',
+      }, {
+        id: '2',
+        name: 'qux',
+      }, {
+        id: '3',
+        name: 'foo',
+        isolate: {
+          qux: true,
+        },
+      }])
+
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(foo.mock.calls).to.have.length(1)
+      expect(dispose.mock.calls).to.have.length(0)
+    })
+
+    it('remove isolate on injector (irrelavent)', async () => {
+      foo.mock.resetCalls()
+      dispose.mock.resetCalls()
+      await root.loader.restart([{
+        id: '1',
+        name: 'bar',
+      }, {
+        id: '2',
+        name: 'qux',
+      }, {
+        id: '3',
+        name: 'foo',
+      }])
+
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(foo.mock.calls).to.have.length(0)
+      expect(dispose.mock.calls).to.have.length(0)
+    })
+
+    it('add isolate on provider (relavent)', async () => {
+      foo.mock.resetCalls()
+      dispose.mock.resetCalls()
+      await root.loader.restart([{
+        id: '1',
+        name: 'bar',
+        isolate: {
+          bar: 'custom',
+        },
+      }, {
+        id: '2',
+        name: 'qux',
+      }, {
+        id: '3',
+        name: 'foo',
+      }])
+
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(foo.mock.calls).to.have.length(0)
       expect(dispose.mock.calls).to.have.length(1)
+    })
+
+    it('add isolate on provider (irrelavent)', async () => {
+      foo.mock.resetCalls()
+      dispose.mock.resetCalls()
+      await root.loader.restart([{
+        id: '1',
+        name: 'bar',
+        isolate: {
+          bar: 'custom',
+        },
+      }, {
+        id: '2',
+        name: 'qux',
+        isolate: {
+          qux: 'custom',
+        },
+      }, {
+        id: '3',
+        name: 'foo',
+      }])
+
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(foo.mock.calls).to.have.length(0)
+      expect(dispose.mock.calls).to.have.length(0)
+    })
+
+    it('remove isolate on provider (relavent)', async () => {
+      foo.mock.resetCalls()
+      dispose.mock.resetCalls()
+      await root.loader.restart([{
+        id: '1',
+        name: 'bar',
+      }, {
+        id: '2',
+        name: 'qux',
+      }, {
+        id: '3',
+        name: 'foo',
+      }])
+
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(foo.mock.calls).to.have.length(1)
+      expect(dispose.mock.calls).to.have.length(0)
+    })
+
+    it('remove isolate on provider (irrelavent)', async () => {
+      foo.mock.resetCalls()
+      dispose.mock.resetCalls()
+      await root.loader.restart([{
+        id: '1',
+        name: 'bar',
+      }, {
+        id: '2',
+        name: 'qux',
+      }, {
+        id: '3',
+        name: 'foo',
+      }])
+
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(foo.mock.calls).to.have.length(0)
+      expect(dispose.mock.calls).to.have.length(0)
     })
   })
 })
