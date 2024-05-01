@@ -110,6 +110,8 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
       if (!this.app.registry.has(fork.runtime.plugin)) return
       fork.parent.emit('loader/entry', 'unload', fork.entry)
       fork.entry.options.disabled = true
+      fork.entry.fork = undefined
+      fork.entry.stop()
       this.writeConfig()
     })
 
@@ -268,6 +270,8 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     const entry = this.entries[id]
     if (!entry) return
     entry.stop()
+    entry.unlink()
+    delete this.entries[id]
   }
 
   remove(id: string) {
@@ -291,7 +295,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     if (sourceEntry === targetEntry) return
     entry.parent = targetEntry.fork.ctx
     if (!entry.fork) return
-    entry.amend()
+    entry.patch()
   }
 
   paths(scope: EffectScope): string[] {

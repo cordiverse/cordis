@@ -69,16 +69,20 @@ export class Entry {
     })
     ctx.emit('loader/patch', this, legacy)
     swap(ctx[Context.intercept], this.options.intercept)
+
+    // part 1: prepare isolate map
     const newMap: Dict<symbol> = Object.create(Object.getPrototypeOf(ctx[Context.isolate]))
     for (const [key, label] of Object.entries(this.options.isolate ?? {})) {
       const realm = this.resolveRealm(label)
       newMap[key] = (this.loader.realms[realm] ??= Object.create(null))[key] ??= Symbol(`${key}${realm}`)
     }
-    for (const key in legacy?.isolate ?? {}) {
-      if (this.options.isolate?.[key] === legacy!.isolate![key]) continue
-      const name = this.resolveRealm(legacy!.isolate![key])
+    for (const [key, label] of Object.entries(legacy?.isolate ?? {})) {
+      if (this.options.isolate?.[key] === label) continue
+      const name = this.resolveRealm(label)
       this.loader._clearRealm(key, name)
     }
+
+    // part 2: generate service diff
     const delimiter = Symbol('delimiter')
     ctx[delimiter] = true
     const diff: [string, symbol, symbol, boolean][] = []
@@ -97,6 +101,9 @@ export class Entry {
         break
       }
     }
+
+    // part 3: emit service events
+    // part 3.1: internal/before-service
     for (const [key, symbol1, symbol2, flag] of diff) {
       const self = Object.create(null)
       self[Context.filter] = (target: Context) => {
@@ -106,6 +113,9 @@ export class Entry {
       }
       ctx.emit(self, 'internal/before-service', key)
     }
+
+    // part 3.2: update service impl, prevent double update
+    this.fork?.update(this.options.config)
     swap(ctx[Context.isolate], newMap)
     for (const [, symbol1, symbol2, flag] of diff) {
       if (flag && ctx[symbol1] && !ctx[symbol2]) {
@@ -113,6 +123,8 @@ export class Entry {
         delete ctx.root[symbol1]
       }
     }
+
+    // part 3.3: internal/service
     for (const [key, symbol1, symbol2, flag] of diff) {
       const self = Object.create(null)
       self[Context.filter] = (target: Context) => {
@@ -122,6 +134,7 @@ export class Entry {
       }
       ctx.emit(self, 'internal/service', key)
     }
+
     delete ctx[delimiter]
     return ctx
   }
@@ -135,7 +148,6 @@ export class Entry {
     } else if (this.fork) {
       this.isUpdate = true
       this.patch(this.fork.parent, legacy)
-      this.fork.update(this.options.config)
     } else {
       this.parent.emit('loader/entry', 'apply', this)
       const plugin = await this.loader.resolve(this.options.name)

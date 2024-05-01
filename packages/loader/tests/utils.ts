@@ -7,7 +7,6 @@ import { expect } from 'chai'
 declare module '../src/shared' {
   interface Loader {
     mock<F extends Function>(name: string, plugin: F): Mock<F>
-    restart(config: Entry.Options[]): Promise<void>
     expectEnable(plugin: any, config?: any): void
     expectDisable(plugin: any): void
   }
@@ -33,11 +32,6 @@ export default class MockLoader extends Loader {
 
   async readConfig() {
     return this.config
-  }
-
-  async restart(config: Entry.Options[]) {
-    this.config = config
-    return this.start()
   }
 
   expectEnable(plugin: any, config?: any) {
