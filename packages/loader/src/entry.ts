@@ -14,7 +14,7 @@ export namespace Entry {
   }
 }
 
-function swapAssign<T extends {}>(target: T, source?: T | null): T {
+function swap<T extends {}>(target: T, source?: T | null): T {
   const result = { ...target }
   for (const key in result) {
     delete target[key]
@@ -54,43 +54,65 @@ export class Entry {
     if (index >= 0) config.splice(index, 1)
   }
 
-  amend(ctx?: Context, initial = false) {
+  amend(ctx?: Context) {
     ctx ??= this.parent.extend({
       [Context.intercept]: Object.create(this.parent[Context.intercept]),
       [Context.isolate]: Object.create(this.parent[Context.isolate]),
     })
     ctx.emit('loader/patch', this)
-    swapAssign(ctx[Context.intercept], this.options.intercept)
-    const neoMap: Dict<symbol> = Object.create(Object.getPrototypeOf(ctx[Context.isolate]))
+    swap(ctx[Context.intercept], this.options.intercept)
+    const newMap: Dict<symbol> = Object.create(Object.getPrototypeOf(ctx[Context.isolate]))
     for (const [key, label] of Object.entries(this.options.isolate ?? {})) {
       if (typeof label === 'string') {
-        neoMap[key] = (this.loader.realms[label] ??= Object.create(null))[key] ??= Symbol(key)
+        newMap[key] = (this.loader.realms[label] ??= Object.create(null))[key] ??= Symbol(`${key}@${label}`)
       } else if (label) {
-        neoMap[key] = Symbol(key)
+        newMap[key] = Symbol(`${key}#${this.options.id}`)
       }
     }
-    // FIXME
-    if (!initial) {
-      for (const key in { ...ctx[Context.isolate], ...neoMap }) {
-        if (neoMap[key] === ctx[Context.isolate][key]) continue
-        const self = Object.create(null)
-        self[Context.filter] = (ctx2: Context) => {
-          return ctx[Context.isolate][key] === ctx2[Context.isolate][key]
+    const delimiter = Symbol('delimiter')
+    ctx[delimiter] = true
+    const diff: [string, symbol, symbol, boolean][] = []
+    const oldMap = ctx[Context.isolate]
+    for (const key in { ...oldMap, ...newMap }) {
+      if (newMap[key] === oldMap[key]) continue
+      for (const symbol of [oldMap[key], newMap[key]]) {
+        const value = symbol && ctx[symbol]
+        if (!(value instanceof Object)) continue
+        const source = Reflect.getOwnPropertyDescriptor(value, Context.origin)?.value
+        if (!source) {
+          this.parent.emit('internal/warning', new Error(`expected service ${key} to be implemented`))
+          continue
         }
-        ctx.emit(self, 'internal/before-service', key)
+        diff.push([key, oldMap[key], newMap[key], !!source[delimiter]])
+        break
       }
     }
-    const oldMap = swapAssign(ctx[Context.isolate], neoMap)
-    if (!initial) {
-      for (const key in { ...oldMap, ...ctx[Context.isolate] }) {
-        if (oldMap[key] === ctx[Context.isolate][key]) continue
-        const self = Object.create(null)
-        self[Context.filter] = (ctx2: Context) => {
-          return ctx[Context.isolate][key] === ctx2[Context.isolate][key]
-        }
-        ctx.emit(self, 'internal/service', key)
+    for (const [key, symbol1, symbol2, flag] of diff) {
+      const self = Object.create(null)
+      self[Context.filter] = (target: Context) => {
+        if (!target[delimiter] !== flag) return false
+        if (symbol1 === target[Context.isolate][key]) return true
+        return flag && symbol2 === target[Context.isolate][key]
+      }
+      ctx.emit(self, 'internal/before-service', key)
+    }
+    swap(ctx[Context.isolate], newMap)
+    for (const [, symbol1, symbol2, flag] of diff) {
+      if (flag && ctx[symbol1]) {
+        ctx.root[symbol2] = ctx.root[symbol1]
+        delete ctx.root[symbol1]
       }
     }
+    for (const [key, symbol1, symbol2, flag] of diff) {
+      const self = Object.create(null)
+      self[Context.filter] = (target: Context) => {
+        if (!target[delimiter] !== flag) return false
+        if (symbol2 === target[Context.isolate][key]) return true
+        return flag && symbol1 === target[Context.isolate][key]
+      }
+      ctx.emit(self, 'internal/service', key)
+    }
+    delete ctx[delimiter]
     return ctx
   }
 
@@ -108,7 +130,7 @@ export class Entry {
       this.parent.emit('loader/entry', 'apply', this)
       const plugin = await this.loader.resolve(this.options.name)
       if (!plugin) return
-      const ctx = this.amend(undefined, true)
+      const ctx = this.amend()
       this.fork = ctx.plugin(plugin, this.options.config)
       this.fork.entry = this
     }

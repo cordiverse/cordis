@@ -339,8 +339,9 @@ export function createGroup(config?: Entry.Options[], options: GroupOptions = {}
   options.initial = config
 
   function group(ctx: Context, config: Entry.Options[]) {
+    const loader = ctx.get('loader')!
     for (const options of config) {
-      ctx.loader._ensure(ctx, options)
+      loader._ensure(ctx, options)
     }
 
     ctx.accept((neo: Entry.Options[]) => {
@@ -352,21 +353,20 @@ export function createGroup(config?: Entry.Options[], options: GroupOptions = {}
       // update inner plugins
       for (const id in { ...oldMap, ...neoMap }) {
         if (!neoMap[id]) {
-          ctx.loader._remove(id)
+          loader._remove(id)
         } else {
-          ctx.loader._ensure(ctx, neoMap[id])
+          loader._ensure(ctx, neoMap[id])
         }
       }
     }, { passive: true })
 
     ctx.on('dispose', () => {
       for (const entry of ctx.scope.config as Entry.Options[]) {
-        ctx.loader._remove(entry.id)
+        loader._remove(entry.id)
       }
     })
   }
 
-  defineProperty(group, 'inject', ['loader'])
   defineProperty(group, 'reusable', true)
   defineProperty(group, kGroup, options)
   if (options.name) defineProperty(group, 'name', options.name)

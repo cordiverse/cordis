@@ -1,6 +1,6 @@
 import { mock } from 'node:test'
 import { expect } from 'chai'
-import { Context, Service } from '@cordisjs/core'
+import { Context, ScopeStatus, Service } from '@cordisjs/core'
 import { defineProperty } from 'cosmokit'
 import MockLoader from './utils'
 
@@ -10,17 +10,12 @@ describe('service isolation: basic', async () => {
 
   const dispose = mock.fn()
 
-  const foo = defineProperty(root.loader.mock('foo', (ctx: Context) => {
+  const foo = root.loader.mock('foo', defineProperty((ctx: Context) => {
     ctx.on('dispose', dispose)
-  }), 'inject', ['bar'])
+  }, 'inject', ['bar']))
 
   const Bar = root.loader.mock('bar', class Bar extends Service {
     static [Service.provide] = 'bar'
-    static [Service.immediate] = true
-  })
-
-  const Qux = root.loader.mock('qux', class Qux extends Service {
-    static [Service.provide] = 'qux'
     static [Service.immediate] = true
   })
 
@@ -29,15 +24,11 @@ describe('service isolation: basic', async () => {
       id: '1',
       name: 'bar',
     }, {
-      id: '2',
-      name: 'qux',
-    }, {
       id: '3',
       name: 'foo',
     }])
     expect(root.registry.get(foo)).to.be.ok
     expect(root.registry.get(Bar)).to.be.ok
-    expect(root.registry.get(Qux)).to.be.ok
     expect(foo.mock.calls).to.have.length(1)
     expect(dispose.mock.calls).to.have.length(0)
   })
@@ -48,9 +39,6 @@ describe('service isolation: basic', async () => {
     await root.loader.restart([{
       id: '1',
       name: 'bar',
-    }, {
-      id: '2',
-      name: 'qux',
     }, {
       id: '3',
       name: 'foo',
@@ -70,9 +58,6 @@ describe('service isolation: basic', async () => {
     await root.loader.restart([{
       id: '1',
       name: 'bar',
-    }, {
-      id: '2',
-      name: 'qux',
     }, {
       id: '3',
       name: 'foo',
@@ -94,9 +79,6 @@ describe('service isolation: basic', async () => {
       id: '1',
       name: 'bar',
     }, {
-      id: '2',
-      name: 'qux',
-    }, {
       id: '3',
       name: 'foo',
       isolate: {
@@ -115,9 +97,6 @@ describe('service isolation: basic', async () => {
     await root.loader.restart([{
       id: '1',
       name: 'bar',
-    }, {
-      id: '2',
-      name: 'qux',
     }, {
       id: '3',
       name: 'foo',
@@ -138,9 +117,6 @@ describe('service isolation: basic', async () => {
         bar: true,
       },
     }, {
-      id: '2',
-      name: 'qux',
-    }, {
       id: '3',
       name: 'foo',
     }])
@@ -158,11 +134,6 @@ describe('service isolation: basic', async () => {
       name: 'bar',
       isolate: {
         bar: true,
-      },
-    }, {
-      id: '2',
-      name: 'qux',
-      isolate: {
         qux: true,
       },
     }, {
@@ -182,9 +153,6 @@ describe('service isolation: basic', async () => {
       id: '1',
       name: 'bar',
     }, {
-      id: '2',
-      name: 'qux',
-    }, {
       id: '3',
       name: 'foo',
     }])
@@ -200,9 +168,6 @@ describe('service isolation: basic', async () => {
     await root.loader.restart([{
       id: '1',
       name: 'bar',
-    }, {
-      id: '2',
-      name: 'qux',
     }, {
       id: '3',
       name: 'foo',
@@ -282,22 +247,26 @@ describe('service isolation: realm', async () => {
     expect(dispose.mock.calls).to.have.length(0)
   })
 
+  let nested1!: string
+  let nested2!: string
+  let nested3!: string
+
   it('realm reference', async () => {
     foo.mock.resetCalls()
     dispose.mock.resetCalls()
 
-    const nested1 = await root.loader.create({
+    nested1 = await root.loader.create({
       name: 'foo',
     }, alpha)
 
-    const nested2 = await root.loader.create({
+    nested2 = await root.loader.create({
       name: 'foo',
       isolate: {
         bar: 'beta',
       },
     }, alpha)
 
-    const nested3 = await root.loader.create({
+    nested3 = await root.loader.create({
       name: 'foo',
       isolate: {
         bar: true,
@@ -309,9 +278,12 @@ describe('service isolation: realm', async () => {
     expect(dispose.mock.calls).to.have.length(0)
     expect(root.loader.entries[nested1]!.fork).to.be.ok
     expect(root.loader.entries[nested1]!.fork!.ctx.get('bar')!.value).to.equal('alpha')
+    expect(root.loader.entries[nested1]!.fork!.status).to.equal(ScopeStatus.ACTIVE)
     expect(root.loader.entries[nested2]!.fork).to.be.ok
     expect(root.loader.entries[nested2]!.fork!.ctx.get('bar')!.value).to.equal('beta')
+    expect(root.loader.entries[nested2]!.fork!.status).to.equal(ScopeStatus.ACTIVE)
     expect(root.loader.entries[nested3]!.fork).to.be.ok
     expect(root.loader.entries[nested3]!.fork!.ctx.get('bar')).to.be.undefined
+    expect(root.loader.entries[nested3]!.fork!.status).to.equal(ScopeStatus.PENDING)
   })
 })
