@@ -15,6 +15,7 @@ declare module '../src/shared' {
 
 export default class MockLoader extends Loader {
   public modules: Dict<Plugin.Object> = Object.create(null)
+  public config: Entry.Options[] = []
 
   constructor(ctx: Context) {
     super(ctx, { name: 'cordis' })

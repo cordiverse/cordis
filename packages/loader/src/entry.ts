@@ -9,7 +9,7 @@ export namespace Entry {
     config?: any
     disabled?: boolean | null
     intercept?: Dict | null
-    isolate?: Dict<boolean | string>
+    isolate?: Dict<true | string>
     when?: any
   }
 }
@@ -54,20 +54,30 @@ export class Entry {
     if (index >= 0) config.splice(index, 1)
   }
 
-  amend(ctx?: Context) {
+  resolveRealm(label: string | true) {
+    if (label === true) {
+      return '#' + this.options.id
+    } else {
+      return '@' + label
+    }
+  }
+
+  patch(ctx?: Context, legacy?: Entry.Options) {
     ctx ??= this.parent.extend({
       [Context.intercept]: Object.create(this.parent[Context.intercept]),
       [Context.isolate]: Object.create(this.parent[Context.isolate]),
     })
-    ctx.emit('loader/patch', this)
+    ctx.emit('loader/patch', this, legacy)
     swap(ctx[Context.intercept], this.options.intercept)
     const newMap: Dict<symbol> = Object.create(Object.getPrototypeOf(ctx[Context.isolate]))
     for (const [key, label] of Object.entries(this.options.isolate ?? {})) {
-      if (typeof label === 'string') {
-        newMap[key] = (this.loader.realms[label] ??= Object.create(null))[key] ??= Symbol(`${key}@${label}`)
-      } else if (label) {
-        newMap[key] = Symbol(`${key}#${this.options.id}`)
-      }
+      const realm = this.resolveRealm(label)
+      newMap[key] = (this.loader.realms[realm] ??= Object.create(null))[key] ??= Symbol(`${key}${realm}`)
+    }
+    for (const key in legacy?.isolate ?? {}) {
+      if (this.options.isolate?.[key] === legacy!.isolate![key]) continue
+      const name = this.resolveRealm(legacy!.isolate![key])
+      this.loader._clearRealm(key, name)
     }
     const delimiter = Symbol('delimiter')
     ctx[delimiter] = true
@@ -98,7 +108,7 @@ export class Entry {
     }
     swap(ctx[Context.isolate], newMap)
     for (const [, symbol1, symbol2, flag] of diff) {
-      if (flag && ctx[symbol1]) {
+      if (flag && ctx[symbol1] && !ctx[symbol2]) {
         ctx.root[symbol2] = ctx.root[symbol1]
         delete ctx.root[symbol1]
       }
@@ -116,21 +126,21 @@ export class Entry {
     return ctx
   }
 
-  // TODO: handle parent change
   async update(parent: Context, options: Entry.Options) {
+    const legacy = this.options
     this.parent = parent
     this.options = sortKeys(options)
     if (!this.loader.isTruthyLike(options.when) || options.disabled) {
       this.stop()
     } else if (this.fork) {
       this.isUpdate = true
-      this.amend(this.fork.parent)
+      this.patch(this.fork.parent, legacy)
       this.fork.update(this.options.config)
     } else {
       this.parent.emit('loader/entry', 'apply', this)
       const plugin = await this.loader.resolve(this.options.name)
       if (!plugin) return
-      const ctx = this.amend()
+      const ctx = this.patch()
       this.fork = ctx.plugin(plugin, this.options.config)
       this.fork.entry = this
     }
@@ -139,7 +149,11 @@ export class Entry {
   stop() {
     this.fork?.dispose()
     this.fork = undefined
+
+    // realm garbage collection
+    for (const [key, label] of Object.entries(this.options.isolate ?? {})) {
+      const name = this.resolveRealm(label)
+      this.loader._clearRealm(key, name)
+    }
   }
 }
-
-Error.stackTraceLimit = 100

@@ -11,7 +11,7 @@ declare module '@cordisjs/core' {
     'config'(): void
     'exit'(signal: NodeJS.Signals): Promise<void>
     'loader/entry'(type: string, entry: Entry): void
-    'loader/patch'(entry: Entry): void
+    'loader/patch'(entry: Entry, legacy?: Entry.Options): void
   }
 
   interface Context {
@@ -81,7 +81,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     super(app, 'loader', true)
     this.root = new Entry(this)
     this.entries[''] = this.root
-    this.realms.root = app.root[Context.isolate]
+    this.realms['#'] = app.root[Context.isolate]
 
     this.app.on('dispose', () => {
       this.exit()
@@ -241,18 +241,19 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     return id
   }
 
-  async update(id: string, options: Entry.Options) {
+  async update(id: string, options: Partial<Omit<Entry.Options, 'id' | 'name'>>) {
     const entry = this.entries[id]
     if (!entry) throw new Error(`entry ${id} not found`)
+    const override = { ...entry.options }
     for (const [key, value] of Object.entries(options)) {
       if (isNullable(value)) {
-        delete entry.options[key]
+        delete override[key]
       } else {
-        entry.options[key] = value
+        override[key] = value
       }
     }
     this.writeConfig()
-    return entry.update(entry.parent, entry.options)
+    return entry.update(entry.parent, override)
   }
 
   async create(options: Omit<Entry.Options, 'id'>, target = '', index = Infinity) {
@@ -313,7 +314,6 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
       name: 'cordis/group',
       config: this.config,
     })
-    this.app.emit('config')
 
     while (this.tasks.size) {
       await Promise.all(this.tasks)
@@ -325,6 +325,20 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
   }
 
   exit() {}
+
+  _clearRealm(key: string, name: string) {
+    const hasRef = Object.values(this.entries).some((entry) => {
+      if (!entry.fork) return false
+      const label = entry.options.isolate?.[key]
+      if (!label) return false
+      return name === entry.resolveRealm(label)
+    })
+    if (hasRef) return
+    delete this.realms[name][key]
+    if (!Object.keys(this.realms[name]).length) {
+      delete this.realms[name]
+    }
+  }
 }
 
 export const kGroup = Symbol.for('cordis.group')
