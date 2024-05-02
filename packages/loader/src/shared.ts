@@ -70,6 +70,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
   public filename!: string
   public entries: Dict<Entry> = Object.create(null)
   public realms: Dict<Dict<symbol>> = Object.create(null)
+  public delims: Dict<symbol> = Object.create(null)
 
   private tasks = new Set<Promise<any>>()
   private _writeTask?: Promise<void>

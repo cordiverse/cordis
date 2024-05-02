@@ -83,12 +83,12 @@ export class Entry {
     }
 
     // part 2: generate service diff
-    const delimiter = Symbol('delimiter')
-    ctx[delimiter] = true
-    const diff: [string, symbol, symbol, boolean][] = []
+    const diff: [string, symbol, symbol, symbol, symbol][] = []
     const oldMap = ctx[Context.isolate]
     for (const key in { ...oldMap, ...newMap }) {
       if (newMap[key] === oldMap[key]) continue
+      const delim = this.loader.delims[key] ??= Symbol(key)
+      ctx[delim] = Symbol(`${key}#${this.options.id}`)
       for (const symbol of [oldMap[key], newMap[key]]) {
         const value = symbol && ctx[symbol]
         if (!(value instanceof Object)) continue
@@ -97,19 +97,18 @@ export class Entry {
           this.parent.emit('internal/warning', new Error(`expected service ${key} to be implemented`))
           continue
         }
-        diff.push([key, oldMap[key], newMap[key], !!source[delimiter]])
-        break
+        diff.push([key, oldMap[key], newMap[key], ctx[delim], source[delim]])
+        if (ctx[delim] !== source[delim]) break
       }
     }
 
     // part 3: emit service events
     // part 3.1: internal/before-service
-    for (const [key, symbol1, symbol2, flag] of diff) {
+    for (const [key, symbol1, symbol2, flag1, flag2] of diff) {
       const self = Object.create(null)
       self[Context.filter] = (target: Context) => {
-        if (!target[delimiter] !== flag) return false
-        if (symbol1 === target[Context.isolate][key]) return true
-        return flag && symbol2 === target[Context.isolate][key]
+        if (![symbol1, symbol2].includes(target[Context.isolate][key])) return false
+        return (flag1 === target[this.loader.delims[key]]) !== (flag1 === flag2)
       }
       ctx.emit(self, 'internal/before-service', key)
     }
@@ -117,25 +116,29 @@ export class Entry {
     // part 3.2: update service impl, prevent double update
     this.fork?.update(this.options.config)
     swap(ctx[Context.isolate], newMap)
-    for (const [, symbol1, symbol2, flag] of diff) {
-      if (flag && ctx[symbol1] && !ctx[symbol2]) {
+    for (const [, symbol1, symbol2, flag1, flag2] of diff) {
+      if (flag1 === flag2 && ctx[symbol1] && !ctx[symbol2]) {
         ctx.root[symbol2] = ctx.root[symbol1]
         delete ctx.root[symbol1]
       }
     }
 
     // part 3.3: internal/service
-    for (const [key, symbol1, symbol2, flag] of diff) {
+    for (const [key, symbol1, symbol2, flag1, flag2] of diff) {
       const self = Object.create(null)
       self[Context.filter] = (target: Context) => {
-        if (!target[delimiter] !== flag) return false
-        if (symbol2 === target[Context.isolate][key]) return true
-        return flag && symbol1 === target[Context.isolate][key]
+        if (![symbol1, symbol2].includes(target[Context.isolate][key])) return false
+        return (flag1 === target[this.loader.delims[key]]) !== (flag1 === flag2)
       }
       ctx.emit(self, 'internal/service', key)
     }
 
-    delete ctx[delimiter]
+    // part 4: clean up delimiter
+    for (const key in this.loader.delims) {
+      if (!Reflect.ownKeys(newMap).includes(key)) {
+        delete ctx[this.loader.delims[key]]
+      }
+    }
     return ctx
   }
 
