@@ -9,18 +9,18 @@ export namespace Entry {
     config?: any
     disabled?: boolean | null
     intercept?: Dict | null
-    isolate?: Dict<true | string>
+    isolate?: Dict<true | string> | null
     when?: any
   }
 }
 
-function swap<T extends {}>(target: T, source?: T | null): T {
-  const result = { ...target }
-  for (const key in result) {
-    delete target[key]
+function swap<T extends {}>(target: T, source?: T | null) {
+  for (const key of Reflect.ownKeys(target)) {
+    Reflect.deleteProperty(target, key)
   }
-  Object.assign(target, source)
-  return result
+  for (const key of Reflect.ownKeys(source || {})) {
+    Reflect.defineProperty(target, key, Reflect.getOwnPropertyDescriptor(source!, key)!)
+  }
 }
 
 function takeEntries(object: {}, keys: string[]) {
@@ -62,30 +62,18 @@ export class Entry {
     }
   }
 
-  patch(ctx?: Context, legacy?: Entry.Options) {
-    ctx ??= this.parent.extend({
-      [Context.intercept]: Object.create(this.parent[Context.intercept]),
-      [Context.isolate]: Object.create(this.parent[Context.isolate]),
-    })
-    ctx.emit('loader/patch', this, legacy)
-    swap(ctx[Context.intercept], this.options.intercept)
-
+  patch(ctx: Context, ref: Context = ctx) {
     // part 1: prepare isolate map
-    const newMap: Dict<symbol> = Object.create(Object.getPrototypeOf(ctx[Context.isolate]))
+    const newMap: Dict<symbol> = Object.create(Object.getPrototypeOf(ref[Context.isolate]))
     for (const [key, label] of Object.entries(this.options.isolate ?? {})) {
       const realm = this.resolveRealm(label)
       newMap[key] = (this.loader.realms[realm] ??= Object.create(null))[key] ??= Symbol(`${key}${realm}`)
-    }
-    for (const [key, label] of Object.entries(legacy?.isolate ?? {})) {
-      if (this.options.isolate?.[key] === label) continue
-      const name = this.resolveRealm(label)
-      this.loader._clearRealm(key, name)
     }
 
     // part 2: generate service diff
     const diff: [string, symbol, symbol, symbol, symbol][] = []
     const oldMap = ctx[Context.isolate]
-    for (const key in { ...oldMap, ...newMap }) {
+    for (const key in { ...oldMap, ...newMap, ...this.loader.delims }) {
       if (newMap[key] === oldMap[key]) continue
       const delim = this.loader.delims[key] ??= Symbol(key)
       ctx[delim] = Symbol(`${key}#${this.options.id}`)
@@ -113,9 +101,17 @@ export class Entry {
       ctx.emit(self, 'internal/before-service', key)
     }
 
-    // part 3.2: update service impl, prevent double update
-    this.fork?.update(this.options.config)
-    swap(ctx[Context.isolate], newMap)
+    // part 3.2: update service impl
+    if (ctx === ref) {
+      // prevent double update
+      this.fork?.update(this.options.config)
+      swap(ctx[Context.isolate], newMap)
+      swap(ctx[Context.intercept], this.options.intercept)
+    } else {
+      // handle entry transfer
+      Object.setPrototypeOf(ctx, Object.getPrototypeOf(ref))
+      swap(ctx, ref)
+    }
     for (const [, symbol1, symbol2, flag1, flag2] of diff) {
       if (flag1 === flag2 && ctx[symbol1] && !ctx[symbol2]) {
         ctx.root[symbol2] = ctx.root[symbol1]
@@ -139,7 +135,13 @@ export class Entry {
         delete ctx[this.loader.delims[key]]
       }
     }
-    return ctx
+  }
+
+  createContext() {
+    return this.parent.extend({
+      [Context.intercept]: Object.create(this.parent[Context.intercept]),
+      [Context.isolate]: Object.create(this.parent[Context.isolate]),
+    })
   }
 
   async update(parent: Context, options: Entry.Options) {
@@ -150,12 +152,18 @@ export class Entry {
       this.stop()
     } else if (this.fork) {
       this.isUpdate = true
-      this.patch(this.fork.parent, legacy)
+      for (const [key, label] of Object.entries(legacy.isolate ?? {})) {
+        if (this.options.isolate?.[key] === label) continue
+        const name = this.resolveRealm(label)
+        this.loader._clearRealm(key, name)
+      }
+      this.patch(this.fork.parent)
     } else {
       this.parent.emit('loader/entry', 'apply', this)
       const plugin = await this.loader.resolve(this.options.name)
       if (!plugin) return
-      const ctx = this.patch()
+      const ctx = this.createContext()
+      this.patch(ctx)
       this.fork = ctx.plugin(plugin, this.options.config)
       this.fork.entry = this
     }

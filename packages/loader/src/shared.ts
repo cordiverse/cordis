@@ -284,7 +284,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     this.writeConfig()
   }
 
-  teleport(id: string, target: string, index = Infinity) {
+  transfer(id: string, target: string, index = Infinity) {
     const entry = this.entries[id]
     if (!entry) throw new Error(`entry ${id} not found`)
     const sourceEntry = entry.parent.scope.entry!
@@ -296,7 +296,8 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     if (sourceEntry === targetEntry) return
     entry.parent = targetEntry.fork.ctx
     if (!entry.fork) return
-    entry.patch()
+    const ctx = entry.createContext()
+    entry.patch(entry.fork.parent, ctx)
   }
 
   paths(scope: EffectScope): string[] {
