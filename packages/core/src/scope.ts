@@ -1,6 +1,6 @@
 import { deepEqual, defineProperty, isNullable, remove } from 'cosmokit'
 import { Context } from './context.ts'
-import { Plugin, Registry } from './registry.ts'
+import { Inject, Plugin, Registry } from './registry.ts'
 import { isConstructor, resolveConfig } from './utils.ts'
 
 declare module './context.ts' {
@@ -77,6 +77,7 @@ export abstract class EffectScope<C extends Context = Context> {
   constructor(public parent: C, public config: C['config']) {
     this.uid = parent.registry ? parent.registry.counter : 0
     this.ctx = this.context = parent.extend({ scope: this })
+    this.ctx[Context.inject] = {}
     this.proxy = new Proxy({}, {
       get: (target, key) => Reflect.get(this.config, key),
     })
@@ -166,7 +167,7 @@ export abstract class EffectScope<C extends Context = Context> {
     this.reset()
   }
 
-  protected setupInject() {
+  protected setupInjectHooks() {
     if (!this.runtime.using.length) return
     defineProperty(this.context.on('internal/before-service', (name) => {
       if (!this.runtime.using.includes(name)) return
@@ -286,7 +287,7 @@ export class ForkScope<C extends Context = Context> extends EffectScope<C> {
     this.context.emit('internal/fork', this)
     if (runtime.isReusable) {
       // non-reusable plugin forks are not responsive to isolated service changes
-      this.setupInject()
+      this.setupInjectHooks()
     }
 
     this.init(error)
@@ -355,18 +356,29 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
     return true
   }
 
+  private setInject(inject?: string[] | Inject): void {
+    if (Array.isArray(inject)) {
+      for (const name of inject) {
+        this.using.push(name)
+        this.inject.add(name)
+      }
+    } else if (inject) {
+      for (const name of inject.required || []) {
+        this.using.push(name)
+        this.inject.add(name)
+      }
+      for (const name of inject.optional || []) {
+        this.inject.add(name)
+      }
+    }
+  }
+
   private setup() {
     const { name } = this.plugin
     if (name && name !== 'apply') this.name = name
     this.schema = this.plugin['Config'] || this.plugin['schema']
-    const inject = this.plugin['using'] || this.plugin['inject'] || []
-    if (Array.isArray(inject)) {
-      this.using = inject
-      this.inject = new Set(inject)
-    } else {
-      this.using = inject.required || []
-      this.inject = new Set([...this.using, ...inject.optional || []])
-    }
+    this.setInject(this.plugin['using'] || this.plugin['inject'])
+    this.setInject(this.parent[Context.inject])
     this.isReusable = this.plugin['reusable']
     this.isReactive = this.plugin['reactive']
     this.context.emit('internal/runtime', this)
@@ -374,7 +386,7 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
     if (this.isReusable) {
       this.forkables.push(this.apply)
     } else {
-      super.setupInject()
+      super.setupInjectHooks()
     }
   }
 

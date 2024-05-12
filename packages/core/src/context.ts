@@ -55,6 +55,7 @@ export class Context {
   static readonly static: unique symbol = symbols.static as any
   static readonly filter: unique symbol = symbols.filter as any
   static readonly expose: unique symbol = symbols.expose as any
+  static readonly inject: unique symbol = symbols.inject as any
   static readonly isolate: unique symbol = symbols.isolate as any
   static readonly internal: unique symbol = symbols.internal as any
   static readonly intercept: unique symbol = symbols.intercept as any
@@ -163,6 +164,7 @@ export class Context {
   constructor(config?: any) {
     const self: Context = new Proxy(this, Context.handler)
     config = resolveConfig(this.constructor, config)
+    self[symbols.inject] = {}
     self[symbols.isolate] = Object.create(null)
     self[symbols.intercept] = Object.create(null)
     self.root = self

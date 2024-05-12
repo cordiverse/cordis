@@ -1,4 +1,4 @@
-import { Dict, defineProperty } from 'cosmokit'
+import { defineProperty, Dict } from 'cosmokit'
 import { Context } from './context.ts'
 import { ForkScope, MainScope } from './scope.ts'
 import { resolveConfig } from './utils.ts'

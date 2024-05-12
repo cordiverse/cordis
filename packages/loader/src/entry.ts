@@ -1,4 +1,4 @@
-import { Context, ForkScope } from '@cordisjs/core'
+import { Context, ForkScope, Inject } from '@cordisjs/core'
 import { Dict } from 'cosmokit'
 import Loader from './shared.ts'
 
@@ -10,6 +10,7 @@ export namespace Entry {
     disabled?: boolean | null
     intercept?: Dict | null
     isolate?: Dict<true | string> | null
+    inject?: string[] | Inject | null
     when?: any
   }
 }
@@ -63,6 +64,8 @@ export class Entry {
   }
 
   patch(ctx: Context, ref: Context = ctx) {
+    ctx[Context.inject] = this.options.inject
+
     // part 1: prepare isolate map
     const newMap: Dict<symbol> = Object.create(Object.getPrototypeOf(ref[Context.isolate]))
     for (const [key, label] of Object.entries(this.options.isolate ?? {})) {
@@ -103,10 +106,10 @@ export class Entry {
 
     // part 3.2: update service impl
     if (ctx === ref) {
-      // prevent double update
-      this.fork?.update(this.options.config)
       swap(ctx[Context.isolate], newMap)
       swap(ctx[Context.intercept], this.options.intercept)
+      // prevent double update
+      this.fork?.update(this.options.config)
     } else {
       // handle entry transfer
       Object.setPrototypeOf(ctx, Object.getPrototypeOf(ref))
@@ -159,13 +162,13 @@ export class Entry {
       }
       this.patch(this.fork.parent)
     } else {
-      this.parent.emit('loader/entry', 'apply', this)
       const plugin = await this.loader.resolve(this.options.name)
       if (!plugin) return
       const ctx = this.createContext()
       this.patch(ctx)
       this.fork = ctx.plugin(plugin, this.options.config)
       this.fork.entry = this
+      this.parent.emit('loader/entry', 'apply', this)
     }
   }
 

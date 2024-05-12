@@ -1,4 +1,5 @@
 import { Logger } from '@cordisjs/logger'
+import { kGroup } from '@cordisjs/loader'
 import { Context } from '../index.ts'
 
 declare module '@cordisjs/loader' {
@@ -35,6 +36,7 @@ export function apply(ctx: Context, config: Config = {}) {
   })
 
   ctx.on('loader/entry', (type, entry) => {
+    if (entry.fork?.runtime.plugin?.[kGroup]) return
     ctx.logger('loader').info('%s plugin %c', type, entry.options.name)
   })
 
