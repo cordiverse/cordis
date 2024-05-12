@@ -1,7 +1,7 @@
 {
   "name": "cordis",
   "description": "Meta-Framework for Modern JavaScript Applications",
-  "version": "3.14.0",
+  "version": "3.15.0",
   "type": "module",
   "main": "lib/index.cjs",
   "module": "lib/index.mjs",
@@ -53,8 +53,8 @@
     "framework"
   ],
   "dependencies": {
-    "@cordisjs/core": "3.14.0",
-    "@cordisjs/loader": "^0.9.0",
+    "@cordisjs/core": "3.15.0",
+    "@cordisjs/loader": "^0.10.0",
     "@cordisjs/logger": "^0.3.2",
     "@cordisjs/timer": "^0.3.2",
     "cac": "^6.7.14",
