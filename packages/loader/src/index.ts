@@ -3,6 +3,7 @@ import { promises as fs } from 'fs'
 import * as dotenv from 'dotenv'
 import * as path from 'path'
 
+export * from './internal.ts'
 export * from './entry.ts'
 export * from './shared.ts'
 
@@ -43,14 +44,6 @@ class NodeLoader extends Loader<NodeLoader.Options> {
     }
 
     return await super.readConfig()
-  }
-
-  async import(name: string) {
-    try {
-      return await import(name)
-    } catch (err: any) {
-      this.app.emit('internal/error', new Error(`Cannot find package "${name}"`))
-    }
   }
 
   exit(code = NodeLoader.exitCode) {

@@ -1,7 +1,5 @@
-import { createRequire, LoadHookContext } from 'module'
+import { LoadHookContext } from 'module'
 import { Dict } from 'cosmokit'
-
-const require = createRequire(import.meta.url)
 
 type ModuleFormat = 'builtin' | 'commonjs' | 'json' | 'module' | 'wasm'
 type ModuleSource = string | ArrayBuffer
@@ -48,5 +46,3 @@ export interface ModuleLoader {
   load(specifier: string, context: Pick<LoadHookContext, 'format' | 'importAttributes'>): Promise<LoadResult>
   loadSync(specifier: string, context: Pick<LoadHookContext, 'format' | 'importAttributes'>): LoadResult
 }
-
-export const internal: ModuleLoader = require('internal/process/esm_loader').esmLoader

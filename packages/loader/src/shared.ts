@@ -1,6 +1,8 @@
 import { Context, EffectScope, Service } from '@cordisjs/core'
 import { defineProperty, Dict, isNullable, valueMap } from 'cosmokit'
-import { constants, promises as fs } from 'fs'
+import { constants, promises as fs } from 'node:fs'
+import { pathToFileURL } from 'node:url'
+import { ModuleLoader } from './internal.ts'
 import { interpolate } from './utils.ts'
 import { Entry } from './entry.ts'
 import * as yaml from 'js-yaml'
@@ -72,11 +74,11 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
   public realms: Dict<Dict<symbol>> = Object.create(null)
   public delims: Dict<symbol> = Object.create(null)
 
+  public internal?: ModuleLoader
+
   private tasks = new Set<Promise<any>>()
   private _writeTask?: Promise<void>
   private _writeSlient = true
-
-  abstract import(name: string): Promise<any>
 
   constructor(public app: Context, public options: T) {
     super(app, 'loader', true)
@@ -216,8 +218,19 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     }
   }
 
+  async import(name: string) {
+    if (this.internal) {
+      return this.internal.import(name, pathToFileURL(this.filename).href, {})
+    } else {
+      return import(name)
+    }
+  }
+
   async resolve(name: string) {
-    const task = this.import(name)
+    const task = this.import(name).catch((error) => {
+      this.app.emit('internal/error', new Error(`Cannot find package "${name}"`))
+      this.app.emit('internal/error', error)
+    })
     this.tasks.add(task)
     task.finally(() => this.tasks.delete(task))
     return this.unwrapExports(await task)
