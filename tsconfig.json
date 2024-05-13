@@ -6,6 +6,7 @@
       // explicitly override subpath exports
       "cordis/*": ["packages/cordis/src/*"],
       "cordis": ["packages/cordis/src"],
+      "create-cordis": ["packages/*/src"],
       "@cordisjs/plugin-*": ["packages/*/src"],
       "@cordisjs/*": ["packages/*/src"],
     },

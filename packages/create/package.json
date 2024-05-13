@@ -1,0 +1,45 @@
+{
+  "name": "create-cordis",
+  "description": "Setup a Cordis application",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "bin": "lib/cli.js",
+  "files": [
+    "lib"
+  ],
+  "author": "Shigma <shigma10826@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cordiverse/cordis.git",
+    "directory": "packages/create"
+  },
+  "bugs": {
+    "url": "https://github.com/cordiverse/cordis/issues"
+  },
+  "keywords": [
+    "cordis",
+    "application",
+    "create",
+    "scaffold",
+    "template",
+    "generator",
+    "boilerplate"
+  ],
+  "devDependencies": {
+    "@types/prompts": "^2.4.9",
+    "@types/tar": "^6.1.11",
+    "@types/which-pm-runs": "^1.0.2",
+    "@types/yargs-parser": "^21.0.3"
+  },
+  "dependencies": {
+    "get-registry": "^1.1.0",
+    "kleur": "^4.1.5",
+    "prompts": "^2.4.2",
+    "tar": "^6.2.1",
+    "which-pm-runs": "^1.1.0",
+    "yargs-parser": "^21.1.1"
+  }
+}

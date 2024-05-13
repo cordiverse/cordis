@@ -136,7 +136,7 @@ export class Context {
         if (!internal.set) return false
         return internal.set.call(ctx, value)
       } else {
-        ctx.emit('internal/warning', new Error(`assigning to service ${name} is not recommended, please use \`ctx.set()\` method instead`))
+        // ctx.emit('internal/warning', new Error(`assigning to service ${name} is not recommended, please use \`ctx.set()\` method instead`))
         ctx.set(name, value)
         return true
       }

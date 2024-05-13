@@ -4,7 +4,7 @@ import { cac } from 'cac'
 import kleur from 'kleur'
 import { start } from '../cli.js'
 import { Dict, hyphenate } from 'cosmokit'
-import { createRequire } from 'module'
+import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
 const { version } = require('../../package.json')
