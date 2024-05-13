@@ -1,13 +1,13 @@
+import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { execSync } from 'node:child_process'
 import { basename, join, relative } from 'node:path'
+import { Readable } from 'node:stream'
 import { extract } from 'tar'
 import getRegistry from 'get-registry'
 import parse from 'yargs-parser'
 import prompts from 'prompts'
 import which from 'which-pm-runs'
 import kleur from 'kleur'
-import * as fs from 'node:fs/promises'
-import { Readable } from 'node:stream'
 
 let project: string
 let rootDir: string
@@ -59,12 +59,12 @@ class Scaffold {
   }
 
   async prepare() {
-    const stats = await fs.stat(rootDir).catch(() => null)
-    if (!stats) return fs.mkdir(rootDir, { recursive: true })
+    const stats = await stat(rootDir).catch(() => null)
+    if (!stats) return mkdir(rootDir, { recursive: true })
 
     let message: string
     if (stats.isDirectory()) {
-      const files = await fs.readdir(rootDir)
+      const files = await readdir(rootDir)
       if (!files.length) return
       message = `  Target directory "${project}" is not empty.`
     } else {
@@ -77,8 +77,8 @@ class Scaffold {
       if (!yes) process.exit(0)
     }
 
-    await fs.rm(rootDir, { recursive: true })
-    await fs.mkdir(rootDir)
+    await rm(rootDir, { recursive: true })
+    await mkdir(rootDir)
   }
 
   async scaffold() {
@@ -109,7 +109,7 @@ class Scaffold {
 
   async writePackageJson() {
     const filename = join(rootDir, 'package.json')
-    const meta = require(filename)
+    const meta = JSON.parse(await readFile(filename, 'utf-8'))
     meta.name = project
     meta.private = true
     meta.version = '0.0.0'
@@ -120,7 +120,7 @@ class Scaffold {
       delete meta.workspaces
       delete meta.devDependencies
     }
-    await fs.writeFile(filename, JSON.stringify(meta, null, 2) + '\n')
+    await writeFile(filename, JSON.stringify(meta, null, 2) + '\n')
   }
 
   async initGit() {
@@ -152,7 +152,7 @@ class Scaffold {
 
   async start() {
     console.log()
-    console.log(`  ${kleur.bold('create cordis')}  ${kleur.blue(`v${this.options.version}`)}`)
+    console.log(`  ${kleur.bold(`create ${this.options.name}`)}  ${kleur.blue(`v${this.options.version}`)}`)
     console.log()
 
     const name = await this.getName()
