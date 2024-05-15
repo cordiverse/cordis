@@ -339,8 +339,13 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     }
   }
 
-  unwrapExports(module: any) {
-    return module?.default || module
+  unwrapExports(exports: any) {
+    if (isNullable(exports)) return exports
+    exports = exports.default ?? exports
+    // https://github.com/evanw/esbuild/issues/2623
+    // https://esbuild.github.io/content-types/#default-interop
+    if (!exports.__esModule) return exports
+    return exports.default ?? exports
   }
 
   exit() {}
