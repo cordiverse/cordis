@@ -63,7 +63,7 @@ declare module './context.ts' {
 
 export class Registry<C extends Context = Context> {
   private _counter = 0
-  private _internal = new Map<Plugin, MainScope<C>>()
+  private _internal = new Map<Function, MainScope<C>>()
 
   constructor(private root: Context, config: any) {
     defineProperty(this, Context.origin, root)
@@ -79,33 +79,34 @@ export class Registry<C extends Context = Context> {
     return this._internal.size
   }
 
-  resolve(plugin: Plugin) {
+  resolve(plugin: Plugin, assert = false): Function | undefined {
     // Allow `null` as a special case.
     if (plugin === null) return plugin
     if (typeof plugin === 'function') return plugin
     if (isApplicable(plugin)) return plugin.apply
-    throw new Error('invalid plugin, expect function or object with an "apply" method, received ' + typeof plugin)
+    if (assert) throw new Error('invalid plugin, expect function or object with an "apply" method, received ' + typeof plugin)
   }
 
   get(plugin: Plugin) {
-    return this._internal.get(this.resolve(plugin))
+    const key = this.resolve(plugin)
+    return key && this._internal.get(key)
   }
 
   has(plugin: Plugin) {
-    return this._internal.has(this.resolve(plugin))
+    const key = this.resolve(plugin)
+    return !!key && this._internal.has(key)
   }
 
   set(plugin: Plugin, state: MainScope<C>) {
-    const oldValue = this._internal.get(this.resolve(plugin))
-    this._internal.set(this.resolve(plugin), state)
-    return oldValue
+    const key = this.resolve(plugin)
+    key && this._internal.set(key, state)
   }
 
   delete(plugin: Plugin) {
-    plugin = this.resolve(plugin)
-    const runtime = this.get(plugin)
+    const key = this.resolve(plugin)
+    const runtime = key && this._internal.get(key)
     if (!runtime) return
-    this._internal.delete(plugin)
+    this._internal.delete(key)
     runtime.dispose()
     return runtime
   }
@@ -122,7 +123,7 @@ export class Registry<C extends Context = Context> {
     return this._internal.entries()
   }
 
-  forEach(callback: (value: MainScope<C>, key: Plugin, map: Map<Plugin, MainScope<C>>) => void) {
+  forEach(callback: (value: MainScope<C>, key: Function, map: Map<Plugin, MainScope<C>>) => void) {
     return this._internal.forEach(callback)
   }
 
@@ -136,7 +137,7 @@ export class Registry<C extends Context = Context> {
 
   plugin(plugin: Plugin<C>, config?: any) {
     // check if it's a valid plugin
-    this.resolve(plugin)
+    this.resolve(plugin, true)
 
     const context: Context = this[Context.origin]
     context.scope.assertActive()

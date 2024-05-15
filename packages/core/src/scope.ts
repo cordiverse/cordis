@@ -331,11 +331,11 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
 
   constructor(registry: Registry<C>, public plugin: Plugin, config: any, error?: any) {
     super(registry[Context.origin] as C, config)
-    registry.set(plugin, this)
     if (!plugin) {
       this.name = 'root'
       this.isActive = true
     } else {
+      registry.set(plugin, this)
       this.setup()
       this.init(error)
     }
