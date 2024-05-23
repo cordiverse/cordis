@@ -56,6 +56,10 @@ export namespace Loader {
 }
 
 export abstract class Loader<T extends Loader.Options = Loader.Options> extends Service<Entry.Options[]> {
+  static inject = {
+    optional: ['loader'],
+  }
+
   // process
   public baseDir = process.cwd()
   public envData = process.env.CORDIS_SHARED
@@ -66,7 +70,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     env: process.env,
   }
 
-  public root: Entry
+  public root: EntryGroup
   public suspend = false
   public writable = false
   public mimeType!: string
@@ -83,8 +87,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
 
   constructor(public app: Context, public options: T) {
     super(app, 'loader', true)
-    this.root = new Entry(this)
-    this.entries[''] = this.root
+    this.root = new EntryGroup(this.app)
     this.realms['#'] = app.root[Context.isolate]
 
     this.app.on('dispose', () => {
@@ -105,6 +108,10 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     })
 
     this.app.on('internal/fork', (fork) => {
+      if (fork.parent[Entry.key]) {
+        fork.entry = fork.parent[Entry.key]
+        delete fork.parent[Entry.key]
+      }
       // fork.uid: fork is created (we only care about fork dispose event)
       // fork.parent.runtime.plugin !== group: fork is not tracked by loader
       if (fork.uid || !fork.entry) return
@@ -242,20 +249,13 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     return !!this.interpolate(`\${{ ${expr} }}`)
   }
 
-  private ensureId(options: Partial<Entry.Options>) {
+  ensureId(options: Partial<Entry.Options>) {
     if (!options.id) {
       do {
         options.id = Math.random().toString(36).slice(2, 8)
       } while (this.entries[options.id])
     }
     return options.id!
-  }
-
-  async _ensure(parent: Context, options: Omit<Entry.Options, 'id'>) {
-    const id = this.ensureId(options)
-    const entry = this.entries[id] ??= new Entry(this)
-    await entry.update(parent, options as Entry.Options)
-    return id
   }
 
   async update(id: string, options: Partial<Omit<Entry.Options, 'id' | 'name'>>) {
@@ -270,23 +270,20 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
       }
     }
     this.writeConfig()
-    return entry.update(entry.parent, override)
+    return entry.update(override)
   }
 
-  async create(options: Omit<Entry.Options, 'id'>, target = '', index = Infinity) {
-    const targetEntry = this.entries[target]
-    if (!targetEntry?.fork) throw new Error(`entry ${target} not found`)
-    targetEntry.options.config.splice(index, 0, options)
+  resolveGroup(id: string | null) {
+    const group = id ? this.entries[id]?.children : this.root
+    if (!group) throw new Error(`entry ${id} not found`)
+    return group
+  }
+
+  async create(options: Omit<Entry.Options, 'id'>, parent: string | null = null, position = Infinity) {
+    const group = this.resolveGroup(parent)
+    group.config.splice(position, 0, options as Entry.Options)
     this.writeConfig()
-    return this._ensure(targetEntry.fork.ctx, options)
-  }
-
-  _remove(id: string) {
-    const entry = this.entries[id]
-    if (!entry) return
-    entry.stop()
-    entry.unlink()
-    delete this.entries[id]
+    return group._create(options)
   }
 
   remove(id: string) {
@@ -298,17 +295,16 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     this.writeConfig()
   }
 
-  transfer(id: string, target: string, index = Infinity) {
+  transfer(id: string, parent: string | null, position = Infinity) {
     const entry = this.entries[id]
     if (!entry) throw new Error(`entry ${id} not found`)
-    const sourceEntry = entry.parent.scope.entry!
-    const targetEntry = this.entries[target]
-    if (!targetEntry?.fork) throw new Error(`entry ${target} not found`)
+    const source = entry.parent
+    const target = this.resolveGroup(parent)
     entry.unlink()
-    targetEntry.options.config.splice(index, 0, entry.options)
+    target.config.splice(position, 0, entry.options)
     this.writeConfig()
-    if (sourceEntry === targetEntry) return
-    entry.parent = targetEntry.fork.ctx
+    if (source === target) return
+    entry.parent = target
     if (!entry.fork) return
     const ctx = entry.createContext()
     entry.patch(entry.fork.parent, ctx)
@@ -331,19 +327,9 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     return this._locate(scope.parent.scope)
   }
 
-  createGroup() {
-    const ctx = this[Context.current]
-    // if (!ctx.scope.entry) throw new Error(`expected entry scope`)
-    return new EntryGroup(this, ctx)
-  }
-
   async start() {
     await this.readConfig()
-    this.root.update(this.app, {
-      id: '',
-      name: 'cordis/group',
-      config: this.config,
-    })
+    this.root.update(this.config)
 
     while (this.tasks.size) {
       await Promise.all(this.tasks)
@@ -387,13 +373,19 @@ export interface GroupOptions {
 export function createGroup(config?: Entry.Options[], options: GroupOptions = {}) {
   options.initial = config
 
-  function group(ctx: Context, config: Entry.Options[]) {
-    const group = ctx.get('loader')!.createGroup()
+  function group(ctx: Context) {
+    if (!ctx.scope.entry) throw new Error(`expected entry scope`)
+    const group = new EntryGroup(ctx)
+    ctx.scope.entry.children = group
+    ctx.on('dispose', () => {
+      group.dispose()
+    })
     ctx.accept((config: Entry.Options[]) => {
       group.update(config)
     }, { passive: true, immediate: true })
   }
 
+  defineProperty(group, 'inject', ['loader'])
   defineProperty(group, 'reusable', true)
   defineProperty(group, kGroup, options)
   if (options.name) defineProperty(group, 'name', options.name)

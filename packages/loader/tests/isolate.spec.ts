@@ -530,7 +530,7 @@ describe('service isolation: transfer', () => {
   })
 
   it('transfer injector out of group', async () => {
-    loader.transfer(injector, '')
+    loader.transfer(injector, null)
 
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(foo.mock.calls).to.have.length(0)
@@ -538,7 +538,7 @@ describe('service isolation: transfer', () => {
   })
 
   it('transfer provider out of group', async () => {
-    loader.transfer(provider, '')
+    loader.transfer(provider, null)
 
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(foo.mock.calls).to.have.length(1)

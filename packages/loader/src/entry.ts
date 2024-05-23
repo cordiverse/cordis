@@ -1,6 +1,7 @@
 import { Context, ForkScope, Inject } from '@cordisjs/core'
 import { Dict } from 'cosmokit'
 import Loader from './shared.ts'
+import { EntryGroup } from './group.ts'
 
 export namespace Entry {
   export interface Options {
@@ -42,16 +43,17 @@ function sortKeys<T extends {}>(object: T, prepend = ['id', 'name'], append = ['
 }
 
 export class Entry {
+  static key = Symbol('cordis.entry')
+
   public fork?: ForkScope
   public isUpdate = false
-  public parent!: Context
   public options!: Entry.Options
-  public group: Entry.Options[] | null = null
+  public children?: EntryGroup
 
-  constructor(public loader: Loader) {}
+  constructor(public loader: Loader, public parent: EntryGroup) {}
 
   unlink() {
-    const config = this.parent.config as Entry.Options[]
+    const config = this.parent.config
     const index = config.indexOf(this.options)
     if (index >= 0) config.splice(index, 1)
   }
@@ -86,7 +88,7 @@ export class Entry {
         if (!(value instanceof Object)) continue
         const source = Reflect.getOwnPropertyDescriptor(value, Context.origin)?.value
         if (!source) {
-          this.parent.emit('internal/warning', new Error(`expected service ${key} to be implemented`))
+          ctx.emit('internal/warning', new Error(`expected service ${key} to be implemented`))
           continue
         }
         diff.push([key, oldMap[key], newMap[key], ctx[delim], source[delim]])
@@ -142,15 +144,14 @@ export class Entry {
   }
 
   createContext() {
-    return this.parent.extend({
-      [Context.intercept]: Object.create(this.parent[Context.intercept]),
-      [Context.isolate]: Object.create(this.parent[Context.isolate]),
+    return this.parent.ctx.extend({
+      [Context.intercept]: Object.create(this.parent.ctx[Context.intercept]),
+      [Context.isolate]: Object.create(this.parent.ctx[Context.isolate]),
     })
   }
 
-  async update(parent: Context, options: Entry.Options) {
+  async update(options: Entry.Options) {
     const legacy = this.options
-    this.parent = parent
     this.options = sortKeys(options)
     if (!this.loader.isTruthyLike(options.when) || options.disabled) {
       this.stop()
@@ -167,9 +168,9 @@ export class Entry {
       if (!plugin) return
       const ctx = this.createContext()
       this.patch(ctx)
+      ctx[Entry.key] = this
       this.fork = ctx.plugin(plugin, this.options.config)
-      this.fork.entry = this
-      this.parent.emit('loader/entry', 'apply', this)
+      ctx.emit('loader/entry', 'apply', this)
     }
   }
 
