@@ -46,6 +46,7 @@ export class Entry {
   public isUpdate = false
   public parent!: Context
   public options!: Entry.Options
+  public group: Entry.Options[] | null = null
 
   constructor(public loader: Loader) {}
 

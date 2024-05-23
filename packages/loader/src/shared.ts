@@ -7,6 +7,7 @@ import { interpolate } from './utils.ts'
 import { Entry } from './entry.ts'
 import * as yaml from 'js-yaml'
 import * as path from 'path'
+import { EntryGroup } from './group.ts'
 
 declare module '@cordisjs/core' {
   interface Events {
@@ -313,17 +314,27 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     entry.patch(entry.fork.parent, ctx)
   }
 
-  paths(scope: EffectScope): string[] {
+  locate(ctx = this[Context.current]) {
+    return this._locate(ctx.scope).map(entry => entry.options.id)
+  }
+
+  _locate(scope: EffectScope): Entry[] {
     // root scope
     if (scope === scope.parent.scope) return []
 
     // runtime scope
     if (scope.runtime === scope) {
-      return ([] as string[]).concat(...scope.runtime.children.map(child => this.paths(child)))
+      return ([] as Entry[]).concat(...scope.runtime.children.map(child => this._locate(child)))
     }
 
-    if (scope.entry) return [scope.entry.options.id]
-    return this.paths(scope.parent.scope)
+    if (scope.entry) return [scope.entry]
+    return this._locate(scope.parent.scope)
+  }
+
+  createGroup() {
+    const ctx = this[Context.current]
+    // if (!ctx.scope.entry) throw new Error(`expected entry scope`)
+    return new EntryGroup(this, ctx)
   }
 
   async start() {
@@ -377,32 +388,10 @@ export function createGroup(config?: Entry.Options[], options: GroupOptions = {}
   options.initial = config
 
   function group(ctx: Context, config: Entry.Options[]) {
-    const loader = ctx.get('loader')!
-    for (const options of config) {
-      loader._ensure(ctx, options)
-    }
-
-    ctx.accept((neo: Entry.Options[]) => {
-      // update config reference
-      const old = ctx.scope.config as Entry.Options[]
-      const oldMap: any = Object.fromEntries(old.map(entry => [entry.id, entry]))
-      const neoMap: any = Object.fromEntries(neo.map(entry => [entry.id, entry]))
-
-      // update inner plugins
-      for (const id in { ...oldMap, ...neoMap }) {
-        if (!neoMap[id]) {
-          loader._remove(id)
-        } else {
-          loader._ensure(ctx, neoMap[id])
-        }
-      }
-    }, { passive: true })
-
-    ctx.on('dispose', () => {
-      for (const entry of ctx.scope.config as Entry.Options[]) {
-        loader._remove(entry.id)
-      }
-    })
+    const group = ctx.get('loader')!.createGroup()
+    ctx.accept((config: Entry.Options[]) => {
+      group.update(config)
+    }, { passive: true, immediate: true })
   }
 
   defineProperty(group, 'reusable', true)
