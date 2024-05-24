@@ -72,7 +72,7 @@ class Watcher extends Service {
   constructor(ctx: Context, public config: Watcher.Config) {
     super(ctx, 'hmr')
     this.base = resolve(ctx.baseDir, config.base || '')
-    this.initialURL = pathToFileURL(ctx.loader.filename).href
+    this.initialURL = pathToFileURL(ctx.loader.file.name).href
   }
 
   relative(filename: string) {
@@ -97,8 +97,8 @@ class Watcher extends Service {
     this.watcher.on('change', async (path) => {
       const filename = pathToFileURL(resolve(this.base, path)).href
       const isEntry = filename === this.initialURL
-      if (loader.suspend && isEntry) {
-        loader.suspend = false
+      if (loader.file.suspend && isEntry) {
+        loader.file.suspend = false
         return
       }
 

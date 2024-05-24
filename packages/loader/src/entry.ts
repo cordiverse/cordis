@@ -52,12 +52,6 @@ export class Entry {
 
   constructor(public loader: Loader, public parent: EntryGroup) {}
 
-  unlink() {
-    const config = this.parent.config
-    const index = config.indexOf(this.options)
-    if (index >= 0) config.splice(index, 1)
-  }
-
   resolveRealm(label: string | true) {
     if (label === true) {
       return '#' + this.options.id

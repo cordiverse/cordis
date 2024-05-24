@@ -1,6 +1,6 @@
 import { Dict } from 'cosmokit'
 import { Context, ForkScope, Plugin } from '@cordisjs/core'
-import { Entry, group, Loader } from '../src'
+import { FileLoader, Entry, group, Loader } from '../src'
 import { Mock, mock } from 'node:test'
 import { expect } from 'chai'
 
@@ -13,26 +13,30 @@ declare module '../src/shared' {
   }
 }
 
+class MockFileLoader<T extends MockLoader = MockLoader> extends FileLoader<T> {
+  mutable = true
+
+  async read() {
+    return this.loader.config
+  }
+
+  async import(name: string) {
+    return this.loader.modules[name]
+  }
+}
+
 export default class MockLoader extends Loader {
   public modules: Dict<Plugin.Object> = Object.create(null)
   public config: Entry.Options[] = []
 
   constructor(ctx: Context) {
     super(ctx, { name: 'cordis' })
+    this.file = new MockFileLoader(this, 'cordis.yml')
     this.mock('cordis/group', group)
-    this.writable = true
   }
 
   mock<F extends Function>(name: string, plugin: F) {
     return this.modules[name] = mock.fn(plugin)
-  }
-
-  async import(name: string) {
-    return this.modules[name]
-  }
-
-  async readConfig() {
-    return this.config
   }
 
   expectEnable(plugin: any, config?: any) {

@@ -4,7 +4,6 @@ import * as dotenv from 'dotenv'
 import * as path from 'path'
 
 export * from './internal.ts'
-export * from './entry.ts'
 export * from './shared.ts'
 
 const oldEnv = { ...process.env }
@@ -18,7 +17,7 @@ namespace NodeLoader {
 class NodeLoader extends Loader<NodeLoader.Options> {
   static readonly exitCode = 51
 
-  async readConfig() {
+  async start() {
     // restore process.env
     for (const key in process.env) {
       if (key in oldEnv) {
@@ -43,7 +42,7 @@ class NodeLoader extends Loader<NodeLoader.Options> {
       process.env[key] = override[key]
     }
 
-    return await super.readConfig()
+    return await super.start()
   }
 
   exit(code = NodeLoader.exitCode) {

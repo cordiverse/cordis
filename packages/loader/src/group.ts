@@ -1,10 +1,9 @@
 import { Context } from '@cordisjs/core'
+import { FileLoader } from './file.ts'
 import { Entry } from './entry.ts'
 
 export class EntryGroup {
-  static inject = ['loader']
-
-  public config: Entry.Options[] = []
+  public data: Entry.Options[] = []
 
   constructor(public ctx: Context) {}
 
@@ -16,17 +15,23 @@ export class EntryGroup {
     return id
   }
 
+  _unlink(options: Entry.Options) {
+    const config = this.data
+    const index = config.indexOf(options)
+    if (index >= 0) config.splice(index, 1)
+  }
+
   _remove(id: string) {
     const entry = this.ctx.loader.entries[id]
     if (!entry) return
     entry.stop()
-    entry.unlink()
+    this._unlink(entry.options)
     delete this.ctx.loader.entries[id]
   }
 
   update(config: Entry.Options[]) {
-    const oldConfig = this.config as Entry.Options[]
-    this.config = config
+    const oldConfig = this.data as Entry.Options[]
+    this.data = config
     const oldMap = Object.fromEntries(oldConfig.map(options => [options.id, options]))
     const newMap = Object.fromEntries(config.map(options => [options.id ?? Symbol('anonymous'), options]))
 
@@ -43,8 +48,55 @@ export class EntryGroup {
   }
 
   dispose() {
-    for (const options of this.config) {
+    for (const options of this.data) {
       this._remove(options.id)
     }
+  }
+}
+
+export const kGroup = Symbol.for('cordis.group')
+
+export interface GroupOptions {
+  name?: string
+  initial?: Omit<Entry.Options, 'id'>[]
+  allowed?: string[]
+}
+
+export function defineGroup(config?: Entry.Options[], options: GroupOptions = {}) {
+  options.initial = config
+
+  class Group extends EntryGroup {
+    static reusable = true
+    static [kGroup] = options
+
+    constructor(public ctx: Context) {
+      super(ctx)
+      ctx.scope.entry!.children = this
+      ctx.on('dispose', () => {
+        this.dispose()
+      })
+      ctx.accept((config: Entry.Options[]) => {
+        this.update(config)
+      }, { passive: true, immediate: true })
+    }
+  }
+
+  return Group
+}
+
+export const group = defineGroup()
+
+export namespace Import {
+  export interface Config {
+    path: string
+    disabled?: boolean
+  }
+}
+
+export class Import extends EntryGroup {
+  file?: FileLoader
+
+  constructor(public ctx: Context, public config: Import.Config) {
+    super(ctx)
   }
 }

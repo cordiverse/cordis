@@ -1,13 +1,16 @@
 import { Context, EffectScope, Service } from '@cordisjs/core'
-import { defineProperty, Dict, isNullable, valueMap } from 'cosmokit'
-import { constants, promises as fs } from 'node:fs'
-import { pathToFileURL } from 'node:url'
+import { Dict, isNullable, valueMap } from 'cosmokit'
+import { readdir, stat } from 'node:fs/promises'
 import { ModuleLoader } from './internal.ts'
 import { interpolate } from './utils.ts'
 import { Entry } from './entry.ts'
-import * as yaml from 'js-yaml'
-import * as path from 'path'
 import { EntryGroup } from './group.ts'
+import { FileLoader } from './file.ts'
+import * as path from 'node:path'
+
+export * from './entry.ts'
+export * from './file.ts'
+export * from './group.ts'
 
 declare module '@cordisjs/core' {
   interface Events {
@@ -56,6 +59,7 @@ export namespace Loader {
 }
 
 export abstract class Loader<T extends Loader.Options = Loader.Options> extends Service<Entry.Options[]> {
+  // TODO auto inject optional when provided?
   static inject = {
     optional: ['loader'],
   }
@@ -70,20 +74,14 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     env: process.env,
   }
 
+  public file!: FileLoader<this>
   public root: EntryGroup
-  public suspend = false
-  public writable = false
-  public mimeType!: string
-  public filename!: string
   public entries: Dict<Entry> = Object.create(null)
   public realms: Dict<Dict<symbol>> = Object.create(null)
   public delims: Dict<symbol> = Object.create(null)
-
   public internal?: ModuleLoader
 
   private tasks = new Set<Promise<any>>()
-  private _writeTask?: Promise<void>
-  private _writeSlient = true
 
   constructor(public app: Context, public options: T) {
     super(app, 'loader', true)
@@ -104,7 +102,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
       if (fork.entry.isUpdate) return fork.entry.isUpdate = false
       const { schema } = fork.runtime
       fork.entry.options.config = schema ? schema.simplify(config) : config
-      this.writeConfig()
+      this.file.write(this.config)
     })
 
     this.app.on('internal/fork', (fork) => {
@@ -123,24 +121,22 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
       fork.entry.options.disabled = true
       fork.entry.fork = undefined
       fork.entry.stop()
-      this.writeConfig()
+      this.file.write(this.config)
     })
-
-    this.app.on('loader/patch', (entry) => {})
   }
 
   async init(filename?: string) {
     if (filename) {
       filename = path.resolve(this.baseDir, filename)
-      const stats = await fs.stat(filename)
+      const stats = await stat(filename)
       if (stats.isFile()) {
-        this.filename = filename
         this.baseDir = path.dirname(filename)
         const extname = path.extname(filename)
-        this.mimeType = writable[extname]
+        const type = writable[extname]
         if (!supported.has(extname)) {
           throw new Error(`extension "${extname}" not supported`)
         }
+        this.file = new FileLoader(this, filename, type)
       } else {
         this.baseDir = filename
         await this.findConfig()
@@ -148,70 +144,31 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     } else {
       await this.findConfig()
     }
-    if (this.mimeType && !this.options.immutable) {
-      try {
-        await fs.access(this.filename, constants.W_OK)
-        this.writable = true
-      } catch {}
-    }
+    await this.file.checkAccess()
     this.app.provide('baseDir', this.baseDir, true)
   }
 
   private async findConfig() {
-    const files = await fs.readdir(this.baseDir)
+    const dirents = await readdir(this.baseDir, { withFileTypes: true })
     for (const extension of supported) {
-      const filename = this.options.name + extension
-      if (files.includes(filename)) {
-        this.mimeType = writable[extension]
-        this.filename = path.resolve(this.baseDir, filename)
-        return
+      const dirent = dirents.find(dirent => dirent.name === this.options.name + extension)
+      if (!dirent) continue
+      if (!dirent.isFile()) {
+        throw new Error(`config file "${dirent.name}" is not a file`)
       }
+      const type = writable[extension]
+      const name = path.resolve(this.baseDir, this.options.name + extension)
+      this.file = new FileLoader(this, name, type)
+      return
     }
     if (this.options.initial) {
       this.config = this.options.initial as any
-      this.mimeType = writable['.yml']
-      this.filename = path.resolve(this.baseDir, this.options.name + '.yml')
-      return this.writeConfig(true)
+      const type = writable['.yml']
+      const name = path.resolve(this.baseDir, this.options.name + '.yml')
+      this.file = new FileLoader(this, name, type)
+      return this.file.write(this.config)
     }
     throw new Error('config file not found')
-  }
-
-  async readConfig() {
-    if (this.mimeType === 'application/yaml') {
-      this.config = yaml.load(await fs.readFile(this.filename, 'utf8')) as any
-    } else if (this.mimeType === 'application/json') {
-      // we do not use require / import here because it will pollute cache
-      this.config = JSON.parse(await fs.readFile(this.filename, 'utf8')) as any
-    } else {
-      const module = await import(this.filename)
-      this.config = module.default || module
-    }
-    return this.config
-  }
-
-  private async _writeConfig(silent = false) {
-    this.suspend = true
-    if (!this.writable) {
-      throw new Error(`cannot overwrite readonly config`)
-    }
-    if (this.mimeType === 'application/yaml') {
-      await fs.writeFile(this.filename, yaml.dump(this.config))
-    } else if (this.mimeType === 'application/json') {
-      await fs.writeFile(this.filename, JSON.stringify(this.config, null, 2))
-    }
-    if (!silent) this.app.emit('config')
-  }
-
-  writeConfig(silent = false) {
-    this._writeSlient &&= silent
-    if (this._writeTask) return this._writeTask
-    return this._writeTask = new Promise((resolve, reject) => {
-      setTimeout(() => {
-        this._writeSlient = true
-        this._writeTask = undefined
-        this._writeConfig(silent).then(resolve, reject)
-      }, 0)
-    })
   }
 
   interpolate(source: any) {
@@ -226,16 +183,8 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     }
   }
 
-  async import(name: string) {
-    if (this.internal) {
-      return this.internal.import(name, pathToFileURL(this.filename).href, {})
-    } else {
-      return import(name)
-    }
-  }
-
   async resolve(name: string) {
-    const task = this.import(name).catch((error) => {
+    const task = this.file.import(name).catch((error) => {
       this.app.emit('internal/error', new Error(`Cannot find package "${name}"`))
       this.app.emit('internal/error', error)
     })
@@ -269,7 +218,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
         override[key] = value
       }
     }
-    this.writeConfig()
+    this.file.write(this.config)
     return entry.update(override)
   }
 
@@ -281,18 +230,16 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
 
   async create(options: Omit<Entry.Options, 'id'>, parent: string | null = null, position = Infinity) {
     const group = this.resolveGroup(parent)
-    group.config.splice(position, 0, options as Entry.Options)
-    this.writeConfig()
+    group.data.splice(position, 0, options as Entry.Options)
+    this.file.write(this.config)
     return group._create(options)
   }
 
   remove(id: string) {
     const entry = this.entries[id]
     if (!entry) throw new Error(`entry ${id} not found`)
-    entry.stop()
-    entry.unlink()
-    delete this.entries[id]
-    this.writeConfig()
+    entry.parent._remove(id)
+    this.file.write(this.config)
   }
 
   transfer(id: string, parent: string | null, position = Infinity) {
@@ -300,9 +247,9 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     if (!entry) throw new Error(`entry ${id} not found`)
     const source = entry.parent
     const target = this.resolveGroup(parent)
-    entry.unlink()
-    target.config.splice(position, 0, entry.options)
-    this.writeConfig()
+    source._unlink(entry.options)
+    target.data.splice(position, 0, entry.options)
+    this.file.write(this.config)
     if (source === target) return
     entry.parent = target
     if (!entry.fork) return
@@ -328,7 +275,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
   }
 
   async start() {
-    await this.readConfig()
+    this.config = await this.file.read()
     this.root.update(this.config)
 
     while (this.tasks.size) {
@@ -361,38 +308,5 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     }
   }
 }
-
-export const kGroup = Symbol.for('cordis.group')
-
-export interface GroupOptions {
-  name?: string
-  initial?: Omit<Entry.Options, 'id'>[]
-  allowed?: string[]
-}
-
-export function createGroup(config?: Entry.Options[], options: GroupOptions = {}) {
-  options.initial = config
-
-  function group(ctx: Context) {
-    if (!ctx.scope.entry) throw new Error(`expected entry scope`)
-    const group = new EntryGroup(ctx)
-    ctx.scope.entry.children = group
-    ctx.on('dispose', () => {
-      group.dispose()
-    })
-    ctx.accept((config: Entry.Options[]) => {
-      group.update(config)
-    }, { passive: true, immediate: true })
-  }
-
-  defineProperty(group, 'inject', ['loader'])
-  defineProperty(group, 'reusable', true)
-  defineProperty(group, kGroup, options)
-  if (options.name) defineProperty(group, 'name', options.name)
-
-  return group
-}
-
-export const group = createGroup()
 
 export default Loader
