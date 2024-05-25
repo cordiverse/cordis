@@ -2,7 +2,7 @@ import { expect } from 'chai'
 import { Context } from '@cordisjs/core'
 import MockLoader from './utils'
 
-describe('loader: basic', () => {
+describe('loader: basic support', () => {
   const root = new Context()
   root.plugin(MockLoader)
   const loader = root.loader as MockLoader
@@ -32,7 +32,7 @@ describe('loader: basic', () => {
         disabled: true,
       }],
     }])
-    await loader.start()
+    await loader.refresh()
 
     loader.expectEnable(foo, {})
     loader.expectEnable(bar, { a: 1 })
@@ -52,7 +52,7 @@ describe('loader: basic', () => {
       id: '4',
       name: 'qux',
     }])
-    await loader.start()
+    await loader.refresh()
 
     loader.expectEnable(foo, {})
     loader.expectDisable(bar)

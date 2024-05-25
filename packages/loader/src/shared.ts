@@ -1,12 +1,9 @@
 import { Context, EffectScope } from '@cordisjs/core'
 import { Dict, isNullable, valueMap } from 'cosmokit'
-import { readdir, stat } from 'node:fs/promises'
 import { ModuleLoader } from './internal.ts'
 import { interpolate } from './utils.ts'
 import { Entry } from './entry.ts'
-import { BaseImportLoader } from './group.ts'
-import { FileLoader } from './file.ts'
-import * as path from 'node:path'
+import { BaseLoader } from './file.ts'
 
 export * from './entry.ts'
 export * from './file.ts'
@@ -21,6 +18,7 @@ declare module '@cordisjs/core' {
   }
 
   interface Context {
+    baseDir: string
     loader: Loader
   }
 
@@ -38,20 +36,18 @@ declare module '@cordisjs/core' {
 export namespace Loader {
   export interface Config {
     name: string
-    immutable?: boolean
     initial?: Omit<Entry.Options, 'id'>[]
     filename?: string
   }
 }
 
-export abstract class Loader extends BaseImportLoader {
+export abstract class Loader extends BaseLoader {
   // TODO auto inject optional when provided?
   static inject = {
     optional: ['loader'],
   }
 
   // process
-  public baseDir = process.cwd()
   public envData = process.env.CORDIS_SHARED
     ? JSON.parse(process.env.CORDIS_SHARED)
     : { startTime: Date.now() }
@@ -106,53 +102,11 @@ export abstract class Loader extends BaseImportLoader {
   }
 
   async start() {
-    if (this.config.filename) {
-      const filename = path.resolve(this.baseDir, this.config.filename)
-      const stats = await stat(filename)
-      if (stats.isFile()) {
-        this.baseDir = path.dirname(filename)
-        const extname = path.extname(filename)
-        const type = FileLoader.writable[extname]
-        if (!FileLoader.supported.has(extname)) {
-          throw new Error(`extension "${extname}" not supported`)
-        }
-        this.file = new FileLoader(this, filename, type)
-      } else {
-        this.baseDir = filename
-        await this.findConfig()
-      }
-    } else {
-      await this.findConfig()
-    }
-    this.ctx.provide('baseDir', this.baseDir, true)
-
+    await this.init(process.cwd(), this.config)
     await super.start()
     while (this.tasks.size) {
       await Promise.all(this.tasks)
     }
-  }
-
-  private async findConfig() {
-    const { name, initial } = this.config
-    const dirents = await readdir(this.baseDir, { withFileTypes: true })
-    for (const extension of FileLoader.supported) {
-      const dirent = dirents.find(dirent => dirent.name === name + extension)
-      if (!dirent) continue
-      if (!dirent.isFile()) {
-        throw new Error(`config file "${dirent.name}" is not a file`)
-      }
-      const type = FileLoader.writable[extension]
-      const filename = path.resolve(this.baseDir, name + extension)
-      this.file = new FileLoader(this, filename, type)
-      return
-    }
-    if (initial) {
-      const type = FileLoader.writable['.yml']
-      const filename = path.resolve(this.baseDir, name + '.yml')
-      this.file = new FileLoader(this, filename, type)
-      return this.file.write(initial as any)
-    }
-    throw new Error('config file not found')
   }
 
   interpolate(source: any) {

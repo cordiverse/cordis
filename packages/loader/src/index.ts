@@ -11,7 +11,9 @@ const oldEnv = { ...process.env }
 class NodeLoader extends Loader {
   static readonly exitCode = 51
 
-  async start() {
+  async init(baseDir: string, options: Loader.Config) {
+    await super.init(baseDir, options)
+
     // restore process.env
     for (const key in process.env) {
       if (key in oldEnv) {
@@ -26,7 +28,7 @@ class NodeLoader extends Loader {
     const envFiles = ['.env', '.env.local']
     for (const filename of envFiles) {
       try {
-        const raw = await fs.readFile(path.resolve(this.baseDir, filename), 'utf8')
+        const raw = await fs.readFile(path.resolve(this.ctx.baseDir, filename), 'utf8')
         Object.assign(override, dotenv.parse(raw))
       } catch {}
     }
@@ -35,8 +37,6 @@ class NodeLoader extends Loader {
     for (const key in override) {
       process.env[key] = override[key]
     }
-
-    return await super.start()
   }
 
   exit(code = NodeLoader.exitCode) {
