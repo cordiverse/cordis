@@ -6,16 +6,31 @@ import * as yaml from 'js-yaml'
 import { Entry } from './entry.ts'
 import { EntryGroup } from './group.ts'
 import { Loader } from './shared.ts'
+import { remove } from 'cosmokit'
 
 export class LoaderFile {
-  public url: string
   public suspend = false
   public mutable = false
+  public url: string
+  public groups: BaseLoader[] = []
 
   private _writeTask?: NodeJS.Timeout
 
-  constructor(public ctx: Context, public name: string, public type?: string) {
+  constructor(public loader: Loader, public name: string, public type?: string) {
     this.url = pathToFileURL(name).href
+    loader.files[name] = this
+  }
+
+  ref(group: BaseLoader) {
+    this.groups.push(group)
+    group.url = pathToFileURL(this.name).href
+  }
+
+  unref(group: BaseLoader) {
+    remove(this.groups, group)
+    if (this.groups.length) return
+    clearTimeout(this._writeTask)
+    delete this.loader.files[this.name]
   }
 
   async checkAccess() {
@@ -51,24 +66,12 @@ export class LoaderFile {
   }
 
   write(config: Entry.Options[]) {
-    this.ctx.emit('config')
+    this.loader.ctx.emit('config')
     clearTimeout(this._writeTask)
     this._writeTask = setTimeout(() => {
       this._writeTask = undefined
       this._write(config)
     }, 0)
-  }
-
-  async import(name: string) {
-    if (this.ctx.loader.internal) {
-      return this.ctx.loader.internal.import(name, this.url, {})
-    } else {
-      return import(name)
-    }
-  }
-
-  dispose() {
-    clearTimeout(this._writeTask)
   }
 }
 
@@ -90,7 +93,9 @@ export namespace LoaderFile {
 }
 
 export class BaseLoader extends EntryGroup {
-  public file!: LoaderFile
+  static reusable = true
+
+  protected file!: LoaderFile
 
   constructor(public ctx: Context) {
     super(ctx)
@@ -107,12 +112,18 @@ export class BaseLoader extends EntryGroup {
   }
 
   stop() {
-    this.file?.dispose()
+    this.file?.unref(this)
     return super.stop()
   }
 
   write() {
     return this.file!.write(this.data)
+  }
+
+  _createFile(filename: string, type: string) {
+    this.file = this.ctx.loader[filename] ??= new LoaderFile(this.ctx.loader, filename, type)
+    this.url = this.file.url
+    this.file.ref(this)
   }
 
   async init(baseDir: string, options: Loader.Config) {
@@ -126,18 +137,18 @@ export class BaseLoader extends EntryGroup {
         if (!LoaderFile.supported.has(ext)) {
           throw new Error(`extension "${ext}" not supported`)
         }
-        this.file = new LoaderFile(this.ctx, filename, type)
+        this._createFile(filename, type)
       } else {
         baseDir = filename
-        await this.findConfig(baseDir, options)
+        await this._init(baseDir, options)
       }
     } else {
-      await this.findConfig(baseDir, options)
+      await this._init(baseDir, options)
     }
     this.ctx.provide('baseDir', baseDir, true)
   }
 
-  private async findConfig(baseDir: string, options: Loader.Config) {
+  private async _init(baseDir: string, options: Loader.Config) {
     const { name, initial } = options
     const dirents = await readdir(baseDir, { withFileTypes: true })
     for (const extension of LoaderFile.supported) {
@@ -148,13 +159,13 @@ export class BaseLoader extends EntryGroup {
       }
       const type = LoaderFile.writable[extension]
       const filename = resolve(baseDir, name + extension)
-      this.file = new LoaderFile(this.ctx, filename, type)
+      this._createFile(filename, type)
       return
     }
     if (initial) {
       const type = LoaderFile.writable['.yml']
       const filename = resolve(baseDir, name + '.yml')
-      this.file = new LoaderFile(this.ctx, filename, type)
+      this._createFile(filename, type)
       return this.file.write(initial as any)
     }
     throw new Error('config file not found')
@@ -175,12 +186,12 @@ export class Import extends BaseLoader {
 
   async start() {
     const { url } = this.config
-    const filename = fileURLToPath(new URL(url, this.ctx.loader.file.url))
+    const filename = fileURLToPath(new URL(url, this.ctx.scope.entry!.parent.url))
     const ext = extname(filename)
     if (!LoaderFile.supported.has(ext)) {
       throw new Error(`extension "${ext}" not supported`)
     }
-    this.file = new LoaderFile(this.ctx, filename, LoaderFile.writable[ext])
+    this._createFile(filename, LoaderFile.writable[ext])
     await super.start()
   }
 }

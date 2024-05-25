@@ -32,7 +32,7 @@ describe('loader: basic support', () => {
         disabled: true,
       }],
     }])
-    await loader.refresh()
+    await loader.start()
 
     loader.expectEnable(foo, {})
     loader.expectEnable(bar, { a: 1 })
@@ -52,7 +52,7 @@ describe('loader: basic support', () => {
       id: '4',
       name: 'qux',
     }])
-    await loader.refresh()
+    await loader.start()
 
     loader.expectEnable(foo, {})
     loader.expectDisable(bar)

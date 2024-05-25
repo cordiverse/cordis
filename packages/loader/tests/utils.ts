@@ -24,31 +24,25 @@ class MockLoaderFile extends LoaderFile {
   write(data: Entry.Options[]) {
     this.data = data
   }
-
-  async import(name: string) {
-    return (this.ctx.loader as MockLoader).modules[name]
-  }
 }
 
 export default class MockLoader extends Loader {
-  declare file: MockLoaderFile
+  public file: MockLoaderFile
   public modules: Dict<Plugin.Object> = Object.create(null)
 
   constructor(ctx: Context) {
     super(ctx, { name: 'cordis' })
+    this.file = new MockLoaderFile(this, 'cordis.yml')
     this.mock('cordis/group', group)
   }
 
-  async refresh() {
-    await super.refresh()
-    while (this.tasks.size) {
-      await Promise.all(this.tasks)
-    }
+  async start() {
+    await this.refresh()
+    await new Promise((resolve) => setTimeout(resolve, 0))
   }
 
-  async start() {
-    this.file = new MockLoaderFile(this.ctx, 'cordis.yml')
-    await this.refresh()
+  async import(name: string) {
+    return this.modules[name]
   }
 
   mock<F extends Function>(name: string, plugin: F) {

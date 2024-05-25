@@ -158,9 +158,13 @@ export class Entry {
       }
       this.patch(this.fork.parent)
     } else {
-      const plugin = await this.loader.resolve(this.options.name)
-      if (!plugin) return
       const ctx = this.createContext()
+      const exports = await this.loader.import(this.options.name).catch((error: any) => {
+        ctx.emit('internal/error', new Error(`Cannot find package "${this.options.name}"`))
+        ctx.emit('internal/error', error)
+      })
+      if (!exports) return
+      const plugin = this.loader.unwrapExports(exports)
       this.patch(ctx)
       ctx[Entry.key] = this
       this.fork = ctx.plugin(plugin, this.options.config)

@@ -3,7 +3,7 @@ import { Dict, isNullable, valueMap } from 'cosmokit'
 import { ModuleLoader } from './internal.ts'
 import { interpolate } from './utils.ts'
 import { Entry } from './entry.ts'
-import { BaseLoader } from './file.ts'
+import { BaseLoader, LoaderFile } from './file.ts'
 
 export * from './entry.ts'
 export * from './file.ts'
@@ -56,12 +56,11 @@ export abstract class Loader extends BaseLoader {
     env: process.env,
   }
 
+  public files: Dict<LoaderFile> = Object.create(null)
   public entries: Dict<Entry> = Object.create(null)
   public realms: Dict<Dict<symbol>> = Object.create(null)
   public delims: Dict<symbol> = Object.create(null)
   public internal?: ModuleLoader
-
-  protected tasks = new Set<Promise<any>>()
 
   constructor(public ctx: Context, public config: Loader.Config) {
     super(ctx)
@@ -104,9 +103,6 @@ export abstract class Loader extends BaseLoader {
   async start() {
     await this.init(process.cwd(), this.config)
     await super.start()
-    while (this.tasks.size) {
-      await Promise.all(this.tasks)
-    }
   }
 
   interpolate(source: any) {
@@ -119,16 +115,6 @@ export abstract class Loader extends BaseLoader {
     } else {
       return valueMap(source, item => this.interpolate(item))
     }
-  }
-
-  async resolve(name: string) {
-    const task = this.file.import(name).catch((error) => {
-      this.ctx.emit('internal/error', new Error(`Cannot find package "${name}"`))
-      this.ctx.emit('internal/error', error)
-    })
-    this.tasks.add(task)
-    task.finally(() => this.tasks.delete(task))
-    return this.unwrapExports(await task)
   }
 
   isTruthyLike(expr: any) {
@@ -213,6 +199,16 @@ export abstract class Loader extends BaseLoader {
     return this._locate(scope.parent.scope)
   }
 
+  async import(name: string, baseURL = this.url) {
+    if (this.internal) {
+      return this.internal.import(name, baseURL, {})
+    } else {
+      return import(name)
+    }
+  }
+
+  exit() {}
+
   unwrapExports(exports: any) {
     if (isNullable(exports)) return exports
     exports = exports.default ?? exports
@@ -221,8 +217,6 @@ export abstract class Loader extends BaseLoader {
     if (!exports.__esModule) return exports
     return exports.default ?? exports
   }
-
-  exit() {}
 
   _clearRealm(key: string, name: string) {
     const hasRef = Object.values(this.entries).some((entry) => {

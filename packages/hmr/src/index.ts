@@ -72,7 +72,8 @@ class Watcher extends Service {
   constructor(ctx: Context, public config: Watcher.Config) {
     super(ctx, 'hmr')
     this.base = resolve(ctx.baseDir, config.base || '')
-    this.initialURL = ctx.loader.file.url
+    // FIXME resolve deps based on different files
+    this.initialURL = ctx.loader.url
   }
 
   relative(filename: string) {
@@ -90,33 +91,29 @@ class Watcher extends Service {
     })
 
     // files independent from any plugins will trigger a full reload
-    const mainJob = await loader.internal!.getModuleJob('cordis/worker', this.initialURL, {})!
+    const parentURL = pathToFileURL(process.cwd()).href
+    const mainJob = await loader.internal!.getModuleJob('cordis/worker', parentURL, {})!
     this.externals = await loadDependencies(mainJob)
     const triggerLocalReload = this.ctx.debounce(() => this.triggerLocalReload(), this.config.debounce)
 
     this.watcher.on('change', async (path) => {
+      this.ctx.logger.debug('change detected:', path)
       const filename = pathToFileURL(resolve(this.base, path)).href
-      const isEntry = filename === this.initialURL
-      if (loader.file.suspend && isEntry) {
-        loader.file.suspend = false
-        return
+      if (this.externals.has(filename)) return loader.exit()
+
+      if (loader.internal!.loadCache.has(filename)) {
+        this.stashed.add(filename)
+        return triggerLocalReload()
       }
 
-      this.ctx.logger.debug('change detected:', path)
-
-      if (isEntry) {
-        if (loader.internal!.loadCache.has(filename)) {
-          loader.exit()
-        } else {
-          await loader.refresh()
-        }
-      } else {
-        if (this.externals.has(filename)) {
-          loader.exit()
-        } else if (loader.internal!.loadCache.has(filename)) {
-          this.stashed.add(filename)
-          triggerLocalReload()
-        }
+      const file = this.ctx.loader.files[filename]
+      if (!file) return
+      if (file.suspend) {
+        file.suspend = false
+        return
+      }
+      for (const loader of file.groups) {
+        loader.refresh()
       }
     })
   }

@@ -1,8 +1,9 @@
 import { Context } from '@cordisjs/core'
 import { Entry } from './entry.ts'
 
-export class EntryGroup {
+export abstract class EntryGroup {
   public data: Entry.Options[] = []
+  public url!: string
 
   constructor(public ctx: Context) {
     ctx.on('dispose', () => this.stop())
@@ -76,6 +77,7 @@ export function defineGroup(config?: Entry.Options[], options: GroupOptions = {}
 
     constructor(public ctx: Context) {
       super(ctx)
+      this.url = ctx.scope.entry!.parent.url
       ctx.scope.entry!.children = this
       ctx.accept((config: Entry.Options[]) => {
         this._update(config)
