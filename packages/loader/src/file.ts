@@ -48,7 +48,7 @@ export class FileLoader<T extends Loader = Loader> {
   }
 
   write(config: Entry.Options[]) {
-    this.loader.app.emit('config')
+    this.loader.ctx.emit('config')
     clearTimeout(this._writeTask)
     this._writeTask = setTimeout(() => {
       this._writeTask = undefined
@@ -66,5 +66,22 @@ export class FileLoader<T extends Loader = Loader> {
 
   dispose() {
     clearTimeout(this._writeTask)
+  }
+}
+
+export namespace FileLoader {
+  export const writable = {
+    '.json': 'application/json',
+    '.yaml': 'application/yaml',
+    '.yml': 'application/yaml',
+  }
+
+  export const supported = new Set(Object.keys(writable))
+
+  if (typeof require !== 'undefined') {
+    // eslint-disable-next-line n/no-deprecated-api
+    for (const extname in require.extensions) {
+      supported.add(extname)
+    }
   }
 }

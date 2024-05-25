@@ -2,6 +2,7 @@ import { Context } from '@cordisjs/core'
 import { FileLoader } from './file.ts'
 import { Entry } from './entry.ts'
 import { fileURLToPath } from 'node:url'
+import { extname } from 'node:path'
 
 export class EntryGroup {
   public data: Entry.Options[] = []
@@ -32,7 +33,7 @@ export class EntryGroup {
     delete this.ctx.loader.entries[id]
   }
 
-  update(config: Entry.Options[]) {
+  _update(config: Entry.Options[]) {
     const oldConfig = this.data as Entry.Options[]
     this.data = config
     const oldMap = Object.fromEntries(oldConfig.map(options => [options.id, options]))
@@ -51,7 +52,11 @@ export class EntryGroup {
   }
 
   write() {
-    this.ctx.loader.file.write(this.ctx.loader.root.data)
+    if (this.ctx.scope.entry) {
+      return this.ctx.scope.entry!.parent.write()
+    } else {
+      return this.ctx.loader.file.write(this.ctx.loader.data)
+    }
   }
 
   stop() {
@@ -80,7 +85,7 @@ export function defineGroup(config?: Entry.Options[], options: GroupOptions = {}
       super(ctx)
       ctx.scope.entry!.children = this
       ctx.accept((config: Entry.Options[]) => {
-        this.update(config)
+        this._update(config)
       }, { passive: true, immediate: true })
     }
   }
@@ -90,6 +95,33 @@ export function defineGroup(config?: Entry.Options[], options: GroupOptions = {}
 
 export const group = defineGroup()
 
+export class BaseImportLoader extends EntryGroup {
+  public file!: FileLoader
+
+  constructor(public ctx: Context) {
+    super(ctx)
+    ctx.on('ready', () => this.start())
+  }
+
+  async start() {
+    await this.refresh()
+    await this.file.checkAccess()
+  }
+
+  async refresh() {
+    this._update(await this.file.read())
+  }
+
+  stop() {
+    this.file?.dispose()
+    return super.stop()
+  }
+
+  write() {
+    return this.file!.write(this.data)
+  }
+}
+
 export namespace Import {
   export interface Config {
     url: string
@@ -97,24 +129,20 @@ export namespace Import {
   }
 }
 
-export class Import extends EntryGroup {
-  file?: FileLoader
-
-  constructor(public ctx: Context, public config: Import.Config) {
+export class Import extends BaseImportLoader {
+  constructor(ctx: Context, public config: Import.Config) {
     super(ctx)
-    ctx.on('ready', () => this.start())
   }
 
   async start() {
     const { url } = this.config
     const filename = fileURLToPath(new URL(url, this.ctx.loader.file.url))
-    this.file = new FileLoader(this.ctx.loader, filename)
-    this.update(await this.file.read())
+    const ext = extname(filename)
+    if (!FileLoader.supported.has(ext)) {
+      throw new Error(`extension "${ext}" not supported`)
+    }
+    this.file = new FileLoader(this.ctx.loader, filename, FileLoader.writable[ext])
+    this._update(await this.file.read())
     await this.file.checkAccess()
-  }
-
-  stop() {
-    this.file?.dispose()
-    return super.stop()
   }
 }

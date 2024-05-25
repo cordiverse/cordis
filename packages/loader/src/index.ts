@@ -8,13 +8,7 @@ export * from './shared.ts'
 
 const oldEnv = { ...process.env }
 
-namespace NodeLoader {
-  export interface Options extends Loader.Options {
-    type?: 'commonjs' | 'module' | 'vm-module'
-  }
-}
-
-class NodeLoader extends Loader<NodeLoader.Options> {
+class NodeLoader extends Loader {
   static readonly exitCode = 51
 
   async start() {
@@ -48,8 +42,8 @@ class NodeLoader extends Loader<NodeLoader.Options> {
   exit(code = NodeLoader.exitCode) {
     const body = JSON.stringify(this.envData)
     process.send?.({ type: 'shared', body }, (err: any) => {
-      if (err) this.app.emit('internal/error', 'failed to send shared data')
-      this.app.emit('internal/info', 'trigger full reload')
+      if (err) this.ctx.emit('internal/error', 'failed to send shared data')
+      this.ctx.emit('internal/info', 'trigger full reload')
       process.exit(code)
     })
   }

@@ -108,7 +108,7 @@ class Watcher extends Service {
         if (loader.internal!.loadCache.has(filename)) {
           loader.exit()
         } else {
-          await loader.start()
+          await loader.refresh()
         }
       } else {
         if (this.externals.has(filename)) {

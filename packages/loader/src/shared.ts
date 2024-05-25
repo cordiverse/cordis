@@ -1,10 +1,10 @@
-import { Context, EffectScope, Service } from '@cordisjs/core'
+import { Context, EffectScope } from '@cordisjs/core'
 import { Dict, isNullable, valueMap } from 'cosmokit'
 import { readdir, stat } from 'node:fs/promises'
 import { ModuleLoader } from './internal.ts'
 import { interpolate } from './utils.ts'
 import { Entry } from './entry.ts'
-import { EntryGroup } from './group.ts'
+import { BaseImportLoader } from './group.ts'
 import { FileLoader } from './file.ts'
 import * as path from 'node:path'
 
@@ -35,30 +35,16 @@ declare module '@cordisjs/core' {
   }
 }
 
-const writable = {
-  '.json': 'application/json',
-  '.yaml': 'application/yaml',
-  '.yml': 'application/yaml',
-}
-
-const supported = new Set(Object.keys(writable))
-
-if (typeof require !== 'undefined') {
-  // eslint-disable-next-line n/no-deprecated-api
-  for (const extname in require.extensions) {
-    supported.add(extname)
-  }
-}
-
 export namespace Loader {
-  export interface Options {
+  export interface Config {
     name: string
     immutable?: boolean
     initial?: Omit<Entry.Options, 'id'>[]
+    filename?: string
   }
 }
 
-export abstract class Loader<T extends Loader.Options = Loader.Options> extends Service<T> {
+export abstract class Loader extends BaseImportLoader {
   // TODO auto inject optional when provided?
   static inject = {
     optional: ['loader'],
@@ -74,30 +60,24 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     env: process.env,
   }
 
-  public file!: FileLoader<this>
-  public root: EntryGroup
   public entries: Dict<Entry> = Object.create(null)
   public realms: Dict<Dict<symbol>> = Object.create(null)
   public delims: Dict<symbol> = Object.create(null)
   public internal?: ModuleLoader
 
-  private tasks = new Set<Promise<any>>()
+  protected tasks = new Set<Promise<any>>()
 
-  constructor(public app: Context, public config: T) {
-    super(app, 'loader', true)
-    this.root = new EntryGroup(this.app)
-    this.realms['#'] = app.root[Context.isolate]
+  constructor(public ctx: Context, public config: Loader.Config) {
+    super(ctx)
+    this.ctx.set('loader', this)
+    this.realms['#'] = ctx.root[Context.isolate]
 
-    this.app.on('dispose', () => {
-      this.exit()
-    })
-
-    this.app.on('internal/update', (fork) => {
+    this.ctx.on('internal/update', (fork) => {
       if (!fork.entry) return
       fork.parent.emit('loader/entry', 'reload', fork.entry)
     })
 
-    this.app.on('internal/before-update', (fork, config) => {
+    this.ctx.on('internal/before-update', (fork, config) => {
       if (!fork.entry) return
       if (fork.entry.suspend) return fork.entry.suspend = false
       const { schema } = fork.runtime
@@ -105,7 +85,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
       fork.entry.parent.write()
     })
 
-    this.app.on('internal/fork', (fork) => {
+    this.ctx.on('internal/fork', (fork) => {
       if (fork.parent[Entry.key]) {
         fork.entry = fork.parent[Entry.key]
         delete fork.parent[Entry.key]
@@ -116,7 +96,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
       // fork is disposed by main scope (e.g. hmr plugin)
       // normal: ctx.dispose() -> fork / runtime dispose -> delete(plugin)
       // hmr: delete(plugin) -> runtime dispose -> fork dispose
-      if (!this.app.registry.has(fork.runtime.plugin)) return
+      if (!this.ctx.registry.has(fork.runtime.plugin)) return
       fork.parent.emit('loader/entry', 'unload', fork.entry)
       fork.entry.options.disabled = true
       fork.entry.fork = undefined
@@ -125,15 +105,15 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     })
   }
 
-  async init(filename?: string) {
-    if (filename) {
-      filename = path.resolve(this.baseDir, filename)
+  async start() {
+    if (this.config.filename) {
+      const filename = path.resolve(this.baseDir, this.config.filename)
       const stats = await stat(filename)
       if (stats.isFile()) {
         this.baseDir = path.dirname(filename)
         const extname = path.extname(filename)
-        const type = writable[extname]
-        if (!supported.has(extname)) {
+        const type = FileLoader.writable[extname]
+        if (!FileLoader.supported.has(extname)) {
           throw new Error(`extension "${extname}" not supported`)
         }
         this.file = new FileLoader(this, filename, type)
@@ -144,27 +124,30 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     } else {
       await this.findConfig()
     }
-    this.app.on('dispose', () => this.file.dispose())
-    await this.file.checkAccess()
-    this.app.provide('baseDir', this.baseDir, true)
+    this.ctx.provide('baseDir', this.baseDir, true)
+
+    await super.start()
+    while (this.tasks.size) {
+      await Promise.all(this.tasks)
+    }
   }
 
   private async findConfig() {
     const { name, initial } = this.config
     const dirents = await readdir(this.baseDir, { withFileTypes: true })
-    for (const extension of supported) {
+    for (const extension of FileLoader.supported) {
       const dirent = dirents.find(dirent => dirent.name === name + extension)
       if (!dirent) continue
       if (!dirent.isFile()) {
         throw new Error(`config file "${dirent.name}" is not a file`)
       }
-      const type = writable[extension]
+      const type = FileLoader.writable[extension]
       const filename = path.resolve(this.baseDir, name + extension)
       this.file = new FileLoader(this, filename, type)
       return
     }
     if (initial) {
-      const type = writable['.yml']
+      const type = FileLoader.writable['.yml']
       const filename = path.resolve(this.baseDir, name + '.yml')
       this.file = new FileLoader(this, filename, type)
       return this.file.write(initial as any)
@@ -186,8 +169,8 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
 
   async resolve(name: string) {
     const task = this.file.import(name).catch((error) => {
-      this.app.emit('internal/error', new Error(`Cannot find package "${name}"`))
-      this.app.emit('internal/error', error)
+      this.ctx.emit('internal/error', new Error(`Cannot find package "${name}"`))
+      this.ctx.emit('internal/error', error)
     })
     this.tasks.add(task)
     task.finally(() => this.tasks.delete(task))
@@ -224,7 +207,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
   }
 
   resolveGroup(id: string | null) {
-    const group = id ? this.entries[id]?.children : this.root
+    const group = id ? this.entries[id]?.children : this
     if (!group) throw new Error(`entry ${id} not found`)
     return group
   }
@@ -274,14 +257,6 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
 
     if (scope.entry) return [scope.entry]
     return this._locate(scope.parent.scope)
-  }
-
-  async start() {
-    this.root.update(await this.file.read())
-
-    while (this.tasks.size) {
-      await Promise.all(this.tasks)
-    }
   }
 
   unwrapExports(exports: any) {

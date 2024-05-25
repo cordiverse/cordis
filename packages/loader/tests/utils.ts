@@ -1,6 +1,6 @@
 import { Dict } from 'cosmokit'
 import { Context, ForkScope, Plugin } from '@cordisjs/core'
-import { FileLoader, Entry, group, Loader } from '../src'
+import { FileLoader, Entry, group, Loader, BaseImportLoader } from '../src'
 import { Mock, mock } from 'node:test'
 import { expect } from 'chai'
 
@@ -15,9 +15,14 @@ declare module '../src/shared' {
 
 class MockFileLoader<T extends MockLoader = MockLoader> extends FileLoader<T> {
   mutable = true
+  data: Entry.Options[] = []
 
   async read() {
-    return this.loader.config
+    return this.data
+  }
+
+  write(data: Entry.Options[]) {
+    this.data = data
   }
 
   async import(name: string) {
@@ -27,12 +32,19 @@ class MockFileLoader<T extends MockLoader = MockLoader> extends FileLoader<T> {
 
 export default class MockLoader extends Loader {
   public modules: Dict<Plugin.Object> = Object.create(null)
-  public config: Entry.Options[] = []
+  public file!: MockFileLoader<this>
 
   constructor(ctx: Context) {
     super(ctx, { name: 'cordis' })
     this.file = new MockFileLoader(this, 'cordis.yml')
     this.mock('cordis/group', group)
+  }
+
+  async start() {
+    await this.refresh()
+    while (this.tasks.size) {
+      await Promise.all(this.tasks)
+    }
   }
 
   mock<F extends Function>(name: string, plugin: F) {

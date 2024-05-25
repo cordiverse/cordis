@@ -17,8 +17,10 @@ export interface Options extends Loader.Options {
 
 export async function start(options: Options) {
   const ctx = new Context()
-  ctx.plugin(Loader, options)
-  await ctx.loader.init(process.env.CORDIS_LOADER_ENTRY)
+  ctx.plugin(Loader, {
+    ...options,
+    filename: process.env.CORDIS_LOADER_ENTRY,
+  })
   if (process.execArgv.includes('--expose-internals')) {
     const require = createRequire(import.meta.url)
     ctx.loader.internal = require('internal/process/esm_loader').esmLoader
