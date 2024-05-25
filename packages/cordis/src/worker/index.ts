@@ -10,7 +10,7 @@ declare module '@cordisjs/loader' {
   }
 }
 
-export interface Options extends Loader.Options {
+export interface Options extends Loader.Config {
   logger?: logger.Config
   daemon?: daemon.Config
 }

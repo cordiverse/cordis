@@ -8,6 +8,10 @@ export * from './shared.ts'
 
 const oldEnv = { ...process.env }
 
+namespace NodeLoader {
+  export interface Config extends Loader.Config {}
+}
+
 class NodeLoader extends Loader {
   static readonly exitCode = 51
 
