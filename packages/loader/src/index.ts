@@ -1,4 +1,4 @@
-import Loader from './shared.ts'
+import { Loader } from './shared.ts'
 import { promises as fs } from 'fs'
 import * as dotenv from 'dotenv'
 import * as path from 'path'

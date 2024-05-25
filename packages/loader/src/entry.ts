@@ -1,6 +1,6 @@
 import { Context, ForkScope, Inject } from '@cordisjs/core'
 import { Dict } from 'cosmokit'
-import Loader from './shared.ts'
+import { Loader } from './shared.ts'
 import { EntryGroup } from './group.ts'
 
 export namespace Entry {
@@ -46,7 +46,7 @@ export class Entry {
   static key = Symbol('cordis.entry')
 
   public fork?: ForkScope
-  public isUpdate = false
+  public suspend = false
   public options!: Entry.Options
   public children?: EntryGroup
 
@@ -150,7 +150,7 @@ export class Entry {
     if (!this.loader.isTruthyLike(options.when) || options.disabled) {
       this.stop()
     } else if (this.fork) {
-      this.isUpdate = true
+      this.suspend = true
       for (const [key, label] of Object.entries(legacy.isolate ?? {})) {
         if (this.options.isolate?.[key] === label) continue
         const name = this.resolveRealm(label)

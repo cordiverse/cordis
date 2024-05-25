@@ -72,7 +72,7 @@ class Watcher extends Service {
   constructor(ctx: Context, public config: Watcher.Config) {
     super(ctx, 'hmr')
     this.base = resolve(ctx.baseDir, config.base || '')
-    this.initialURL = pathToFileURL(ctx.loader.file.name).href
+    this.initialURL = ctx.loader.file.url
   }
 
   relative(filename: string) {

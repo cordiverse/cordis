@@ -1,11 +1,14 @@
 import { Context } from '@cordisjs/core'
 import { FileLoader } from './file.ts'
 import { Entry } from './entry.ts'
+import { fileURLToPath } from 'node:url'
 
 export class EntryGroup {
   public data: Entry.Options[] = []
 
-  constructor(public ctx: Context) {}
+  constructor(public ctx: Context) {
+    ctx.on('dispose', () => this.stop())
+  }
 
   async _create(options: Omit<Entry.Options, 'id'>) {
     const id = this.ctx.loader.ensureId(options)
@@ -47,7 +50,11 @@ export class EntryGroup {
     }
   }
 
-  dispose() {
+  write() {
+    this.ctx.loader.file.write(this.ctx.loader.root.data)
+  }
+
+  stop() {
     for (const options of this.data) {
       this._remove(options.id)
     }
@@ -72,9 +79,6 @@ export function defineGroup(config?: Entry.Options[], options: GroupOptions = {}
     constructor(public ctx: Context) {
       super(ctx)
       ctx.scope.entry!.children = this
-      ctx.on('dispose', () => {
-        this.dispose()
-      })
       ctx.accept((config: Entry.Options[]) => {
         this.update(config)
       }, { passive: true, immediate: true })
@@ -88,8 +92,8 @@ export const group = defineGroup()
 
 export namespace Import {
   export interface Config {
-    path: string
-    disabled?: boolean
+    url: string
+    // disabled?: boolean
   }
 }
 
@@ -98,5 +102,19 @@ export class Import extends EntryGroup {
 
   constructor(public ctx: Context, public config: Import.Config) {
     super(ctx)
+    ctx.on('ready', () => this.start())
+  }
+
+  async start() {
+    const { url } = this.config
+    const filename = fileURLToPath(new URL(url, this.ctx.loader.file.url))
+    this.file = new FileLoader(this.ctx.loader, filename)
+    this.update(await this.file.read())
+    await this.file.checkAccess()
+  }
+
+  stop() {
+    this.file?.dispose()
+    return super.stop()
   }
 }

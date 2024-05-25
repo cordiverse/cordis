@@ -58,7 +58,7 @@ export namespace Loader {
   }
 }
 
-export abstract class Loader<T extends Loader.Options = Loader.Options> extends Service<Entry.Options[]> {
+export abstract class Loader<T extends Loader.Options = Loader.Options> extends Service<T> {
   // TODO auto inject optional when provided?
   static inject = {
     optional: ['loader'],
@@ -83,7 +83,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
 
   private tasks = new Set<Promise<any>>()
 
-  constructor(public app: Context, public options: T) {
+  constructor(public app: Context, public config: T) {
     super(app, 'loader', true)
     this.root = new EntryGroup(this.app)
     this.realms['#'] = app.root[Context.isolate]
@@ -99,10 +99,10 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
 
     this.app.on('internal/before-update', (fork, config) => {
       if (!fork.entry) return
-      if (fork.entry.isUpdate) return fork.entry.isUpdate = false
+      if (fork.entry.suspend) return fork.entry.suspend = false
       const { schema } = fork.runtime
       fork.entry.options.config = schema ? schema.simplify(config) : config
-      this.file.write(this.config)
+      fork.entry.parent.write()
     })
 
     this.app.on('internal/fork', (fork) => {
@@ -121,7 +121,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
       fork.entry.options.disabled = true
       fork.entry.fork = undefined
       fork.entry.stop()
-      this.file.write(this.config)
+      fork.entry.parent.write()
     })
   }
 
@@ -144,29 +144,30 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     } else {
       await this.findConfig()
     }
+    this.app.on('dispose', () => this.file.dispose())
     await this.file.checkAccess()
     this.app.provide('baseDir', this.baseDir, true)
   }
 
   private async findConfig() {
+    const { name, initial } = this.config
     const dirents = await readdir(this.baseDir, { withFileTypes: true })
     for (const extension of supported) {
-      const dirent = dirents.find(dirent => dirent.name === this.options.name + extension)
+      const dirent = dirents.find(dirent => dirent.name === name + extension)
       if (!dirent) continue
       if (!dirent.isFile()) {
         throw new Error(`config file "${dirent.name}" is not a file`)
       }
       const type = writable[extension]
-      const name = path.resolve(this.baseDir, this.options.name + extension)
-      this.file = new FileLoader(this, name, type)
+      const filename = path.resolve(this.baseDir, name + extension)
+      this.file = new FileLoader(this, filename, type)
       return
     }
-    if (this.options.initial) {
-      this.config = this.options.initial as any
+    if (initial) {
       const type = writable['.yml']
-      const name = path.resolve(this.baseDir, this.options.name + '.yml')
-      this.file = new FileLoader(this, name, type)
-      return this.file.write(this.config)
+      const filename = path.resolve(this.baseDir, name + '.yml')
+      this.file = new FileLoader(this, filename, type)
+      return this.file.write(initial as any)
     }
     throw new Error('config file not found')
   }
@@ -218,7 +219,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
         override[key] = value
       }
     }
-    this.file.write(this.config)
+    entry.parent.write()
     return entry.update(override)
   }
 
@@ -231,7 +232,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
   async create(options: Omit<Entry.Options, 'id'>, parent: string | null = null, position = Infinity) {
     const group = this.resolveGroup(parent)
     group.data.splice(position, 0, options as Entry.Options)
-    this.file.write(this.config)
+    group.write()
     return group._create(options)
   }
 
@@ -239,7 +240,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     const entry = this.entries[id]
     if (!entry) throw new Error(`entry ${id} not found`)
     entry.parent._remove(id)
-    this.file.write(this.config)
+    entry.parent.write()
   }
 
   transfer(id: string, parent: string | null, position = Infinity) {
@@ -249,7 +250,8 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
     const target = this.resolveGroup(parent)
     source._unlink(entry.options)
     target.data.splice(position, 0, entry.options)
-    this.file.write(this.config)
+    source.write()
+    target.write()
     if (source === target) return
     entry.parent = target
     if (!entry.fork) return
@@ -275,8 +277,7 @@ export abstract class Loader<T extends Loader.Options = Loader.Options> extends 
   }
 
   async start() {
-    this.config = await this.file.read()
-    this.root.update(this.config)
+    this.root.update(await this.file.read())
 
     while (this.tasks.size) {
       await Promise.all(this.tasks)

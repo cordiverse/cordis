@@ -1,15 +1,19 @@
 import { access, constants, readFile, writeFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import * as yaml from 'js-yaml'
-import Loader from './shared.ts'
+import { Entry } from './entry.ts'
+import { Loader } from './shared.ts'
 
 export class FileLoader<T extends Loader = Loader> {
+  public url: string
   public suspend = false
   public mutable = false
 
   private _writeTask?: NodeJS.Timeout
 
-  constructor(public loader: T, public name: string, public type?: string) {}
+  constructor(public loader: T, public name: string, public type?: string) {
+    this.url = pathToFileURL(name).href
+  }
 
   async checkAccess() {
     if (!this.type) return
@@ -19,7 +23,7 @@ export class FileLoader<T extends Loader = Loader> {
     } catch {}
   }
 
-  async read() {
+  async read(): Promise<Entry.Options[]> {
     if (this.type === 'application/yaml') {
       return yaml.load(await readFile(this.name, 'utf8')) as any
     } else if (this.type === 'application/json') {
@@ -31,7 +35,7 @@ export class FileLoader<T extends Loader = Loader> {
     }
   }
 
-  private async _write(config: any) {
+  private async _write(config: Entry.Options[]) {
     this.suspend = true
     if (!this.mutable) {
       throw new Error(`cannot overwrite readonly config`)
@@ -43,7 +47,8 @@ export class FileLoader<T extends Loader = Loader> {
     }
   }
 
-  write(config: any) {
+  write(config: Entry.Options[]) {
+    this.loader.app.emit('config')
     clearTimeout(this._writeTask)
     this._writeTask = setTimeout(() => {
       this._writeTask = undefined
@@ -53,9 +58,13 @@ export class FileLoader<T extends Loader = Loader> {
 
   async import(name: string) {
     if (this.loader.internal) {
-      return this.loader.internal.import(name, pathToFileURL(this.name).href, {})
+      return this.loader.internal.import(name, this.url, {})
     } else {
       return import(name)
     }
+  }
+
+  dispose() {
+    clearTimeout(this._writeTask)
   }
 }
