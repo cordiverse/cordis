@@ -1,13 +1,17 @@
-import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { access, copyFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { execSync } from 'node:child_process'
 import { basename, join, relative } from 'node:path'
 import { Readable } from 'node:stream'
-import { extract } from 'tar'
+import * as tar from 'tar'
+import * as yaml from 'js-yaml'
+import envPaths from 'env-paths'
 import getRegistry from 'get-registry'
 import parse from 'yargs-parser'
 import prompts from 'prompts'
 import which from 'which-pm-runs'
 import kleur from 'kleur'
+
+const paths = envPaths('create-cordis', { suffix: '' })
 
 let project: string
 let rootDir: string
@@ -45,6 +49,8 @@ async function confirm(message: string) {
 }
 
 class Scaffold {
+  registry?: string
+
   constructor(public options: Record<string, any> = {}) {}
 
   async getName() {
@@ -81,13 +87,49 @@ class Scaffold {
     await mkdir(rootDir)
   }
 
+  async downloadYarn() {
+    interface YarnRC {
+      yarnPath?: string
+    }
+
+    const rc = yaml.load(await readFile(join(rootDir, '.yarnrc.yml'), 'utf8')) as any as YarnRC
+    const version = rc.yarnPath?.match(/^\.yarn\/releases\/yarn-([^/]+).cjs$/)?.[1]
+    if (!version) return
+
+    const cacheDir = join(paths.cache, '.yarn/releases')
+    const cacheFile = join(cacheDir, `yarn-${version}.cjs`)
+    try {
+      await access(join(cacheDir, `yarn-${version}.cjs`))
+    } catch {
+      const tempDir = join(paths.temp, '@yarnpkg/cli-dist')
+      await mkdir(tempDir, { recursive: true })
+      await mkdir(cacheDir, { recursive: true })
+      const resp3 = await fetch(`${this.registry}/@yarnpkg/cli-dist/-/cli-dist-${version}.tgz`)
+      await new Promise<void>((resolve, reject) => {
+        const stream = Readable.fromWeb(resp3.body as any).pipe(tar.extract({
+          cwd: tempDir,
+          newer: true,
+          strip: 2,
+        }, ['package/bin/yarn.js']))
+        stream.on('finish', resolve)
+        stream.on('error', reject)
+      })
+      await rename(join(tempDir, 'yarn.js'), cacheFile)
+    }
+
+    const targetDir = join(rootDir, '.yarn/releases')
+    const targetFile = join(targetDir, `yarn-${version}.cjs`)
+    await mkdir(targetDir, { recursive: true })
+    await copyFile(targetFile, cacheFile)
+  }
+
   async scaffold() {
     console.log(kleur.dim('  Scaffolding project in ') + project + kleur.dim(' ...'))
 
-    const registry = (await getRegistry()).replace(/\/$/, '')
+    this.registry = (await getRegistry()).replace(/\/$/, '')
     const template = argv.template || this.options.template
 
-    const resp1 = await fetch(`${registry}/${template}`)
+    const resp1 = await fetch(`${this.registry}/${template}`)
     if (!resp1.ok) {
       const { status, statusText } = resp1
       console.log(`${kleur.red('error')} request failed with status code ${status} ${statusText}`)
@@ -98,21 +140,26 @@ class Scaffold {
 
     const resp2 = await fetch(remote.versions[version].dist.tarball)
     await new Promise<void>((resolve, reject) => {
-      const stream = Readable.fromWeb(resp2.body as any).pipe(extract({ cwd: rootDir, newer: true, strip: 1 }))
+      const stream = Readable.fromWeb(resp2.body as any).pipe(tar.extract({
+        cwd: rootDir,
+        newer: true,
+        strip: 1,
+      }))
       stream.on('finish', resolve)
       stream.on('error', reject)
     })
 
-    await this.writePackageJson()
+    await Promise.all([
+      this.downloadYarn(),
+      this.writePackageJson(),
+    ])
     console.log(kleur.green('  Done.\n'))
   }
 
   async writePackageJson() {
     const filename = join(rootDir, 'package.json')
-    const meta = JSON.parse(await readFile(filename, 'utf-8'))
+    const meta = JSON.parse(await readFile(filename, 'utf8'))
     meta.name = project
-    meta.private = true
-    meta.version = '0.0.0'
     if (argv.prod) {
       // https://github.com/koishijs/koishi/issues/994
       // Do not use `NODE_ENV` or `--production` flag.

@@ -91,8 +91,7 @@ class Watcher extends Service {
     })
 
     // files independent from any plugins will trigger a full reload
-    const parentURL = pathToFileURL(process.cwd()).href
-    const mainJob = await loader.internal!.getModuleJob('cordis/worker', parentURL, {})!
+    const mainJob = await loader.internal!.getModuleJob('cordis/worker', import.meta.url, {})!
     this.externals = await loadDependencies(mainJob)
     const triggerLocalReload = this.ctx.debounce(() => this.triggerLocalReload(), this.config.debounce)
 
