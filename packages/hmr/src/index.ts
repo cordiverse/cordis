@@ -123,7 +123,7 @@ class Watcher extends Service {
 
   async getLinked(filename: string) {
     // The second parameter `type` should always be `javascript`.
-    const job = this.ctx.loader.internal!.loadCache.get(pathToFileURL(filename).toString()) as ModuleJob | undefined
+    const job = this.ctx.loader.internal!.loadCache.get(pathToFileURL(filename).toString())
     if (!job) return []
     const linked = await job.linked
     return linked.map(job => fileURLToPath(job.url))
@@ -205,7 +205,7 @@ class Watcher extends Service {
       try {
         const { url } = await this.ctx.loader.internal!.resolve(name, this.initialURL, {})
         if (this.declined.has(url)) continue
-        const job = this.ctx.loader.internal!.loadCache.get(url) as ModuleJob | undefined
+        const job = this.ctx.loader.internal!.loadCache.get(url)
         const plugin = this.ctx.loader.unwrapExports(job?.module?.getNamespace())
         const runtime = this.ctx.registry.get(plugin)
         if (!job || !plugin) continue

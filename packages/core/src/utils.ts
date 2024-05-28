@@ -30,7 +30,8 @@ export function isConstructor(func: any): func is new (...args: any) => any {
   // we cannot use below check because `mock.fn()` is proxified
   // if (func.prototype.constructor !== func) return false
   if (func instanceof GeneratorFunction) return false
-  if (func instanceof AsyncGeneratorFunction) return false
+  // polyfilled AsyncGeneratorFunction === Function
+  if (AsyncGeneratorFunction !== Function && func instanceof AsyncGeneratorFunction) return false
   return true
 }
 

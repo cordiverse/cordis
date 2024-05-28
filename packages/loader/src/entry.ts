@@ -1,5 +1,5 @@
 import { Context, ForkScope, Inject } from '@cordisjs/core'
-import { Dict } from 'cosmokit'
+import { Dict, isNullable } from 'cosmokit'
 import { Loader } from './shared.ts'
 import { EntryGroup } from './group.ts'
 

@@ -1,10 +1,14 @@
+import Module from 'node:module'
+import { pathToFileURL } from 'node:url'
+import { readFile } from 'node:fs/promises'
 import { Loader } from './shared.ts'
-import { promises as fs } from 'fs'
 import * as dotenv from 'dotenv'
-import * as path from 'path'
+import * as path from 'node:path'
 
 export * from './internal.ts'
 export * from './shared.ts'
+
+type ModuleLoad = (request: string, parent: Module, isMain: boolean) => any
 
 const oldEnv = { ...process.env }
 
@@ -32,7 +36,7 @@ class NodeLoader extends Loader {
     const envFiles = ['.env', '.env.local']
     for (const filename of envFiles) {
       try {
-        const raw = await fs.readFile(path.resolve(this.ctx.baseDir, filename), 'utf8')
+        const raw = await readFile(path.resolve(this.ctx.baseDir, filename), 'utf8')
         Object.assign(override, dotenv.parse(raw))
       } catch {}
     }
@@ -41,6 +45,23 @@ class NodeLoader extends Loader {
     for (const key in override) {
       process.env[key] = override[key]
     }
+  }
+
+  async start() {
+    const originalLoad: ModuleLoad = Module['_load']
+    Module['_load'] = ((request, parent, isMain) => {
+      if (request.startsWith('node:')) return originalLoad(request, parent, isMain)
+      try {
+        const result = this.internal?.resolveSync(request, pathToFileURL(parent.filename).href, {})
+        if (result?.format === 'module' && this.internal?.loadCache.has(result.url)) {
+          const job = this.internal?.loadCache.get(result.url)
+          return job?.module?.getNamespace()
+        }
+      } catch {}
+      return originalLoad(request, parent, isMain)
+    }) as ModuleLoad
+
+    await super.start()
   }
 
   exit(code = NodeLoader.exitCode) {

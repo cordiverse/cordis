@@ -7,9 +7,9 @@
   "typings": "lib/index.d.ts",
   "exports": {
     ".": {
+      "types": "./lib/index.d.ts",
       "node": "./lib/index.js",
-      "browser": "./lib/shared.js",
-      "types": "./lib/index.d.ts"
+      "default": "./lib/shared.js"
     },
     "./src/*": "./src/*",
     "./package.json": "./package.json"

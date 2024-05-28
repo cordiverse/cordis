@@ -14,9 +14,11 @@ interface LoadResult {
   source?: ModuleSource
 }
 
-interface LoadCache extends Omit<Map<string, Dict<ModuleJob | Function>>, 'get' | 'set' | 'has'> {
-  get(url: string, type?: string): ModuleJob | Function | undefined
-  set(url: string, type?: string, job?: ModuleJob | Function): this
+type LoadCacheData = ModuleJob // | Function
+
+interface LoadCache extends Omit<Map<string, Dict<LoadCacheData>>, 'get' | 'set' | 'has'> {
+  get(url: string, type?: string): LoadCacheData | undefined
+  set(url: string, type?: string, job?: LoadCacheData): this
   has(url: string, type?: string): boolean
 }
 
