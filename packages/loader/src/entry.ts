@@ -61,8 +61,6 @@ export class Entry {
   }
 
   patch(ctx: Context, ref: Context = ctx) {
-    ctx[Context.inject] = this.options.inject
-
     // part 1: prepare isolate map
     const newMap: Dict<symbol> = Object.create(Object.getPrototypeOf(ref[Context.isolate]))
     for (const [key, label] of Object.entries(this.options.isolate ?? {})) {
@@ -144,11 +142,51 @@ export class Entry {
     })
   }
 
+  get requiredInjects() {
+    return Array.isArray(this.options.inject)
+      ? this.options.inject
+      : this.options.inject?.required ?? []
+  }
+
+  get optionalInjects() {
+    return Array.isArray(this.options.inject)
+      ? this.options.inject
+      : [
+        ...this.options.inject?.required ?? [],
+        ...this.options.inject?.optional ?? [],
+      ]
+  }
+
+  _check() {
+    if (!this.loader.isTruthyLike(this.options.when)) return false
+    if (this.options.disabled) return false
+    for (const name of this.requiredInjects) {
+      let key = this.parent.ctx[Context.isolate][name]
+      const label = this.options.isolate?.[name]
+      if (label) {
+        const realm = this.resolveRealm(label)
+        key = (this.loader.realms[realm] ?? Object.create(null))[name] ?? Symbol(`${name}${realm}`)
+      }
+      if (!key || isNullable(this.parent.ctx[key])) return false
+    }
+    return true
+  }
+
+  async checkService(name: string) {
+    if (!this.requiredInjects.includes(name)) return
+    const ready = this._check()
+    if (ready && !this.fork) {
+      await this.start()
+    } else if (!ready && this.fork) {
+      await this.stop()
+    }
+  }
+
   async update(options: Entry.Options) {
     const legacy = this.options
     this.options = sortKeys(options)
-    if (!this.loader.isTruthyLike(options.when) || options.disabled) {
-      this.stop()
+    if (!this._check()) {
+      await this.stop()
     } else if (this.fork) {
       this.suspend = true
       for (const [key, label] of Object.entries(legacy.isolate ?? {})) {
@@ -158,21 +196,25 @@ export class Entry {
       }
       this.patch(this.fork.parent)
     } else {
-      const ctx = this.createContext()
-      const exports = await this.loader.import(this.options.name).catch((error: any) => {
-        ctx.emit('internal/error', new Error(`Cannot find package "${this.options.name}"`))
-        ctx.emit('internal/error', error)
-      })
-      if (!exports) return
-      const plugin = this.loader.unwrapExports(exports)
-      this.patch(ctx)
-      ctx[Entry.key] = this
-      this.fork = ctx.plugin(plugin, this.options.config)
-      ctx.emit('loader/entry', 'apply', this)
+      await this.start()
     }
   }
 
-  stop() {
+  async start() {
+    const ctx = this.createContext()
+    const exports = await this.loader.import(this.options.name, this.parent.url).catch((error: any) => {
+      ctx.emit('internal/error', new Error(`Cannot find package "${this.options.name}"`))
+      ctx.emit('internal/error', error)
+    })
+    if (!exports) return
+    const plugin = this.loader.unwrapExports(exports)
+    this.patch(ctx)
+    ctx[Entry.key] = this
+    this.fork = ctx.plugin(plugin, this.options.config)
+    ctx.emit('loader/entry', 'apply', this)
+  }
+
+  async stop() {
     this.fork?.dispose()
     this.fork = undefined
 

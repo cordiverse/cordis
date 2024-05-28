@@ -8,7 +8,6 @@ export const symbols = {
   static: Symbol.for('cordis.static') as typeof Context.static,
   filter: Symbol.for('cordis.filter') as typeof Context.filter,
   expose: Symbol.for('cordis.expose') as typeof Context.expose,
-  inject: Symbol.for('cordis.inject') as typeof Context.inject,
   isolate: Symbol.for('cordis.isolate') as typeof Context.isolate,
   internal: Symbol.for('cordis.internal') as typeof Context.internal,
   intercept: Symbol.for('cordis.intercept') as typeof Context.intercept,

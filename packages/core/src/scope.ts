@@ -77,7 +77,6 @@ export abstract class EffectScope<C extends Context = Context> {
   constructor(public parent: C, public config: C['config']) {
     this.uid = parent.registry ? parent.registry.counter : 0
     this.ctx = this.context = parent.extend({ scope: this })
-    this.ctx[Context.inject] = {}
     this.proxy = new Proxy({}, {
       get: (target, key) => Reflect.get(this.config, key),
     })
@@ -360,7 +359,6 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
     if (name && name !== 'apply') this.name = name
     this.schema = this.plugin['Config'] || this.plugin['schema']
     this.setInject(this.plugin['using'] || this.plugin['inject'])
-    this.setInject(this.parent[Context.inject])
     this.isReusable = this.plugin['reusable']
     this.isReactive = this.plugin['reactive']
     this.context.emit('internal/runtime', this)

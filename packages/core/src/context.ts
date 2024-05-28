@@ -55,7 +55,6 @@ export class Context {
   static readonly static: unique symbol = symbols.static as any
   static readonly filter: unique symbol = symbols.filter as any
   static readonly expose: unique symbol = symbols.expose as any
-  static readonly inject: unique symbol = symbols.inject as any
   static readonly isolate: unique symbol = symbols.isolate as any
   static readonly internal: unique symbol = symbols.internal as any
   static readonly intercept: unique symbol = symbols.intercept as any
@@ -104,14 +103,8 @@ export class Context {
         if (name[0] === '$' || name[0] === '_') return
         // Case 4: access directly from root
         if (!ctx.runtime.plugin) return
-        // Case 5: inject in ancestor contexts
-        let parent = ctx
-        while (parent.runtime.plugin) {
-          for (const key of parent.runtime.inject) {
-            if (name === Context.resolveInject(parent, key)[0]) return
-          }
-          parent = parent.scope.parent
-        }
+        // Case 5: custom inject checks
+        if (ctx.bail('internal/inject', name)) return
         ctx.emit('internal/warning', new Error(`property ${name} is not registered, declare it as \`inject\` to suppress this warning`))
       }
 
@@ -164,7 +157,6 @@ export class Context {
   constructor(config?: any) {
     const self: Context = new Proxy(this, Context.handler)
     config = resolveConfig(this.constructor, config)
-    self[symbols.inject] = {}
     self[symbols.isolate] = Object.create(null)
     self[symbols.intercept] = Object.create(null)
     self.root = self

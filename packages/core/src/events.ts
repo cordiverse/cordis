@@ -95,6 +95,17 @@ export class Lifecycle {
         }
       }
     }, { global: true }), Context.static, root.scope)
+
+    // inject in ancestor contexts
+    defineProperty(this.on('internal/inject', function (name) {
+      let parent = this
+      while (parent.runtime.plugin) {
+        for (const key of parent.runtime.inject) {
+          if (name === Context.resolveInject(parent, key)[0]) return true
+        }
+        parent = parent.scope.parent
+      }
+    }, { global: true }), Context.static, root.scope)
   }
 
   async flush() {
@@ -224,6 +235,7 @@ export interface Events<in C extends Context = Context> {
   'internal/service'(this: C, name: string, value: any): void
   'internal/before-update'(fork: ForkScope<C>, config: any): void
   'internal/update'(fork: ForkScope<C>, oldConfig: any): void
+  'internal/inject'(this: C, name: string): boolean | undefined
   'internal/listener'(this: C, name: string, listener: any, prepend: boolean): void
   'internal/event'(type: 'emit' | 'parallel' | 'serial' | 'bail', name: string, args: any[], thisArg: any): void
 }

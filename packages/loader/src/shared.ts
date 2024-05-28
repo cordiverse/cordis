@@ -64,6 +64,8 @@ export abstract class Loader extends BaseLoader {
 
   constructor(public ctx: Context, public config: Loader.Config) {
     super(ctx)
+
+    const self = this
     this.ctx.set('loader', this)
     this.realms['#'] = ctx.root[Context.isolate]
 
@@ -97,6 +99,31 @@ export abstract class Loader extends BaseLoader {
       fork.entry.fork = undefined
       fork.entry.stop()
       fork.entry.parent.write()
+    })
+
+    this.ctx.on('internal/before-service', function (name) {
+      for (const entry of Object.values(self.entries)) {
+        entry.checkService(name)
+      }
+    }, { global: true })
+
+    this.ctx.on('internal/service', function (name) {
+      for (const entry of Object.values(self.entries)) {
+        entry.checkService(name)
+      }
+    }, { global: true })
+
+    const checkInject = (scope: EffectScope, name: string) => {
+      if (!scope.runtime.plugin) return false
+      if (scope.runtime === scope) {
+        return scope.runtime.children.every(fork => checkInject(fork, name))
+      }
+      if (scope.entry?.optionalInjects.includes(name)) return true
+      return checkInject(scope.parent.scope, name)
+    }
+
+    this.ctx.on('internal/inject', function (this, name) {
+      return checkInject(this.scope, name)
     })
   }
 
@@ -188,11 +215,11 @@ export abstract class Loader extends BaseLoader {
 
   _locate(scope: EffectScope): Entry[] {
     // root scope
-    if (scope === scope.parent.scope) return []
+    if (!scope.runtime.plugin) return []
 
     // runtime scope
     if (scope.runtime === scope) {
-      return ([] as Entry[]).concat(...scope.runtime.children.map(child => this._locate(child)))
+      return scope.runtime.children.flatMap(child => this._locate(child))
     }
 
     if (scope.entry) return [scope.entry]
