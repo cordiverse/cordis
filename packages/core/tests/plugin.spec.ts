@@ -38,7 +38,7 @@ describe('Plugin', () => {
     const callback = mock.fn()
     root.plugin({ apply: callback })
     expect(callback.mock.calls).to.have.length(1)
-    root.plugin({ apply: callback })
+    root.plugin({ apply: callback }) // duplicate
     expect(callback.mock.calls).to.have.length(1)
   })
 

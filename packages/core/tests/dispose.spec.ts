@@ -23,21 +23,21 @@ describe('Disposables', () => {
 
     // 4 handlers by now
     expect(callback.mock.calls).to.have.length(0)
-    expect(root.registry.size).to.equal(3)
+    expect(root.registry.size).to.equal(4)
     root.emit(event)
     expect(callback.mock.calls).to.have.length(4)
 
     // only 1 handler left
     callback.mock.resetCalls()
     expect(fork.dispose()).to.be.true
-    expect(root.registry.size).to.equal(0)
+    expect(root.registry.size).to.equal(1)
     root.emit(event)
     expect(callback.mock.calls).to.have.length(1)
 
     // subsequent calls should be noop
     callback.mock.resetCalls()
     expect(fork.dispose()).to.be.false
-    expect(root.registry.size).to.equal(0)
+    expect(root.registry.size).to.equal(1)
     root.emit(event)
     expect(callback.mock.calls).to.have.length(1)
   })

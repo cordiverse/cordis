@@ -138,7 +138,7 @@ export abstract class EffectScope<C extends Context = Context> {
     return ScopeStatus.PENDING
   }
 
-  protected _updateStatus(callback?: () => void) {
+  updateStatus(callback?: () => void) {
     const oldValue = this.status
     callback?.()
     this.status = this._getStatus()
@@ -154,30 +154,17 @@ export abstract class EffectScope<C extends Context = Context> {
         this.cancel(reason)
       })
       .finally(() => {
-        this._updateStatus(() => this.tasks.delete(task))
+        this.updateStatus(() => this.tasks.delete(task))
         this.context.events._tasks.delete(task)
       })
-    this._updateStatus(() => this.tasks.add(task))
+    this.updateStatus(() => this.tasks.add(task))
     this.context.events._tasks.add(task)
   }
 
   cancel(reason?: any) {
     this.error = reason
-    this._updateStatus(() => this.hasError = true)
+    this.updateStatus(() => this.hasError = true)
     this.reset()
-  }
-
-  protected setupInjectHooks() {
-    if (!this.runtime.using.length) return
-    defineProperty(this.context.on('internal/before-service', (name) => {
-      if (!this.runtime.using.includes(name)) return
-      this._updateStatus()
-      this.reset()
-    }), Context.static, this)
-    defineProperty(this.context.on('internal/service', (name) => {
-      if (!this.runtime.using.includes(name)) return
-      this.start()
-    }), Context.static, this)
   }
 
   get ready() {
@@ -205,7 +192,7 @@ export abstract class EffectScope<C extends Context = Context> {
   start() {
     if (!this.ready || this.isActive || this.uid === null) return true
     this.isActive = true
-    this._updateStatus(() => this.hasError = false)
+    this.updateStatus(() => this.hasError = false)
   }
 
   accept(callback?: (config: C['config']) => void | boolean, options?: AcceptOptions): () => boolean
@@ -285,11 +272,6 @@ export class ForkScope<C extends Context = Context> extends EffectScope<C> {
     runtime.children.push(this)
     runtime.disposables.push(this.dispose)
     this.context.emit('internal/fork', this)
-    if (runtime.isReusable) {
-      // non-reusable plugin forks are not responsive to isolated service changes
-      this.setupInjectHooks()
-    }
-
     this.init(error)
   }
 
@@ -331,11 +313,11 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
 
   constructor(registry: Registry<C>, public plugin: Plugin, config: any, error?: any) {
     super(registry[Context.origin] as C, config)
+    registry.set(plugin, this)
     if (!plugin) {
       this.name = 'root'
       this.isActive = true
     } else {
-      registry.set(plugin, this)
       this.setup()
       this.init(error)
     }
@@ -385,8 +367,6 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
 
     if (this.isReusable) {
       this.forkables.push(this.apply)
-    } else {
-      super.setupInjectHooks()
     }
   }
 

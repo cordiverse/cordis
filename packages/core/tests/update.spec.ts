@@ -171,7 +171,9 @@ describe('Update', () => {
   it('deferred update', () => {
     const root = new Context()
     root.provide('foo')
-    const callback = mock.fn()
+    const callback = mock.fn((ctx: Context, config: any) => {
+      ctx.effect(() => () => {})
+    })
     const plugin = {
       inject: ['foo'],
       reusable: true,
@@ -187,13 +189,13 @@ describe('Update', () => {
     root.foo = {}
     expect(callback.mock.calls).to.have.length(1)
     expect(callback.mock.calls[0].arguments[1]).to.deep.equal({ value: 2 })
-    expect(fork.disposables).to.have.length(2)              // service listener
+    expect(fork.disposables).to.have.length(1)              // effect
     expect(fork.runtime.disposables).to.have.length(1)      // fork
 
     fork.update({ value: 3 }, true)
     expect(callback.mock.calls).to.have.length(2)
     expect(callback.mock.calls[1].arguments[1]).to.deep.equal({ value: 3 })
-    expect(fork.disposables).to.have.length(2)              // service listener
+    expect(fork.disposables).to.have.length(1)              // effect
     expect(fork.runtime.disposables).to.have.length(1)      // fork
   })
 

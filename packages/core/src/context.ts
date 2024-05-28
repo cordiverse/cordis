@@ -248,7 +248,7 @@ export class Context {
     }
 
     // setup filter for events
-    const self = Object.create(null)
+    const self = Object.create(ctx)
     self[symbols.filter] = (ctx2: Context) => {
       return ctx[symbols.isolate][name] === ctx2[symbols.isolate][name]
     }

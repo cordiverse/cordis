@@ -1,6 +1,7 @@
 import { Awaitable, defineProperty, Promisify, remove } from 'cosmokit'
 import { Context } from './context.ts'
 import { EffectScope, ForkScope, MainScope, ScopeStatus } from './scope.ts'
+import { symbols } from './index.ts'
 
 export function isBailed(value: any) {
   return value !== null && value !== false && value !== undefined
@@ -23,8 +24,8 @@ declare module './context.ts' {
     serial<K extends keyof GetEvents<this>>(thisArg: ThisType<GetEvents<this>[K]>, name: K, ...args: Parameters<GetEvents<this>[K]>): Promisify<ReturnType<GetEvents<this>[K]>>
     bail<K extends keyof GetEvents<this>>(name: K, ...args: Parameters<GetEvents<this>[K]>): ReturnType<GetEvents<this>[K]>
     bail<K extends keyof GetEvents<this>>(thisArg: ThisType<GetEvents<this>[K]>, name: K, ...args: Parameters<GetEvents<this>[K]>): ReturnType<GetEvents<this>[K]>
-    on<K extends keyof GetEvents<this>>(name: K, listener: GetEvents<this>[K], prepend?: boolean): () => boolean
-    once<K extends keyof GetEvents<this>>(name: K, listener: GetEvents<this>[K], prepend?: boolean): () => boolean
+    on<K extends keyof GetEvents<this>>(name: K, listener: GetEvents<this>[K], options?: boolean | EventOptions): () => boolean
+    once<K extends keyof GetEvents<this>>(name: K, listener: GetEvents<this>[K], options?: boolean | EventOptions): () => boolean
     off<K extends keyof GetEvents<this>>(name: K, listener: GetEvents<this>[K]): boolean
     start(): Promise<void>
     stop(): Promise<void>
@@ -32,16 +33,23 @@ declare module './context.ts' {
   }
 }
 
+export interface EventOptions {
+  prepend?: boolean
+  global?: boolean
+}
+
+type Hook = [Context, (...args: any[]) => any, EventOptions]
+
 export class Lifecycle {
   isActive = false
   _tasks = new Set<Promise<void>>()
-  _hooks: Record<keyof any, [Context, (...args: any[]) => any][]> = {}
+  _hooks: Record<keyof any, Hook[]> = {}
 
   constructor(private root: Context) {
     defineProperty(this, Context.origin, root)
 
-    defineProperty(this.on('internal/listener', function (this: Context, name, listener, prepend) {
-      const method = prepend ? 'unshift' : 'push'
+    defineProperty(this.on('internal/listener', function (this: Context, name, listener, options: EventOptions) {
+      const method = options.prepend ? 'unshift' : 'push'
       if (name === 'ready') {
         if (!this.lifecycle.isActive) return
         this.scope.ensure(async () => listener())
@@ -63,6 +71,30 @@ export class Lifecycle {
         console.info(format, ...param)
       }), Context.static, root.scope)
     }
+
+    // non-reusable plugin forks are not responsive to isolated service changes
+    defineProperty(this.on('internal/before-service', function (this: Context, name) {
+      for (const runtime of this.registry.values()) {
+        if (!runtime.using.includes(name)) continue
+        const scopes = runtime.isReusable ? runtime.children : [runtime]
+        for (const scope of scopes) {
+          if (!this[symbols.filter](scope.ctx)) continue
+          scope.updateStatus()
+          scope.reset()
+        }
+      }
+    }, { global: true }), Context.static, root.scope)
+
+    defineProperty(this.on('internal/service', function (this: Context, name) {
+      for (const runtime of this.registry.values()) {
+        if (!runtime.using.includes(name)) continue
+        const scopes = runtime.isReusable ? runtime.children : [runtime]
+        for (const scope of scopes) {
+          if (!this[symbols.filter](scope.ctx)) continue
+          scope.start()
+        }
+      }
+    }, { global: true }), Context.static, root.scope)
   }
 
   async flush() {
@@ -73,14 +105,14 @@ export class Lifecycle {
 
   getHooks(name: keyof any, thisArg?: object) {
     const hooks = this._hooks[name] || []
-    return hooks.slice().filter(([context]) => {
+    return hooks.slice().filter(([context, callback, options]) => {
       const filter = thisArg?.[Context.filter]
-      return !filter || filter.call(thisArg, context)
+      return options.global || !filter || filter.call(thisArg, context)
     }).map(([, callback]) => callback)
   }
 
   prepareEvent(type: string, args: any[]) {
-    const thisArg = typeof args[0] === 'object' ? args.shift() : null
+    const thisArg = typeof args[0] === 'object' || typeof args[0] === 'function' ? args.shift() : null
     const name = args.shift()
     if (name !== 'internal/event') {
       this.emit('internal/event', type, name, args, thisArg)
@@ -118,14 +150,14 @@ export class Lifecycle {
     }
   }
 
-  register(label: string, hooks: [Context, any][], listener: any, prepend?: boolean) {
+  register(label: string, hooks: Hook[], listener: any, options: EventOptions) {
     const caller = this[Context.origin]
-    const method = prepend ? 'unshift' : 'push'
-    hooks[method]([caller, listener])
+    const method = options.prepend ? 'unshift' : 'push'
+    hooks[method]([caller, listener, options])
     return caller.state.collect(label, () => this.unregister(hooks, listener))
   }
 
-  unregister(hooks: [Context, any][], listener: any) {
+  unregister(hooks: Hook[], listener: any) {
     const index = hooks.findIndex(([context, callback]) => callback === listener)
     if (index >= 0) {
       hooks.splice(index, 1)
@@ -133,23 +165,27 @@ export class Lifecycle {
     }
   }
 
-  on(name: string, listener: (...args: any) => any, prepend = false) {
+  on(name: string, listener: (...args: any) => any, options?: boolean | EventOptions) {
+    if (typeof options !== 'object') {
+      options = { prepend: options }
+    }
+
     // handle special events
     const caller: Context = this[Context.origin]
     caller.scope.assertActive()
-    const result = this.bail(caller, 'internal/listener', name, listener, prepend)
+    const result = this.bail(caller, 'internal/listener', name, listener, options)
     if (result) return result
 
     const hooks = this._hooks[name] ||= []
     const label = typeof name === 'string' ? `event <${name}>` : 'event (Symbol)'
-    return this.register(label, hooks, listener, prepend)
+    return this.register(label, hooks, listener, options)
   }
 
-  once(name: string, listener: (...args: any) => any, prepend = false) {
+  once(name: string, listener: (...args: any) => any, options?: boolean | EventOptions) {
     const dispose = this.on(name, function (...args: any[]) {
       dispose()
       return listener.apply(this, args)
-    }, prepend)
+    }, options)
     return dispose
   }
 
@@ -184,8 +220,8 @@ export interface Events<in C extends Context = Context> {
   'internal/info'(this: C, format: any, ...param: any[]): void
   'internal/error'(this: C, format: any, ...param: any[]): void
   'internal/warning'(this: C, format: any, ...param: any[]): void
-  'internal/before-service'(name: string): void
-  'internal/service'(name: string): void
+  'internal/before-service'(this: C, name: string, value: any): void
+  'internal/service'(this: C, name: string, value: any): void
   'internal/before-update'(fork: ForkScope<C>, config: any): void
   'internal/update'(fork: ForkScope<C>, oldConfig: any): void
   'internal/listener'(this: C, name: string, listener: any, prepend: boolean): void

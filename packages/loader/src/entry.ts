@@ -93,7 +93,7 @@ export class Entry {
     // part 3: emit service events
     // part 3.1: internal/before-service
     for (const [key, symbol1, symbol2, flag1, flag2] of diff) {
-      const self = Object.create(null)
+      const self = Object.create(ctx)
       self[Context.filter] = (target: Context) => {
         if (![symbol1, symbol2].includes(target[Context.isolate][key])) return false
         return (flag1 === target[this.loader.delims[key]]) !== (flag1 === flag2)
@@ -121,7 +121,7 @@ export class Entry {
 
     // part 3.3: internal/service
     for (const [key, symbol1, symbol2, flag1, flag2] of diff) {
-      const self = Object.create(null)
+      const self = Object.create(ctx)
       self[Context.filter] = (target: Context) => {
         if (![symbol1, symbol2].includes(target[Context.isolate][key])) return false
         return (flag1 === target[this.loader.delims[key]]) !== (flag1 === flag2)

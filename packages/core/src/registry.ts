@@ -99,7 +99,7 @@ export class Registry<C extends Context = Context> {
 
   set(plugin: Plugin, state: MainScope<C>) {
     const key = this.resolve(plugin)
-    key && this._internal.set(key, state)
+    this._internal.set(key!, state)
   }
 
   delete(plugin: Plugin) {
