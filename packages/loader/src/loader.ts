@@ -1,7 +1,6 @@
 import { Context, EffectScope } from '@cordisjs/core'
-import { Dict, isNullable, valueMap } from 'cosmokit'
+import { Dict, isNullable } from 'cosmokit'
 import { ModuleLoader } from './internal.ts'
-import { interpolate } from './utils.ts'
 import { Entry } from './entry.ts'
 import { ImportTree, LoaderFile } from './file.ts'
 
@@ -129,23 +128,6 @@ export abstract class Loader extends ImportTree {
   async start() {
     await this.init(process.cwd(), this.config)
     await super.start()
-  }
-
-  interpolate(source: any) {
-    if (typeof source === 'string') {
-      return interpolate(source, this.params, /\$\{\{(.+?)\}\}/g)
-    } else if (!source || typeof source !== 'object') {
-      return source
-    } else if (Array.isArray(source)) {
-      return source.map(item => this.interpolate(item))
-    } else {
-      return valueMap(source, item => this.interpolate(item))
-    }
-  }
-
-  isTruthyLike(expr: any) {
-    if (isNullable(expr)) return true
-    return !!this.interpolate(`\${{ ${expr} }}`)
   }
 
   locate(ctx = this[Context.current]) {

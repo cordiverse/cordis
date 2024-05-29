@@ -7,6 +7,9 @@ import * as yaml from 'js-yaml'
 import { Entry } from './entry.ts'
 import { Loader } from './loader.ts'
 import { EntryTree } from './tree.ts'
+import { JsExpr } from './utils.ts'
+
+export const schema = yaml.JSON_SCHEMA.extend(JsExpr)
 
 export class LoaderFile {
   public suspend = false
@@ -45,7 +48,7 @@ export class LoaderFile {
 
   async read(): Promise<Entry.Options[]> {
     if (this.type === 'application/yaml') {
-      return yaml.load(await readFile(this.name, 'utf8')) as any
+      return yaml.load(await readFile(this.name, 'utf8'), { schema }) as any
     } else if (this.type === 'application/json') {
       // we do not use require / import here because it will pollute cache
       return JSON.parse(await readFile(this.name, 'utf8')) as any
@@ -61,7 +64,7 @@ export class LoaderFile {
       throw new Error(`cannot overwrite readonly config`)
     }
     if (this.type === 'application/yaml') {
-      await writeFile(this.name, yaml.dump(config))
+      await writeFile(this.name, yaml.dump(config, { schema }))
     } else if (this.type === 'application/json') {
       await writeFile(this.name, JSON.stringify(config, null, 2))
     }
