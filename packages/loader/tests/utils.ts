@@ -4,7 +4,7 @@ import { LoaderFile, Entry, Group, Loader } from '../src'
 import { Mock, mock } from 'node:test'
 import { expect } from 'chai'
 
-declare module '../src/shared' {
+declare module '../src/index.ts' {
   interface Loader {
     mock<F extends Function>(name: string, plugin: F): Mock<F>
     expectEnable(plugin: any, config?: any): void

@@ -164,14 +164,6 @@ export abstract class Loader extends ImportTree {
     return this._locate(scope.parent.scope)
   }
 
-  async import(name: string, baseURL = this.url) {
-    if (this.internal) {
-      return this.internal.import(name, baseURL, {})
-    } else {
-      return import(name)
-    }
-  }
-
   exit() {}
 
   unwrapExports(exports: any) {

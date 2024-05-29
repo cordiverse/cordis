@@ -11,10 +11,12 @@ export class EntryGroup {
   }
 
   async create(options: Omit<Entry.Options, 'id'>) {
-    const id = this.ctx.loader.ensureId(options)
-    const entry = this.ctx.loader.entries[id] ??= new Entry(this.ctx.loader, this)
+    const id = this.tree.ensureId(options)
+    const entry = this.tree.entries[id] ??= new Entry(this.ctx.loader, this)
+    // Entry may be moved from another group,
+    // so we need to update the parent reference.
     entry.parent = this
-    await entry.update(options as Entry.Options)
+    await entry.update(options as Entry.Options, true)
     return id
   }
 
@@ -25,11 +27,11 @@ export class EntryGroup {
   }
 
   remove(id: string) {
-    const entry = this.ctx.loader.entries[id]
+    const entry = this.tree.entries[id]
     if (!entry) return
     entry.stop()
     this.unlink(entry.options)
-    delete this.ctx.loader.entries[id]
+    delete this.tree.entries[id]
   }
 
   update(config: Entry.Options[]) {

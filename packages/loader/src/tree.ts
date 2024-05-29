@@ -1,5 +1,5 @@
 import { Context } from '@cordisjs/core'
-import { Dict, isNullable } from 'cosmokit'
+import { Dict } from 'cosmokit'
 import { Entry } from './entry.ts'
 import { EntryGroup } from './group.ts'
 
@@ -23,21 +23,6 @@ export abstract class EntryTree {
     return options.id!
   }
 
-  async update(id: string, options: Partial<Omit<Entry.Options, 'id' | 'name'>>) {
-    const entry = this.entries[id]
-    if (!entry) throw new Error(`entry ${id} not found`)
-    const override = { ...entry.options }
-    for (const [key, value] of Object.entries(options)) {
-      if (isNullable(value)) {
-        delete override[key]
-      } else {
-        override[key] = value
-      }
-    }
-    entry.parent.tree.write()
-    return entry.update(override)
-  }
-
   resolveGroup(id: string | null) {
     const group = id ? this.entries[id]?.subgroup : this.root
     if (!group) throw new Error(`entry ${id} not found`)
@@ -58,20 +43,28 @@ export abstract class EntryTree {
     entry.parent.tree.write()
   }
 
-  transfer(id: string, parent: string | null, position = Infinity) {
+  async update(id: string, options: Omit<Entry.Options, 'id' | 'name'>, parent?: string | null, position?: number) {
     const entry = this.entries[id]
     if (!entry) throw new Error(`entry ${id} not found`)
     const source = entry.parent
-    const target = this.resolveGroup(parent)
-    source.unlink(entry.options)
-    target.data.splice(position, 0, entry.options)
     source.tree.write()
-    target.tree.write()
-    if (source === target) return
-    entry.parent = target
-    if (!entry.fork) return
-    const ctx = entry.createContext()
-    entry.patch(entry.fork.parent, ctx)
+    let target: EntryGroup | undefined
+    if (parent !== undefined) {
+      target = this.resolveGroup(parent)
+      source.unlink(entry.options)
+      target.data.splice(position ?? Infinity, 0, entry.options)
+      target.tree.write()
+      entry.parent = target
+    }
+    return entry.update(options)
+  }
+
+  async import(name: string) {
+    if (this.ctx.loader.internal) {
+      return this.ctx.loader.internal.import(name, this.url, {})
+    } else {
+      return import(name)
+    }
   }
 
   abstract write(): void

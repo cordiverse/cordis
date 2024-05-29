@@ -514,7 +514,7 @@ describe('service isolation: transfer', () => {
   })
 
   it('transfer injector into group', async () => {
-    loader.transfer(injector, group)
+    loader.update(injector, {}, group)
 
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(foo.mock.calls).to.have.length(0)
@@ -522,7 +522,7 @@ describe('service isolation: transfer', () => {
   })
 
   it('transfer provider into group', async () => {
-    loader.transfer(provider, group)
+    loader.update(provider, {}, group)
 
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(foo.mock.calls).to.have.length(1)
@@ -530,7 +530,7 @@ describe('service isolation: transfer', () => {
   })
 
   it('transfer injector out of group', async () => {
-    loader.transfer(injector, null)
+    loader.update(injector, {}, null)
 
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(foo.mock.calls).to.have.length(0)
@@ -538,7 +538,7 @@ describe('service isolation: transfer', () => {
   })
 
   it('transfer provider out of group', async () => {
-    loader.transfer(provider, null)
+    loader.update(provider, {}, null)
 
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(foo.mock.calls).to.have.length(1)

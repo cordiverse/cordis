@@ -14,7 +14,6 @@ export namespace Entry {
     intercept?: Dict | null
     isolate?: Dict<true | string> | null
     inject?: string[] | Inject | null
-    when?: any
   }
 }
 
@@ -63,20 +62,24 @@ export class Entry {
     }
   }
 
-  patch(ctx: Context, ref: Context = ctx) {
-    // part 1: prepare isolate map
-    const newMap: Dict<symbol> = Object.create(Object.getPrototypeOf(ref[Context.isolate]))
+  patch(options: Partial<Entry.Options> = {}) {
+    // step 1: prepare isolate map
+    const ctx = this.fork?.parent ?? this.parent.ctx.extend({
+      [Context.intercept]: Object.create(this.parent.ctx[Context.intercept]),
+      [Context.isolate]: Object.create(this.parent.ctx[Context.isolate]),
+    })
+    const newMap: Dict<symbol> = Object.create(this.parent.ctx[Context.isolate])
     for (const [key, label] of Object.entries(this.options.isolate ?? {})) {
       const realm = this.resolveRealm(label)
       newMap[key] = (this.loader.realms[realm] ??= Object.create(null))[key] ??= Symbol(`${key}${realm}`)
     }
 
-    // part 2: generate service diff
+    // step 2: generate service diff
     const diff: [string, symbol, symbol, symbol, symbol][] = []
     const oldMap = ctx[Context.isolate]
     for (const key in { ...oldMap, ...newMap, ...this.loader.delims }) {
       if (newMap[key] === oldMap[key]) continue
-      const delim = this.loader.delims[key] ??= Symbol(key)
+      const delim = this.loader.delims[key] ??= Symbol(`delim:${key}`)
       ctx[delim] = Symbol(`${key}#${this.options.id}`)
       for (const symbol of [oldMap[key], newMap[key]]) {
         const value = symbol && ctx[symbol]
@@ -91,8 +94,7 @@ export class Entry {
       }
     }
 
-    // part 3: emit service events
-    // part 3.1: internal/before-service
+    // step 3: emit internal/before-service
     for (const [key, symbol1, symbol2, flag1, flag2] of diff) {
       const self = Object.create(ctx)
       self[Context.filter] = (target: Context) => {
@@ -102,17 +104,21 @@ export class Entry {
       ctx.emit(self, 'internal/before-service', key)
     }
 
-    // part 3.2: update service impl
-    if (ctx === ref) {
-      swap(ctx[Context.isolate], newMap)
-      swap(ctx[Context.intercept], this.options.intercept)
-      // prevent double update
-      this.fork?.update(this.options.config)
-    } else {
-      // handle entry transfer
-      Object.setPrototypeOf(ctx, Object.getPrototypeOf(ref))
-      swap(ctx, ref)
+    // step 4: update
+    // step 4.1: patch context
+    Object.setPrototypeOf(ctx, this.parent.ctx)
+    Object.setPrototypeOf(ctx[Context.isolate], this.parent.ctx[Context.isolate])
+    Object.setPrototypeOf(ctx[Context.intercept], this.parent.ctx[Context.intercept])
+    swap(ctx[Context.isolate], newMap)
+    swap(ctx[Context.intercept], this.options.intercept)
+
+    // step 4.2: update fork when options.config is updated
+    if (this.fork && 'config' in options) {
+      this.suspend = true
+      this.fork.update(this.options.config)
     }
+
+    // step 4.3: update service impl
     for (const [, symbol1, symbol2, flag1, flag2] of diff) {
       if (flag1 === flag2 && ctx[symbol1] && !ctx[symbol2]) {
         ctx.root[symbol2] = ctx.root[symbol1]
@@ -120,7 +126,7 @@ export class Entry {
       }
     }
 
-    // part 3.3: internal/service
+    // step 5: emit internal/service
     for (const [key, symbol1, symbol2, flag1, flag2] of diff) {
       const self = Object.create(ctx)
       self[Context.filter] = (target: Context) => {
@@ -130,19 +136,14 @@ export class Entry {
       ctx.emit(self, 'internal/service', key)
     }
 
-    // part 4: clean up delimiter
+    // step 6: clean up delimiters
     for (const key in this.loader.delims) {
       if (!Reflect.ownKeys(newMap).includes(key)) {
         delete ctx[this.loader.delims[key]]
       }
     }
-  }
 
-  createContext() {
-    return this.parent.ctx.extend({
-      [Context.intercept]: Object.create(this.parent.ctx[Context.intercept]),
-      [Context.isolate]: Object.create(this.parent.ctx[Context.isolate]),
-    })
+    return ctx
   }
 
   get requiredInjects() {
@@ -161,7 +162,6 @@ export class Entry {
   }
 
   _check() {
-    if (!this.loader.isTruthyLike(this.options.when)) return false
     if (this.options.disabled) return false
     for (const name of this.requiredInjects) {
       let key = this.parent.ctx[Context.isolate][name]
@@ -185,33 +185,46 @@ export class Entry {
     }
   }
 
-  async update(options: Entry.Options) {
-    const legacy = this.options
-    this.options = sortKeys(options)
+  async update(options: Partial<Entry.Options>, override = false) {
+    const legacy = { ...this.options }
+
+    // step 1: update options
+    if (override) {
+      this.options = options as Entry.Options
+    } else {
+      for (const [key, value] of Object.entries(options)) {
+        if (isNullable(value)) {
+          delete this.options[key]
+        } else {
+          this.options[key] = value
+        }
+      }
+    }
+    sortKeys(this.options)
+
+    // step 2: execute
     if (!this._check()) {
       await this.stop()
     } else if (this.fork) {
-      this.suspend = true
       for (const [key, label] of Object.entries(legacy.isolate ?? {})) {
         if (this.options.isolate?.[key] === label) continue
         const name = this.resolveRealm(label)
         this.loader._clearRealm(key, name)
       }
-      this.patch(this.fork.parent)
+      this.patch(options)
     } else {
       await this.start()
     }
   }
 
   async start() {
-    const ctx = this.createContext()
-    const exports = await this.loader.import(this.options.name, this.parent.tree.url).catch((error: any) => {
-      ctx.emit('internal/error', new Error(`Cannot find package "${this.options.name}"`))
-      ctx.emit('internal/error', error)
+    const exports = await this.parent.tree.import(this.options.name).catch((error: any) => {
+      this.parent.ctx.emit('internal/error', new Error(`Cannot find package "${this.options.name}"`))
+      this.parent.ctx.emit('internal/error', error)
     })
     if (!exports) return
     const plugin = this.loader.unwrapExports(exports)
-    this.patch(ctx)
+    const ctx = this.patch()
     ctx[Entry.key] = this
     this.fork = ctx.plugin(plugin, this.options.config)
     ctx.emit('loader/entry', 'apply', this)
