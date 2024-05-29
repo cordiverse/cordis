@@ -7,38 +7,41 @@ import { Entry } from './entry.ts'
 import { EntryGroup } from './group.ts'
 import { Loader } from './shared.ts'
 import { remove } from 'cosmokit'
+import { EntryTree } from './tree.ts'
 
 export class LoaderFile {
   public suspend = false
-  public mutable = false
+  public readonly: boolean
   public url: string
-  public groups: BaseLoader[] = []
+  public trees: ImportTree[] = []
 
   private _writeTask?: NodeJS.Timeout
 
   constructor(public loader: Loader, public name: string, public type?: string) {
     this.url = pathToFileURL(name).href
-    loader.files[name] = this
+    loader.files[this.url] = this
+    this.readonly = !type
   }
 
-  ref(group: BaseLoader) {
-    this.groups.push(group)
-    group.url = pathToFileURL(this.name).href
+  ref(tree: ImportTree) {
+    this.trees.push(tree)
+    tree.url = pathToFileURL(this.name).href
   }
 
-  unref(group: BaseLoader) {
-    remove(this.groups, group)
-    if (this.groups.length) return
+  unref(tree: ImportTree) {
+    remove(this.trees, tree)
+    if (this.trees.length) return
     clearTimeout(this._writeTask)
-    delete this.loader.files[this.name]
+    delete this.loader.files[this.url]
   }
 
   async checkAccess() {
     if (!this.type) return
     try {
       await access(this.name, constants.W_OK)
-      this.mutable = true
-    } catch {}
+    } catch {
+      this.readonly = true
+    }
   }
 
   async read(): Promise<Entry.Options[]> {
@@ -55,7 +58,7 @@ export class LoaderFile {
 
   private async _write(config: Entry.Options[]) {
     this.suspend = true
-    if (!this.mutable) {
+    if (this.readonly) {
       throw new Error(`cannot overwrite readonly config`)
     }
     if (this.type === 'application/yaml') {
@@ -92,14 +95,16 @@ export namespace LoaderFile {
   }
 }
 
-export class BaseLoader extends EntryGroup {
+export class ImportTree extends EntryTree {
   static reusable = true
 
   protected file!: LoaderFile
 
   constructor(public ctx: Context) {
-    super(ctx)
+    super()
+    this.root = new EntryGroup(ctx, this)
     ctx.on('ready', () => this.start())
+    ctx.on('dispose', () => this.stop())
   }
 
   async start() {
@@ -108,21 +113,20 @@ export class BaseLoader extends EntryGroup {
   }
 
   async refresh() {
-    this._update(await this.file.read())
+    this.root.update(await this.file.read())
   }
 
   stop() {
     this.file?.unref(this)
-    return super.stop()
+    return this.root.stop()
   }
 
   write() {
-    return this.file!.write(this.data)
+    return this.file!.write(this.root.data)
   }
 
   _createFile(filename: string, type: string) {
     this.file = this.ctx.loader[filename] ??= new LoaderFile(this.ctx.loader, filename, type)
-    this.url = this.file.url
     this.file.ref(this)
   }
 
@@ -179,14 +183,14 @@ export namespace Import {
   }
 }
 
-export class Import extends BaseLoader {
+export class Import extends ImportTree {
   constructor(ctx: Context, public config: Import.Config) {
     super(ctx)
   }
 
   async start() {
     const { url } = this.config
-    const filename = fileURLToPath(new URL(url, this.ctx.scope.entry!.parent.url))
+    const filename = fileURLToPath(new URL(url, this.ctx.scope.entry!.parent.tree.url))
     const ext = extname(filename)
     if (!LoaderFile.supported.has(ext)) {
       throw new Error(`extension "${ext}" not supported`)

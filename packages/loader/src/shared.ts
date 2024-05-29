@@ -3,7 +3,7 @@ import { Dict, isNullable, valueMap } from 'cosmokit'
 import { ModuleLoader } from './internal.ts'
 import { interpolate } from './utils.ts'
 import { Entry } from './entry.ts'
-import { BaseLoader, LoaderFile } from './file.ts'
+import { ImportTree, LoaderFile } from './file.ts'
 
 export * from './entry.ts'
 export * from './file.ts'
@@ -41,7 +41,7 @@ export namespace Loader {
   }
 }
 
-export abstract class Loader extends BaseLoader {
+export abstract class Loader extends ImportTree {
   // TODO auto inject optional when provided?
   static inject = {
     optional: ['loader'],
@@ -57,7 +57,6 @@ export abstract class Loader extends BaseLoader {
   }
 
   public files: Dict<LoaderFile> = Object.create(null)
-  public entries: Dict<Entry> = Object.create(null)
   public realms: Dict<Dict<symbol>> = Object.create(null)
   public delims: Dict<symbol> = Object.create(null)
   public internal?: ModuleLoader
@@ -65,7 +64,6 @@ export abstract class Loader extends BaseLoader {
   constructor(public ctx: Context, public config: Loader.Config) {
     super(ctx)
 
-    const self = this
     this.ctx.set('loader', this)
     this.realms['#'] = ctx.root[Context.isolate]
 
@@ -79,7 +77,7 @@ export abstract class Loader extends BaseLoader {
       if (fork.entry.suspend) return fork.entry.suspend = false
       const { schema } = fork.runtime
       fork.entry.options.config = schema ? schema.simplify(config) : config
-      fork.entry.parent.write()
+      fork.entry.parent.tree.write()
     })
 
     this.ctx.on('internal/fork', (fork) => {
@@ -98,17 +96,17 @@ export abstract class Loader extends BaseLoader {
       fork.entry.options.disabled = true
       fork.entry.fork = undefined
       fork.entry.stop()
-      fork.entry.parent.write()
+      fork.entry.parent.tree.write()
     })
 
-    this.ctx.on('internal/before-service', function (name) {
-      for (const entry of Object.values(self.entries)) {
+    this.ctx.on('internal/before-service', (name) => {
+      for (const entry of Object.values(this.entries)) {
         entry.checkService(name)
       }
     }, { global: true })
 
-    this.ctx.on('internal/service', function (name) {
-      for (const entry of Object.values(self.entries)) {
+    this.ctx.on('internal/service', (name) => {
+      for (const entry of Object.values(this.entries)) {
         entry.checkService(name)
       }
     }, { global: true })
@@ -147,66 +145,6 @@ export abstract class Loader extends BaseLoader {
   isTruthyLike(expr: any) {
     if (isNullable(expr)) return true
     return !!this.interpolate(`\${{ ${expr} }}`)
-  }
-
-  ensureId(options: Partial<Entry.Options>) {
-    if (!options.id) {
-      do {
-        options.id = Math.random().toString(36).slice(2, 8)
-      } while (this.entries[options.id])
-    }
-    return options.id!
-  }
-
-  async update(id: string, options: Partial<Omit<Entry.Options, 'id' | 'name'>>) {
-    const entry = this.entries[id]
-    if (!entry) throw new Error(`entry ${id} not found`)
-    const override = { ...entry.options }
-    for (const [key, value] of Object.entries(options)) {
-      if (isNullable(value)) {
-        delete override[key]
-      } else {
-        override[key] = value
-      }
-    }
-    entry.parent.write()
-    return entry.update(override)
-  }
-
-  resolveGroup(id: string | null) {
-    const group = id ? this.entries[id]?.children : this
-    if (!group) throw new Error(`entry ${id} not found`)
-    return group
-  }
-
-  async create(options: Omit<Entry.Options, 'id'>, parent: string | null = null, position = Infinity) {
-    const group = this.resolveGroup(parent)
-    group.data.splice(position, 0, options as Entry.Options)
-    group.write()
-    return group._create(options)
-  }
-
-  remove(id: string) {
-    const entry = this.entries[id]
-    if (!entry) throw new Error(`entry ${id} not found`)
-    entry.parent._remove(id)
-    entry.parent.write()
-  }
-
-  transfer(id: string, parent: string | null, position = Infinity) {
-    const entry = this.entries[id]
-    if (!entry) throw new Error(`entry ${id} not found`)
-    const source = entry.parent
-    const target = this.resolveGroup(parent)
-    source._unlink(entry.options)
-    target.data.splice(position, 0, entry.options)
-    source.write()
-    target.write()
-    if (source === target) return
-    entry.parent = target
-    if (!entry.fork) return
-    const ctx = entry.createContext()
-    entry.patch(entry.fork.parent, ctx)
   }
 
   locate(ctx = this[Context.current]) {

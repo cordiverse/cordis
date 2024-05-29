@@ -1,6 +1,6 @@
 import { Dict } from 'cosmokit'
 import { Context, ForkScope, Plugin } from '@cordisjs/core'
-import { LoaderFile, Entry, group, Loader } from '../src'
+import { LoaderFile, Entry, Group, Loader } from '../src'
 import { Mock, mock } from 'node:test'
 import { expect } from 'chai'
 
@@ -14,7 +14,6 @@ declare module '../src/shared' {
 }
 
 class MockLoaderFile extends LoaderFile {
-  mutable = true
   data: Entry.Options[] = []
 
   async read() {
@@ -32,8 +31,9 @@ export default class MockLoader extends Loader {
 
   constructor(ctx: Context) {
     super(ctx, { name: 'cordis' })
-    this.file = new MockLoaderFile(this, 'cordis.yml')
-    this.mock('cordis/group', group)
+    this.file = new MockLoaderFile(this, 'config-1.yml')
+    this.file.ref(this)
+    this.mock('cordis/group', Group)
   }
 
   async start() {

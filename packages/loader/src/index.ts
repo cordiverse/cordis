@@ -50,13 +50,13 @@ class NodeLoader extends Loader {
   async start() {
     const originalLoad: ModuleLoad = Module['_load']
     Module['_load'] = ((request, parent, isMain) => {
-      if (request.startsWith('node:')) return originalLoad(request, parent, isMain)
       try {
+        // TODO support hmr for cjs-esm interop
         const result = this.internal?.resolveSync(request, pathToFileURL(parent.filename).href, {})
-        if (result?.format === 'module' && this.internal?.loadCache.has(result.url)) {
-          const job = this.internal?.loadCache.get(result.url)
-          return job?.module?.getNamespace()
-        }
+        const job = result?.format === 'module'
+          ? this.internal?.loadCache.get(result.url)
+          : undefined
+        if (job) return job?.module?.getNamespace()
       } catch {}
       return originalLoad(request, parent, isMain)
     }) as ModuleLoad

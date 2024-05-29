@@ -12,6 +12,7 @@ export namespace Entry {
     intercept?: Dict | null
     isolate?: Dict<true | string> | null
     inject?: string[] | Inject | null
+    transparent?: boolean | null
     when?: any
   }
 }
@@ -43,7 +44,7 @@ function sortKeys<T extends {}>(object: T, prepend = ['id', 'name'], append = ['
 }
 
 export class Entry {
-  static key = Symbol('cordis.entry')
+  static key = Symbol.for('cordis.entry')
 
   public fork?: ForkScope
   public suspend = false
@@ -202,7 +203,7 @@ export class Entry {
 
   async start() {
     const ctx = this.createContext()
-    const exports = await this.loader.import(this.options.name, this.parent.url).catch((error: any) => {
+    const exports = await this.loader.import(this.options.name, this.parent.tree.url).catch((error: any) => {
       ctx.emit('internal/error', new Error(`Cannot find package "${this.options.name}"`))
       ctx.emit('internal/error', error)
     })
