@@ -5,7 +5,10 @@ import { EntryTree } from './tree.ts'
 export class EntryGroup {
   public data: Entry.Options[] = []
 
-  constructor(public ctx: Context, public tree: EntryTree) {}
+  constructor(public ctx: Context, public tree: EntryTree) {
+    const entry = ctx.scope.entry
+    if (entry) entry.subgroup = this
+  }
 
   async create(options: Omit<Entry.Options, 'id'>) {
     const id = this.ctx.loader.ensureId(options)
@@ -61,9 +64,7 @@ export class Group extends EntryGroup {
 
   // TODO support options
   constructor(public ctx: Context) {
-    const entry = ctx.scope.entry!
-    super(ctx, entry.parent.tree)
-    entry.children = this
+    super(ctx, ctx.scope.entry!.parent.tree)
     ctx.on('dispose', () => this.stop())
     ctx.accept((config: Entry.Options[]) => {
       this.update(config)

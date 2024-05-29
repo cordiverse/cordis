@@ -1,11 +1,18 @@
+import { Context } from '@cordisjs/core'
 import { Dict, isNullable } from 'cosmokit'
 import { Entry } from './entry.ts'
 import { EntryGroup } from './group.ts'
 
 export abstract class EntryTree {
   public url!: string
-  public root!: EntryGroup
+  public root: EntryGroup
   public entries: Dict<Entry> = Object.create(null)
+
+  constructor(public ctx: Context) {
+    this.root = new EntryGroup(ctx, this)
+    const entry = ctx.scope.entry
+    if (entry) entry.subtree = this
+  }
 
   ensureId(options: Partial<Entry.Options>) {
     if (!options.id) {
@@ -32,7 +39,7 @@ export abstract class EntryTree {
   }
 
   resolveGroup(id: string | null) {
-    const group = id ? this.entries[id]?.children : this.root
+    const group = id ? this.entries[id]?.subgroup : this.root
     if (!group) throw new Error(`entry ${id} not found`)
     return group
   }

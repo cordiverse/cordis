@@ -1,12 +1,12 @@
 import Module from 'node:module'
 import { pathToFileURL } from 'node:url'
 import { readFile } from 'node:fs/promises'
-import { Loader } from './shared.ts'
+import { Loader } from './loader.ts'
 import * as dotenv from 'dotenv'
 import * as path from 'node:path'
 
 export * from './internal.ts'
-export * from './shared.ts'
+export * from './loader.ts'
 
 type ModuleLoad = (request: string, parent: Module, isMain: boolean) => any
 

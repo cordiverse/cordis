@@ -35,7 +35,7 @@ export function apply(ctx: Context, config: Config = {}) {
   })
 
   ctx.on('loader/entry', (type, entry) => {
-    if (entry.options.transparent) return
+    if (entry.options.group) return
     ctx.logger('loader').info('%s plugin %c', type, entry.options.name)
   })
 

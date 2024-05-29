@@ -1,18 +1,19 @@
 import { Context, ForkScope, Inject } from '@cordisjs/core'
 import { Dict, isNullable } from 'cosmokit'
-import { Loader } from './shared.ts'
+import { Loader } from './loader.ts'
 import { EntryGroup } from './group.ts'
+import { EntryTree } from './tree.ts'
 
 export namespace Entry {
   export interface Options {
     id: string
     name: string
     config?: any
+    group?: boolean | null
     disabled?: boolean | null
     intercept?: Dict | null
     isolate?: Dict<true | string> | null
     inject?: string[] | Inject | null
-    transparent?: boolean | null
     when?: any
   }
 }
@@ -49,7 +50,8 @@ export class Entry {
   public fork?: ForkScope
   public suspend = false
   public options!: Entry.Options
-  public children?: EntryGroup
+  public subgroup?: EntryGroup
+  public subtree?: EntryTree
 
   constructor(public loader: Loader, public parent: EntryGroup) {}
 

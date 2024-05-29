@@ -2,11 +2,10 @@ import { Context } from '@cordisjs/core'
 import { dirname, extname, resolve } from 'node:path'
 import { access, constants, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { remove } from 'cosmokit'
 import * as yaml from 'js-yaml'
 import { Entry } from './entry.ts'
-import { EntryGroup } from './group.ts'
-import { Loader } from './shared.ts'
-import { remove } from 'cosmokit'
+import { Loader } from './loader.ts'
 import { EntryTree } from './tree.ts'
 
 export class LoaderFile {
@@ -101,8 +100,7 @@ export class ImportTree extends EntryTree {
   protected file!: LoaderFile
 
   constructor(public ctx: Context) {
-    super()
-    this.root = new EntryGroup(ctx, this)
+    super(ctx)
     ctx.on('ready', () => this.start())
     ctx.on('dispose', () => this.stop())
   }
