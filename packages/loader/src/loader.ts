@@ -8,6 +8,7 @@ import { ImportTree, LoaderFile } from './file.ts'
 export * from './entry.ts'
 export * from './file.ts'
 export * from './group.ts'
+export * from './tree.ts'
 
 declare module '@cordisjs/core' {
   interface Events {
@@ -100,13 +101,13 @@ export abstract class Loader extends ImportTree {
     })
 
     this.ctx.on('internal/before-service', (name) => {
-      for (const entry of Object.values(this.entries)) {
+      for (const entry of this.entries()) {
         entry.checkService(name)
       }
     }, { global: true })
 
     this.ctx.on('internal/service', (name) => {
-      for (const entry of Object.values(this.entries)) {
+      for (const entry of this.entries()) {
         entry.checkService(name)
       }
     }, { global: true })
@@ -116,7 +117,7 @@ export abstract class Loader extends ImportTree {
       if (scope.runtime === scope) {
         return scope.runtime.children.every(fork => checkInject(fork, name))
       }
-      if (scope.entry?.optionalInjects.includes(name)) return true
+      if (scope.entry?.deps.includes(name)) return true
       return checkInject(scope.parent.scope, name)
     }
 
@@ -175,17 +176,13 @@ export abstract class Loader extends ImportTree {
     return exports.default ?? exports
   }
 
-  _clearRealm(key: string, name: string) {
-    const hasRef = Object.values(this.entries).some((entry) => {
-      if (!entry.fork) return false
-      const label = entry.options.isolate?.[key]
-      if (!label) return false
-      return name === entry.resolveRealm(label)
-    })
-    if (hasRef) return
-    delete this.realms[name][key]
-    if (!Object.keys(this.realms[name]).length) {
-      delete this.realms[name]
+  _clearRealm(key: string, realm: string) {
+    for (const entry of this.entries()) {
+      if (entry.hasIsolate(key, realm)) return
+    }
+    delete this.realms[realm][key]
+    if (!Object.keys(this.realms[realm]).length) {
+      delete this.realms[realm]
     }
   }
 }

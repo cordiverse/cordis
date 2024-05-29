@@ -41,7 +41,6 @@ class Watcher extends Service {
 
   private base: string
   private watcher!: FSWatcher
-  private initialURL!: string
 
   /**
    * changes from externals E will always trigger a full reload
@@ -72,8 +71,6 @@ class Watcher extends Service {
   constructor(ctx: Context, public config: Watcher.Config) {
     super(ctx, 'hmr')
     this.base = resolve(ctx.baseDir, config.base || '')
-    // FIXME resolve deps based on different files
-    this.initialURL = ctx.loader.url
   }
 
   relative(filename: string) {
@@ -111,8 +108,8 @@ class Watcher extends Service {
         file.suspend = false
         return
       }
-      for (const loader of file.groups) {
-        loader.refresh()
+      for (const tree of file.trees) {
+        tree.refresh()
       }
     })
   }
@@ -200,19 +197,24 @@ class Watcher extends Service {
 
     // Plugin entry files should be "atomic".
     // Which means, reloading them will not cause any other reloads.
-    const names = new Set(Object.values(this.ctx.loader.entries).map(entry => entry.options.name))
-    for (const name of names) {
-      try {
-        const { url } = await this.ctx.loader.internal!.resolve(name, this.initialURL, {})
-        if (this.declined.has(url)) continue
-        const job = this.ctx.loader.internal!.loadCache.get(url)
-        const plugin = this.ctx.loader.unwrapExports(job?.module?.getNamespace())
-        const runtime = this.ctx.registry.get(plugin)
-        if (!job || !plugin) continue
-        pending.set(job, [plugin, runtime])
-        this.declined.add(url)
-      } catch (err) {
-        this.ctx.logger.warn(err)
+    const nameMap: Dict<Set<string>> = Object.create(null)
+    for (const entry of this.ctx.loader.entries()) {
+      (nameMap[entry.parent.tree.url] ??= new Set()).add(entry.options.name)
+    }
+    for (const baseURL in nameMap) {
+      for (const name of nameMap[baseURL]) {
+        try {
+          const { url } = await this.ctx.loader.internal!.resolve(name, baseURL, {})
+          if (this.declined.has(url)) continue
+          const job = this.ctx.loader.internal!.loadCache.get(url)
+          const plugin = this.ctx.loader.unwrapExports(job?.module?.getNamespace())
+          const runtime = this.ctx.registry.get(plugin)
+          if (!job || !plugin) continue
+          pending.set(job, [plugin, runtime])
+          this.declined.add(url)
+        } catch (err) {
+          this.ctx.logger.warn(err)
+        }
       }
     }
 

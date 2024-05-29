@@ -61,7 +61,7 @@ export default class MockLoader extends Loader {
   }
 
   expectFork(id: string) {
-    expect(this.entries[id]?.fork).to.be.ok
-    return this.entries[id]!.fork!
+    expect(this.store[id]?.fork).to.be.ok
+    return this.store[id]!.fork!
   }
 }

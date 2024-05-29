@@ -62,6 +62,13 @@ export class Entry {
     }
   }
 
+  hasIsolate(key: string, realm: string) {
+    if (!this.fork) return false
+    const label = this.options.isolate?.[key]
+    if (!label) return false
+    return realm === this.resolveRealm(label)
+  }
+
   patch(options: Partial<Entry.Options> = {}) {
     // step 1: prepare isolate map
     const ctx = this.fork?.parent ?? this.parent.ctx.extend({
@@ -112,13 +119,13 @@ export class Entry {
     swap(ctx[Context.isolate], newMap)
     swap(ctx[Context.intercept], this.options.intercept)
 
-    // step 4.2: update fork when options.config is updated
+    // step 4.2: update fork (only when options.config is updated)
     if (this.fork && 'config' in options) {
       this.suspend = true
       this.fork.update(this.options.config)
     }
 
-    // step 4.3: update service impl
+    // step 4.3: replace service impl
     for (const [, symbol1, symbol2, flag1, flag2] of diff) {
       if (flag1 === flag2 && ctx[symbol1] && !ctx[symbol2]) {
         ctx.root[symbol2] = ctx.root[symbol1]
@@ -146,13 +153,13 @@ export class Entry {
     return ctx
   }
 
-  get requiredInjects() {
+  get requiredDeps() {
     return Array.isArray(this.options.inject)
       ? this.options.inject
       : this.options.inject?.required ?? []
   }
 
-  get optionalInjects() {
+  get deps() {
     return Array.isArray(this.options.inject)
       ? this.options.inject
       : [
@@ -163,7 +170,7 @@ export class Entry {
 
   _check() {
     if (this.options.disabled) return false
-    for (const name of this.requiredInjects) {
+    for (const name of this.requiredDeps) {
       let key = this.parent.ctx[Context.isolate][name]
       const label = this.options.isolate?.[name]
       if (label) {
@@ -176,7 +183,7 @@ export class Entry {
   }
 
   async checkService(name: string) {
-    if (!this.requiredInjects.includes(name)) return
+    if (!this.requiredDeps.includes(name)) return
     const ready = this._check()
     if (ready && !this.fork) {
       await this.start()
