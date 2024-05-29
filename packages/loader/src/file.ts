@@ -174,15 +174,16 @@ export class ImportTree extends EntryTree {
   }
 }
 
-export namespace Import {
+export namespace ImportConfig {
   export interface Config {
     url: string
-    // disabled?: boolean
   }
 }
 
-export class Import extends ImportTree {
-  constructor(ctx: Context, public config: Import.Config) {
+export class ImportConfig extends ImportTree {
+  static reusable = true
+
+  constructor(ctx: Context, public config: ImportConfig.Config) {
     super(ctx)
   }
 
