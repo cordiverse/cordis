@@ -4,6 +4,8 @@ import { Entry } from './entry.ts'
 import { EntryGroup } from './group.ts'
 
 export abstract class EntryTree {
+  static readonly sep = ':'
+
   public url!: string
   public root: EntryGroup
   public store: Dict<Entry> = Object.create(null)
@@ -31,10 +33,24 @@ export abstract class EntryTree {
     return options.id!
   }
 
+  resolve(id: string) {
+    const parts = id.split(EntryTree.sep)
+    let tree: EntryTree | undefined = this
+    const final = parts.pop()!
+    for (const part of parts) {
+      tree = tree.store[part]?.subtree
+      if (!tree) throw new Error(`cannot resolve entry ${id}`)
+    }
+    const entry = tree.store[final]
+    if (!entry) throw new Error(`cannot resolve entry ${id}`)
+    return entry
+  }
+
   resolveGroup(id: string | null) {
-    const group = id ? this.store[id]?.subgroup : this.root
-    if (!group) throw new Error(`entry ${id} not found`)
-    return group
+    if (!id) return this.root
+    const entry = this.resolve(id)
+    if (!entry.subgroup) throw new Error(`entry ${id} is not a group`)
+    return entry.subgroup
   }
 
   async create(options: Omit<Entry.Options, 'id'>, parent: string | null = null, position = Infinity) {
@@ -45,17 +61,14 @@ export abstract class EntryTree {
   }
 
   remove(id: string) {
-    const entry = this.store[id]
-    if (!entry) throw new Error(`entry ${id} not found`)
+    const entry = this.resolve(id)
     entry.parent.remove(id)
     entry.parent.tree.write()
   }
 
   async update(id: string, options: Omit<Entry.Options, 'id' | 'name'>, parent?: string | null, position?: number) {
-    const entry = this.store[id]
-    if (!entry) throw new Error(`entry ${id} not found`)
+    const entry = this.resolve(id)
     const source = entry.parent
-    source.tree.write()
     if (parent !== undefined) {
       const target = this.resolveGroup(parent)
       source.unlink(entry.options)
@@ -63,6 +76,7 @@ export abstract class EntryTree {
       target.tree.write()
       entry.parent = target
     }
+    source.tree.write()
     return entry.update(options)
   }
 

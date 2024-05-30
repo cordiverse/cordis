@@ -17,7 +17,7 @@ export class EntryGroup {
     // so we need to update the parent reference.
     entry.parent = this
     await entry.update(options, true)
-    return id
+    return entry.id
   }
 
   unlink(options: Entry.Options) {

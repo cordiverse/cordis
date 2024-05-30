@@ -131,7 +131,7 @@ export abstract class Loader extends ImportTree {
   }
 
   locate(ctx = this[Context.current]) {
-    return this._locate(ctx.scope).map(entry => entry.options.id)
+    return this._locate(ctx.scope).map(entry => entry.id)
   }
 
   _locate(scope: EffectScope): Entry[] {

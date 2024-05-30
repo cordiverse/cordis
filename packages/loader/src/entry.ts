@@ -44,7 +44,7 @@ function sortKeys<T extends {}>(object: T, prepend = ['id', 'name'], append = ['
 }
 
 export class Entry {
-  static key = Symbol.for('cordis.entry')
+  static readonly key = Symbol.for('cordis.entry')
 
   public fork?: ForkScope
   public suspend = false
@@ -54,9 +54,17 @@ export class Entry {
 
   constructor(public loader: Loader, public parent: EntryGroup) {}
 
+  get id() {
+    let id = this.options.id
+    if (this.parent.tree.ctx.scope.entry) {
+      id = this.parent.tree.ctx.scope.entry.id + EntryTree.sep + id
+    }
+    return id
+  }
+
   resolveRealm(label: string | true) {
     if (label === true) {
-      return '#' + this.options.id
+      return '#' + this.id
     } else {
       return '@' + label
     }
@@ -87,7 +95,7 @@ export class Entry {
     for (const key in { ...oldMap, ...newMap, ...this.loader.delims }) {
       if (newMap[key] === oldMap[key]) continue
       const delim = this.loader.delims[key] ??= Symbol(`delim:${key}`)
-      ctx[delim] = Symbol(`${key}#${this.options.id}`)
+      ctx[delim] = Symbol(`${key}#${this.id}`)
       for (const symbol of [oldMap[key], newMap[key]]) {
         const value = symbol && ctx[symbol]
         if (!(value instanceof Object)) continue
