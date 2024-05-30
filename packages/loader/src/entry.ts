@@ -62,6 +62,56 @@ export class Entry {
     return id
   }
 
+  get requiredDeps() {
+    return Array.isArray(this.options.inject)
+      ? this.options.inject
+      : this.options.inject?.required ?? []
+  }
+
+  get deps() {
+    return Array.isArray(this.options.inject)
+      ? this.options.inject
+      : [
+        ...this.options.inject?.required ?? [],
+        ...this.options.inject?.optional ?? [],
+      ]
+  }
+
+  get disabled() {
+    // group is always enabled
+    if (this.options.group) return false
+    let entry: Entry | undefined = this
+    do {
+      if (entry.options.disabled) return true
+      entry = entry.parent.ctx.scope.entry
+    } while (entry)
+    return false
+  }
+
+  _check() {
+    if (this.disabled) return false
+    for (const name of this.requiredDeps) {
+      let key = this.parent.ctx[Context.isolate][name]
+      const label = this.options.isolate?.[name]
+      if (label) {
+        const realm = this.resolveRealm(label)
+        key = (this.loader.realms[realm] ?? Object.create(null))[name] ?? Symbol(`${name}${realm}`)
+      }
+      if (!key || isNullable(this.parent.ctx[key])) return false
+    }
+    return true
+  }
+
+  async checkService(name: string) {
+    if (!this.requiredDeps.includes(name)) return
+    const ready = this._check()
+    if (ready && !this.fork) {
+      await this.start()
+    } else if (!ready && this.fork) {
+      await this.stop()
+    }
+  }
+
   resolveRealm(label: string | true) {
     if (label === true) {
       return '#' + this.id
@@ -131,6 +181,13 @@ export class Entry {
     if (this.fork && 'config' in options) {
       this.suspend = true
       this.fork.update(this.options.config)
+    } else if (this.subgroup && 'disabled' in options) {
+      const tree = this.subtree ?? this.parent.tree
+      for (const options of this.subgroup.data) {
+        tree.store[options.id].update({
+          disabled: options.disabled,
+        })
+      }
     }
 
     // step 4.3: replace service impl
@@ -159,45 +216,6 @@ export class Entry {
     }
 
     return ctx
-  }
-
-  get requiredDeps() {
-    return Array.isArray(this.options.inject)
-      ? this.options.inject
-      : this.options.inject?.required ?? []
-  }
-
-  get deps() {
-    return Array.isArray(this.options.inject)
-      ? this.options.inject
-      : [
-        ...this.options.inject?.required ?? [],
-        ...this.options.inject?.optional ?? [],
-      ]
-  }
-
-  _check() {
-    if (this.options.disabled) return false
-    for (const name of this.requiredDeps) {
-      let key = this.parent.ctx[Context.isolate][name]
-      const label = this.options.isolate?.[name]
-      if (label) {
-        const realm = this.resolveRealm(label)
-        key = (this.loader.realms[realm] ?? Object.create(null))[name] ?? Symbol(`${name}${realm}`)
-      }
-      if (!key || isNullable(this.parent.ctx[key])) return false
-    }
-    return true
-  }
-
-  async checkService(name: string) {
-    if (!this.requiredDeps.includes(name)) return
-    const ready = this._check()
-    if (ready && !this.fork) {
-      await this.start()
-    } else if (!ready && this.fork) {
-      await this.stop()
-    }
   }
 
   async update(options: Partial<Entry.Options>, override = false) {

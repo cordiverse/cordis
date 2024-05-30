@@ -81,17 +81,29 @@ export abstract class Loader extends ImportTree {
     })
 
     this.ctx.on('internal/fork', (fork) => {
+      // 1. set `fork.entry`
       if (fork.parent[Entry.key]) {
         fork.entry = fork.parent[Entry.key]
         delete fork.parent[Entry.key]
       }
-      // fork.uid: fork is created (we only care about fork dispose event)
-      // fork.parent.runtime.plugin !== group: fork is not tracked by loader
-      if (fork.uid || !fork.entry) return
-      // fork is disposed by main scope (e.g. hmr plugin)
-      // normal: ctx.dispose() -> fork / runtime dispose -> delete(plugin)
+
+      // 2. handle self-dispose
+      // We only care about `ctx.scope.dispose()`, so we need to filter out other cases.
+
+      // case 1: fork is created
+      if (fork.uid) return
+
+      // case 2: fork is not tracked by loader
+      if (!fork.entry) return
+
+      // case 3: fork is disposed outside of plugin
+      // self-dispose: ctx.scope.dispose() -> fork / runtime dispose -> delete(plugin)
       // hmr: delete(plugin) -> runtime dispose -> fork dispose
       if (!this.ctx.registry.has(fork.runtime.plugin)) return
+
+      // case 4: fork is disposed by inject checker / config file hmr / ancestor group
+      if (!fork.entry._check()) return
+
       fork.parent.emit('loader/entry', 'unload', fork.entry)
       fork.entry.options.disabled = true
       fork.entry.fork = undefined
