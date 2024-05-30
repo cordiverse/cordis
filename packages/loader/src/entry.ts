@@ -43,16 +43,68 @@ function sortKeys<T extends {}>(object: T, prepend = ['id', 'name'], append = ['
   return Object.assign(object, Object.fromEntries([...part1, ...rest, ...part2]))
 }
 
+export abstract class Realm {
+  protected store: Dict<symbol> = Object.create(null)
+
+  abstract get suffix(): string
+
+  access(key: string, create = false) {
+    if (create) {
+      return this.store[key] ??= Symbol(`${key}${this.suffix}`)
+    } else {
+      return this.store[key] ?? Symbol(`${key}${this.suffix}`)
+    }
+  }
+
+  delete(key: string) {
+    delete this.store[key]
+  }
+}
+
+export class LocalRealm extends Realm {
+  constructor(private entry: Entry) {
+    super()
+  }
+
+  get suffix() {
+    return '#' + this.entry.options.id
+  }
+}
+
+export class GlobalRealm extends Realm {
+  constructor(private loader: Loader, private label: string) {
+    super()
+  }
+
+  get suffix() {
+    return '@' + this.label
+  }
+
+  gc(key: string) {
+    // realm garbage collection
+    for (const entry of this.loader.entries()) {
+      // has reference to this realm
+      if (entry.options.isolate?.[key] === this.label) return
+    }
+    this.delete(key)
+    if (!Object.keys(this.store).length) {
+      delete this.loader.realms[this.suffix]
+    }
+  }
+}
+
 export class Entry {
   static readonly key = Symbol.for('cordis.entry')
 
   public fork?: ForkScope
   public suspend = false
+  public parent!: EntryGroup
   public options!: Entry.Options
   public subgroup?: EntryGroup
   public subtree?: EntryTree
+  public realm = new LocalRealm(this)
 
-  constructor(public loader: Loader, public parent: EntryGroup) {}
+  constructor(public loader: Loader) {}
 
   get id() {
     let id = this.options.id
@@ -91,15 +143,26 @@ export class Entry {
   _check() {
     if (this.disabled) return false
     for (const name of this.requiredDeps) {
-      let key = this.parent.ctx[Context.isolate][name]
+      let key: symbol | undefined = this.parent.ctx[Context.isolate][name]
       const label = this.options.isolate?.[name]
-      if (label) {
-        const realm = this.resolveRealm(label)
-        key = (this.loader.realms[realm] ?? Object.create(null))[name] ?? Symbol(`${name}${realm}`)
-      }
+      if (label) key = this.access(name, label)
       if (!key || isNullable(this.parent.ctx[key])) return false
     }
     return true
+  }
+
+  access(key: string, label: string | true, create: true): symbol
+  access(key: string, label: string | true, create?: boolean): symbol | undefined
+  access(key: string, label: string | true, create = false) {
+    let realm: Realm | undefined
+    if (label === true) {
+      realm = this.realm
+    } else if (create) {
+      realm = this.loader.realms[label] ??= new GlobalRealm(this.loader, label)
+    } else {
+      realm = this.loader.realms[label]
+    }
+    return realm?.access(key, create)
   }
 
   async checkService(name: string) {
@@ -112,21 +175,6 @@ export class Entry {
     }
   }
 
-  resolveRealm(label: string | true) {
-    if (label === true) {
-      return '#' + this.id
-    } else {
-      return '@' + label
-    }
-  }
-
-  hasIsolate(key: string, realm: string) {
-    if (!this.fork) return false
-    const label = this.options.isolate?.[key]
-    if (!label) return false
-    return realm === this.resolveRealm(label)
-  }
-
   patch(options: Partial<Entry.Options> = {}) {
     // step 1: prepare isolate map
     const ctx = this.fork?.parent ?? this.parent.ctx.extend({
@@ -135,8 +183,7 @@ export class Entry {
     })
     const newMap: Dict<symbol> = Object.create(this.parent.ctx[Context.isolate])
     for (const [key, label] of Object.entries(this.options.isolate ?? {})) {
-      const realm = this.resolveRealm(label)
-      newMap[key] = (this.loader.realms[realm] ??= Object.create(null))[key] ??= Symbol(`${key}${realm}`)
+      newMap[key] = this.access(key, label, true)
     }
 
     // step 2: generate service diff
@@ -240,9 +287,8 @@ export class Entry {
       await this.stop()
     } else if (this.fork) {
       for (const [key, label] of Object.entries(legacy.isolate ?? {})) {
-        if (this.options.isolate?.[key] === label) continue
-        const name = this.resolveRealm(label)
-        this.loader._clearRealm(key, name)
+        if (this.options.isolate?.[key] === label || label === true) continue
+        this.loader.realms[label]?.gc(key)
       }
       this.patch(options)
     } else {
@@ -266,11 +312,12 @@ export class Entry {
   async stop() {
     this.fork?.dispose()
     this.fork = undefined
+  }
 
-    // realm garbage collection
+  dispose() {
     for (const [key, label] of Object.entries(this.options.isolate ?? {})) {
-      const name = this.resolveRealm(label)
-      this.loader._clearRealm(key, name)
+      if (label === true) continue
+      this.loader.realms[label]?.gc(key)
     }
   }
 }

@@ -1,7 +1,7 @@
 import { Context, EffectScope } from '@cordisjs/core'
 import { Dict, isNullable } from 'cosmokit'
 import { ModuleLoader } from './internal.ts'
-import { Entry } from './entry.ts'
+import { Entry, GlobalRealm } from './entry.ts'
 import { ImportTree, LoaderFile } from './file.ts'
 
 export * from './entry.ts'
@@ -57,7 +57,7 @@ export abstract class Loader extends ImportTree {
   }
 
   public files: Dict<LoaderFile> = Object.create(null)
-  public realms: Dict<Dict<symbol>> = Object.create(null)
+  public realms: Dict<GlobalRealm> = Object.create(null)
   public delims: Dict<symbol> = Object.create(null)
   public internal?: ModuleLoader
 
@@ -65,7 +65,6 @@ export abstract class Loader extends ImportTree {
     super(ctx)
 
     this.ctx.set('loader', this)
-    this.realms['#'] = ctx.root[Context.isolate]
 
     this.ctx.on('internal/update', (fork) => {
       if (!fork.entry) return
@@ -96,18 +95,18 @@ export abstract class Loader extends ImportTree {
       // case 2: fork is not tracked by loader
       if (!fork.entry) return
 
-      // case 3: fork is disposed outside of plugin
+      // case 3: fork is disposed on behalf of plugin deletion (such as plugin hmr)
       // self-dispose: ctx.scope.dispose() -> fork / runtime dispose -> delete(plugin)
-      // hmr: delete(plugin) -> runtime dispose -> fork dispose
+      // plugin hmr: delete(plugin) -> runtime dispose -> fork dispose
       if (!this.ctx.registry.has(fork.runtime.plugin)) return
 
-      // case 4: fork is disposed by inject checker / config file hmr / ancestor group
+      // case 4: fork is disposed by loader behavior
+      // such as inject checker, config file update, ancestor group disable
       if (!fork.entry._check()) return
 
       fork.parent.emit('loader/entry', 'unload', fork.entry)
       fork.entry.options.disabled = true
       fork.entry.fork = undefined
-      fork.entry.stop()
       fork.entry.parent.tree.write()
     })
 
@@ -168,16 +167,6 @@ export abstract class Loader extends ImportTree {
     // https://esbuild.github.io/content-types/#default-interop
     if (!exports.__esModule) return exports
     return exports.default ?? exports
-  }
-
-  _clearRealm(key: string, realm: string) {
-    for (const entry of this.entries()) {
-      if (entry.hasIsolate(key, realm)) return
-    }
-    delete this.realms[realm][key]
-    if (!Object.keys(this.realms[realm]).length) {
-      delete this.realms[realm]
-    }
   }
 }
 

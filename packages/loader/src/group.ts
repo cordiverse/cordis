@@ -3,6 +3,8 @@ import { Entry } from './entry.ts'
 import { EntryTree } from './tree.ts'
 
 export class EntryGroup {
+  static readonly key = Symbol.for('cordis.group')
+
   public data: Entry.Options[] = []
 
   constructor(public ctx: Context, public tree: EntryTree) {
@@ -12,7 +14,7 @@ export class EntryGroup {
 
   async create(options: Omit<Entry.Options, 'id'>) {
     const id = this.tree.ensureId(options)
-    const entry = this.tree.store[id] ??= new Entry(this.ctx.loader, this)
+    const entry = this.tree.store[id] ??= new Entry(this.ctx.loader)
     // Entry may be moved from another group,
     // so we need to update the parent reference.
     entry.parent = this
@@ -30,6 +32,7 @@ export class EntryGroup {
     const entry = this.tree.store[id]
     if (!entry) return
     entry.stop()
+    entry.dispose()
     this.unlink(entry.options)
     delete this.tree.store[id]
   }
@@ -60,9 +63,9 @@ export class EntryGroup {
 }
 
 export class Group extends EntryGroup {
-  static key = Symbol('cordis.group')
   static reusable = true
   static initial: Omit<Entry.Options, 'id'>[] = []
+  static readonly [EntryGroup.key] = true
 
   // TODO support options
   constructor(public ctx: Context) {
