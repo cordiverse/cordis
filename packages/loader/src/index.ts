@@ -51,14 +51,20 @@ class NodeLoader extends Loader {
     const originalLoad: ModuleLoad = Module['_load']
     Module['_load'] = ((request, parent, isMain) => {
       try {
-        // TODO support hmr for cjs-esm interop
-        const result = this.internal?.resolveSync(request, pathToFileURL(parent.filename).href, {})
-        const job = result?.format === 'module'
-          ? this.internal?.loadCache.get(result.url)
-          : undefined
-        if (job) return job?.module?.getNamespace()
-      } catch {}
-      return originalLoad(request, parent, isMain)
+        return originalLoad(request, parent, isMain)
+      } catch (e: any) {
+        if (e.code !== 'ERR_REQUIRE_ESM' || !this.internal) throw e
+        try {
+          // TODO support hmr for cjs-esm interop
+          const result = this.internal.resolveSync(request, pathToFileURL(parent.filename).href, {})
+          const job = result?.format === 'module'
+            ? this.internal.loadCache.get(result.url)
+            : undefined
+          if (job) return job?.module?.getNamespace()
+        } catch {
+          throw e
+        }
+      }
     }) as ModuleLoad
 
     await super.start()
