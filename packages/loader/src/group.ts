@@ -1,18 +1,18 @@
 import { Context } from '@cordisjs/core'
-import { Entry } from './entry.ts'
+import { Entry, EntryOptions } from './entry.ts'
 import { EntryTree } from './tree.ts'
 
 export class EntryGroup {
   static readonly key = Symbol.for('cordis.group')
 
-  public data: Entry.Options[] = []
+  public data: EntryOptions[] = []
 
   constructor(public ctx: Context, public tree: EntryTree) {
     const entry = ctx.scope.entry
     if (entry) entry.subgroup = this
   }
 
-  async create(options: Omit<Entry.Options, 'id'>) {
+  async create(options: Omit<EntryOptions, 'id'>) {
     const id = this.tree.ensureId(options)
     const entry = this.tree.store[id] ??= new Entry(this.ctx.loader)
     // Entry may be moved from another group,
@@ -22,7 +22,7 @@ export class EntryGroup {
     return entry.id
   }
 
-  unlink(options: Entry.Options) {
+  unlink(options: EntryOptions) {
     const config = this.data
     const index = config.indexOf(options)
     if (index >= 0) config.splice(index, 1)
@@ -32,13 +32,13 @@ export class EntryGroup {
     const entry = this.tree.store[id]
     if (!entry) return
     entry.stop()
-    entry.dispose()
     this.unlink(entry.options)
     delete this.tree.store[id]
+    this.ctx.emit('loader/partial-dispose', entry, entry.options, false)
   }
 
-  update(config: Entry.Options[]) {
-    const oldConfig = this.data as Entry.Options[]
+  update(config: EntryOptions[]) {
+    const oldConfig = this.data as EntryOptions[]
     this.data = config
     const oldMap = Object.fromEntries(oldConfig.map(options => [options.id, options]))
     const newMap = Object.fromEntries(config.map(options => [options.id ?? Symbol('anonymous'), options]))
@@ -64,14 +64,14 @@ export class EntryGroup {
 
 export class Group extends EntryGroup {
   static reusable = true
-  static initial: Omit<Entry.Options, 'id'>[] = []
+  static initial: Omit<EntryOptions, 'id'>[] = []
   static readonly [EntryGroup.key] = true
 
   // TODO support options
   constructor(public ctx: Context) {
     super(ctx, ctx.scope.entry!.parent.tree)
     ctx.on('dispose', () => this.stop())
-    ctx.accept((config: Entry.Options[]) => {
+    ctx.accept((config: EntryOptions[]) => {
       this.update(config)
     }, { passive: true, immediate: true })
   }

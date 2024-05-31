@@ -4,7 +4,7 @@ import { access, constants, readdir, readFile, stat, writeFile } from 'node:fs/p
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { remove } from 'cosmokit'
 import * as yaml from 'js-yaml'
-import { Entry } from './entry.ts'
+import { EntryOptions } from './entry.ts'
 import { Loader } from './loader.ts'
 import { EntryTree } from './tree.ts'
 import { JsExpr } from './utils.ts'
@@ -46,7 +46,7 @@ export class LoaderFile {
     }
   }
 
-  async read(): Promise<Entry.Options[]> {
+  async read(): Promise<EntryOptions[]> {
     if (this.type === 'application/yaml') {
       return yaml.load(await readFile(this.name, 'utf8'), { schema }) as any
     } else if (this.type === 'application/json') {
@@ -58,7 +58,7 @@ export class LoaderFile {
     }
   }
 
-  private async _write(config: Entry.Options[]) {
+  private async _write(config: EntryOptions[]) {
     this.suspend = true
     if (this.readonly) {
       throw new Error(`cannot overwrite readonly config`)
@@ -70,8 +70,7 @@ export class LoaderFile {
     }
   }
 
-  write(config: Entry.Options[]) {
-    this.loader.ctx.emit('config')
+  write(config: EntryOptions[]) {
     clearTimeout(this._writeTask)
     this._writeTask = setTimeout(() => {
       this._writeTask = undefined
@@ -123,7 +122,8 @@ export class ImportTree extends EntryTree {
   }
 
   write() {
-    return this.file!.write(this.root.data)
+    this.ctx.emit('loader/config-update')
+    return this.file.write(this.root.data)
   }
 
   _createFile(filename: string, type: string) {

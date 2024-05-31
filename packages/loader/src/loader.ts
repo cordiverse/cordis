@@ -1,8 +1,9 @@
 import { Context, EffectScope } from '@cordisjs/core'
 import { Dict, isNullable } from 'cosmokit'
 import { ModuleLoader } from './internal.ts'
-import { Entry, GlobalRealm } from './entry.ts'
+import { Entry, EntryOptions, EntryUpdateMeta } from './entry.ts'
 import { ImportTree, LoaderFile } from './file.ts'
+import * as inject from './inject.ts'
 
 export * from './entry.ts'
 export * from './file.ts'
@@ -11,10 +12,14 @@ export * from './tree.ts'
 
 declare module '@cordisjs/core' {
   interface Events {
-    'config'(): void
     'exit'(signal: NodeJS.Signals): Promise<void>
-    'loader/entry'(type: string, entry: Entry): void
-    'loader/patch'(entry: Entry, legacy?: Entry.Options): void
+    'loader/config-update'(): void
+    'loader/entry-fork'(entry: Entry, type: string): void
+    'loader/entry-check'(entry: Entry): boolean | undefined
+    'loader/partial-dispose'(entry: Entry, legacy: Partial<EntryOptions>, active: boolean): void
+    'loader/context-init'(entry: Entry, ctx: Context): void
+    'loader/before-patch'(this: EntryUpdateMeta, entry: Entry, ctx: Context): void
+    'loader/after-patch'(this: EntryUpdateMeta, entry: Entry, ctx: Context): void
   }
 
   interface Context {
@@ -36,7 +41,7 @@ declare module '@cordisjs/core' {
 export namespace Loader {
   export interface Config {
     name: string
-    initial?: Omit<Entry.Options, 'id'>[]
+    initial?: Omit<EntryOptions, 'id'>[]
     filename?: string
   }
 }
@@ -57,21 +62,20 @@ export abstract class Loader extends ImportTree {
   }
 
   public files: Dict<LoaderFile> = Object.create(null)
-  public realms: Dict<GlobalRealm> = Object.create(null)
   public delims: Dict<symbol> = Object.create(null)
   public internal?: ModuleLoader
 
   constructor(public ctx: Context, public config: Loader.Config) {
     super(ctx)
 
-    this.ctx.set('loader', this)
+    ctx.set('loader', this)
 
-    this.ctx.on('internal/update', (fork) => {
+    ctx.on('internal/update', (fork) => {
       if (!fork.entry) return
-      fork.parent.emit('loader/entry', 'reload', fork.entry)
+      fork.parent.emit('loader/entry-fork', fork.entry, 'reload')
     })
 
-    this.ctx.on('internal/before-update', (fork, config) => {
+    ctx.on('internal/before-update', (fork, config) => {
       if (!fork.entry) return
       if (fork.entry.suspend) return fork.entry.suspend = false
       const { schema } = fork.runtime
@@ -79,7 +83,7 @@ export abstract class Loader extends ImportTree {
       fork.entry.parent.tree.write()
     })
 
-    this.ctx.on('internal/fork', (fork) => {
+    ctx.on('internal/fork', (fork) => {
       // 1. set `fork.entry`
       if (fork.parent[Entry.key]) {
         fork.entry = fork.parent[Entry.key]
@@ -98,42 +102,20 @@ export abstract class Loader extends ImportTree {
       // case 3: fork is disposed on behalf of plugin deletion (such as plugin hmr)
       // self-dispose: ctx.scope.dispose() -> fork / runtime dispose -> delete(plugin)
       // plugin hmr: delete(plugin) -> runtime dispose -> fork dispose
-      if (!this.ctx.registry.has(fork.runtime.plugin)) return
+      if (!ctx.registry.has(fork.runtime.plugin)) return
+
+      fork.entry.fork = undefined
+      fork.parent.emit('loader/entry-fork', fork.entry, 'unload')
 
       // case 4: fork is disposed by loader behavior
       // such as inject checker, config file update, ancestor group disable
       if (!fork.entry._check()) return
 
-      fork.parent.emit('loader/entry', 'unload', fork.entry)
       fork.entry.options.disabled = true
-      fork.entry.fork = undefined
       fork.entry.parent.tree.write()
     })
 
-    this.ctx.on('internal/before-service', (name) => {
-      for (const entry of this.entries()) {
-        entry.checkService(name)
-      }
-    }, { global: true })
-
-    this.ctx.on('internal/service', (name) => {
-      for (const entry of this.entries()) {
-        entry.checkService(name)
-      }
-    }, { global: true })
-
-    const checkInject = (scope: EffectScope, name: string) => {
-      if (!scope.runtime.plugin) return false
-      if (scope.runtime === scope) {
-        return scope.runtime.children.every(fork => checkInject(fork, name))
-      }
-      if (scope.entry?.deps.includes(name)) return true
-      return checkInject(scope.parent.scope, name)
-    }
-
-    this.ctx.on('internal/inject', function (this, name) {
-      return checkInject(this.scope, name)
-    })
+    ctx.plugin(inject)
   }
 
   async start() {

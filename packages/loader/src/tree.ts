@@ -1,6 +1,6 @@
 import { Context } from '@cordisjs/core'
 import { Dict } from 'cosmokit'
-import { Entry } from './entry.ts'
+import { Entry, EntryOptions } from './entry.ts'
 import { EntryGroup } from './group.ts'
 
 export abstract class EntryTree {
@@ -25,7 +25,7 @@ export abstract class EntryTree {
     }
   }
 
-  ensureId(options: Partial<Entry.Options>) {
+  ensureId(options: Partial<EntryOptions>) {
     if (!options.id) {
       do {
         options.id = Math.random().toString(36).slice(2, 8)
@@ -54,9 +54,9 @@ export abstract class EntryTree {
     return entry.subgroup
   }
 
-  async create(options: Omit<Entry.Options, 'id'>, parent: string | null = null, position = Infinity) {
+  async create(options: Omit<EntryOptions, 'id'>, parent: string | null = null, position = Infinity) {
     const group = this.resolveGroup(parent)
-    group.data.splice(position, 0, options as Entry.Options)
+    group.data.splice(position, 0, options as EntryOptions)
     group.tree.write()
     return group.create(options)
   }
@@ -67,7 +67,7 @@ export abstract class EntryTree {
     entry.parent.tree.write()
   }
 
-  async update(id: string, options: Omit<Entry.Options, 'id' | 'name'>, parent?: string | null, position?: number) {
+  async update(id: string, options: Omit<EntryOptions, 'id' | 'name'>, parent?: string | null, position?: number) {
     const entry = this.resolve(id)
     const source = entry.parent
     if (parent !== undefined) {

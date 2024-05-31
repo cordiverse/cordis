@@ -1,6 +1,6 @@
 import { Dict } from 'cosmokit'
 import { Context, ForkScope, Plugin } from '@cordisjs/core'
-import { LoaderFile, Entry, Group, Loader } from '../src'
+import { EntryOptions, Group, Loader, LoaderFile } from '../src'
 import { Mock, mock } from 'node:test'
 import { expect } from 'chai'
 
@@ -14,13 +14,13 @@ declare module '../src/index.ts' {
 }
 
 class MockLoaderFile extends LoaderFile {
-  data: Entry.Options[] = []
+  data: EntryOptions[] = []
 
   async read() {
     return this.data
   }
 
-  write(data: Entry.Options[]) {
+  write(data: EntryOptions[]) {
     this.data = data
   }
 }
