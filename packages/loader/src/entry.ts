@@ -1,4 +1,4 @@
-import { ForkScope } from '@cordisjs/core'
+import { Context, ForkScope } from '@cordisjs/core'
 import { isNullable } from 'cosmokit'
 import { Loader } from './loader.ts'
 import { EntryGroup } from './group.ts'
@@ -34,6 +34,7 @@ function sortKeys<T extends {}>(object: T, prepend = ['id', 'name'], append = ['
 export class Entry {
   static readonly key = Symbol.for('cordis.entry')
 
+  public ctx: Context
   public fork?: ForkScope
   public suspend = false
   public parent!: EntryGroup
@@ -41,7 +42,10 @@ export class Entry {
   public subgroup?: EntryGroup
   public subtree?: EntryTree
 
-  constructor(public loader: Loader) {}
+  constructor(public loader: Loader) {
+    this.ctx = loader.ctx.extend()
+    this.ctx.emit('loader/entry-init', this)
+  }
 
   get id() {
     let id = this.options.id
@@ -67,20 +71,13 @@ export class Entry {
     return !this.parent.ctx.bail('loader/entry-check', this)
   }
 
-  createContext() {
-    const ctx = this.parent.ctx.extend()
-    ctx.emit('loader/context-init', this, ctx)
-    return ctx
-  }
-
   patch(options: Partial<EntryOptions> = {}) {
     // step 1: prepare isolate map
-    const ctx = this.fork?.parent ?? this.createContext()
     const meta = {} as EntryUpdateMeta
-    ctx.emit(meta, 'loader/before-patch', this, ctx)
+    this.ctx.emit(meta, 'loader/before-patch', this)
 
     // step 1: set prototype for transferred context
-    Object.setPrototypeOf(ctx, this.parent.ctx)
+    Object.setPrototypeOf(this.ctx, this.parent.ctx)
 
     if (this.fork && 'config' in options) {
       // step 2: update fork (when options.config is updated)
@@ -96,8 +93,8 @@ export class Entry {
       }
     }
 
-    ctx.emit(meta, 'loader/after-patch', this, ctx)
-    return ctx
+    this.ctx.emit(meta, 'loader/after-patch', this)
+    return this.ctx
   }
 
   async refresh() {
@@ -144,10 +141,10 @@ export class Entry {
     })
     if (!exports) return
     const plugin = this.loader.unwrapExports(exports)
-    const ctx = this.patch()
-    ctx[Entry.key] = this
-    this.fork = ctx.plugin(plugin, this.options.config)
-    ctx.emit('loader/entry-fork', this, 'apply')
+    this.patch()
+    this.ctx[Entry.key] = this
+    this.fork = this.ctx.plugin(plugin, this.options.config)
+    this.ctx.emit('loader/entry-fork', this, 'apply')
   }
 
   async stop() {

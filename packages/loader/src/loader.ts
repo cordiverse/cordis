@@ -4,6 +4,7 @@ import { ModuleLoader } from './internal.ts'
 import { Entry, EntryOptions, EntryUpdateMeta } from './entry.ts'
 import { ImportTree, LoaderFile } from './file.ts'
 import * as inject from './inject.ts'
+import * as isolate from './isolate.ts'
 
 export * from './entry.ts'
 export * from './file.ts'
@@ -14,17 +15,17 @@ declare module '@cordisjs/core' {
   interface Events {
     'exit'(signal: NodeJS.Signals): Promise<void>
     'loader/config-update'(): void
+    'loader/entry-init'(entry: Entry): void
     'loader/entry-fork'(entry: Entry, type: string): void
     'loader/entry-check'(entry: Entry): boolean | undefined
     'loader/partial-dispose'(entry: Entry, legacy: Partial<EntryOptions>, active: boolean): void
-    'loader/context-init'(entry: Entry, ctx: Context): void
-    'loader/before-patch'(this: EntryUpdateMeta, entry: Entry, ctx: Context): void
-    'loader/after-patch'(this: EntryUpdateMeta, entry: Entry, ctx: Context): void
+    'loader/before-patch'(this: EntryUpdateMeta, entry: Entry): void
+    'loader/after-patch'(this: EntryUpdateMeta, entry: Entry): void
   }
 
   interface Context {
     baseDir: string
-    loader: Loader
+    loader: Loader<this>
   }
 
   interface EnvData {
@@ -46,11 +47,13 @@ export namespace Loader {
   }
 }
 
-export abstract class Loader extends ImportTree {
+export abstract class Loader<C extends Context = Context> extends ImportTree {
   // TODO auto inject optional when provided?
   static inject = {
     optional: ['loader'],
   }
+
+  private [Context.current]!: C
 
   // process
   public envData = process.env.CORDIS_SHARED
@@ -65,7 +68,7 @@ export abstract class Loader extends ImportTree {
   public delims: Dict<symbol> = Object.create(null)
   public internal?: ModuleLoader
 
-  constructor(public ctx: Context, public config: Loader.Config) {
+  constructor(public ctx: C, public config: Loader.Config) {
     super(ctx)
 
     ctx.set('loader', this)
@@ -116,6 +119,7 @@ export abstract class Loader extends ImportTree {
     })
 
     ctx.plugin(inject)
+    ctx.plugin(isolate)
   }
 
   async start() {
@@ -127,7 +131,7 @@ export abstract class Loader extends ImportTree {
     return this._locate(ctx.scope).map(entry => entry.id)
   }
 
-  _locate(scope: EffectScope): Entry[] {
+  _locate(scope: EffectScope<C>): Entry[] {
     // root scope
     if (!scope.runtime.plugin) return []
 
