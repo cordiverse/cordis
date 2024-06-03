@@ -1,29 +1,30 @@
 {
   "name": "cordis",
   "description": "Meta-Framework for Modern JavaScript Applications",
-  "version": "3.15.2",
+  "version": "3.16.1",
   "type": "module",
-  "main": "lib/index.cjs",
-  "module": "lib/index.mjs",
-  "types": "lib/index.d.ts",
   "bin": "lib/bin/cordis.mjs",
   "exports": {
     ".": {
+      "types": "./lib/index.d.ts",
       "require": "./lib/index.cjs",
-      "import": "./lib/index.mjs",
-      "types": "./lib/index.d.ts"
+      "default": "./lib/index.mjs"
     },
     "./cli": {
-      "default": "./lib/cli.mjs",
-      "types": "./lib/cli.d.ts"
+      "types": "./lib/cli.d.ts",
+      "default": "./lib/cli.mjs"
     },
     "./group": {
-      "default": "./lib/group.mjs",
-      "types": "./lib/group.d.ts"
+      "types": "./lib/plugins/group.d.ts",
+      "default": "./lib/plugins/group.mjs"
+    },
+    "./import-config": {
+      "types": "./lib/plugins/import-config.d.ts",
+      "default": "./lib/plugins/import-config.mjs"
     },
     "./worker": {
-      "default": "./lib/worker/index.mjs",
-      "types": "./lib/worker/index.d.ts"
+      "types": "./lib/worker/index.d.ts",
+      "default": "./lib/worker/index.mjs"
     },
     "./worker/main": "./lib/worker/main.mjs",
     "./src/*": "./src/*",
@@ -52,15 +53,29 @@
     "effect",
     "framework"
   ],
+  "cordis": {
+    "exports": {
+      ".": null,
+      "./group": {
+        "description": "Group Plugins"
+      },
+      "./import-config": {
+        "description": "Import Configurations"
+      }
+    }
+  },
+  "peerDependencies": {
+    "cordis": "3.16.0"
+  },
   "dependencies": {
-    "@cordisjs/core": "3.15.2",
-    "@cordisjs/loader": "^0.10.2",
+    "@cordisjs/core": "3.16.1",
+    "@cordisjs/loader": "^0.11.1",
     "@cordisjs/logger": "^0.3.2",
+    "@cordisjs/schema": "^0.1.0",
     "@cordisjs/timer": "^0.3.2",
     "cac": "^6.7.14",
     "cosmokit": "^1.6.2",
     "kleur": "^4.1.5",
-    "reggol": "^1.6.3",
-    "schemastery": "^3.14.6"
+    "reggol": "^1.6.3"
   }
 }
