@@ -1,9 +1,10 @@
 import * as core from '@cordisjs/core'
 import { Logger, LoggerService } from '@cordisjs/logger'
+import { SchemaService } from '@cordisjs/schema'
 import { TimerService } from '@cordisjs/timer'
 
 export * from '@cordisjs/core'
-export { default as Schema, default as z } from 'schemastery'
+export { Schema, z } from '@cordisjs/schema'
 export { Logger } from '@cordisjs/logger'
 export { TimerService } from '@cordisjs/timer'
 
@@ -21,9 +22,11 @@ export class Context extends core.Context {
     this.baseDir = globalThis.process?.cwd() || ''
 
     this.provide('logger', undefined, true)
+    this.provide('schema', undefined, true)
     this.provide('timer', undefined, true)
 
     this.plugin(LoggerService)
+    this.plugin(SchemaService)
     this.plugin(TimerService)
   }
 }
