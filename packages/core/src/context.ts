@@ -105,7 +105,7 @@ export class Context {
         if (!ctx.runtime.plugin) return
         // Case 5: custom inject checks
         if (ctx.bail('internal/inject', name)) return
-        ctx.emit('internal/warning', new Error(`property ${name} is not registered, declare it as \`inject\` to suppress this warning`))
+        ctx.emit(ctx, 'internal/warning', new Error(`property ${name} is not registered, declare it as \`inject\` to suppress this warning`))
       }
 
       const [name, internal] = Context.resolveInject(ctx, prop)
@@ -236,7 +236,7 @@ export class Context {
       })
     }
     if (isUnproxyable(value)) {
-      ctx.emit('internal/warning', new Error(`service ${name} is an unproxyable object, which may lead to unexpected behavior`))
+      ctx.emit(ctx, 'internal/warning', new Error(`service ${name} is an unproxyable object, which may lead to unexpected behavior`))
     }
 
     // setup filter for events

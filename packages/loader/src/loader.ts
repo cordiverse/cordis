@@ -47,7 +47,7 @@ export namespace Loader {
   }
 }
 
-export abstract class Loader<C extends Context = Context> extends ImportTree {
+export abstract class Loader<C extends Context = Context> extends ImportTree<C> {
   // TODO auto inject optional when provided?
   static inject = {
     optional: ['loader'],

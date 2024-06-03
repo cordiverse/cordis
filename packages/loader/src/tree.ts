@@ -3,21 +3,25 @@ import { Dict } from 'cosmokit'
 import { Entry, EntryOptions } from './entry.ts'
 import { EntryGroup } from './group.ts'
 
-export abstract class EntryTree {
+export abstract class EntryTree<C extends Context = Context> {
   static readonly sep = ':'
   static readonly [EntryGroup.key] = true
 
   public url!: string
   public root: EntryGroup
-  public store: Dict<Entry> = Object.create(null)
+  public store: Dict<Entry<C>> = Object.create(null)
 
-  constructor(public ctx: Context) {
+  constructor(public ctx: C) {
     this.root = new EntryGroup(ctx, this)
     const entry = ctx.scope.entry
     if (entry) entry.subtree = this
   }
 
-  * entries(): Generator<Entry, void, void> {
+  get context(): Context {
+    return this.ctx
+  }
+
+  * entries(): Generator<Entry<C>, void, void> {
     for (const entry of Object.values(this.store)) {
       yield entry
       if (!entry.subtree) continue

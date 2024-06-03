@@ -96,12 +96,12 @@ export namespace LoaderFile {
   }
 }
 
-export class ImportTree extends EntryTree {
+export class ImportTree<C extends Context = Context> extends EntryTree<C> {
   static reusable = true
 
   protected file!: LoaderFile
 
-  constructor(public ctx: Context) {
+  constructor(public ctx: C) {
     super(ctx)
     ctx.on('ready', () => this.start())
     ctx.on('dispose', () => this.stop())
@@ -122,7 +122,7 @@ export class ImportTree extends EntryTree {
   }
 
   write() {
-    this.ctx.emit('loader/config-update')
+    this.context.emit('loader/config-update')
     return this.file.write(this.root.data)
   }
 

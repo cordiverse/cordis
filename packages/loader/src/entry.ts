@@ -31,20 +31,24 @@ function sortKeys<T extends {}>(object: T, prepend = ['id', 'name'], append = ['
   return Object.assign(object, Object.fromEntries([...part1, ...rest, ...part2]))
 }
 
-export class Entry {
+export class Entry<C extends Context = Context> {
   static readonly key = Symbol.for('cordis.entry')
 
-  public ctx: Context
-  public fork?: ForkScope
+  public ctx: C
+  public fork?: ForkScope<C>
   public suspend = false
   public parent!: EntryGroup
   public options!: EntryOptions
   public subgroup?: EntryGroup
-  public subtree?: EntryTree
+  public subtree?: EntryTree<C>
 
-  constructor(public loader: Loader) {
+  constructor(public loader: Loader<C>) {
     this.ctx = loader.ctx.extend()
-    this.ctx.emit('loader/entry-init', this)
+    this.context.emit('loader/entry-init', this)
+  }
+
+  get context(): Context {
+    return this.ctx
   }
 
   get id() {
@@ -74,7 +78,7 @@ export class Entry {
   patch(options: Partial<EntryOptions> = {}) {
     // step 1: prepare isolate map
     const meta = {} as EntryUpdateMeta
-    this.ctx.emit(meta, 'loader/before-patch', this)
+    this.context.emit(meta, 'loader/before-patch', this)
 
     // step 1: set prototype for transferred context
     Object.setPrototypeOf(this.ctx, this.parent.ctx)
@@ -93,8 +97,7 @@ export class Entry {
       }
     }
 
-    this.ctx.emit(meta, 'loader/after-patch', this)
-    return this.ctx
+    this.context.emit(meta, 'loader/after-patch', this)
   }
 
   async refresh() {
@@ -127,7 +130,7 @@ export class Entry {
     if (!this._check()) {
       await this.stop()
     } else if (this.fork) {
-      this.parent.ctx.emit('loader/partial-dispose', this, legacy, true)
+      this.context.emit('loader/partial-dispose', this, legacy, true)
       this.patch(options)
     } else {
       await this.start()
@@ -136,15 +139,15 @@ export class Entry {
 
   async start() {
     const exports = await this.parent.tree.import(this.options.name).catch((error: any) => {
-      this.parent.ctx.emit('internal/error', new Error(`Cannot find package "${this.options.name}"`))
-      this.parent.ctx.emit('internal/error', error)
+      this.context.emit('internal/error', new Error(`Cannot find package "${this.options.name}"`))
+      this.context.emit('internal/error', error)
     })
     if (!exports) return
     const plugin = this.loader.unwrapExports(exports)
     this.patch()
     this.ctx[Entry.key] = this
     this.fork = this.ctx.plugin(plugin, this.options.config)
-    this.ctx.emit('loader/entry-fork', this, 'apply')
+    this.context.emit('loader/entry-fork', this, 'apply')
   }
 
   async stop() {
