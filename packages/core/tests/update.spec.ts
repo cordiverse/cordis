@@ -13,6 +13,9 @@ describe('Update', () => {
   it('update runtime', () => {
     const root = new Context()
     const dispose = mock.fn(noop)
+    const warning = mock.fn(noop)
+    root.on('internal/warning', warning)
+
     const plugin = mock.fn((ctx: Context, config: Config) => {
       ctx.on('dispose', dispose)
       ctx.on(event, () => {
@@ -24,16 +27,19 @@ describe('Update', () => {
 
     root.plugin(plugin, { foo: 1 })
     expect(dispose.mock.calls).to.have.length(0)
+    expect(warning.mock.calls).to.have.length(0)
     expect(plugin.mock.calls).to.have.length(1)
 
     // update config, should trigger reload
     root.emit(event)
     expect(dispose.mock.calls).to.have.length(1)
+    expect(warning.mock.calls).to.have.length(1)
     expect(plugin.mock.calls).to.have.length(2)
 
     // update config, should not trigger reload
     root.emit(event)
     expect(dispose.mock.calls).to.have.length(1)
+    expect(warning.mock.calls).to.have.length(2)
     expect(plugin.mock.calls).to.have.length(2)
 
     expect(plugin.mock.calls[0].arguments[0]).to.equal(plugin.mock.calls[1].arguments[0])

@@ -1,7 +1,8 @@
 {
   "compilerOptions": {
     "target": "es2022",
-    "module": "nodenext",
+    "module": "esnext",
+    "moduleResolution": "bundler",
     "sourceMap": true,
     "declaration": true,
     "emitDeclarationOnly": true,

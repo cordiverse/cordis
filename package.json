@@ -33,6 +33,7 @@
     "esbuild": "^0.18.20",
     "esbuild-register": "^3.5.0",
     "eslint": "^8.57.0",
+    "mocha": "^9.2.2",
     "shx": "^0.3.4",
     "tsx": "patch:tsx@npm%3A4.7.0#./.yarn/patches/tsx-npm-4.7.0-86d7b66640.patch",
     "typescript": "^5.4.3",

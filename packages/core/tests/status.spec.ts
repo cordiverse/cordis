@@ -7,6 +7,8 @@ describe('Status', () => {
   it('invalid config (main)', async () => {
     const root = new Context()
     const callback = mock.fn()
+    const error = mock.fn()
+    root.on('internal/error', error)
     const apply = mock.fn((ctx: Context) => {
       ctx.on(event, callback)
     })
@@ -19,12 +21,14 @@ describe('Status', () => {
     expect(fork.status).to.equal(ScopeStatus.FAILED)
     expect(fork.runtime.status).to.equal(ScopeStatus.FAILED)
     expect(apply.mock.calls).to.have.length(0)
+    expect(error.mock.calls).to.have.length(1)
 
     fork.update({ foo: true })
     await checkError(root)
     expect(fork.status).to.equal(ScopeStatus.ACTIVE)
     expect(fork.runtime.status).to.equal(ScopeStatus.ACTIVE)
     expect(apply.mock.calls).to.have.length(1)
+    expect(error.mock.calls).to.have.length(1)
 
     root.emit(event)
     expect(callback.mock.calls).to.have.length(1)
@@ -33,6 +37,8 @@ describe('Status', () => {
   it('invalid plugin (fork)', async () => {
     const root = new Context()
     const callback = mock.fn()
+    const error = mock.fn()
+    root.on('internal/error', error)
     const apply = mock.fn((ctx: Context) => {
       ctx.on(event, callback)
     })
@@ -48,6 +54,7 @@ describe('Status', () => {
     expect(fork1.status).to.equal(ScopeStatus.FAILED)
     expect(fork2.status).to.equal(ScopeStatus.ACTIVE)
     expect(apply.mock.calls).to.have.length(1)
+    expect(error.mock.calls).to.have.length(1)
 
     root.emit(event)
     expect(callback.mock.calls).to.have.length(1)
@@ -56,6 +63,8 @@ describe('Status', () => {
   it('plugin error (main)', async () => {
     const root = new Context()
     const callback = mock.fn()
+    const error = mock.fn()
+    root.on('internal/error', error)
     const apply = mock.fn((ctx: Context) => {
       ctx.on(event, callback)
       throw new Error('plugin error')
@@ -66,6 +75,7 @@ describe('Status', () => {
     expect(fork.runtime.status).to.equal(ScopeStatus.FAILED)
     expect(fork.status).to.equal(ScopeStatus.ACTIVE)
     expect(apply.mock.calls).to.have.length(1)
+    expect(error.mock.calls).to.have.length(1)
 
     root.emit(event)
     expect(callback.mock.calls).to.have.length(0)
@@ -74,6 +84,8 @@ describe('Status', () => {
   it('plugin error (fork)', async () => {
     const root = new Context()
     const callback = mock.fn()
+    const error = mock.fn()
+    root.on('internal/error', error)
     const apply = mock.fn((ctx: Context, config: { foo?: boolean } | undefined) => {
       ctx.on(event, callback)
       if (!config?.foo) throw new Error('plugin error')
@@ -85,6 +97,7 @@ describe('Status', () => {
     expect(fork1.status).to.equal(ScopeStatus.FAILED)
     expect(fork2.status).to.equal(ScopeStatus.ACTIVE)
     expect(apply.mock.calls).to.have.length(2)
+    expect(error.mock.calls).to.have.length(1)
 
     root.emit(event)
     expect(callback.mock.calls).to.have.length(1)

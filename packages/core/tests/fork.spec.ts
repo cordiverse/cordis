@@ -1,5 +1,5 @@
 import { Context } from '../src'
-import { noop } from 'cosmokit'
+import { defineProperty, noop } from 'cosmokit'
 import { expect } from 'chai'
 import { mock } from 'node:test'
 import { event, Filter, Session, filter } from './utils'
@@ -92,6 +92,8 @@ describe('Fork', () => {
   it('deferred execution', () => {
     const root = new Context()
     root.provide('foo')
+    const warning = mock.fn()
+    root.on('internal/warning', warning)
     const listener = mock.fn()
     const callback = mock.fn((ctx: Context) => {
       ctx.on(event, listener)
@@ -105,8 +107,10 @@ describe('Fork', () => {
 
     root.plugin(plugin)
     expect(callback.mock.calls).to.have.length(0)
+    expect(warning.mock.calls).to.have.length(0)
     root.plugin(plugin)
     expect(callback.mock.calls).to.have.length(0)
+    expect(warning.mock.calls).to.have.length(1) // FIXME should be 0 maybe?
     root.emit(event)
     expect(listener.mock.calls).to.have.length(0)
 
@@ -133,7 +137,7 @@ describe('Fork', () => {
 
   it('state.uid', () => {
     const root = new Context()
-    const callback1 = mock.fn()
+    const callback1 = defineProperty(mock.fn(), 'reusable', true)
     expect(root.state.uid).to.equal(0)
 
     const fork1 = root.plugin(callback1)

@@ -145,17 +145,20 @@ describe('Service', () => {
     }
 
     const root = new Context()
+    const warning = mock.fn()
+    root.on('internal/warning', warning)
     root.plugin(Foo)
     root.foo.increse()
     expect(root.foo.size).to.equal(1)
 
-    const fork = root.plugin((ctx) => {
+    const fork = root.inject(['foo'], (ctx) => {
       ctx.foo.increse()
       expect(ctx.foo.size).to.equal(2)
     })
 
     fork.dispose()
     expect(root.foo.size).to.equal(1)
+    expect(warning.mock.calls).to.have.length(0)
   })
 
   it('dependency update', async () => {
