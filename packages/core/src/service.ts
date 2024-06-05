@@ -79,14 +79,13 @@ export abstract class Service<T = unknown, C extends Context = Context> {
   }
 
   protected [symbols.extend](props?: any) {
-    const caller = this[symbols.origin]
     let self: any
     if (this[Service.invoke]) {
       self = createCallable(this.name, this)
     } else {
       self = Object.create(this)
     }
-    defineProperty(self, symbols.origin, caller)
+    defineProperty(self, symbols.origin, this.ctx)
     return Context.associate<this>(Object.assign(self, props), this.name)
   }
 

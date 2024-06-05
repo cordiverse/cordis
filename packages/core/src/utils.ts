@@ -57,7 +57,7 @@ export function joinPrototype(proto1: {}, proto2: {}) {
 export function createTraceable(ctx: any, value: any) {
   const proxy = new Proxy(value, {
     get: (target, name, receiver) => {
-      if (name === symbols.origin) return ctx
+      if (name === symbols.origin || name === 'ctx') return ctx
       return Reflect.get(target, name, receiver)
     },
     apply: (target, thisArg, args) => {

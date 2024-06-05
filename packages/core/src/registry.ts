@@ -65,10 +65,10 @@ export class Registry<C extends Context = Context> {
   private _counter = 0
   private _internal = new Map<Function, MainScope<C>>()
 
-  constructor(private root: Context, config: any) {
-    defineProperty(this, Context.origin, root)
-    root.scope = new MainScope(this, null!, config)
-    root.scope.runtime.isReactive = true
+  constructor(private ctx: Context, config: any) {
+    defineProperty(this, Context.origin, ctx)
+    ctx.scope = new MainScope(this, null!, config)
+    ctx.scope.runtime.isReactive = true
   }
 
   get counter() {
@@ -139,7 +139,7 @@ export class Registry<C extends Context = Context> {
     // check if it's a valid plugin
     this.resolve(plugin, true)
 
-    const context: Context = this[Context.origin]
+    const context: Context = this.ctx
     context.scope.assertActive()
 
     // resolve plugin config

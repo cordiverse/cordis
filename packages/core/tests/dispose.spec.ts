@@ -75,7 +75,7 @@ describe('Disposables', () => {
     expect(dispose.mock.calls).to.have.length(1)
   })
 
-  it('dispose event', async () => {
+  it('dispose event error', async () => {
     const root = new Context()
     const error = mock.fn()
     const dispose = mock.fn(() => {

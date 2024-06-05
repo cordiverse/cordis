@@ -45,8 +45,8 @@ export class Lifecycle {
   _tasks = new Set<Promise<void>>()
   _hooks: Record<keyof any, Hook[]> = {}
 
-  constructor(private root: Context) {
-    defineProperty(this, Context.origin, root)
+  constructor(private ctx: Context) {
+    defineProperty(this, Context.origin, ctx)
 
     defineProperty(this.on('internal/listener', function (this: Context, name, listener, options: EventOptions) {
       const method = options.prepend ? 'unshift' : 'push'
@@ -62,14 +62,14 @@ export class Lifecycle {
         this.scope.runtime.forkables[method](listener as any)
         return this.scope.collect('event <fork>', () => remove(this.scope.runtime.forkables, listener))
       }
-    }), Context.static, root.scope)
+    }), Context.static, ctx.scope)
 
     for (const level of ['info', 'error', 'warning']) {
       defineProperty(this.on(`internal/${level}`, (format, ...param) => {
         if (this._hooks[`internal/${level}`].length > 1) return
         // eslint-disable-next-line no-console
         console.info(format, ...param)
-      }), Context.static, root.scope)
+      }), Context.static, ctx.scope)
     }
 
     // non-reusable plugin forks are not responsive to isolated service changes
@@ -83,7 +83,7 @@ export class Lifecycle {
           scope.reset()
         }
       }
-    }, { global: true }), Context.static, root.scope)
+    }, { global: true }), Context.static, ctx.scope)
 
     defineProperty(this.on('internal/service', function (this: Context, name) {
       for (const runtime of this.registry.values()) {
@@ -94,7 +94,7 @@ export class Lifecycle {
           scope.start()
         }
       }
-    }, { global: true }), Context.static, root.scope)
+    }, { global: true }), Context.static, ctx.scope)
 
     // inject in ancestor contexts
     defineProperty(this.on('internal/inject', function (name) {
@@ -105,7 +105,7 @@ export class Lifecycle {
         }
         parent = parent.scope.parent
       }
-    }, { global: true }), Context.static, root.scope)
+    }, { global: true }), Context.static, ctx.scope)
   }
 
   async flush() {
@@ -128,7 +128,7 @@ export class Lifecycle {
     if (name !== 'internal/event') {
       this.emit('internal/event', type, name, args, thisArg)
     }
-    return [this.getHooks(name, thisArg), thisArg ?? this[Context.origin]] as const
+    return [this.getHooks(name, thisArg), thisArg ?? this.ctx] as const
   }
 
   async parallel(...args: any[]) {
@@ -162,10 +162,9 @@ export class Lifecycle {
   }
 
   register(label: string, hooks: Hook[], listener: any, options: EventOptions) {
-    const caller = this[Context.origin]
     const method = options.prepend ? 'unshift' : 'push'
-    hooks[method]([caller, listener, options])
-    return caller.state.collect(label, () => this.unregister(hooks, listener))
+    hooks[method]([this.ctx, listener, options])
+    return this.ctx.state.collect(label, () => this.unregister(hooks, listener))
   }
 
   unregister(hooks: Hook[], listener: any) {
@@ -182,9 +181,8 @@ export class Lifecycle {
     }
 
     // handle special events
-    const caller: Context = this[Context.origin]
-    caller.scope.assertActive()
-    const result = this.bail(caller, 'internal/listener', name, listener, options)
+    this.ctx.scope.assertActive()
+    const result = this.bail(this.ctx, 'internal/listener', name, listener, options)
     if (result) return result
 
     const hooks = this._hooks[name] ||= []
@@ -217,7 +215,7 @@ export class Lifecycle {
   async stop() {
     this.isActive = false
     // `dispose` event is handled by state.disposables
-    this.root.scope.reset()
+    this.ctx.scope.reset()
   }
 }
 

@@ -254,6 +254,7 @@ export class Context {
     return dispose
   }
 
+  /** @deprecated use `ctx.set()` instead */
   provide(name: string, value?: any, builtin?: boolean) {
     const internal = Context.ensureInternal.call(this.root)
     if (name in internal) return
