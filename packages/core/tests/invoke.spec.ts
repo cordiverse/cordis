@@ -1,5 +1,6 @@
 import { expect } from 'chai'
 import { Context, Service } from '../src'
+import './utils'
 
 describe('functional service', () => {
   it('functional service', async () => {
@@ -14,7 +15,7 @@ describe('functional service', () => {
       static [Service.immediate] = true
 
       protected [Service.invoke](init?: Config) {
-        const caller = this[Context.origin]
+        const caller = this.ctx
         expect(caller).to.be.instanceof(Context)
         let result = { ...this.config }
         let intercept = caller[Context.intercept]

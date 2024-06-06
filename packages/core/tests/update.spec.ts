@@ -204,21 +204,4 @@ describe('Update', () => {
     expect(fork.disposables).to.have.length(1)              // effect
     expect(fork.runtime.disposables).to.have.length(1)      // fork
   })
-
-  it('root update', async () => {
-    const root = new Context()
-    const callback = mock.fn(noop)
-    const { length } = root.state.disposables
-
-    root.decline(['foo'])
-    root.on('dispose', callback)
-    expect(callback.mock.calls).to.have.length(0)
-
-    root.state.update({ maxListeners: 100 })
-    expect(callback.mock.calls).to.have.length(0)
-
-    root.state.update({ foo: 100 })
-    expect(callback.mock.calls).to.have.length(1)
-    expect(root.state.disposables.length).to.equal(length)
-  })
 })

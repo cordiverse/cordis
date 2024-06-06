@@ -97,13 +97,15 @@ export class Lifecycle {
     }, { global: true }), Context.static, ctx.scope)
 
     // inject in ancestor contexts
-    defineProperty(this.on('internal/inject', function (name) {
-      let parent = this
-      while (parent.runtime.plugin) {
-        for (const key of parent.runtime.inject) {
-          if (name === Context.resolveInject(parent, key)[0]) return true
+    defineProperty(this.on('internal/inject', function (this: Context, name) {
+      let ctx = this
+      while (ctx !== ctx.root) {
+        if (Reflect.ownKeys(ctx).includes('scope')) {
+          for (const key of ctx.runtime.inject) {
+            if (name === Context.resolveInject(ctx, key)[0]) return true
+          }
         }
-        parent = parent.scope.parent
+        ctx = ctx[symbols.trace] ?? Object.getPrototypeOf(ctx)
       }
     }, { global: true }), Context.static, ctx.scope)
   }

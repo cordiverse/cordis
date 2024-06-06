@@ -1,6 +1,6 @@
 import { deepEqual, defineProperty, isNullable, remove } from 'cosmokit'
 import { Context } from './context.ts'
-import { Inject, Plugin, Registry } from './registry.ts'
+import { Inject, Plugin } from './registry.ts'
 import { isConstructor, resolveConfig } from './utils.ts'
 
 declare module './context.ts' {
@@ -167,7 +167,7 @@ export abstract class EffectScope<C extends Context = Context> {
   }
 
   get ready() {
-    return this.runtime.using.every(name => !isNullable(this.ctx[name]))
+    return this.runtime.using.every(name => !isNullable(this.ctx.get(name)))
   }
 
   reset() {
@@ -310,9 +310,8 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
   isReusable?: boolean = false
   isReactive?: boolean = false
 
-  constructor(registry: Registry<C>, public plugin: Plugin, config: any, error?: any) {
-    super(registry[Context.origin] as C, config)
-    registry.set(plugin, this)
+  constructor(ctx: C, public plugin: Plugin, config: any, error?: any) {
+    super(ctx, config)
     if (!plugin) {
       this.name = 'root'
       this.isActive = true

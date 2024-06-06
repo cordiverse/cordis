@@ -64,11 +64,15 @@ declare module './context.ts' {
 export class Registry<C extends Context = Context> {
   private _counter = 0
   private _internal = new Map<Function, MainScope<C>>()
+  protected context: Context
 
-  constructor(private ctx: Context, config: any) {
+  constructor(public ctx: C, config: any) {
     defineProperty(this, Context.origin, ctx)
-    ctx.scope = new MainScope(this, null!, config)
-    ctx.scope.runtime.isReactive = true
+    this.context = ctx
+    const runtime = new MainScope(ctx, null!, config)
+    ctx.scope = runtime
+    runtime.ctx = ctx
+    this.set(null!, runtime)
   }
 
   get counter() {
@@ -139,15 +143,17 @@ export class Registry<C extends Context = Context> {
     // check if it's a valid plugin
     this.resolve(plugin, true)
 
-    const context: Context = this.ctx
-    context.scope.assertActive()
+    // magic: this.ctx[symbols.trace] === this
+    // Here we ignore the reference
+    const ctx: C = Object.getPrototypeOf(this.ctx)
+    ctx.scope.assertActive()
 
     // resolve plugin config
     let error: any
     try {
       config = resolveConfig(plugin, config)
     } catch (reason) {
-      context.emit('internal/error', reason)
+      this.context.emit(ctx, 'internal/error', reason)
       error = reason
       config = null
     }
@@ -156,12 +162,13 @@ export class Registry<C extends Context = Context> {
     let runtime = this.get(plugin)
     if (runtime) {
       if (!runtime.isForkable) {
-        context.emit('internal/warning', new Error(`duplicate plugin detected: ${plugin.name}`))
+        this.context.emit(ctx, 'internal/warning', new Error(`duplicate plugin detected: ${plugin.name}`))
       }
-      return runtime.fork(context, config, error)
+      return runtime.fork(ctx, config, error)
     }
 
-    runtime = new MainScope(this, plugin, config, error)
-    return runtime.fork(context, config, error)
+    runtime = new MainScope(ctx, plugin, config, error)
+    this.set(plugin, runtime)
+    return runtime.fork(ctx, config, error)
   }
 }

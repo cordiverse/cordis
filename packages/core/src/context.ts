@@ -104,8 +104,9 @@ export class Context {
         // Case 4: access directly from root
         if (!ctx.runtime.plugin) return
         // Case 5: custom inject checks
-        if (ctx.bail('internal/inject', name)) return
-        ctx.emit(ctx, 'internal/warning', new Error(`property ${name} is not registered, declare it as \`inject\` to suppress this warning`))
+        if (ctx.bail(ctx, 'internal/inject', name)) return
+        const warning = new Error(`property ${name} is not registered, declare it as \`inject\` to suppress this warning`)
+        ctx.emit(ctx, 'internal/warning', warning)
       }
 
       const [name, internal] = Context.resolveInject(ctx, prop)

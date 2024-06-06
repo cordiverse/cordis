@@ -7,6 +7,8 @@ declare module './entry.ts' {
   }
 }
 
+export const name = 'inject'
+
 export function apply(ctx: Context) {
   function getRequired(entry?: Entry) {
     return Array.isArray(entry?.options.inject)

@@ -28,8 +28,7 @@ export class Filter {
 export function filter(ctx: Context) {
   ctx.root.filter = () => true
   ctx.on('internal/runtime', (runtime) => {
-    // same as `!runtime.uid`, but to make coverage happy
-    if (!ctx.registry.has(runtime.plugin)) return
+    if (!runtime.uid) return
     runtime.ctx.filter = (session) => {
       return runtime.children.some((child) => {
         return child.ctx.filter(session)
@@ -44,11 +43,25 @@ declare module '../src/events' {
   }
 }
 
+export class Counter {
+  value = 0
+
+  constructor(public ctx: Context) {}
+
+  increse() {
+    return this.ctx.effect(() => {
+      this.value++
+      return () => this.value--
+    })
+  }
+}
+
 declare module '../src/context' {
   interface Context {
     foo: any
     bar: any
     baz: any
+    counter: Counter
     filter(session: Session): boolean
   }
 

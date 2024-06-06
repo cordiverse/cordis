@@ -69,6 +69,8 @@ export class GlobalRealm extends Realm {
   }
 }
 
+export const name = 'isolate'
+
 export function apply(ctx: Context) {
   const realms: Dict<GlobalRealm> = Object.create(null)
 

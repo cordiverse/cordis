@@ -2,7 +2,7 @@ import { Context, Service } from '../src'
 import { noop } from 'cosmokit'
 import { expect } from 'chai'
 import { mock } from 'node:test'
-import { checkError, getHookSnapshot } from './utils'
+import { checkError, Counter, getHookSnapshot } from './utils'
 
 describe('Service', () => {
   it('non-service access', async () => {
@@ -128,36 +128,36 @@ describe('Service', () => {
     expect(callback.mock.calls).to.have.length(1)
   })
 
-  it('traceable effect', async () => {
+  it('traceable effect (inject)', async () => {
     class Foo extends Service {
-      size = 0
+      static inject = ['counter']
 
       constructor(ctx: Context) {
         super(ctx, 'foo', true)
       }
 
-      increse() {
-        return this.ctx.effect(() => {
-          this.size++
-          return () => this.size--
-        })
+      count() {
+        this.ctx.counter.increse()
+        return this.ctx.counter.value
       }
     }
 
     const root = new Context()
     const warning = mock.fn()
     root.on('internal/warning', warning)
+    root.set('counter', new Counter(root))
+
     root.plugin(Foo)
-    root.foo.increse()
-    expect(root.foo.size).to.equal(1)
+    expect(root.foo.count()).to.equal(1)
+    expect(root.foo.count()).to.equal(2)
 
     const fork = root.inject(['foo'], (ctx) => {
-      ctx.foo.increse()
-      expect(ctx.foo.size).to.equal(2)
+      expect(ctx.foo.count()).to.equal(3)
+      expect(ctx.foo.count()).to.equal(4)
     })
 
     fork.dispose()
-    expect(root.foo.size).to.equal(1)
+    expect(root.foo.count()).to.equal(3)
     expect(warning.mock.calls).to.have.length(0)
   })
 

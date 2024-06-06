@@ -5,6 +5,7 @@ import { Spread } from './registry.ts'
 
 export abstract class Service<T = unknown, C extends Context = Context> {
   static readonly setup: unique symbol = symbols.setup as any
+  static readonly trace: unique symbol = symbols.trace as any
   static readonly invoke: unique symbol = symbols.invoke as any
   static readonly extend: unique symbol = symbols.extend as any
   static readonly provide: unique symbol = symbols.provide as any

@@ -14,6 +14,7 @@ export const symbols = {
 
   // service symbols
   setup: Symbol.for('cordis.setup') as typeof Service.setup,
+  trace: Symbol.for('cordis.trace') as typeof Service.trace,
   invoke: Symbol.for('cordis.invoke') as typeof Service.invoke,
   extend: Symbol.for('cordis.extend') as typeof Service.extend,
   provide: Symbol.for('cordis.provide') as typeof Service.provide,
@@ -57,7 +58,10 @@ export function joinPrototype(proto1: {}, proto2: {}) {
 export function createTraceable(ctx: any, value: any) {
   const proxy = new Proxy(value, {
     get: (target, name, receiver) => {
-      if (name === symbols.origin || name === 'ctx') return ctx
+      if (name === symbols.origin || name === 'ctx') {
+        const origin = Reflect.getOwnPropertyDescriptor(target, symbols.origin)?.value
+        return ctx.extend({ [symbols.trace]: origin })
+      }
       return Reflect.get(target, name, receiver)
     },
     apply: (target, thisArg, args) => {
