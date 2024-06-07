@@ -1,5 +1,5 @@
 import { use } from 'chai'
-import { Context } from '../src'
+import { Context, Service } from '../src'
 import promised from 'chai-as-promised'
 import { Dict } from 'cosmokit'
 
@@ -44,6 +44,11 @@ declare module '../src/events' {
 }
 
 export class Counter {
+  [Service.tracker] = {
+    associate: 'counter',
+    property: 'ctx',
+  }
+
   value = 0
 
   constructor(public ctx: Context) {}

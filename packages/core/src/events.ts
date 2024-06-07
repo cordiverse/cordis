@@ -46,7 +46,10 @@ export class Lifecycle {
   _hooks: Record<keyof any, Hook[]> = {}
 
   constructor(private ctx: Context) {
-    defineProperty(this, symbols.trace, 'lifecycle')
+    defineProperty(this, symbols.tracker, {
+      associate: 'lifecycle',
+      property: 'ctx',
+    })
 
     defineProperty(this.on('internal/listener', function (this: Context, name, listener, options: EventOptions) {
       const method = options.prepend ? 'unshift' : 'push'

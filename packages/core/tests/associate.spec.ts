@@ -56,8 +56,12 @@ describe('Association', () => {
 
   it('associated type', async () => {
     class Session {
-      [Service.trace] = 'session'
-      constructor(ctx: Context) {}
+      [Service.tracker] = {
+        property: 'ctx',
+        associate: 'session',
+      }
+
+      constructor(private ctx: Context) {}
     }
 
     class Foo extends Service {

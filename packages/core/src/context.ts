@@ -1,7 +1,7 @@
 import { defineProperty, Dict, isNullable } from 'cosmokit'
 import { Lifecycle } from './events.ts'
 import { Registry } from './registry.ts'
-import { createTraceable, getTraceable, isObject, isUnproxyable, resolveConfig, symbols } from './utils.ts'
+import { getTraceable, isObject, isUnproxyable, resolveConfig, symbols } from './utils.ts'
 
 export namespace Context {
   export type Parameterized<C, T = any> = C & { config: T }
@@ -202,8 +202,7 @@ export class Context {
     const internal = this[symbols.internal][name]
     if (internal?.type !== 'service') return
     const value = this.root[this[symbols.isolate][name]]
-    if (!isObject(value) || isUnproxyable(value)) return value
-    return createTraceable(this, value, name)
+    return getTraceable(this, value)
   }
 
   set<K extends string & keyof this>(name: K, value: undefined | this[K]): () => void
@@ -238,9 +237,9 @@ export class Context {
 
     ctx.emit(self, 'internal/before-service', name, value)
     ctx.root[key] = value
-    // if (value instanceof Object) {
-    //   defineProperty(value, symbols.origin, ctx)
-    // }
+    if (isObject(value)) {
+      defineProperty(value, symbols.source, ctx)
+    }
     ctx.emit(self, 'internal/service', name, oldValue)
     return dispose
   }

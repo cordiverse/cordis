@@ -67,7 +67,11 @@ export class Registry<C extends Context = Context> {
   protected context: Context
 
   constructor(public ctx: C, config: any) {
-    defineProperty(this, symbols.trace, 'registry')
+    defineProperty(this, symbols.tracker, {
+      associate: 'registry',
+      property: 'ctx',
+    })
+
     this.context = ctx
     const runtime = new MainScope(ctx, null!, config)
     ctx.scope = runtime

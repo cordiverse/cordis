@@ -112,7 +112,7 @@ export function apply(ctx: Context) {
       for (const symbol of [oldMap[key], this.newMap[key]]) {
         const value = symbol && entry.ctx[symbol]
         if (!(value instanceof Object)) continue
-        const source = Reflect.getOwnPropertyDescriptor(value, Context.origin)?.value
+        const source = Reflect.getOwnPropertyDescriptor(value, Context.source)?.value
         if (!source) {
           entry.ctx.emit('internal/warning', new Error(`expected service ${key} to be implemented`))
           continue

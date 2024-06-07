@@ -1,15 +1,15 @@
 import { Awaitable, defineProperty } from 'cosmokit'
 import { Context } from './context.ts'
-import { createCallable, joinPrototype, symbols } from './utils.ts'
+import { createCallable, joinPrototype, symbols, Tracker } from './utils.ts'
 import { Spread } from './registry.ts'
 
 export abstract class Service<T = unknown, C extends Context = Context> {
   static readonly setup: unique symbol = symbols.setup as any
   static readonly invoke: unique symbol = symbols.invoke as any
   static readonly extend: unique symbol = symbols.extend as any
+  static readonly tracker: unique symbol = symbols.tracker as any
   static readonly provide: unique symbol = symbols.provide as any
   static readonly immediate: unique symbol = symbols.immediate as any
-  static readonly trace: unique symbol = symbols.trace as any
 
   protected start(): Awaitable<void> {}
   protected stop(): Awaitable<void> {}
@@ -40,8 +40,12 @@ export abstract class Service<T = unknown, C extends Context = Context> {
     immediate ??= this.constructor[symbols.immediate]
 
     let self = this
+    const tracker: Tracker = {
+      associate: name,
+      property: 'ctx',
+    }
     if (self[symbols.invoke]) {
-      self = createCallable(name, joinPrototype(Object.getPrototypeOf(this), Function.prototype))
+      self = createCallable(name, joinPrototype(Object.getPrototypeOf(this), Function.prototype), tracker)
     }
     if (_ctx) {
       self.ctx = _ctx
@@ -50,7 +54,7 @@ export abstract class Service<T = unknown, C extends Context = Context> {
     }
     self.name = name
     self.config = config
-    defineProperty(self, symbols.trace, name)
+    defineProperty(self, symbols.tracker, tracker)
 
     self.ctx.provide(name)
     self.ctx.runtime.name = name
@@ -81,12 +85,10 @@ export abstract class Service<T = unknown, C extends Context = Context> {
   protected [symbols.extend](props?: any) {
     let self: any
     if (this[Service.invoke]) {
-      self = createCallable(this.name, this)
+      self = createCallable(this.name, this, this[symbols.tracker])
     } else {
       self = Object.create(this)
     }
-    defineProperty(self, symbols.trace, this.name)
-    // defineProperty(self, symbols.origin, this.ctx)
     return Object.assign(self, props)
   }
 
