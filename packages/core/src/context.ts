@@ -1,7 +1,7 @@
 import { defineProperty, Dict, isNullable } from 'cosmokit'
 import { Lifecycle } from './events.ts'
 import { Registry } from './registry.ts'
-import { createTraceable, isUnproxyable, resolveConfig, symbols } from './utils.ts'
+import { createTraceable, getTraceable, isObject, isUnproxyable, resolveConfig, symbols } from './utils.ts'
 
 export namespace Context {
   export type Parameterized<C, T = any> = C & { config: T }
@@ -50,7 +50,7 @@ export interface Context {
 }
 
 export class Context {
-  static readonly origin: unique symbol = symbols.origin as any
+  static readonly source: unique symbol = symbols.source as any
   static readonly events: unique symbol = symbols.events as any
   static readonly static: unique symbol = symbols.static as any
   static readonly filter: unique symbol = symbols.filter as any
@@ -58,8 +58,8 @@ export class Context {
   static readonly isolate: unique symbol = symbols.isolate as any
   static readonly internal: unique symbol = symbols.internal as any
   static readonly intercept: unique symbol = symbols.intercept as any
-  /** @deprecated use `Context.origin` instead */
-  static readonly current: typeof Context.origin = Context.origin
+  static readonly origin = 'ctx'
+  static readonly current = 'ctx'
 
   static is<C extends Context>(value: any): value is C {
     return !!value?.[Context.is as any]
@@ -91,6 +91,10 @@ export class Context {
   static handler: ProxyHandler<Context> = {
     get(target, prop, ctx: Context) {
       if (typeof prop !== 'string') return Reflect.get(target, prop, ctx)
+
+      if (Reflect.has(target, prop)) {
+        return getTraceable(ctx, Reflect.get(target, prop, ctx))
+      }
 
       const checkInject = (name: string) => {
         // Case 1: a normal property defined on context
@@ -125,7 +129,10 @@ export class Context {
       if (typeof prop !== 'string') return Reflect.set(target, prop, value, ctx)
 
       const [name, internal] = Context.resolveInject(ctx, prop)
-      if (!internal) return Reflect.set(target, name, value, ctx)
+      if (!internal) {
+        // TODO
+        return Reflect.set(target, name, value, ctx)
+      }
       if (internal.type === 'accessor') {
         if (!internal.set) return false
         return internal.set.call(ctx, value)
@@ -137,35 +144,22 @@ export class Context {
     },
   }
 
+  /** @deprecated use `Service.traceable` instead */
   static associate<T extends {}>(object: T, name: string) {
-    return new Proxy(object, {
-      get(target, key, receiver) {
-        if (typeof key === 'symbol') return Reflect.get(target, key, receiver)
-        const caller: Context = receiver[symbols.origin]
-        if (!caller?.[symbols.internal][`${name}.${key}`]) return Reflect.get(target, key, receiver)
-        return caller[`${name}.${key}`]
-      },
-      set(target, key, value, receiver) {
-        if (typeof key === 'symbol') return Reflect.set(target, key, value, receiver)
-        const caller: Context = receiver[symbols.origin]
-        if (!caller?.[symbols.internal][`${name}.${key}`]) return Reflect.set(target, key, value, receiver)
-        caller[`${name}.${key}`] = value
-        return true
-      },
-    })
+    return object
   }
 
   constructor(config?: any) {
-    const self: Context = new Proxy(this, Context.handler)
     config = resolveConfig(this.constructor, config)
-    self[symbols.isolate] = Object.create(null)
-    self[symbols.intercept] = Object.create(null)
+    this[symbols.isolate] = Object.create(null)
+    this[symbols.intercept] = Object.create(null)
+    const self: Context = new Proxy(this, Context.handler)
     self.root = self
+    self.registry = new Registry(self, config)
+    self.lifecycle = new Lifecycle(self)
     self.mixin('scope', ['config', 'runtime', 'effect', 'collect', 'accept', 'decline'])
     self.mixin('registry', ['using', 'inject', 'plugin', 'dispose'])
     self.mixin('lifecycle', ['on', 'once', 'off', 'after', 'parallel', 'emit', 'serial', 'bail', 'start', 'stop'])
-    self.provide('registry', new Registry(self, config!), true)
-    self.provide('lifecycle', new Lifecycle(self), true)
 
     const attach = (internal: Context[typeof symbols.internal]) => {
       if (!internal) return
@@ -174,7 +168,7 @@ export class Context {
         const constructor = internal[key]['prototype']?.constructor
         if (!constructor) continue
         self[internal[key]['key']] = new constructor(self, config)
-        defineProperty(self[internal[key]['key']], symbols.origin, self)
+        defineProperty(self[internal[key]['key']], 'ctx', self)
       }
     }
     attach(this[symbols.internal])
@@ -208,12 +202,8 @@ export class Context {
     const internal = this[symbols.internal][name]
     if (internal?.type !== 'service') return
     const value = this.root[this[symbols.isolate][name]]
-    if (!value || typeof value !== 'object' && typeof value !== 'function') return value
-    if (isUnproxyable(value)) {
-      defineProperty(value, symbols.origin, this)
-      return value
-    }
-    return createTraceable(this, value)
+    if (!isObject(value) || isUnproxyable(value)) return value
+    return createTraceable(this, value, name)
   }
 
   set<K extends string & keyof this>(name: K, value: undefined | this[K]): () => void
@@ -248,9 +238,9 @@ export class Context {
 
     ctx.emit(self, 'internal/before-service', name, value)
     ctx.root[key] = value
-    if (value instanceof Object) {
-      defineProperty(value, symbols.origin, ctx)
-    }
+    // if (value instanceof Object) {
+    //   defineProperty(value, symbols.origin, ctx)
+    // }
     ctx.emit(self, 'internal/service', name, oldValue)
     return dispose
   }

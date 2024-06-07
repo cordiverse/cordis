@@ -46,7 +46,7 @@ export class Lifecycle {
   _hooks: Record<keyof any, Hook[]> = {}
 
   constructor(private ctx: Context) {
-    defineProperty(this, Context.origin, ctx)
+    defineProperty(this, symbols.trace, 'lifecycle')
 
     defineProperty(this.on('internal/listener', function (this: Context, name, listener, options: EventOptions) {
       const method = options.prepend ? 'unshift' : 'push'
@@ -105,7 +105,7 @@ export class Lifecycle {
             if (name === Context.resolveInject(ctx, key)[0]) return true
           }
         }
-        ctx = ctx[symbols.trace] ?? Object.getPrototypeOf(ctx)
+        ctx = ctx[symbols.source] ?? Object.getPrototypeOf(ctx)
       }
     }, { global: true }), Context.static, ctx.scope)
   }

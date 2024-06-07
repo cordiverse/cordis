@@ -3,7 +3,7 @@ import type { Context, Service } from './index.ts'
 
 export const symbols = {
   // context symbols
-  origin: Symbol.for('cordis.origin') as typeof Context.origin,
+  source: Symbol.for('cordis.source') as typeof Context.source,
   events: Symbol.for('cordis.events') as typeof Context.events,
   static: Symbol.for('cordis.static') as typeof Context.static,
   filter: Symbol.for('cordis.filter') as typeof Context.filter,
@@ -13,8 +13,8 @@ export const symbols = {
   intercept: Symbol.for('cordis.intercept') as typeof Context.intercept,
 
   // service symbols
+  trace: Symbol.for('cordis.traceable') as typeof Service.trace,
   setup: Symbol.for('cordis.setup') as typeof Service.setup,
-  trace: Symbol.for('cordis.trace') as typeof Service.trace,
   invoke: Symbol.for('cordis.invoke') as typeof Service.invoke,
   extend: Symbol.for('cordis.extend') as typeof Service.extend,
   provide: Symbol.for('cordis.provide') as typeof Service.provide,
@@ -55,14 +55,49 @@ export function joinPrototype(proto1: {}, proto2: {}) {
   return result
 }
 
-export function createTraceable(ctx: any, value: any) {
+export function isObject(value: any): value is {} {
+  return value && (typeof value === 'object' || typeof value === 'function')
+}
+
+export function getTraceable(ctx: any, value: any) {
+  if (isObject(value) && symbols.trace in value) {
+    return createTraceable(ctx, value, value[symbols.trace] as any)
+  } else {
+    return value
+  }
+}
+
+export function createTraceable(ctx: any, value: any, name: string) {
   const proxy = new Proxy(value, {
-    get: (target, name, receiver) => {
-      if (name === symbols.origin || name === 'ctx') {
-        const origin = Reflect.getOwnPropertyDescriptor(target, symbols.origin)?.value
-        return ctx.extend({ [symbols.trace]: origin })
+    get: (target, prop, receiver) => {
+      if (prop === 'ctx') {
+        const origin = Reflect.getOwnPropertyDescriptor(target, 'ctx')?.value
+        return ctx.extend({ [symbols.source]: origin })
       }
-      return Reflect.get(target, name, receiver)
+
+      if (typeof prop === 'symbol') {
+        return Reflect.get(target, prop, receiver)
+      }
+
+      if (!ctx[symbols.internal][`${name}.${prop}`]) {
+        return getTraceable(ctx, Reflect.get(target, prop, receiver))
+      }
+
+      return ctx[`${name}.${prop}`]
+    },
+    set: (target, prop, value, receiver) => {
+      if (prop === 'ctx') return false
+
+      if (typeof prop === 'symbol') {
+        return Reflect.set(target, prop, value, receiver)
+      }
+
+      if (!ctx[symbols.internal][`${name}.${prop}`]) {
+        return Reflect.set(target, prop, value, receiver)
+      }
+
+      ctx[`${name}.${prop}`] = value
+      return true
     },
     apply: (target, thisArg, args) => {
       return applyTraceable(proxy, target, thisArg, args)
@@ -78,7 +113,7 @@ export function applyTraceable(proxy: any, value: any, thisArg: any, args: any[]
 
 export function createCallable(name: string, proto: {}) {
   const self = function (...args: any[]) {
-    const proxy = createTraceable(self[symbols.origin], self)
+    const proxy = createTraceable(self['ctx'], self, name)
     return applyTraceable(proxy, self, this, args)
   }
   defineProperty(self, 'name', name)

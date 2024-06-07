@@ -1,4 +1,4 @@
-import { Context, Service } from '../src'
+import { Context, getTraceable, Service } from '../src'
 import { expect } from 'chai'
 import {} from './utils'
 
@@ -55,20 +55,30 @@ describe('Association', () => {
   })
 
   it('associated type', async () => {
+    class Session {
+      [Service.trace] = 'session'
+      constructor(ctx: Context) {}
+    }
+
+    class Foo extends Service {
+      session: any = Session.prototype
+
+      constructor(ctx: Context) {
+        super(ctx, 'foo', true)
+      }
+
+      createSession() {
+        return getTraceable(this.ctx, new this.session.constructor(this.ctx))
+      }
+    }
+
     interface Session {
       bar(): this
     }
 
-    class Session {
+    class Bar extends Service {
       constructor(ctx: Context) {
-        this[Context.origin] = ctx
-        return Context.associate(this, 'session')
-      }
-    }
-
-    class Foo extends Service {
-      constructor(ctx: Context) {
-        super(ctx, 'foo', true)
+        super(ctx, 'bar', true)
         ctx.provide('session.bar')
         ctx['session.bar'] = function (this: Session) {
           return this
@@ -77,9 +87,13 @@ describe('Association', () => {
     }
 
     const root = new Context()
-    const session = new Session(root)
+
     root.plugin(Foo)
-    expect(root.foo).to.be.instanceof(Foo)
+    const session = root.foo.createSession()
+    expect(session).to.be.instanceof(Session)
+    expect(session.bar).to.be.undefined
+
+    root.plugin(Bar)
     expect(session.bar()).to.be.instanceof(Session)
   })
 })

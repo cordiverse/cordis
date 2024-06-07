@@ -1,7 +1,7 @@
 import { defineProperty, Dict } from 'cosmokit'
 import { Context } from './context.ts'
 import { ForkScope, MainScope } from './scope.ts'
-import { resolveConfig } from './utils.ts'
+import { resolveConfig, symbols } from './utils.ts'
 
 export function isApplicable(object: Plugin) {
   return object && typeof object === 'object' && typeof object.apply === 'function'
@@ -67,7 +67,7 @@ export class Registry<C extends Context = Context> {
   protected context: Context
 
   constructor(public ctx: C, config: any) {
-    defineProperty(this, Context.origin, ctx)
+    defineProperty(this, symbols.trace, 'registry')
     this.context = ctx
     const runtime = new MainScope(ctx, null!, config)
     ctx.scope = runtime
@@ -145,7 +145,7 @@ export class Registry<C extends Context = Context> {
 
     // magic: this.ctx[symbols.trace] === this
     // Here we ignore the reference
-    const ctx: C = Object.getPrototypeOf(this.ctx)
+    const ctx: C = this.ctx === this.ctx.root ? this.ctx : Object.getPrototypeOf(this.ctx)
     ctx.scope.assertActive()
 
     // resolve plugin config

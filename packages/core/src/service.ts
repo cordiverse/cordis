@@ -5,18 +5,17 @@ import { Spread } from './registry.ts'
 
 export abstract class Service<T = unknown, C extends Context = Context> {
   static readonly setup: unique symbol = symbols.setup as any
-  static readonly trace: unique symbol = symbols.trace as any
   static readonly invoke: unique symbol = symbols.invoke as any
   static readonly extend: unique symbol = symbols.extend as any
   static readonly provide: unique symbol = symbols.provide as any
   static readonly immediate: unique symbol = symbols.immediate as any
+  static readonly trace: unique symbol = symbols.trace as any
 
   protected start(): Awaitable<void> {}
   protected stop(): Awaitable<void> {}
   protected fork?(ctx: C, config: any): void
 
   protected ctx!: C
-  protected [symbols.origin]!: C
 
   public name!: string
   public config!: T
@@ -51,7 +50,7 @@ export abstract class Service<T = unknown, C extends Context = Context> {
     }
     self.name = name
     self.config = config
-    defineProperty(self, symbols.origin, self.ctx)
+    defineProperty(self, symbols.trace, name)
 
     self.ctx.provide(name)
     self.ctx.runtime.name = name
@@ -68,7 +67,7 @@ export abstract class Service<T = unknown, C extends Context = Context> {
     })
 
     self.ctx.on('dispose', () => self.stop())
-    return Context.associate(self, name)
+    return self
   }
 
   protected [symbols.filter](ctx: Context) {
@@ -86,8 +85,9 @@ export abstract class Service<T = unknown, C extends Context = Context> {
     } else {
       self = Object.create(this)
     }
-    defineProperty(self, symbols.origin, this.ctx)
-    return Context.associate<this>(Object.assign(self, props), this.name)
+    defineProperty(self, symbols.trace, this.name)
+    // defineProperty(self, symbols.origin, this.ctx)
+    return Object.assign(self, props)
   }
 
   static [Symbol.hasInstance](instance: any) {
