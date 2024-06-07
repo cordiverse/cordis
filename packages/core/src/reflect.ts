@@ -1,0 +1,180 @@
+import { defineProperty, Dict, isNullable } from 'cosmokit'
+import { Context } from './context'
+import { getTraceable, isObject, isUnproxyable, symbols } from './utils'
+
+declare module './context' {
+  interface Context {
+    get<K extends string & keyof this>(name: K): undefined | this[K]
+    get(name: string): any
+    set<K extends string & keyof this>(name: K, value: undefined | this[K]): () => void
+    set(name: string, value: any): () => void
+    /** @deprecated use `ctx.set()` instead */
+    provide(name: string, value?: any, builtin?: boolean): void
+    accessor(name: string, options: Omit<Context.Internal.Accessor, 'type'>): void
+    alias(name: string, aliases: string[]): void
+    mixin(name: string, mixins: string[] | Dict<string>): void
+  }
+}
+
+export default class ReflectService {
+  static resolveInject(ctx: Context, name: string) {
+    let internal = ctx[symbols.internal][name]
+    while (internal?.type === 'alias') {
+      name = internal.name
+      internal = ctx[symbols.internal][name]
+    }
+    return [name, internal] as const
+  }
+
+  static handler: ProxyHandler<Context> = {
+    get(target, prop, ctx: Context) {
+      if (typeof prop !== 'string') return Reflect.get(target, prop, ctx)
+
+      if (Reflect.has(target, prop)) {
+        return getTraceable(ctx, Reflect.get(target, prop, ctx))
+      }
+
+      const checkInject = (name: string) => {
+        // Case 1: a normal property defined on context
+        if (Reflect.has(target, name)) return
+        // Case 2: built-in services and special properties
+        // - prototype: prototype detection
+        // - then: async function return
+        if (['prototype', 'then', 'registry', 'lifecycle'].includes(name)) return
+        // Case 3: `$` or `_` prefix
+        if (name[0] === '$' || name[0] === '_') return
+        // Case 4: access directly from root
+        if (!ctx.runtime.plugin) return
+        // Case 5: custom inject checks
+        if (ctx.bail(ctx, 'internal/inject', name)) return
+        const warning = new Error(`property ${name} is not registered, declare it as \`inject\` to suppress this warning`)
+        ctx.emit(ctx, 'internal/warning', warning)
+      }
+
+      const [name, internal] = ReflectService.resolveInject(ctx, prop)
+      if (!internal) {
+        checkInject(name)
+        return Reflect.get(target, name, ctx)
+      } else if (internal.type === 'accessor') {
+        return internal.get.call(ctx)
+      } else {
+        if (!internal.builtin) checkInject(name)
+        return ctx.reflect.get(name)
+      }
+    },
+
+    set(target, prop, value, ctx: Context) {
+      if (typeof prop !== 'string') return Reflect.set(target, prop, value, ctx)
+
+      const [name, internal] = ReflectService.resolveInject(ctx, prop)
+      if (!internal) {
+        // TODO
+        return Reflect.set(target, name, value, ctx)
+      }
+      if (internal.type === 'accessor') {
+        if (!internal.set) return false
+        return internal.set.call(ctx, value)
+      } else {
+        // ctx.emit('internal/warning', new Error(`assigning to service ${name} is not recommended, please use \`ctx.set()\` method instead`))
+        ctx.reflect.set(name, value)
+        return true
+      }
+    },
+  }
+
+  constructor(public ctx: Context) {
+    defineProperty(this, symbols.tracker, {
+      associate: 'reflect',
+      property: 'ctx',
+    })
+
+    this.mixin('reflect', ['get', 'set', 'provide', 'accessor', 'mixin', 'alias'])
+  }
+
+  trace(value: any) {
+    return getTraceable(this.ctx, value)
+  }
+
+  get(name: string) {
+    const internal = this.ctx[symbols.internal][name]
+    if (internal?.type !== 'service') return
+    const value = this.ctx.root[this.ctx[symbols.isolate][name]]
+    return getTraceable(this.ctx, value)
+  }
+
+  set(name: string, value: any) {
+    this.provide(name)
+    const key = this.ctx[symbols.isolate][name]
+    const oldValue = this.ctx.root[key]
+    value ??= undefined
+    let dispose = () => {}
+    if (oldValue === value) return dispose
+
+    // check override
+    if (!isNullable(value) && !isNullable(oldValue)) {
+      throw new Error(`service ${name} has been registered`)
+    }
+    const ctx: Context = this.ctx
+    if (!isNullable(value)) {
+      dispose = ctx.effect(() => () => {
+        ctx.set(name, undefined)
+      })
+    }
+    if (isUnproxyable(value)) {
+      ctx.emit(ctx, 'internal/warning', new Error(`service ${name} is an unproxyable object, which may lead to unexpected behavior`))
+    }
+
+    // setup filter for events
+    const self = Object.create(ctx)
+    self[symbols.filter] = (ctx2: Context) => {
+      return ctx[symbols.isolate][name] === ctx2[symbols.isolate][name]
+    }
+
+    ctx.emit(self, 'internal/before-service', name, value)
+    ctx.root[key] = value
+    if (isObject(value)) {
+      defineProperty(value, symbols.source, ctx)
+    }
+    ctx.emit(self, 'internal/service', name, oldValue)
+    return dispose
+  }
+
+  provide(name: string, value?: any, builtin?: boolean) {
+    const internal = this.ctx.root[symbols.internal]
+    if (name in internal) return
+    const key = Symbol(name)
+    internal[name] = { type: 'service', builtin }
+    this.ctx.root[key] = value
+    this.ctx.root[symbols.isolate][name] = key
+  }
+
+  accessor(name: string, options: Omit<Context.Internal.Accessor, 'type'>) {
+    const internal = this.ctx.root[symbols.internal]
+    internal[name] ||= { type: 'accessor', ...options }
+  }
+
+  alias(name: string, aliases: string[]) {
+    const internal = this.ctx.root[symbols.internal]
+    for (const key of aliases) {
+      internal[key] ||= { type: 'alias', name }
+    }
+  }
+
+  mixin(name: string, mixins: string[] | Dict<string>) {
+    const entries = Array.isArray(mixins) ? mixins.map(key => [key, key]) : Object.entries(mixins)
+    for (const [key, value] of entries) {
+      this.accessor(value, {
+        get() {
+          const service = this[name]
+          if (isNullable(service)) return service
+          const value = Reflect.get(service, key)
+          if (typeof value !== 'function') return value
+          return value.bind(service)
+        },
+        set(value) {
+          return Reflect.set(this[name], key, value)
+        },
+      })
+    }
+  }
+}

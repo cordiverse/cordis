@@ -68,7 +68,7 @@ function isTraceable(value: any): value is {} {
   return isObject(value) && !isUnproxyable(value) && symbols.tracker in value
 }
 
-export function getTraceable(ctx: any, value: any) {
+export function getTraceable(ctx: Context, value: any) {
   if (isTraceable(value)) {
     return createTraceable(ctx, value, value[symbols.tracker])
   } else {
@@ -76,7 +76,7 @@ export function getTraceable(ctx: any, value: any) {
   }
 }
 
-function createTraceable(ctx: any, value: any, tracer: Tracker) {
+function createTraceable(ctx: Context, value: any, tracer: Tracker) {
   const proxy = new Proxy(value, {
     get: (target, prop, receiver) => {
       if (typeof prop === 'symbol') {

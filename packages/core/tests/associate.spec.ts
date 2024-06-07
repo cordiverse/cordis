@@ -1,4 +1,4 @@
-import { Context, getTraceable, Service } from '../src'
+import { Context, Service } from '../src'
 import { expect } from 'chai'
 import {} from './utils'
 
@@ -65,14 +65,12 @@ describe('Association', () => {
     }
 
     class Foo extends Service {
-      session: any = Session.prototype
-
       constructor(ctx: Context) {
         super(ctx, 'foo', true)
       }
 
       createSession() {
-        return getTraceable(this.ctx, new this.session.constructor(this.ctx))
+        return this.ctx.reflect.trace(new Session(this.ctx))
       }
     }
 
@@ -83,10 +81,9 @@ describe('Association', () => {
     class Bar extends Service {
       constructor(ctx: Context) {
         super(ctx, 'bar', true)
-        ctx.provide('session.bar')
-        ctx['session.bar'] = function (this: Session) {
+        ctx.set('session.bar', function (this: Session) {
           return this
-        }
+        })
       }
     }
 

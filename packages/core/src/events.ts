@@ -2,6 +2,7 @@ import { Awaitable, defineProperty, Promisify, remove } from 'cosmokit'
 import { Context } from './context.ts'
 import { EffectScope, ForkScope, MainScope, ScopeStatus } from './scope.ts'
 import { symbols } from './index.ts'
+import ReflectService from './reflect.ts'
 
 export function isBailed(value: any) {
   return value !== null && value !== false && value !== undefined
@@ -40,7 +41,7 @@ export interface EventOptions {
 
 type Hook = [Context, (...args: any[]) => any, EventOptions]
 
-export class Lifecycle {
+export default class Lifecycle {
   isActive = false
   _tasks = new Set<Promise<void>>()
   _hooks: Record<keyof any, Hook[]> = {}
@@ -105,7 +106,7 @@ export class Lifecycle {
       while (ctx !== ctx.root) {
         if (Reflect.ownKeys(ctx).includes('scope')) {
           for (const key of ctx.runtime.inject) {
-            if (name === Context.resolveInject(ctx, key)[0]) return true
+            if (name === ReflectService.resolveInject(ctx, key)[0]) return true
           }
         }
         ctx = ctx[symbols.source] ?? Object.getPrototypeOf(ctx)

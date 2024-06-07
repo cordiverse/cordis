@@ -61,7 +61,7 @@ declare module './context.ts' {
   }
 }
 
-export class Registry<C extends Context = Context> {
+export default class Registry<C extends Context = Context> {
   private _counter = 0
   private _internal = new Map<Function, MainScope<C>>()
   protected context: Context

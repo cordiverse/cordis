@@ -1,7 +1,8 @@
-import { defineProperty, Dict, isNullable } from 'cosmokit'
-import { Lifecycle } from './events.ts'
-import { Registry } from './registry.ts'
-import { getTraceable, isObject, isUnproxyable, resolveConfig, symbols } from './utils.ts'
+import { defineProperty, Dict } from 'cosmokit'
+import Lifecycle from './events.ts'
+import ReflectService from './reflect.ts'
+import Registry from './registry.ts'
+import { resolveConfig, symbols } from './utils.ts'
 
 export namespace Context {
   export type Parameterized<C, T = any> = C & { config: T }
@@ -45,6 +46,7 @@ export interface Context {
   [Context.internal]: Dict<Context.Internal>
   root: this
   lifecycle: Lifecycle
+  reflect: ReflectService
   registry: Registry<this>
   config: any
 }
@@ -70,80 +72,6 @@ export class Context {
     Context.prototype[Context.is as any] = true
   }
 
-  private static ensureInternal(): Context[typeof symbols.internal] {
-    const ctx = this.prototype || this
-    if (Object.prototype.hasOwnProperty.call(ctx, symbols.internal)) {
-      return ctx[symbols.internal]
-    }
-    const parent = Context.ensureInternal.call(Object.getPrototypeOf(this))
-    return ctx[symbols.internal] = Object.create(parent)
-  }
-
-  static resolveInject(ctx: Context, name: string) {
-    let internal = ctx[symbols.internal][name]
-    while (internal?.type === 'alias') {
-      name = internal.name
-      internal = ctx[symbols.internal][name]
-    }
-    return [name, internal] as const
-  }
-
-  static handler: ProxyHandler<Context> = {
-    get(target, prop, ctx: Context) {
-      if (typeof prop !== 'string') return Reflect.get(target, prop, ctx)
-
-      if (Reflect.has(target, prop)) {
-        return getTraceable(ctx, Reflect.get(target, prop, ctx))
-      }
-
-      const checkInject = (name: string) => {
-        // Case 1: a normal property defined on context
-        if (Reflect.has(target, name)) return
-        // Case 2: built-in services and special properties
-        // - prototype: prototype detection
-        // - then: async function return
-        if (['prototype', 'then', 'registry', 'lifecycle'].includes(name)) return
-        // Case 3: `$` or `_` prefix
-        if (name[0] === '$' || name[0] === '_') return
-        // Case 4: access directly from root
-        if (!ctx.runtime.plugin) return
-        // Case 5: custom inject checks
-        if (ctx.bail(ctx, 'internal/inject', name)) return
-        const warning = new Error(`property ${name} is not registered, declare it as \`inject\` to suppress this warning`)
-        ctx.emit(ctx, 'internal/warning', warning)
-      }
-
-      const [name, internal] = Context.resolveInject(ctx, prop)
-      if (!internal) {
-        checkInject(name)
-        return Reflect.get(target, name, ctx)
-      } else if (internal.type === 'accessor') {
-        return internal.get.call(ctx)
-      } else {
-        if (!internal.builtin) checkInject(name)
-        return ctx.get(name)
-      }
-    },
-
-    set(target, prop, value, ctx: Context) {
-      if (typeof prop !== 'string') return Reflect.set(target, prop, value, ctx)
-
-      const [name, internal] = Context.resolveInject(ctx, prop)
-      if (!internal) {
-        // TODO
-        return Reflect.set(target, name, value, ctx)
-      }
-      if (internal.type === 'accessor') {
-        if (!internal.set) return false
-        return internal.set.call(ctx, value)
-      } else {
-        // ctx.emit('internal/warning', new Error(`assigning to service ${name} is not recommended, please use \`ctx.set()\` method instead`))
-        ctx.set(name, value)
-        return true
-      }
-    },
-  }
-
   /** @deprecated use `Service.traceable` instead */
   static associate<T extends {}>(object: T, name: string) {
     return object
@@ -151,10 +79,12 @@ export class Context {
 
   constructor(config?: any) {
     config = resolveConfig(this.constructor, config)
+    this[symbols.internal] = Object.create(null)
     this[symbols.isolate] = Object.create(null)
     this[symbols.intercept] = Object.create(null)
-    const self: Context = new Proxy(this, Context.handler)
+    const self: Context = new Proxy(this, ReflectService.handler)
     self.root = self
+    self.reflect = new ReflectService(self)
     self.registry = new Registry(self, config)
     self.lifecycle = new Lifecycle(self)
     self.mixin('scope', ['config', 'runtime', 'effect', 'collect', 'accept', 'decline'])
@@ -194,94 +124,6 @@ export class Context {
   /** @deprecated */
   get state() {
     return this.scope
-  }
-
-  get<K extends string & keyof this>(name: K): undefined | this[K]
-  get(name: string): any
-  get(name: string) {
-    const internal = this[symbols.internal][name]
-    if (internal?.type !== 'service') return
-    const value = this.root[this[symbols.isolate][name]]
-    return getTraceable(this, value)
-  }
-
-  set<K extends string & keyof this>(name: K, value: undefined | this[K]): () => void
-  set(name: string, value: any): () => void
-  set(name: string, value: any) {
-    this.provide(name)
-    const key = this[symbols.isolate][name]
-    const oldValue = this.root[key]
-    value ??= undefined
-    let dispose = () => {}
-    if (oldValue === value) return dispose
-
-    // check override
-    if (!isNullable(value) && !isNullable(oldValue)) {
-      throw new Error(`service ${name} has been registered`)
-    }
-    const ctx: Context = this
-    if (!isNullable(value)) {
-      dispose = ctx.effect(() => () => {
-        ctx.set(name, undefined)
-      })
-    }
-    if (isUnproxyable(value)) {
-      ctx.emit(ctx, 'internal/warning', new Error(`service ${name} is an unproxyable object, which may lead to unexpected behavior`))
-    }
-
-    // setup filter for events
-    const self = Object.create(ctx)
-    self[symbols.filter] = (ctx2: Context) => {
-      return ctx[symbols.isolate][name] === ctx2[symbols.isolate][name]
-    }
-
-    ctx.emit(self, 'internal/before-service', name, value)
-    ctx.root[key] = value
-    if (isObject(value)) {
-      defineProperty(value, symbols.source, ctx)
-    }
-    ctx.emit(self, 'internal/service', name, oldValue)
-    return dispose
-  }
-
-  /** @deprecated use `ctx.set()` instead */
-  provide(name: string, value?: any, builtin?: boolean) {
-    const internal = Context.ensureInternal.call(this.root)
-    if (name in internal) return
-    const key = Symbol(name)
-    internal[name] = { type: 'service', builtin }
-    this.root[key] = value
-    this.root[Context.isolate][name] = key
-  }
-
-  accessor(name: string, options: Omit<Context.Internal.Accessor, 'type'>) {
-    const internal = Context.ensureInternal.call(this.root)
-    internal[name] ||= { type: 'accessor', ...options }
-  }
-
-  alias(name: string, aliases: string[]) {
-    const internal = Context.ensureInternal.call(this.root)
-    for (const key of aliases) {
-      internal[key] ||= { type: 'alias', name }
-    }
-  }
-
-  mixin(name: string, mixins: string[] | Dict<string>) {
-    const entries = Array.isArray(mixins) ? mixins.map(key => [key, key]) : Object.entries(mixins)
-    for (const [key, value] of entries) {
-      this.accessor(value, {
-        get() {
-          const service = this[name]
-          if (isNullable(service)) return service
-          const value = Reflect.get(service, key)
-          if (typeof value !== 'function') return value
-          return value.bind(service)
-        },
-        set(value) {
-          return Reflect.set(this[name], key, value)
-        },
-      })
-    }
   }
 
   extend(meta = {}): this {
