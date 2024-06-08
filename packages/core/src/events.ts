@@ -39,7 +39,10 @@ export interface EventOptions {
   global?: boolean
 }
 
-type Hook = [Context, (...args: any[]) => any, EventOptions]
+interface Hook extends EventOptions {
+  ctx: Context
+  callback: (...args: any[]) => any
+}
 
 export default class Lifecycle {
   isActive = false
@@ -122,59 +125,51 @@ export default class Lifecycle {
 
   getHooks(name: keyof any, thisArg?: object) {
     const hooks = this._hooks[name] || []
-    return hooks.slice().filter(([context, callback, options]) => {
+    return hooks.slice().filter((hook) => {
       const filter = thisArg?.[Context.filter]
-      return options.global || !filter || filter.call(thisArg, context)
-    }).map(([, callback]) => callback)
+      return hook.global || !filter || filter.call(thisArg, hook.ctx)
+    })
   }
 
-  prepareEvent(type: string, args: any[]) {
+  * dispatch(type: string, args: any[]) {
     const thisArg = typeof args[0] === 'object' || typeof args[0] === 'function' ? args.shift() : null
     const name = args.shift()
     if (name !== 'internal/event') {
       this.emit('internal/event', type, name, args, thisArg)
     }
-    return [this.getHooks(name, thisArg), thisArg ?? this.ctx] as const
-  }
-
-  async parallel(...args: any[]) {
-    const [hooks, thisArg] = this.prepareEvent('parallel', args)
-    await Promise.all(hooks.map(async (callback) => {
-      await callback.apply(thisArg, args)
-    }))
-  }
-
-  emit(...args: any[]) {
-    const [hooks, thisArg] = this.prepareEvent('emit', args)
-    for (const callback of hooks) {
-      callback.apply(thisArg, args)
+    for (const hook of this.getHooks(name, thisArg)) {
+      yield hook.callback.apply(thisArg, args)
     }
   }
 
+  async parallel(...args: any[]) {
+    await Promise.all(this.dispatch('emit', args))
+  }
+
+  emit(...args: any[]) {
+    Array.from(this.dispatch('emit', args))
+  }
+
   async serial(...args: any[]) {
-    const [hooks, thisArg] = this.prepareEvent('serial', args)
-    for (const callback of hooks) {
-      const result = await callback.apply(thisArg, args)
+    for await (const result of this.dispatch('serial', args)) {
       if (isBailed(result)) return result
     }
   }
 
   bail(...args: any[]) {
-    const [hooks, thisArg] = this.prepareEvent('bail', args)
-    for (const callback of hooks) {
-      const result = callback.apply(thisArg, args)
+    for (const result of this.dispatch('bail', args)) {
       if (isBailed(result)) return result
     }
   }
 
-  register(label: string, hooks: Hook[], listener: any, options: EventOptions) {
+  register(label: string, hooks: Hook[], callback: any, options: EventOptions) {
     const method = options.prepend ? 'unshift' : 'push'
-    hooks[method]([this.ctx, listener, options])
-    return this.ctx.state.collect(label, () => this.unregister(hooks, listener))
+    hooks[method]({ ctx: this.ctx, callback, ...options })
+    return this.ctx.state.collect(label, () => this.unregister(hooks, callback))
   }
 
-  unregister(hooks: Hook[], listener: any) {
-    const index = hooks.findIndex(([context, callback]) => callback === listener)
+  unregister(hooks: Hook[], callback: any) {
+    const index = hooks.findIndex(hook => hook.callback === callback)
     if (index >= 0) {
       hooks.splice(index, 1)
       return true
@@ -188,6 +183,7 @@ export default class Lifecycle {
 
     // handle special events
     this.ctx.scope.assertActive()
+    listener = this.ctx.reflect.bind(listener)
     const result = this.bail(this.ctx, 'internal/listener', name, listener, options)
     if (result) return result
 
@@ -204,16 +200,12 @@ export default class Lifecycle {
     return dispose
   }
 
-  off(name: string, listener: (...args: any) => any) {
-    return this.unregister(this._hooks[name] || [], listener)
-  }
-
   async start() {
     this.isActive = true
     const hooks = this._hooks.ready || []
     while (hooks.length) {
-      const [context, callback] = hooks.shift()!
-      context.scope.ensure(async () => callback())
+      const { ctx, callback } = hooks.shift()!
+      ctx.scope.ensure(async () => callback())
     }
     await this.flush()
   }

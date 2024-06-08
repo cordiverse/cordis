@@ -68,7 +68,7 @@ function isTraceable(value: any): value is {} {
   return isObject(value) && !isUnproxyable(value) && symbols.tracker in value
 }
 
-export function getTraceable(ctx: Context, value: any) {
+export function getTraceable<T>(ctx: Context, value: T): T {
   if (isTraceable(value)) {
     return createTraceable(ctx, value, value[symbols.tracker])
   } else {

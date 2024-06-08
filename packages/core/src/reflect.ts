@@ -91,10 +91,6 @@ export default class ReflectService {
     this.mixin('reflect', ['get', 'set', 'provide', 'accessor', 'mixin', 'alias'])
   }
 
-  trace(value: any) {
-    return getTraceable(this.ctx, value)
-  }
-
   get(name: string) {
     const internal = this.ctx[symbols.internal][name]
     if (internal?.type !== 'service') return
@@ -176,5 +172,17 @@ export default class ReflectService {
         },
       })
     }
+  }
+
+  trace<T>(value: T) {
+    return getTraceable(this.ctx, value)
+  }
+
+  bind<T extends Function>(callback: T) {
+    return new Proxy(callback, {
+      apply: (target, thisArg, args) => {
+        return target.apply(this.trace(thisArg), args.map(arg => this.trace(arg)))
+      },
+    })
   }
 }

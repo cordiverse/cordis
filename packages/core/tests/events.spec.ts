@@ -40,18 +40,6 @@ describe('Event Listener', () => {
     root.emit(event)
     expect(callback.mock.calls).to.have.length(1)
   })
-
-  it('context.prototype.off', () => {
-    const { root } = setup()
-    const callback = mock.fn()
-    root.on(event, callback)
-    root.emit(event)
-    expect(callback.mock.calls).to.have.length(1)
-    expect(root.off(event, callback)).to.be.ok
-    root.emit(event)
-    expect(callback.mock.calls).to.have.length(1)
-    expect(root.off(event, callback)).to.be.not.ok
-  })
 })
 
 describe('Events Emitter', () => {
