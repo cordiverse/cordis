@@ -128,7 +128,7 @@ describe('Service', () => {
     expect(callback.mock.calls).to.have.length(1)
   })
 
-  it('traceable effect (inject)', async () => {
+  it('traceable effect (with inject)', async () => {
     class Foo extends Service {
       static inject = ['counter']
 
@@ -159,6 +159,40 @@ describe('Service', () => {
     fork.dispose()
     expect(root.foo.count()).to.equal(3)
     expect(warning.mock.calls).to.have.length(0)
+  })
+
+  it('traceable effect (without inject)', async () => {
+    class Foo extends Service {
+      constructor(ctx: Context) {
+        super(ctx, 'foo', true)
+      }
+
+      count() {
+        this.ctx.counter.increse()
+        return this.ctx.counter.value
+      }
+    }
+
+    const root = new Context()
+    const warning = mock.fn()
+    root.on('internal/warning', warning)
+    root.set('counter', new Counter(root))
+
+    root.plugin(Foo)
+    expect(root.foo.count()).to.equal(1)
+    expect(root.foo.count()).to.equal(2)
+    expect(warning.mock.calls).to.have.length(0) // access from root
+
+    const fork = root.inject(['foo'], (ctx) => {
+      expect(ctx.foo.count()).to.equal(3)
+      expect(ctx.foo.count()).to.equal(4)
+      expect(warning.mock.calls).to.have.length(4)
+    })
+
+    fork.dispose()
+    expect(root.foo.count()).to.equal(3)
+
+    await checkError(root)
   })
 
   it('dependency update', async () => {

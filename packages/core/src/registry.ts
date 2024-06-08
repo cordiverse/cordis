@@ -146,18 +146,14 @@ export default class Registry<C extends Context = Context> {
   plugin(plugin: Plugin<C>, config?: any) {
     // check if it's a valid plugin
     this.resolve(plugin, true)
-
-    // magic: this.ctx[symbols.trace] === this
-    // Here we ignore the reference
-    const ctx: C = this.ctx === this.ctx.root ? this.ctx : Object.getPrototypeOf(this.ctx)
-    ctx.scope.assertActive()
+    this.ctx.scope.assertActive()
 
     // resolve plugin config
     let error: any
     try {
       config = resolveConfig(plugin, config)
     } catch (reason) {
-      this.context.emit(ctx, 'internal/error', reason)
+      this.context.emit(this.ctx, 'internal/error', reason)
       error = reason
       config = null
     }
@@ -166,13 +162,13 @@ export default class Registry<C extends Context = Context> {
     let runtime = this.get(plugin)
     if (runtime) {
       if (!runtime.isForkable) {
-        this.context.emit(ctx, 'internal/warning', new Error(`duplicate plugin detected: ${plugin.name}`))
+        this.context.emit(this.ctx, 'internal/warning', new Error(`duplicate plugin detected: ${plugin.name}`))
       }
-      return runtime.fork(ctx, config, error)
+      return runtime.fork(this.ctx, config, error)
     }
 
-    runtime = new MainScope(ctx, plugin, config, error)
+    runtime = new MainScope(this.ctx, plugin, config, error)
     this.set(plugin, runtime)
-    return runtime.fork(ctx, config, error)
+    return runtime.fork(this.ctx, config, error)
   }
 }

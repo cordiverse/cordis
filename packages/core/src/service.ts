@@ -95,6 +95,8 @@ export abstract class Service<T = unknown, C extends Context = Context> {
   static [Symbol.hasInstance](instance: any) {
     let constructor = instance.constructor
     while (constructor) {
+      // constructor may be a proxy
+      constructor = constructor.prototype?.constructor
       if (constructor === this) return true
       constructor = Object.getPrototypeOf(constructor)
     }

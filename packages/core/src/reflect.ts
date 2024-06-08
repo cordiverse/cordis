@@ -31,7 +31,7 @@ export default class ReflectService {
       if (typeof prop !== 'string') return Reflect.get(target, prop, ctx)
 
       if (Reflect.has(target, prop)) {
-        return getTraceable(ctx, Reflect.get(target, prop, ctx))
+        return getTraceable(ctx, Reflect.get(target, prop, ctx), true)
       }
 
       const checkInject = (name: string) => {
@@ -142,6 +142,10 @@ export default class ReflectService {
     internal[name] = { type: 'service', builtin }
     this.ctx.root[key] = value
     this.ctx.root[symbols.isolate][name] = key
+    isObject(value) && defineProperty(value, symbols.tracker, {
+      associate: name,
+      property: 'ctx',
+    })
   }
 
   accessor(name: string, options: Omit<Context.Internal.Accessor, 'type'>) {

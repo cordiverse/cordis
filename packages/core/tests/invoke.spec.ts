@@ -27,7 +27,7 @@ describe('functional service', () => {
         return result
       }
 
-      reflect() {
+      invoke() {
         return this()
       }
 
@@ -54,9 +54,9 @@ describe('functional service', () => {
     expect(foo2()).to.deep.equal({ a: 1, c: 3 })
     const foo3 = foo1.extend({ d: 4 })
     expect(foo3).to.be.instanceof(Foo)
-    expect(foo3.reflect()).to.deep.equal({ a: 1, b: 2, d: 4 })
+    expect(foo3.invoke()).to.deep.equal({ a: 1, b: 2, d: 4 })
 
-    // context tracibility
-    expect(foo1.reflect()).to.deep.equal({ a: 1, b: 2 })
+    // context traceability
+    expect(foo1.invoke()).to.deep.equal({ a: 1, b: 2 })
   })
 })

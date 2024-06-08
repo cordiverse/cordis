@@ -1,6 +1,6 @@
 import { Context, Service } from '../src'
 import { expect } from 'chai'
-import {} from './utils'
+import { checkError } from './utils'
 
 describe('Association', () => {
   it('service injection', async () => {
@@ -61,7 +61,7 @@ describe('Association', () => {
         associate: 'session',
       }
 
-      constructor(private ctx: Context) {}
+      constructor(public ctx: Context) {}
     }
 
     class Foo extends Service {
@@ -70,7 +70,7 @@ describe('Association', () => {
       }
 
       createSession() {
-        return this.ctx.reflect.trace(new Session(this.ctx))
+        return new Session(this.ctx)
       }
     }
 
@@ -79,22 +79,36 @@ describe('Association', () => {
     }
 
     class Bar extends Service {
+      inject = ['foo']
+
       constructor(ctx: Context) {
         super(ctx, 'bar', true)
-        ctx.set('session.bar', function (this: Session) {
-          return this
+        ctx.mixin('bar', {
+          getBar: 'session.bar',
         })
+      }
+
+      getBar(this: Session) {
+        return this
       }
     }
 
     const root = new Context()
-
     root.plugin(Foo)
-    const session = root.foo.createSession()
-    expect(session).to.be.instanceof(Session)
-    expect(session.bar).to.be.undefined
 
-    root.plugin(Bar)
-    expect(session.bar()).to.be.instanceof(Session)
+    root.inject(['foo'], (ctx) => {
+      const session = ctx.foo.createSession()
+      expect(session).to.be.instanceof(Session)
+      expect(session.bar).to.be.undefined
+
+      ctx.plugin(Bar)
+      ctx.inject(['bar'], (ctx) => {
+        const session = ctx.foo.createSession()
+        expect(session).to.be.instanceof(Session)
+        expect(session.bar()).to.be.instanceof(Bar)
+      })
+    })
+
+    await checkError(root)
   })
 })
