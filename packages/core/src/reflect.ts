@@ -12,7 +12,8 @@ declare module './context' {
     provide(name: string, value?: any, builtin?: boolean): void
     accessor(name: string, options: Omit<Context.Internal.Accessor, 'type'>): void
     alias(name: string, aliases: string[]): void
-    mixin(name: string, mixins: string[] | Dict<string>): void
+    mixin<K extends string & keyof this>(name: K, mixins: (keyof this & keyof this[K])[] | Dict<string>): void
+    mixin<T extends {}>(source: T, mixins: (keyof this & keyof T)[] | Dict<string>): void
   }
 }
 
@@ -160,19 +161,20 @@ export default class ReflectService {
     }
   }
 
-  mixin(name: string, mixins: string[] | Dict<string>) {
+  mixin(source: any, mixins: string[] | Dict<string>) {
     const entries = Array.isArray(mixins) ? mixins.map(key => [key, key]) : Object.entries(mixins)
+    const getTarget = typeof source === 'string' ? (ctx: Context) => ctx[source] : () => source
     for (const [key, value] of entries) {
       this.accessor(value, {
         get() {
-          const service = this[name]
+          const service = getTarget(this)
           if (isNullable(service)) return service
           const value = Reflect.get(service, key)
-          if (typeof value !== 'function') return value
+          if (typeof value !== 'function' || typeof source !== 'string') return value
           return value.bind(service)
         },
         set(value) {
-          return Reflect.set(this[name], key, value)
+          return Reflect.set(getTarget(this), key, value)
         },
       })
     }

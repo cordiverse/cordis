@@ -39,7 +39,7 @@ export interface EventOptions {
   global?: boolean
 }
 
-interface Hook extends EventOptions {
+export interface Hook extends EventOptions {
   ctx: Context
   callback: (...args: any[]) => any
 }
@@ -123,8 +123,7 @@ export default class Lifecycle {
     }
   }
 
-  getHooks(name: keyof any, thisArg?: object) {
-    const hooks = this._hooks[name] || []
+  filterHooks(hooks: Hook[], thisArg?: object) {
     return hooks.slice().filter((hook) => {
       const filter = thisArg?.[Context.filter]
       return hook.global || !filter || filter.call(thisArg, hook.ctx)
@@ -137,7 +136,7 @@ export default class Lifecycle {
     if (name !== 'internal/event') {
       this.emit('internal/event', type, name, args, thisArg)
     }
-    for (const hook of this.getHooks(name, thisArg)) {
+    for (const hook of this.filterHooks(this._hooks[name] || [], thisArg)) {
       yield hook.callback.apply(thisArg, args)
     }
   }

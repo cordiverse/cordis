@@ -25,8 +25,8 @@ export namespace Context {
 
     export interface Accessor {
       type: 'accessor'
-      get: () => any
-      set?: (value: any) => boolean
+      get: (this: Context) => any
+      set?: (this: Context, value: any) => boolean
     }
 
     export interface Alias {
@@ -88,8 +88,8 @@ export class Context {
     self.registry = new Registry(self, config)
     self.lifecycle = new Lifecycle(self)
     self.mixin('scope', ['config', 'runtime', 'effect', 'collect', 'accept', 'decline'])
-    self.mixin('registry', ['using', 'inject', 'plugin', 'dispose'])
-    self.mixin('lifecycle', ['on', 'once', 'off', 'after', 'parallel', 'emit', 'serial', 'bail', 'start', 'stop'])
+    self.mixin('registry', ['using', 'inject', 'plugin'])
+    self.mixin('lifecycle', ['on', 'once', 'parallel', 'emit', 'serial', 'bail', 'start', 'stop'])
 
     const attach = (internal: Context[typeof symbols.internal]) => {
       if (!internal) return
