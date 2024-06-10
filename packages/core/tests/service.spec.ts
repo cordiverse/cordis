@@ -150,10 +150,12 @@ describe('Service', () => {
     root.plugin(Foo)
     expect(root.foo.count()).to.equal(1)
     expect(root.foo.count()).to.equal(2)
+    expect(warning.mock.calls).to.have.length(0)
 
     const fork = root.inject(['foo'], (ctx) => {
       expect(ctx.foo.count()).to.equal(3)
       expect(ctx.foo.count()).to.equal(4)
+      expect(warning.mock.calls).to.have.length(0)
     })
 
     fork.dispose()
@@ -181,16 +183,17 @@ describe('Service', () => {
     root.plugin(Foo)
     expect(root.foo.count()).to.equal(1)
     expect(root.foo.count()).to.equal(2)
-    expect(warning.mock.calls).to.have.length(0) // access from root
+    expect(warning.mock.calls).to.have.length(4)
 
     const fork = root.inject(['foo'], (ctx) => {
       expect(ctx.foo.count()).to.equal(3)
       expect(ctx.foo.count()).to.equal(4)
-      expect(warning.mock.calls).to.have.length(4)
+      expect(warning.mock.calls).to.have.length(8)
     })
 
     fork.dispose()
     expect(root.foo.count()).to.equal(3)
+    expect(warning.mock.calls).to.have.length(10)
 
     await checkError(root)
   })

@@ -112,7 +112,7 @@ export default class Lifecycle {
             if (name === ReflectService.resolveInject(ctx, key)[0]) return true
           }
         }
-        ctx = ctx[symbols.source] ?? Object.getPrototypeOf(ctx)
+        ctx = Object.getPrototypeOf(ctx)
       }
     }, { global: true }), Context.static, ctx.scope)
   }

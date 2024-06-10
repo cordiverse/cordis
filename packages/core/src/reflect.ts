@@ -27,6 +27,22 @@ export default class ReflectService {
     return [name, internal] as const
   }
 
+  static checkInject(ctx: Context, name: string) {
+    ctx = ctx[symbols.shadow] ?? ctx
+    // Case 1: built-in services and special properties
+    // - prototype: prototype detection
+    // - then: async function return
+    if (['prototype', 'then', 'registry', 'lifecycle'].includes(name)) return
+    // Case 2: `$` or `_` prefix
+    if (name[0] === '$' || name[0] === '_') return
+    // Case 3: access directly from root
+    if (!ctx.runtime.plugin) return
+    // Case 4: custom inject checks
+    if (ctx.bail(ctx, 'internal/inject', name)) return
+    const warning = new Error(`property ${name} is not registered, declare it as \`inject\` to suppress this warning`)
+    ctx.emit(ctx, 'internal/warning', warning)
+  }
+
   static handler: ProxyHandler<Context> = {
     get(target, prop, ctx: Context) {
       if (typeof prop !== 'string') return Reflect.get(target, prop, ctx)
@@ -35,31 +51,14 @@ export default class ReflectService {
         return getTraceable(ctx, Reflect.get(target, prop, ctx), true)
       }
 
-      const checkInject = (name: string) => {
-        // Case 1: a normal property defined on context
-        if (Reflect.has(target, name)) return
-        // Case 2: built-in services and special properties
-        // - prototype: prototype detection
-        // - then: async function return
-        if (['prototype', 'then', 'registry', 'lifecycle'].includes(name)) return
-        // Case 3: `$` or `_` prefix
-        if (name[0] === '$' || name[0] === '_') return
-        // Case 4: access directly from root
-        if (!ctx.runtime.plugin) return
-        // Case 5: custom inject checks
-        if (ctx.bail(ctx, 'internal/inject', name)) return
-        const warning = new Error(`property ${name} is not registered, declare it as \`inject\` to suppress this warning`)
-        ctx.emit(ctx, 'internal/warning', warning)
-      }
-
       const [name, internal] = ReflectService.resolveInject(ctx, prop)
       if (!internal) {
-        checkInject(name)
+        ReflectService.checkInject(ctx, name)
         return Reflect.get(target, name, ctx)
       } else if (internal.type === 'accessor') {
-        return internal.get.call(ctx)
+        return internal.get.call(ctx, ctx[symbols.target])
       } else {
-        if (!internal.builtin) checkInject(name)
+        if (!internal.builtin) ReflectService.checkInject(ctx, name)
         return ctx.reflect.get(name)
       }
     },
@@ -69,12 +68,12 @@ export default class ReflectService {
 
       const [name, internal] = ReflectService.resolveInject(ctx, prop)
       if (!internal) {
-        // TODO
+        // TODO warning
         return Reflect.set(target, name, value, ctx)
       }
       if (internal.type === 'accessor') {
         if (!internal.set) return false
-        return internal.set.call(ctx, value)
+        return internal.set.call(ctx, value, ctx[symbols.target])
       } else {
         // ctx.emit('internal/warning', new Error(`assigning to service ${name} is not recommended, please use \`ctx.set()\` method instead`))
         ctx.reflect.set(name, value)
@@ -166,15 +165,21 @@ export default class ReflectService {
     const getTarget = typeof source === 'string' ? (ctx: Context) => ctx[source] : () => source
     for (const [key, value] of entries) {
       this.accessor(value, {
-        get() {
+        get(receiver) {
           const service = getTarget(this)
           if (isNullable(service)) return service
-          const value = Reflect.get(service, key)
-          if (typeof value !== 'function' || typeof source !== 'string') return value
-          return value.bind(service)
+          const mixed = receiver && new Proxy(receiver, {
+            get: (target, prop, receiver) => {
+              if (prop in service) return Reflect.get(service, prop, receiver)
+              return Reflect.get(target, prop, receiver)
+            },
+          })
+          const value = Reflect.get(service, key, mixed)
+          if (typeof value !== 'function') return value
+          return value.bind(mixed ?? service)
         },
-        set(value) {
-          return Reflect.set(getTarget(this), key, value)
+        set(value, receiver) {
+          return Reflect.set(getTarget(this), key, value, receiver)
         },
       })
     }

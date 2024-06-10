@@ -2,7 +2,7 @@ import { defineProperty, Dict } from 'cosmokit'
 import Lifecycle from './events.ts'
 import ReflectService from './reflect.ts'
 import Registry from './registry.ts'
-import { resolveConfig, symbols } from './utils.ts'
+import { getTraceable, resolveConfig, symbols } from './utils.ts'
 
 export namespace Context {
   export type Parameterized<C, T = any> = C & { config: T }
@@ -25,8 +25,8 @@ export namespace Context {
 
     export interface Accessor {
       type: 'accessor'
-      get: (this: Context) => any
-      set?: (this: Context, value: any) => boolean
+      get: (this: Context, receiver: any) => any
+      set?: (this: Context, value: any, receiver: any) => boolean
     }
 
     export interface Alias {
@@ -127,7 +127,10 @@ export class Context {
   }
 
   extend(meta = {}): this {
-    return Object.assign(Object.create(this), meta)
+    const source = Reflect.getOwnPropertyDescriptor(this, symbols.shadow)?.value
+    const self = Object.assign(Object.create(getTraceable(this, this)), meta)
+    if (!source || Object.hasOwn(meta, symbols.source)) return self
+    return Object.assign(Object.create(self), { [symbols.shadow]: source })
   }
 
   isolate(name: string, label?: symbol) {
