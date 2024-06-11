@@ -54,7 +54,7 @@ describe('Association', () => {
     expect(root.foo.baz()).to.be.instanceof(Foo)
   })
 
-  it('associated type', async () => {
+  it('associated type - service injection', async () => {
     class Session {
       [Service.tracker] = {
         property: 'ctx',
@@ -107,6 +107,66 @@ describe('Association', () => {
         expect(session).to.be.instanceof(Session)
         expect(session.bar()).to.be.instanceof(Bar)
       })
+    })
+
+    await checkError(root)
+  })
+
+  it('associated type - accessor injection', async () => {
+    class Session {
+      [Service.tracker] = {
+        property: 'ctx',
+        associate: 'session',
+      }
+
+      constructor(public ctx: Context) {}
+    }
+
+    class Foo extends Service {
+      constructor(ctx: Context) {
+        super(ctx, 'foo', true)
+      }
+
+      session() {
+        return new Session(this.ctx)
+      }
+    }
+
+    interface Session {
+      bar: number
+    }
+
+    interface Bar extends Session {
+      secret: number
+    }
+
+    class Bar {
+      constructor(ctx: Context) {
+        ctx.mixin(this, {
+          bar: 'session.bar',
+        })
+      }
+
+      get bar() {
+        return this.secret
+      }
+
+      set bar(value: number) {
+        this.secret = value + 1
+      }
+    }
+
+    const root = new Context()
+    root.plugin(Foo)
+    root.plugin(Bar)
+
+    root.inject(['foo'], (ctx) => {
+      const session = ctx.foo.session()
+      expect(session).to.be.instanceof(Session)
+      expect(session.bar).to.be.undefined
+
+      session.bar = 100
+      expect(session.bar).to.equal(101)
     })
 
     await checkError(root)

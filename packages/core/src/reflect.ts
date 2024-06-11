@@ -1,6 +1,6 @@
 import { defineProperty, Dict, isNullable } from 'cosmokit'
 import { Context } from './context'
-import { getTraceable, isObject, isUnproxyable, symbols } from './utils'
+import { createMixin, getTraceable, isObject, isUnproxyable, symbols } from './utils'
 
 declare module './context' {
   interface Context {
@@ -56,7 +56,7 @@ export default class ReflectService {
         ReflectService.checkInject(ctx, name)
         return Reflect.get(target, name, ctx)
       } else if (internal.type === 'accessor') {
-        return internal.get.call(ctx, ctx[symbols.target])
+        return internal.get.call(ctx, ctx[symbols.receiver])
       } else {
         if (!internal.builtin) ReflectService.checkInject(ctx, name)
         return ctx.reflect.get(name)
@@ -73,7 +73,7 @@ export default class ReflectService {
       }
       if (internal.type === 'accessor') {
         if (!internal.set) return false
-        return internal.set.call(ctx, value, ctx[symbols.target])
+        return internal.set.call(ctx, value, ctx[symbols.receiver])
       } else {
         // ctx.emit('internal/warning', new Error(`assigning to service ${name} is not recommended, please use \`ctx.set()\` method instead`))
         ctx.reflect.set(name, value)
@@ -168,18 +168,15 @@ export default class ReflectService {
         get(receiver) {
           const service = getTarget(this)
           if (isNullable(service)) return service
-          const mixed = receiver && new Proxy(receiver, {
-            get: (target, prop, receiver) => {
-              if (prop in service) return Reflect.get(service, prop, receiver)
-              return Reflect.get(target, prop, receiver)
-            },
-          })
-          const value = Reflect.get(service, key, mixed)
+          const mixin = createMixin(service, receiver)
+          const value = Reflect.get(service, key, mixin)
           if (typeof value !== 'function') return value
-          return value.bind(mixed ?? service)
+          return value.bind(mixin ?? service)
         },
         set(value, receiver) {
-          return Reflect.set(getTarget(this), key, value, receiver)
+          const service = getTarget(this)
+          const mixin = createMixin(service, receiver)
+          return Reflect.set(service, key, value, mixin)
         },
       })
     }

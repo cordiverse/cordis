@@ -9,7 +9,7 @@ export interface Tracker {
 export const symbols = {
   // internal symbols
   shadow: Symbol.for('cordis.shadow'),
-  target: Symbol.for('cordis.target'),
+  receiver: Symbol.for('cordis.receiver'),
 
   // context symbols
   source: Symbol.for('cordis.source') as typeof Context.source,
@@ -129,7 +129,7 @@ function createTraceable(ctx: Context, value: any, tracker: Tracker, noTrap?: bo
       if (tracker.associate && ctx[symbols.internal][`${tracker.associate}.${prop}`]) {
         return Reflect.get(ctx, `${tracker.associate}.${prop}`, new Proxy(ctx, {
           get: (target2, prop2, receiver2) => {
-            if (prop2 === symbols.target) return receiver
+            if (prop2 === symbols.receiver) return receiver
             return Reflect.get(target2, prop2, receiver2)
           },
         }))
@@ -152,7 +152,7 @@ function createTraceable(ctx: Context, value: any, tracker: Tracker, noTrap?: bo
       if (tracker.associate && ctx[symbols.internal][`${tracker.associate}.${prop}`]) {
         return Reflect.set(ctx, `${tracker.associate}.${prop}`, value, new Proxy(ctx, {
           get: (target2, prop2, receiver2) => {
-            if (prop2 === symbols.target) return receiver
+            if (prop2 === symbols.receiver) return receiver
             return Reflect.get(target2, prop2, receiver2)
           },
         }))
@@ -178,4 +178,13 @@ export function createCallable(name: string, proto: {}, tracker: Tracker) {
   }
   defineProperty(self, 'name', name)
   return Object.setPrototypeOf(self, proto)
+}
+
+export function createMixin(service: {}, receiver: any) {
+  return receiver ? new Proxy(receiver, {
+    get: (target, prop, receiver) => {
+      if (prop in service) return Reflect.get(service, prop, receiver)
+      return Reflect.get(target, prop, receiver)
+    },
+  }) : service
 }
