@@ -104,16 +104,16 @@ export default class Lifecycle {
     }, { global: true }), Context.static, ctx.scope)
 
     // inject in ancestor contexts
-    defineProperty(this.on('internal/inject', function (this: Context, name) {
-      let ctx = this
-      while (ctx !== ctx.root) {
-        if (Reflect.ownKeys(ctx).includes('scope')) {
-          for (const key of ctx.runtime.inject) {
-            if (name === ReflectService.resolveInject(ctx, key)[0]) return true
-          }
-        }
-        ctx = Object.getPrototypeOf(ctx)
+    const checkInject = (scope: EffectScope, name: string) => {
+      if (!scope.runtime.plugin) return false
+      for (const key of scope.runtime.inject) {
+        if (name === ReflectService.resolveInject(scope.ctx, key)[0]) return true
       }
+      return checkInject(scope.parent.scope, name)
+    }
+
+    defineProperty(this.on('internal/inject', function (this: Context, name) {
+      return checkInject(this.scope, name)
     }, { global: true }), Context.static, ctx.scope)
   }
 

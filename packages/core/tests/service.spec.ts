@@ -136,9 +136,12 @@ describe('Service', () => {
         super(ctx, 'foo', true)
       }
 
-      count() {
-        this.ctx.counter.increse()
+      get value() {
         return this.ctx.counter.value
+      }
+
+      increase() {
+        return this.ctx.counter.increase()
       }
     }
 
@@ -148,19 +151,22 @@ describe('Service', () => {
     root.set('counter', new Counter(root))
 
     root.plugin(Foo)
-    expect(root.foo.count()).to.equal(1)
-    expect(root.foo.count()).to.equal(2)
+    root.foo.increase()
+    expect(root.foo.value).to.equal(1)
     expect(warning.mock.calls).to.have.length(0)
 
     const fork = root.inject(['foo'], (ctx) => {
-      expect(ctx.foo.count()).to.equal(3)
-      expect(ctx.foo.count()).to.equal(4)
+      root.foo.increase()
+      expect(ctx.foo.value).to.equal(2)
       expect(warning.mock.calls).to.have.length(0)
     })
 
     fork.dispose()
-    expect(root.foo.count()).to.equal(3)
+    root.foo.increase()
+    expect(root.foo.value).to.equal(3)
     expect(warning.mock.calls).to.have.length(0)
+
+    await checkError(root)
   })
 
   it('traceable effect (without inject)', async () => {
@@ -169,9 +175,12 @@ describe('Service', () => {
         super(ctx, 'foo', true)
       }
 
-      count() {
-        this.ctx.counter.increse()
+      get value() {
         return this.ctx.counter.value
+      }
+
+      increase() {
+        return this.ctx.counter.increase()
       }
     }
 
@@ -181,19 +190,20 @@ describe('Service', () => {
     root.set('counter', new Counter(root))
 
     root.plugin(Foo)
-    expect(root.foo.count()).to.equal(1)
-    expect(root.foo.count()).to.equal(2)
-    expect(warning.mock.calls).to.have.length(4)
+    root.foo.increase()
+    expect(root.foo.value).to.equal(1)
+    expect(warning.mock.calls).to.have.length(2)
 
     const fork = root.inject(['foo'], (ctx) => {
-      expect(ctx.foo.count()).to.equal(3)
-      expect(ctx.foo.count()).to.equal(4)
-      expect(warning.mock.calls).to.have.length(8)
+      root.foo.increase()
+      expect(root.foo.value).to.equal(2)
+      expect(warning.mock.calls).to.have.length(4)
     })
 
     fork.dispose()
-    expect(root.foo.count()).to.equal(3)
-    expect(warning.mock.calls).to.have.length(10)
+    root.foo.increase()
+    expect(root.foo.value).to.equal(3)
+    expect(warning.mock.calls).to.have.length(6)
 
     await checkError(root)
   })

@@ -1,6 +1,6 @@
 import { defineProperty, Dict, isNullable } from 'cosmokit'
 import { Context } from './context'
-import { createMixin, getTraceable, isObject, isUnproxyable, symbols } from './utils'
+import { getTraceable, isObject, isUnproxyable, symbols, withProps } from './utils'
 
 declare module './context' {
   interface Context {
@@ -168,14 +168,14 @@ export default class ReflectService {
         get(receiver) {
           const service = getTarget(this)
           if (isNullable(service)) return service
-          const mixin = createMixin(service, receiver)
+          const mixin = receiver ? withProps(receiver, service) : service
           const value = Reflect.get(service, key, mixin)
           if (typeof value !== 'function') return value
           return value.bind(mixin ?? service)
         },
         set(value, receiver) {
           const service = getTarget(this)
-          const mixin = createMixin(service, receiver)
+          const mixin = receiver ? withProps(receiver, service) : service
           return Reflect.set(service, key, value, mixin)
         },
       })

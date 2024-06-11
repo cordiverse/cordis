@@ -53,7 +53,7 @@ export class Counter {
 
   constructor(public ctx: Context) {}
 
-  increse() {
+  increase() {
     return this.ctx.effect(() => {
       this.value++
       return () => this.value--

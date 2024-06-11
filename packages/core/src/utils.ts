@@ -78,26 +78,39 @@ export function getTraceable<T>(ctx: Context, value: T, noTrap?: boolean): T {
   return createTraceable(ctx, value, tracker, noTrap)
 }
 
-function createShadowMethod(ctx: Context, value: any, outer: any, property: string) {
+export function withProps(target: any, props?: {}) {
+  if (!props) return target
+  return new Proxy(target, {
+    get: (target, prop, receiver) => {
+      if (prop in props) return Reflect.get(props, prop, receiver)
+      return Reflect.get(target, prop, receiver)
+    },
+    set: (target, prop, value, receiver) => {
+      if (prop in props) return Reflect.set(props, prop, value, receiver)
+      return Reflect.set(target, prop, value, receiver)
+    },
+  })
+}
+
+function withProp(target: any, prop: string | symbol, value: any) {
+  return withProps(target, Object.defineProperty(Object.create(null), prop, {
+    value,
+    writable: false,
+  }))
+}
+
+function createShadow(ctx: Context, target: any, property: string | undefined, receiver: any) {
+  if (!property) return receiver
+  const origin = Reflect.getOwnPropertyDescriptor(target, property)?.value
+  if (!origin) return receiver
+  return withProp(receiver, property, ctx.extend({ [symbols.shadow]: origin }))
+}
+
+function createShadowMethod(ctx: Context, value: any, outer: any, shadow: {}) {
   return new Proxy(value, {
     apply: (target, thisArg, args) => {
-      const isBound = thisArg === outer
-
       // contravariant
-      thisArg = new Proxy(thisArg, {
-        get: (target, prop, receiver) => {
-          if (prop === property && isBound) {
-            const origin = Reflect.getOwnPropertyDescriptor(target, prop)?.value
-            return ctx.extend({ [symbols.shadow]: origin })
-          }
-          return Reflect.get(target, prop, receiver)
-        },
-        set: (target, prop, value, receiver) => {
-          if (prop === property) return false
-          return Reflect.set(target, prop, value, receiver)
-        },
-      })
-
+      if (thisArg === outer) thisArg = shadow
       // contravariant
       args = args.map((arg) => {
         if (typeof arg !== 'function') return arg
@@ -108,14 +121,12 @@ function createShadowMethod(ctx: Context, value: any, outer: any, property: stri
           },
         })
       })
-
       // covariant
       return getTraceable(ctx, Reflect.apply(target, thisArg, args))
     },
   })
 }
 
-// covariant
 function createTraceable(ctx: Context, value: any, tracker: Tracker, noTrap?: boolean) {
   if (ctx[symbols.shadow]) {
     ctx = Object.getPrototypeOf(ctx)
@@ -127,19 +138,15 @@ function createTraceable(ctx: Context, value: any, tracker: Tracker, noTrap?: bo
         return Reflect.get(target, prop, receiver)
       }
       if (tracker.associate && ctx[symbols.internal][`${tracker.associate}.${prop}`]) {
-        return Reflect.get(ctx, `${tracker.associate}.${prop}`, new Proxy(ctx, {
-          get: (target2, prop2, receiver2) => {
-            if (prop2 === symbols.receiver) return receiver
-            return Reflect.get(target2, prop2, receiver2)
-          },
-        }))
+        return Reflect.get(ctx, `${tracker.associate}.${prop}`, withProp(ctx, symbols.receiver, receiver))
       }
-      const innerValue = Reflect.get(target, prop, receiver)
+      const shadow = createShadow(ctx, target, tracker.property, receiver)
+      const innerValue = Reflect.get(target, prop, shadow)
       const innerTracker = innerValue?.[symbols.tracker]
       if (innerTracker) {
         return createTraceable(ctx, innerValue, innerTracker)
-      } else if (!noTrap && tracker.property && typeof innerValue === 'function') {
-        return createShadowMethod(ctx, innerValue, receiver, tracker.property)
+      } else if (!noTrap && typeof innerValue === 'function') {
+        return createShadowMethod(ctx, innerValue, receiver, shadow)
       } else {
         return innerValue
       }
@@ -150,14 +157,10 @@ function createTraceable(ctx: Context, value: any, tracker: Tracker, noTrap?: bo
         return Reflect.set(target, prop, value, receiver)
       }
       if (tracker.associate && ctx[symbols.internal][`${tracker.associate}.${prop}`]) {
-        return Reflect.set(ctx, `${tracker.associate}.${prop}`, value, new Proxy(ctx, {
-          get: (target2, prop2, receiver2) => {
-            if (prop2 === symbols.receiver) return receiver
-            return Reflect.get(target2, prop2, receiver2)
-          },
-        }))
+        return Reflect.set(ctx, `${tracker.associate}.${prop}`, value, withProp(ctx, symbols.receiver, receiver))
       }
-      return Reflect.set(target, prop, value, receiver)
+      const shadow = createShadow(ctx, target, tracker.property, receiver)
+      return Reflect.set(target, prop, value, shadow)
     },
     apply: (target, thisArg, args) => {
       return applyTraceable(proxy, target, thisArg, args)
@@ -178,13 +181,4 @@ export function createCallable(name: string, proto: {}, tracker: Tracker) {
   }
   defineProperty(self, 'name', name)
   return Object.setPrototypeOf(self, proto)
-}
-
-export function createMixin(service: {}, receiver: any) {
-  return receiver ? new Proxy(receiver, {
-    get: (target, prop, receiver) => {
-      if (prop in service) return Reflect.get(service, prop, receiver)
-      return Reflect.get(target, prop, receiver)
-    },
-  }) : service
 }
