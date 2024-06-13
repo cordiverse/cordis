@@ -22,11 +22,9 @@ export class Context extends core.Context {
     this.baseDir = globalThis.process?.cwd() || ''
 
     this.provide('logger', undefined, true)
-    this.provide('schema', undefined, true)
     this.provide('timer', undefined, true)
 
     this.plugin(LoggerService)
-    this.plugin(SchemaService)
     this.plugin(TimerService)
   }
 }
@@ -34,6 +32,7 @@ export class Context extends core.Context {
 export abstract class Service<T = unknown, C extends Context = Context> extends core.Service<T, C> {
   /** @deprecated use `this.ctx.logger` instead */
   public logger: Logger
+  public schema: SchemaService
 
   constructor(...args: core.Spread<T>)
   constructor(ctx: C, ...args: core.Spread<T>)
@@ -41,6 +40,7 @@ export abstract class Service<T = unknown, C extends Context = Context> extends 
   constructor(...args: any) {
     super(...args)
     this.logger = this.ctx.logger(this.name)
+    this.schema = new SchemaService(this.ctx)
   }
 
   [core.Service.setup]() {

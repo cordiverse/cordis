@@ -82,7 +82,7 @@ export default class Lifecycle {
     // non-reusable plugin forks are not responsive to isolated service changes
     defineProperty(this.on('internal/before-service', function (this: Context, name) {
       for (const runtime of this.registry.values()) {
-        if (!runtime.using.includes(name)) continue
+        if (!runtime.inject[name]?.required) continue
         const scopes = runtime.isReusable ? runtime.children : [runtime]
         for (const scope of scopes) {
           if (!this[symbols.filter](scope.ctx)) continue
@@ -94,7 +94,7 @@ export default class Lifecycle {
 
     defineProperty(this.on('internal/service', function (this: Context, name) {
       for (const runtime of this.registry.values()) {
-        if (!runtime.using.includes(name)) continue
+        if (!runtime.inject[name]?.required) continue
         const scopes = runtime.isReusable ? runtime.children : [runtime]
         for (const scope of scopes) {
           if (!this[symbols.filter](scope.ctx)) continue
@@ -106,7 +106,7 @@ export default class Lifecycle {
     // inject in ancestor contexts
     const checkInject = (scope: EffectScope, name: string) => {
       if (!scope.runtime.plugin) return false
-      for (const key of scope.runtime.inject) {
+      for (const key in scope.runtime.inject) {
         if (name === ReflectService.resolveInject(scope.ctx, key)[0]) return true
       }
       return checkInject(scope.parent.scope, name)

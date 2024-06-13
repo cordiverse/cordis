@@ -3,13 +3,31 @@ import { Context } from './context.ts'
 import { ForkScope, MainScope } from './scope.ts'
 import { resolveConfig, symbols } from './utils.ts'
 
-export function isApplicable(object: Plugin) {
+function isApplicable(object: Plugin) {
   return object && typeof object === 'object' && typeof object.apply === 'function'
 }
 
-export interface Inject {
-  readonly required?: string[]
-  readonly optional?: string[]
+export type Inject = string[] | Dict<Inject.Meta>
+
+export namespace Inject {
+  export interface Meta {
+    required: boolean
+  }
+
+  export function resolve(inject: Inject | null | undefined) {
+    if (!inject) return {}
+    if (Array.isArray(inject)) {
+      return Object.fromEntries(inject.map(name => [name, { required: true }]))
+    }
+    const { required, optional, ...rest } = inject
+    if (Array.isArray(required)) {
+      Object.assign(rest, Object.fromEntries(required.map(name => [name, { required: true }])))
+    }
+    if (Array.isArray(optional)) {
+      Object.assign(rest, Object.fromEntries(optional.map(name => [name, { required: false }])))
+    }
+    return rest
+  }
 }
 
 export type Plugin<C extends Context = Context, T = any> =
@@ -23,7 +41,7 @@ export namespace Plugin {
     reactive?: boolean
     reusable?: boolean
     Config?: (config: any) => T
-    inject?: string[] | Inject
+    inject?: Inject
     intercept?: Dict<boolean>
   }
 
@@ -50,8 +68,8 @@ export type Spread<T> = undefined extends T ? [config?: T] : [config: T]
 declare module './context.ts' {
   export interface Context {
     /** @deprecated use `ctx.inject()` instead */
-    using(deps: string[] | Inject, callback: Plugin.Function<this, void>): ForkScope<this>
-    inject(deps: string[] | Inject, callback: Plugin.Function<this, void>): ForkScope<this>
+    using(deps: Inject, callback: Plugin.Function<this, void>): ForkScope<this>
+    inject(deps: Inject, callback: Plugin.Function<this, void>): ForkScope<this>
     plugin<T = undefined, S = T>(plugin: Plugin.Function<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): ForkScope<this>
     plugin<T = undefined, S = T>(plugin: Plugin.Constructor<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): ForkScope<this>
     plugin<T = undefined, S = T>(plugin: Plugin.Object<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): ForkScope<this>
@@ -135,11 +153,11 @@ export default class Registry<C extends Context = Context> {
     return this._internal.forEach(callback)
   }
 
-  using(inject: string[] | Inject, callback: Plugin.Function<C, void>) {
+  using(inject: Inject, callback: Plugin.Function<C, void>) {
     return this.inject(inject, callback)
   }
 
-  inject(inject: string[] | Inject, callback: Plugin.Function<C, void>) {
+  inject(inject: Inject, callback: Plugin.Function<C, void>) {
     return this.plugin({ inject, apply: callback, name: callback.name })
   }
 

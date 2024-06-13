@@ -1,28 +1,18 @@
 import { Context, EffectScope, Inject } from '@cordisjs/core'
+import { filterKeys } from 'cosmokit'
 import { Entry } from './entry.ts'
 
 declare module './entry.ts' {
   interface EntryOptions {
-    inject?: string[] | Inject | null
+    inject?: Inject | null
   }
 }
 
 export const name = 'inject'
 
 export function apply(ctx: Context) {
-  function getRequired(entry?: Entry) {
-    return Array.isArray(entry?.options.inject)
-      ? entry.options.inject
-      : entry?.options.inject?.required ?? []
-  }
-
-  function getInject(entry?: Entry) {
-    return Array.isArray(entry?.options.inject)
-      ? entry?.options.inject
-      : [
-        ...entry?.options.inject?.required ?? [],
-        ...entry?.options.inject?.optional ?? [],
-      ]
+  function getRequired(entry: Entry) {
+    return filterKeys(Inject.resolve(entry.options.inject), (_, meta) => meta.required)
   }
 
   const checkInject = (scope: EffectScope, name: string) => {
@@ -30,7 +20,7 @@ export function apply(ctx: Context) {
     if (scope.runtime === scope) {
       return scope.runtime.children.every(fork => checkInject(fork, name))
     }
-    if (getInject(scope.entry).includes(name)) return true
+    if (name in Inject.resolve(scope.entry?.options.inject)) return true
     return checkInject(scope.parent.scope, name)
   }
 
@@ -39,21 +29,21 @@ export function apply(ctx: Context) {
   })
 
   ctx.on('loader/entry-check', (entry) => {
-    for (const name of getRequired(entry)) {
+    for (const name in getRequired(entry)) {
       if (!entry.ctx.get(name)) return true
     }
   })
 
   ctx.on('internal/before-service', (name) => {
     for (const entry of ctx.loader.entries()) {
-      if (!getRequired(entry).includes(name)) continue
+      if (!(name in getRequired(entry))) continue
       entry.refresh()
     }
   }, { global: true })
 
   ctx.on('internal/service', (name) => {
     for (const entry of ctx.loader.entries()) {
-      if (!getRequired(entry).includes(name)) continue
+      if (!(name in getRequired(entry))) continue
       entry.refresh()
     }
   }, { global: true })

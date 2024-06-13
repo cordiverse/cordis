@@ -1,4 +1,4 @@
-import { deepEqual, defineProperty, isNullable, remove } from 'cosmokit'
+import { deepEqual, defineProperty, Dict, isNullable, remove } from 'cosmokit'
 import { Context } from './context.ts'
 import { Inject, Plugin } from './registry.ts'
 import { isConstructor, resolveConfig } from './utils.ts'
@@ -167,7 +167,9 @@ export abstract class EffectScope<C extends Context = Context> {
   }
 
   get ready() {
-    return this.runtime.using.every(name => !isNullable(this.ctx.get(name)))
+    return Object.entries(this.runtime.inject).every(([name, inject]) => {
+      return !inject.required || !isNullable(this.ctx.get(name))
+    })
   }
 
   reset() {
@@ -303,8 +305,7 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
   runtime = this
   schema: any
   name?: string
-  using: string[] = []
-  inject = new Set<string>()
+  inject: Dict<Inject.Meta> = Object.create(null)
   forkables: Function[] = []
   children: ForkScope<C>[] = []
   isReusable?: boolean = false
@@ -336,28 +337,11 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
     return true
   }
 
-  private setInject(inject?: string[] | Inject): void {
-    if (Array.isArray(inject)) {
-      for (const name of inject) {
-        this.using.push(name)
-        this.inject.add(name)
-      }
-    } else if (inject) {
-      for (const name of inject.required || []) {
-        this.using.push(name)
-        this.inject.add(name)
-      }
-      for (const name of inject.optional || []) {
-        this.inject.add(name)
-      }
-    }
-  }
-
   private setup() {
     const { name } = this.plugin
     if (name && name !== 'apply') this.name = name
     this.schema = this.plugin['Config'] || this.plugin['schema']
-    this.setInject(this.plugin['using'] || this.plugin['inject'])
+    this.inject = Inject.resolve(this.plugin['using'] || this.plugin['inject'])
     this.isReusable = this.plugin['reusable']
     this.isReactive = this.plugin['reactive']
     this.context.emit('internal/runtime', this)

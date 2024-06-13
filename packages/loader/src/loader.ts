@@ -50,10 +50,8 @@ export namespace Loader {
 export abstract class Loader<C extends Context = Context> extends ImportTree<C> {
   // TODO auto inject optional when provided?
   static inject = {
-    optional: ['loader'],
+    loader: { required: false },
   }
-
-  private [Context.current]!: C
 
   // process
   public envData = process.env.CORDIS_SHARED
@@ -127,7 +125,7 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
     await super.start()
   }
 
-  locate(ctx = this[Context.current]) {
+  locate(ctx = this.ctx) {
     return this._locate(ctx.scope).map(entry => entry.id)
   }
 

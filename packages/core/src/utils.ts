@@ -10,6 +10,7 @@ export const symbols = {
   // internal symbols
   shadow: Symbol.for('cordis.shadow'),
   receiver: Symbol.for('cordis.receiver'),
+  original: Symbol.for('cordis.original'),
 
   // context symbols
   source: Symbol.for('cordis.source') as typeof Context.source,
@@ -133,6 +134,7 @@ function createTraceable(ctx: Context, value: any, tracker: Tracker, noTrap?: bo
   }
   const proxy = new Proxy(value, {
     get: (target, prop, receiver) => {
+      if (prop === symbols.original) return target
       if (prop === tracker.property) return ctx
       if (typeof prop === 'symbol') {
         return Reflect.get(target, prop, receiver)
@@ -152,6 +154,7 @@ function createTraceable(ctx: Context, value: any, tracker: Tracker, noTrap?: bo
       }
     },
     set: (target, prop, value, receiver) => {
+      if (prop === symbols.original) return false
       if (prop === tracker.property) return false
       if (typeof prop === 'symbol') {
         return Reflect.set(target, prop, value, receiver)
