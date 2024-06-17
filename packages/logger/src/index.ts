@@ -1,4 +1,5 @@
 import { Context, Service } from '@cordisjs/core'
+import { defineProperty } from 'cosmokit'
 import Logger from 'reggol'
 
 export { Logger }
@@ -9,13 +10,19 @@ declare module '@cordisjs/core' {
   }
 }
 
+declare module 'reggol' {
+  namespace Logger {
+    interface Meta {
+      ctx?: Context
+    }
+  }
+}
+
 export interface LoggerService extends Pick<Logger, Logger.Type | 'extend'> {
   (name: string): Logger
 }
 
 export class LoggerService extends Service {
-  static [Service.provide] = 'logger'
-
   constructor(ctx: Context) {
     super(ctx, 'logger', true)
 
@@ -33,14 +40,13 @@ export class LoggerService extends Service {
   }
 
   [Service.invoke](name: string) {
-    return new Logger(name, { [Context.origin]: this })
+    return new Logger(name, defineProperty({}, 'ctx', this.ctx))
   }
 
   static {
-    for (const type of ['success', 'error', 'info', 'warn', 'debug', 'extend'] as const) {
-      LoggerService.prototype[type] = function (this: any, ...args: any[]) {
-        const caller: Context = this[Context.origin]
-        return this(caller.name)[type](...args)
+    for (const type of ['success', 'error', 'info', 'warn', 'debug', 'extend']) {
+      LoggerService.prototype[type] = function (this: LoggerService, ...args: any[]) {
+        return this(this.ctx.name)[type](...args)
       }
     }
   }
