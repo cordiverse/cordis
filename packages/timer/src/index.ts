@@ -21,7 +21,7 @@ export class TimerService extends Service {
   }
 
   setTimeout(callback: () => void, delay: number) {
-    const dispose = this[Context.origin].effect(() => {
+    const dispose = this.ctx.effect(() => {
       const timer = setTimeout(() => {
         dispose()
         callback()
@@ -32,14 +32,14 @@ export class TimerService extends Service {
   }
 
   setInterval(callback: () => void, delay: number) {
-    return this[Context.origin].effect(() => {
+    return this.ctx.effect(() => {
       const timer = setInterval(callback, delay)
       return () => clearInterval(timer)
     })
   }
 
   sleep(delay: number) {
-    const caller = this[Context.origin]
+    const caller = this.ctx
     return new Promise<void>((resolve, reject) => {
       const dispose1 = this.setTimeout(() => {
         dispose1()
@@ -55,22 +55,21 @@ export class TimerService extends Service {
   }
 
   private createWrapper(callback: (args: any[], check: () => boolean) => any, isDisposed = false) {
-    const caller = this[Context.origin]
-    caller.scope.assertActive()
+    this.ctx.scope.assertActive()
 
     let timer: number | NodeJS.Timeout | undefined
     const dispose = () => {
       isDisposed = true
-      remove(caller.scope.disposables, dispose)
+      remove(this.ctx.scope.disposables, dispose)
       clearTimeout(timer)
     }
 
     const wrapper: any = (...args: any[]) => {
       clearTimeout(timer)
-      timer = callback(args, () => !isDisposed && caller.scope.isActive)
+      timer = callback(args, () => !isDisposed && this.ctx.scope.isActive)
     }
     wrapper.dispose = dispose
-    caller.scope.disposables.push(dispose)
+    this.ctx.scope.disposables.push(dispose)
     return wrapper
   }
 
