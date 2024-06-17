@@ -17,7 +17,7 @@ declare module './context' {
   }
 }
 
-export default class ReflectService {
+class ReflectService {
   static resolveInject(ctx: Context, name: string) {
     let internal = ctx[symbols.internal][name]
     while (internal?.type === 'alias') {
@@ -75,7 +75,7 @@ export default class ReflectService {
         if (!internal.set) return false
         return internal.set.call(ctx, value, ctx[symbols.receiver])
       } else {
-        // ctx.emit('internal/warning', new Error(`assigning to service ${name} is not recommended, please use \`ctx.set()\` method instead`))
+        // ctx.emit(ctx, 'internal/warning', new Error(`assigning to service ${name} is not recommended, please use \`ctx.set()\` method instead`))
         ctx.reflect.set(name, value)
         return true
       }
@@ -194,3 +194,5 @@ export default class ReflectService {
     })
   }
 }
+
+export default ReflectService

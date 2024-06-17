@@ -44,7 +44,7 @@ export interface Hook extends EventOptions {
   callback: (...args: any[]) => any
 }
 
-export default class Lifecycle {
+class Lifecycle {
   isActive = false
   _tasks = new Set<Promise<void>>()
   _hooks: Record<keyof any, Hook[]> = {}
@@ -215,6 +215,8 @@ export default class Lifecycle {
     this.ctx.scope.reset()
   }
 }
+
+export default Lifecycle
 
 export interface Events<in C extends Context = Context> {
   'fork'(ctx: C, config: C['config']): void

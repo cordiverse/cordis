@@ -149,7 +149,7 @@ export abstract class EffectScope<C extends Context = Context> {
   ensure(callback: () => Promise<void>) {
     const task = callback()
       .catch((reason) => {
-        this.context.emit('internal/error', reason)
+        this.context.emit(this.ctx, 'internal/error', reason)
         this.cancel(reason)
       })
       .finally(() => {
@@ -177,7 +177,7 @@ export abstract class EffectScope<C extends Context = Context> {
     this.disposables = this.disposables.splice(0).filter((dispose) => {
       if (this.uid !== null && dispose[Context.static] === this) return true
       ;(async () => dispose())().catch((reason) => {
-        this.context.emit('internal/error', reason)
+        this.context.emit(this.ctx, 'internal/error', reason)
       })
     })
   }
@@ -389,7 +389,8 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
 
   update(config: C['config'], forced?: boolean) {
     if (this.isForkable) {
-      this.context.emit('internal/warning', new Error(`attempting to update forkable plugin "${this.plugin.name}", which may lead to unexpected behavior`))
+      const warning = new Error(`attempting to update forkable plugin "${this.plugin.name}", which may lead to unexpected behavior`)
+      this.context.emit(this.ctx, 'internal/warning', warning)
     }
     const oldConfig = this.config
     const resolved = resolveConfig(this.runtime.plugin || this.context.constructor, config)

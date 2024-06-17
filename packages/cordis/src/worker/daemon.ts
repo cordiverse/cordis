@@ -15,7 +15,7 @@ export function apply(ctx: Context, config: Config = {}) {
     if (config.autoRestart) {
       process.send!({ type: 'exit' })
     }
-    ctx.emit('internal/info', `terminated by ${signal}`)
+    ctx.emit(ctx, 'internal/info', `terminated by ${signal}`)
     ctx.parallel('exit', signal).finally(() => process.exit())
   }
 

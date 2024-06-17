@@ -114,7 +114,7 @@ export function apply(ctx: Context) {
         if (!(value instanceof Object)) continue
         const source = Reflect.getOwnPropertyDescriptor(value, Context.source)?.value
         if (!source) {
-          entry.ctx.emit('internal/warning', new Error(`expected service ${key} to be implemented`))
+          entry.ctx.emit(entry.ctx, 'internal/warning', new Error(`expected service ${key} to be implemented`))
           continue
         }
         this.diff.push([key, oldMap[key], this.newMap[key], entry.ctx[delim], source[delim]])

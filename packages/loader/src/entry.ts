@@ -139,8 +139,8 @@ export class Entry<C extends Context = Context> {
 
   async start() {
     const exports = await this.parent.tree.import(this.options.name).catch((error: any) => {
-      this.context.emit('internal/error', new Error(`Cannot find package "${this.options.name}"`))
-      this.context.emit('internal/error', error)
+      this.context.emit(this.ctx, 'internal/error', new Error(`Cannot find package "${this.options.name}"`))
+      this.context.emit(this.ctx, 'internal/error', error)
     })
     if (!exports) return
     const plugin = this.loader.unwrapExports(exports)

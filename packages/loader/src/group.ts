@@ -47,7 +47,7 @@ export class EntryGroup {
     for (const id of Reflect.ownKeys({ ...oldMap, ...newMap }) as string[]) {
       if (newMap[id]) {
         this.create(newMap[id]).catch((error) => {
-          this.ctx.emit('internal/error', error)
+          this.ctx.emit(this.ctx, 'internal/error', error)
         })
       } else {
         this.remove(id)
