@@ -19,7 +19,7 @@ export class Context extends core.Context {
 
   constructor(config?: any) {
     super(config)
-    this.baseDir = globalThis.process?.cwd() || ''
+    this.baseDir = globalThis.process?.cwd?.() || ''
 
     this.provide('logger', undefined, true)
     this.provide('timer', undefined, true)
