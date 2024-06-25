@@ -23,7 +23,7 @@ export async function start(options: Options) {
   })
   if (process.execArgv.includes('--expose-internals')) {
     const require = createRequire(import.meta.url)
-    ctx.loader.internal = require('internal/process/esm_loader').esmLoader
+    ctx.loader.internal = require('internal/modules/esm/loader').getOrInitializeCascadedLoader()
   }
   if (options.logger) ctx.plugin(logger, options.logger)
   if (options.daemon) ctx.plugin(daemon, options.daemon)
