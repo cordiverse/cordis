@@ -84,12 +84,12 @@ describe('Association', () => {
       constructor(ctx: Context) {
         super(ctx, 'bar', true)
         ctx.mixin('bar', {
-          getBar: 'session.bar',
+          answer: 'session.answer',
         })
       }
 
-      getBar(this: Session) {
-        return this
+      answer() {
+        return 42
       }
     }
 
@@ -105,7 +105,7 @@ describe('Association', () => {
       ctx.inject(['bar'], (ctx) => {
         const session = ctx.foo.createSession()
         expect(session).to.be.instanceof(Session)
-        expect(session.bar()).to.be.instanceof(Bar)
+        expect(session.answer()).to.equal(42)
       })
     })
 

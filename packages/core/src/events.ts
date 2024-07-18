@@ -1,7 +1,7 @@
 import { Awaitable, defineProperty, Promisify, remove } from 'cosmokit'
 import { Context } from './context.ts'
 import { EffectScope, ForkScope, MainScope, ScopeStatus } from './scope.ts'
-import { symbols } from './index.ts'
+import { getTraceable, symbols } from './index.ts'
 import ReflectService from './reflect.ts'
 
 export function isBailed(value: any) {
@@ -124,6 +124,7 @@ class Lifecycle {
   }
 
   filterHooks(hooks: Hook[], thisArg?: object) {
+    thisArg = getTraceable(this.ctx, thisArg)
     return hooks.slice().filter((hook) => {
       const filter = thisArg?.[Context.filter]
       return hook.global || !filter || filter.call(thisArg, hook.ctx)

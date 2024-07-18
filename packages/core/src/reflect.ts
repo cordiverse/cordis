@@ -88,7 +88,10 @@ class ReflectService {
       property: 'ctx',
     })
 
-    this.mixin('reflect', ['get', 'set', 'provide', 'accessor', 'mixin', 'alias'])
+    this._mixin('reflect', ['get', 'set', 'provide', 'accessor', 'mixin', 'alias'])
+    this._mixin('scope', ['config', 'runtime', 'effect', 'collect', 'accept', 'decline'])
+    this._mixin('registry', ['using', 'inject', 'plugin'])
+    this._mixin('lifecycle', ['on', 'once', 'parallel', 'emit', 'serial', 'bail', 'start', 'stop'])
   }
 
   get(name: string) {
@@ -148,23 +151,32 @@ class ReflectService {
     })
   }
 
-  accessor(name: string, options: Omit<Context.Internal.Accessor, 'type'>) {
+  _accessor(name: string, options: Omit<Context.Internal.Accessor, 'type'>) {
     const internal = this.ctx.root[symbols.internal]
-    internal[name] ||= { type: 'accessor', ...options }
+    if (name in internal) return () => {}
+    internal[name] = { type: 'accessor', ...options }
+    return () => delete this.ctx.root[symbols.isolate][name]
+  }
+
+  accessor(name: string, options: Omit<Context.Internal.Accessor, 'type'>, leak = false) {
+    this.ctx.scope.effect(() => {
+      return this._accessor(name, options)
+    })
   }
 
   alias(name: string, aliases: string[]) {
     const internal = this.ctx.root[symbols.internal]
+    if (name in internal) return
     for (const key of aliases) {
       internal[key] ||= { type: 'alias', name }
     }
   }
 
-  mixin(source: any, mixins: string[] | Dict<string>) {
+  _mixin(source: any, mixins: string[] | Dict<string>) {
     const entries = Array.isArray(mixins) ? mixins.map(key => [key, key]) : Object.entries(mixins)
     const getTarget = typeof source === 'string' ? (ctx: Context) => ctx[source] : () => source
-    for (const [key, value] of entries) {
-      this.accessor(value, {
+    const disposables = entries.map(([key, value]) => {
+      return this._accessor(value, {
         get(receiver) {
           const service = getTarget(this)
           if (isNullable(service)) return service
@@ -179,7 +191,14 @@ class ReflectService {
           return Reflect.set(service, key, value, mixin)
         },
       })
-    }
+    })
+    return () => disposables.forEach(dispose => dispose())
+  }
+
+  mixin(source: any, mixins: string[] | Dict<string>) {
+    this.ctx.scope.effect(() => {
+      return this._mixin(source, mixins)
+    })
   }
 
   trace<T>(value: T) {

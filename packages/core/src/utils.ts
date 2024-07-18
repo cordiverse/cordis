@@ -83,11 +83,11 @@ export function withProps(target: any, props?: {}) {
   if (!props) return target
   return new Proxy(target, {
     get: (target, prop, receiver) => {
-      if (prop in props) return Reflect.get(props, prop, receiver)
+      if (prop in props && prop !== 'constructor') return Reflect.get(props, prop, receiver)
       return Reflect.get(target, prop, receiver)
     },
     set: (target, prop, value, receiver) => {
-      if (prop in props) return Reflect.set(props, prop, value, receiver)
+      if (prop in props && prop !== 'constructor') return Reflect.set(props, prop, value, receiver)
       return Reflect.set(target, prop, value, receiver)
     },
   })

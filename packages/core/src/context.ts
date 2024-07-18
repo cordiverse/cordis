@@ -87,9 +87,6 @@ export class Context {
     self.reflect = new ReflectService(self)
     self.registry = new Registry(self, config)
     self.lifecycle = new Lifecycle(self)
-    self.mixin('scope', ['config', 'runtime', 'effect', 'collect', 'accept', 'decline'])
-    self.mixin('registry', ['using', 'inject', 'plugin'])
-    self.mixin('lifecycle', ['on', 'once', 'parallel', 'emit', 'serial', 'bail', 'start', 'stop'])
 
     const attach = (internal: Context[typeof symbols.internal]) => {
       if (!internal) return
