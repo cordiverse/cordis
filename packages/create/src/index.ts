@@ -121,12 +121,14 @@ class Scaffold {
     const targetFile = join(targetDir, `yarn-${version}.cjs`)
     await mkdir(targetDir, { recursive: true })
     await copyFile(targetFile, cacheFile)
+    return version
   }
 
   async scaffold() {
-    console.log(kleur.dim('  Scaffolding project in ') + project + kleur.dim(' ...'))
-
     this.registry = (await getRegistry()).replace(/\/$/, '')
+    console.log(kleur.dim('  Registry server: ') + this.registry)
+
+    console.log(kleur.dim('  Scaffolding project in ') + project + kleur.dim(' ...'))
     const template = argv.template || this.options.template
 
     const resp1 = await fetch(`${this.registry}/${template}`)
@@ -149,17 +151,17 @@ class Scaffold {
       stream.on('error', reject)
     })
 
-    await Promise.all([
-      this.downloadYarn(),
-      this.writePackageJson(),
-    ])
+    const yarnVersion = await this.downloadYarn()
+    const packageManager = yarnVersion ? `yarn@${yarnVersion}` : undefined
+    await this.writePackageJson(packageManager)
     console.log(kleur.green('  Done.\n'))
   }
 
-  async writePackageJson() {
+  async writePackageJson(packageManager?: string) {
     const filename = join(rootDir, 'package.json')
     const meta = JSON.parse(await readFile(filename, 'utf8'))
     meta.name = project
+    meta.packageManager = packageManager
     if (argv.prod) {
       // https://github.com/koishijs/koishi/issues/994
       // Do not use `NODE_ENV` or `--production` flag.
