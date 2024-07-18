@@ -1,7 +1,7 @@
 {
   "name": "@cordisjs/logger",
   "description": "Logger service for cordis",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "type": "module",
   "main": "lib/index.cjs",
   "module": "lib/index.mjs",
@@ -36,12 +36,13 @@
     "plugin"
   ],
   "devDependencies": {
-    "@cordisjs/core": "^3.16.1"
+    "@cordisjs/core": "^3.17.5"
   },
   "peerDependencies": {
-    "@cordisjs/core": "^3.16.1"
+    "@cordisjs/core": "^3.17.5"
   },
   "dependencies": {
-    "reggol": "^1.6.3"
+    "cosmokit": "^1.6.2",
+    "reggol": "^1.7.0"
   }
 }
