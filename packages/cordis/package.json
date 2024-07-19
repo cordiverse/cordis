@@ -22,6 +22,10 @@
       "types": "./lib/plugins/import-config.d.ts",
       "default": "./lib/plugins/import-config.mjs"
     },
+    "./loader": {
+      "types": "./lib/plugins/loader.d.ts",
+      "default": "./lib/plugins/loader.mjs"
+    },
     "./worker": {
       "types": "./lib/worker/index.d.ts",
       "default": "./lib/worker/index.mjs"

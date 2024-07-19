@@ -1,6 +1,6 @@
 import { Context, ForkScope, MainScope, Plugin, Schema, Service } from 'cordis'
 import { Dict, makeArray } from 'cosmokit'
-import { ModuleJob } from '@cordisjs/loader'
+import { ModuleJob } from 'cordis/loader'
 import { FSWatcher, watch, WatchOptions } from 'chokidar'
 import { relative, resolve } from 'path'
 import { handleError } from './error.js'
