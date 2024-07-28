@@ -15,6 +15,21 @@ export interface Options extends Loader.Config {
   daemon?: daemon.Config
 }
 
+const internalLoaders: ((require: NodeRequire) => any)[] = [
+  // Node 20.13 and above
+  (require) => require('internal/modules/esm/loader').getOrInitializeCascadedLoader(),
+  (require) => require('internal/process/esm_loader').esmLoader,
+]
+
+function getInternal() {
+  const require = createRequire(import.meta.url)
+  for (const loader of internalLoaders) {
+    try {
+      return loader(require)
+    } catch {}
+  }
+}
+
 export async function start(options: Options) {
   const ctx = new Context()
   ctx.plugin(Loader, {
@@ -22,8 +37,7 @@ export async function start(options: Options) {
     filename: process.env.CORDIS_LOADER_ENTRY,
   })
   if (process.execArgv.includes('--expose-internals')) {
-    const require = createRequire(import.meta.url)
-    ctx.loader.internal = require('internal/modules/esm/loader').getOrInitializeCascadedLoader()
+    ctx.loader.internal = getInternal()
   }
   if (options.logger) ctx.plugin(logger, options.logger)
   if (options.daemon) ctx.plugin(daemon, options.daemon)
