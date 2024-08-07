@@ -27,7 +27,7 @@ class ReflectService {
     return [name, internal] as const
   }
 
-  static checkInject(ctx: Context, name: string) {
+  static checkInject(ctx: Context, name: string, error: Error) {
     ctx = ctx[symbols.shadow] ?? ctx
     // Case 1: built-in services and special properties
     // - prototype: prototype detection
@@ -39,8 +39,7 @@ class ReflectService {
     if (!ctx.runtime.plugin) return
     // Case 4: custom inject checks
     if (ctx.bail(ctx, 'internal/inject', name)) return
-    const warning = new Error(`property ${name} is not registered, declare it as \`inject\` to suppress this warning`)
-    ctx.emit(ctx, 'internal/warning', warning)
+    ctx.emit(ctx, 'internal/warning', error)
   }
 
   static handler: ProxyHandler<Context> = {
@@ -52,13 +51,18 @@ class ReflectService {
       }
 
       const [name, internal] = ReflectService.resolveInject(ctx, prop)
+      // trace caller
+      const error = new Error(`property ${name} is not registered, declare it as \`inject\` to suppress this warning`)
+      const lines = error.stack!.split('\n')
+      lines.splice(1, 1)
+      error.stack = lines.join('\n')
       if (!internal) {
-        ReflectService.checkInject(ctx, name)
+        ReflectService.checkInject(ctx, name, error)
         return Reflect.get(target, name, ctx)
       } else if (internal.type === 'accessor') {
         return internal.get.call(ctx, ctx[symbols.receiver])
       } else {
-        if (!internal.builtin) ReflectService.checkInject(ctx, name)
+        if (!internal.builtin) ReflectService.checkInject(ctx, name, error)
         return ctx.reflect.get(name)
       }
     },

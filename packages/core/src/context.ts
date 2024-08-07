@@ -4,6 +4,8 @@ import ReflectService from './reflect.ts'
 import Registry from './registry.ts'
 import { getTraceable, resolveConfig, symbols } from './utils.ts'
 
+export { Lifecycle, ReflectService, Registry }
+
 export namespace Context {
   export type Parameterized<C, T = any> = C & { config: T }
 
