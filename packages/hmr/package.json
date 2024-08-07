@@ -38,11 +38,11 @@
     }
   },
   "peerDependencies": {
-    "cordis": "^3.17.7"
+    "cordis": "^3.17.8"
   },
   "devDependencies": {
     "@types/babel__code-frame": "^7.0.6",
-    "cordis": "^3.17.7",
+    "cordis": "^3.17.8",
     "esbuild": "^0.23.0"
   },
   "dependencies": {
