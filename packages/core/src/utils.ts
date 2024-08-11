@@ -114,11 +114,26 @@ function createShadowMethod(ctx: Context, value: any, outer: any, shadow: {}) {
       if (thisArg === outer) thisArg = shadow
       // contravariant
       args = args.map((arg) => {
-        if (typeof arg !== 'function') return arg
+        if (typeof arg !== 'function' || arg[symbols.original]) return arg
         return new Proxy(arg, {
+          get: (target, prop, receiver) => {
+            if (prop === symbols.original) return target
+            const value = Reflect.get(target, prop, receiver)
+            // https://github.com/cordiverse/cordis/issues/14
+            if (prop === 'toString' && value === Function.prototype.toString) {
+              return function (...args: any[]) {
+                return Reflect.apply(value, this === receiver ? target : this, args)
+              }
+            }
+            return value
+          },
           apply: (target: Function, thisArg, args) => {
             // covariant
             return Reflect.apply(target, getTraceable(ctx, thisArg), args.map(arg => getTraceable(ctx, arg)))
+          },
+          construct: (target: Function, args, newTarget) => {
+            // covariant
+            return Reflect.construct(target, args.map(arg => getTraceable(ctx, arg)), newTarget)
           },
         })
       })

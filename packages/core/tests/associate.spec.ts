@@ -171,4 +171,27 @@ describe('Association', () => {
 
     await checkError(root)
   })
+
+  // https://github.com/cordiverse/cordis/issues/14
+  it('inspect', () => {
+    class Foo extends Service {
+      constructor(ctx: Context) {
+        super(ctx, 'foo', true)
+      }
+
+      bar(arg: any) {
+        expect(arg.toString()).to.include('class X')
+        this.baz(arg)
+      }
+
+      baz(arg: any) {
+        expect(arg.toString()).to.include('class X')
+      }
+    }
+
+    const root = new Context()
+    root.plugin(Foo)
+    class X {}
+    root.foo.bar(X)
+  })
 })
