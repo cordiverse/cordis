@@ -1,6 +1,6 @@
 import { Context } from '@cordisjs/core'
 import { dirname, extname, resolve } from 'node:path'
-import { access, constants, readdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { access, constants, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { remove } from 'cosmokit'
 import * as yaml from 'js-yaml'
@@ -64,10 +64,11 @@ export class LoaderFile {
       throw new Error(`cannot overwrite readonly config`)
     }
     if (this.type === 'application/yaml') {
-      await writeFile(this.name, yaml.dump(config, { schema }))
+      await writeFile(this.name + '.tmp', yaml.dump(config, { schema }))
     } else if (this.type === 'application/json') {
-      await writeFile(this.name, JSON.stringify(config, null, 2))
+      await writeFile(this.name + '.tmp', JSON.stringify(config, null, 2))
     }
+    await rename(this.name + '.tmp', this.name)
   }
 
   write(config: EntryOptions[]) {
