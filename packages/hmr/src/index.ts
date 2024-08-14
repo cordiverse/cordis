@@ -94,15 +94,15 @@ class Watcher extends Service {
 
     this.watcher.on('change', async (path) => {
       this.ctx.logger.debug('change detected:', path)
-      const filename = pathToFileURL(resolve(this.base, path)).href
-      if (this.externals.has(filename)) return loader.exit()
+      const url = pathToFileURL(resolve(this.base, path)).href
+      if (this.externals.has(url)) return loader.exit()
 
-      if (loader.internal!.loadCache.has(filename)) {
-        this.stashed.add(filename)
+      if (loader.internal!.loadCache.has(url)) {
+        this.stashed.add(url)
         return triggerLocalReload()
       }
 
-      const file = this.ctx.loader.files[filename]
+      const file = this.ctx.loader.files[url]
       if (!file) return
       if (file.suspend) {
         file.suspend = false

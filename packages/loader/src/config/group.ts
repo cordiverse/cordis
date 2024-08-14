@@ -67,7 +67,6 @@ export class Group extends EntryGroup {
   static initial: Omit<EntryOptions, 'id'>[] = []
   static readonly [EntryGroup.key] = true
 
-  // TODO support options
   constructor(public ctx: Context) {
     super(ctx, ctx.scope.entry!.parent.tree)
     ctx.on('dispose', () => this.stop())

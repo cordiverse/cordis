@@ -1,8 +1,9 @@
 import { Context, ForkScope } from '@cordisjs/core'
 import { isNullable } from 'cosmokit'
-import { Loader } from './loader.ts'
+import { Loader } from '../loader.ts'
 import { EntryGroup } from './group.ts'
 import { EntryTree } from './tree.ts'
+import { interpolate } from './utils.ts'
 
 export interface EntryOptions {
   id: string
@@ -75,6 +76,11 @@ export class Entry<C extends Context = Context> {
     return !this.parent.ctx.bail('loader/entry-check', this)
   }
 
+  _resolveConfig(plugin: any) {
+    if (!plugin[EntryGroup.key]) return this.options.config
+    return interpolate({}, this.options.config) // FIXME
+  }
+
   patch(options: Partial<EntryOptions> = {}) {
     // step 1: prepare isolate map
     const meta = {} as EntryUpdateMeta
@@ -86,7 +92,7 @@ export class Entry<C extends Context = Context> {
     if (this.fork && 'config' in options) {
       // step 2: update fork (when options.config is updated)
       this.suspend = true
-      this.fork.update(this.options.config)
+      this.fork.update(this._resolveConfig(this.fork.runtime.plugin))
     } else if (this.subgroup && 'disabled' in options) {
       // step 3: check children (when options.disabled is updated)
       const tree = this.subtree ?? this.parent.tree
@@ -146,7 +152,7 @@ export class Entry<C extends Context = Context> {
     const plugin = this.loader.unwrapExports(exports)
     this.patch()
     this.ctx[Entry.key] = this
-    this.fork = this.ctx.plugin(plugin, this.options.config)
+    this.fork = this.ctx.plugin(plugin, this._resolveConfig(plugin))
     this.context.emit('loader/entry-fork', this, 'apply')
   }
 

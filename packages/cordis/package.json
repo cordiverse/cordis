@@ -21,9 +21,9 @@
       "types": "./lib/plugins/group.d.ts",
       "default": "./lib/plugins/group.mjs"
     },
-    "./import-config": {
-      "types": "./lib/plugins/import-config.d.ts",
-      "default": "./lib/plugins/import-config.mjs"
+    "./import": {
+      "types": "./lib/plugins/import.d.ts",
+      "default": "./lib/plugins/import.mjs"
     },
     "./loader": {
       "types": "./lib/plugins/loader.d.ts",

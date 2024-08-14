@@ -5,7 +5,6 @@ import { EntryGroup } from './group.ts'
 
 export abstract class EntryTree<C extends Context = Context> {
   static readonly sep = ':'
-  static readonly [EntryGroup.key] = true
 
   public url!: string
   public root: EntryGroup

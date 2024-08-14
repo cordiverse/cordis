@@ -1,6 +1,6 @@
 import { Dict } from 'cosmokit'
 import { Context, ForkScope, Plugin } from '@cordisjs/core'
-import { EntryOptions, Group, Loader, LoaderFile } from '../src'
+import { EntryOptions, FileRef, Group, Loader, LoaderFile } from '../src'
 import { Mock, mock } from 'node:test'
 import { expect } from 'chai'
 
@@ -26,13 +26,13 @@ class MockLoaderFile extends LoaderFile {
 }
 
 export default class MockLoader extends Loader {
-  public file: MockLoaderFile
+  declare ref: FileRef<MockLoaderFile>
+
   public modules: Dict<Plugin.Object> = Object.create(null)
 
   constructor(ctx: Context) {
     super(ctx, { name: 'cordis' })
-    this.file = new MockLoaderFile(this, 'config-1.yml')
-    this.file.ref(this)
+    this.ref = new MockLoaderFile(this, 'config-1.yml').ref()
     this.mock('cordis/group', Group)
   }
 

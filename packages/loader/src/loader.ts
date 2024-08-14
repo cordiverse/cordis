@@ -1,15 +1,17 @@
 import { Context, EffectScope } from '@cordisjs/core'
 import { Dict, isNullable } from 'cosmokit'
 import { ModuleLoader } from './internal.ts'
-import { Entry, EntryOptions, EntryUpdateMeta } from './entry.ts'
-import { ImportTree, LoaderFile } from './file.ts'
-import * as inject from './inject.ts'
-import * as isolate from './isolate.ts'
+import { Entry, EntryOptions, EntryUpdateMeta } from './config/entry.ts'
+import { LoaderFile } from './config/file.ts'
+import { ImportTree } from './config/import.ts'
+import * as inject from './config/inject.ts'
+import * as isolate from './config/isolate.ts'
 
-export * from './entry.ts'
-export * from './file.ts'
-export * from './group.ts'
-export * from './tree.ts'
+export * from './config/entry.ts'
+export * from './config/file.ts'
+export * from './config/group.ts'
+export * from './config/import.ts'
+export * from './config/tree.ts'
 
 declare module '@cordisjs/core' {
   interface Events {
