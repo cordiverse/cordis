@@ -1,7 +1,7 @@
 {
   "name": "create-cordis",
   "description": "Setup a Cordis application",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",

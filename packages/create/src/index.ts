@@ -99,7 +99,7 @@ class Scaffold {
     const cacheDir = join(paths.cache, '.yarn/releases')
     const cacheFile = join(cacheDir, `yarn-${version}.cjs`)
     try {
-      await access(join(cacheDir, `yarn-${version}.cjs`))
+      await access(cacheFile)
     } catch {
       const tempDir = join(paths.temp, '@yarnpkg/cli-dist')
       await mkdir(tempDir, { recursive: true })
@@ -120,7 +120,7 @@ class Scaffold {
     const targetDir = join(rootDir, '.yarn/releases')
     const targetFile = join(targetDir, `yarn-${version}.cjs`)
     await mkdir(targetDir, { recursive: true })
-    await copyFile(targetFile, cacheFile)
+    await copyFile(cacheFile, targetFile)
     return version
   }
 
