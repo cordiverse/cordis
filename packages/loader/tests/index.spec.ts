@@ -14,7 +14,7 @@ describe('loader: basic support', () => {
   before(() => loader.start())
 
   it('loader initiate', async () => {
-    loader.ref.file.write([{
+    loader.file.write([{
       id: '1',
       name: 'foo',
     }, {
@@ -45,7 +45,7 @@ describe('loader: basic support', () => {
   it('loader update', async () => {
     foo.mock.resetCalls()
     bar.mock.resetCalls()
-    loader.ref.file.write([{
+    loader.file.write([{
       id: '1',
       name: 'foo',
     }, {
@@ -65,7 +65,7 @@ describe('loader: basic support', () => {
   it('plugin self-update 1', async () => {
     root.registry.get(foo)!.update({ a: 3 })
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(loader.ref.file.data).to.deep.equal([{
+    expect(loader.file.data).to.deep.equal([{
       id: '1',
       name: 'foo',
       config: { a: 3 },
@@ -78,7 +78,7 @@ describe('loader: basic support', () => {
   it('plugin self-update 2', async () => {
     root.registry.get(foo)!.children[0].update({ a: 5 })
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(loader.ref.file.data).to.deep.equal([{
+    expect(loader.file.data).to.deep.equal([{
       id: '1',
       name: 'foo',
       config: { a: 5 },
@@ -91,7 +91,7 @@ describe('loader: basic support', () => {
   it('plugin self-dispose 1', async () => {
     root.registry.get(foo)!.dispose()
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(loader.ref.file.data).to.deep.equal([{
+    expect(loader.file.data).to.deep.equal([{
       id: '1',
       name: 'foo',
       disabled: true,
@@ -105,7 +105,7 @@ describe('loader: basic support', () => {
   it('plugin self-dispose 2', async () => {
     root.registry.get(qux)!.children[0].dispose()
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(loader.ref.file.data).to.deep.equal([{
+    expect(loader.file.data).to.deep.equal([{
       id: '1',
       name: 'foo',
       disabled: true,

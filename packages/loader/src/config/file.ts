@@ -3,7 +3,7 @@ import { pathToFileURL } from 'node:url'
 import { remove } from 'cosmokit'
 import * as yaml from 'js-yaml'
 import { EntryOptions } from './entry.ts'
-import { Loader } from '../loader.ts'
+import { ImportTree } from './import.ts'
 import { JsExpr } from './utils.ts'
 
 export const schema = yaml.JSON_SCHEMA.extend(JsExpr)
@@ -11,11 +11,23 @@ export const schema = yaml.JSON_SCHEMA.extend(JsExpr)
 export class LoaderFile {
   public suspend = false
   public readonly: boolean
-  public refs: FileRef[] = []
+  public trees: ImportTree[] = []
   public writeTask?: NodeJS.Timeout
 
-  constructor(public loader: Loader, public name: string, public type?: string) {
+  constructor(public name: string, public type?: string) {
     this.readonly = !type
+  }
+
+  ref(tree: ImportTree) {
+    this.trees.push(tree)
+    tree.url = pathToFileURL(this.name).href
+    tree.ctx.loader.files[tree.url] ??= this
+  }
+
+  unref(tree: ImportTree) {
+    remove(this.trees, tree)
+    if (this.trees.length) return
+    delete tree.ctx.loader.files[tree.url]
   }
 
   async checkAccess() {
@@ -59,10 +71,6 @@ export class LoaderFile {
       this._write(config)
     }, 0)
   }
-
-  ref() {
-    return new FileRef(this)
-  }
 }
 
 export namespace LoaderFile {
@@ -79,21 +87,5 @@ export namespace LoaderFile {
     for (const extname in require.extensions) {
       supported.add(extname)
     }
-  }
-}
-
-export class FileRef<F extends LoaderFile = LoaderFile> {
-  public url: string
-
-  constructor(public file: F) {
-    this.file.refs.push(this)
-    this.url = pathToFileURL(file.name).href
-    file.loader.files[this.url] ??= this.file
-  }
-
-  stop() {
-    remove(this.file.refs, this)
-    if (this.file.refs.length) return
-    delete this.file.loader.files[this.url]
   }
 }
