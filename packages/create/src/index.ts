@@ -1,4 +1,4 @@
-import { access, copyFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { access, copyFile, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { execSync } from 'node:child_process'
 import { basename, join, relative } from 'node:path'
 import { Readable } from 'node:stream'
@@ -114,7 +114,9 @@ class Scaffold {
         stream.on('finish', resolve)
         stream.on('error', reject)
       })
-      await rename(join(tempDir, 'yarn.js'), cacheFile)
+      // https://github.com/satorijs/satori/issues/305
+      await copyFile(join(tempDir, 'yarn.js'), cacheFile)
+      await rm(tempDir, { recursive: true })
     }
 
     const targetDir = join(rootDir, '.yarn/releases')
