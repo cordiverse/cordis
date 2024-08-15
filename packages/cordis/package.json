@@ -1,7 +1,7 @@
 {
   "name": "cordis",
   "description": "Meta-Framework for Modern JavaScript Applications",
-  "version": "3.17.8",
+  "version": "3.18.0",
   "type": "module",
   "bin": "lib/bin/cordis.mjs",
   "main": "lib/index.cjs",
@@ -66,7 +66,7 @@
       "./group": {
         "description": "Group Plugins"
       },
-      "./import-config": {
+      "./import": {
         "description": "Import Configurations"
       }
     }
@@ -75,8 +75,8 @@
     "cordis": "*"
   },
   "dependencies": {
-    "@cordisjs/core": "3.17.8",
-    "@cordisjs/loader": "^0.12.8",
+    "@cordisjs/core": "3.18.0",
+    "@cordisjs/loader": "^0.13.0",
     "@cordisjs/logger": "^0.3.3",
     "@cordisjs/schema": "^0.1.1",
     "@cordisjs/timer": "^0.3.2",

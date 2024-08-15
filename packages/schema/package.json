@@ -38,10 +38,10 @@
     "config"
   ],
   "devDependencies": {
-    "@cordisjs/core": "^3.17.8"
+    "@cordisjs/core": "^3.18.0"
   },
   "peerDependencies": {
-    "@cordisjs/core": "^3.17.8"
+    "@cordisjs/core": "^3.18.0"
   },
   "dependencies": {
     "cosmokit": "^1.6.2",

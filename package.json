@@ -33,7 +33,7 @@
     "shx": "^0.3.4",
     "tsx": "patch:tsx@npm%3A4.7.0#./.yarn/patches/tsx-npm-4.7.0-86d7b66640.patch",
     "typescript": "^5.5.3",
-    "yakumo": "^1.0.0-beta.16",
+    "yakumo": "^1.0.0-beta.18",
     "yakumo-esbuild": "^1.0.0-beta.6",
     "yakumo-mocha": "^1.0.0-beta.2",
     "yakumo-tsc": "^1.0.0-beta.4",
