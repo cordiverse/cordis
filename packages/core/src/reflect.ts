@@ -108,14 +108,15 @@ class ReflectService {
   get(name: string) {
     const internal = this.ctx[symbols.internal][name]
     if (internal?.type !== 'service') return
-    const value = this.ctx.root[this.ctx[symbols.isolate][name]]
+    const key = this.ctx[symbols.isolate][name]
+    const value = this.ctx[symbols.store][key]?.value
     return getTraceable(this.ctx, value)
   }
 
   set(name: string, value: any) {
     this.provide(name)
     const key = this.ctx[symbols.isolate][name]
-    const oldValue = this.ctx.root[key]
+    const oldValue = this.ctx[symbols.store][key]?.value
     value ??= undefined
     let dispose = () => {}
     if (oldValue === value) return dispose
@@ -141,13 +142,7 @@ class ReflectService {
     }
 
     ctx.emit(self, 'internal/before-service', name, value)
-    ctx.root[key] = value
-    if (isObject(value)) {
-      try {
-        // Frozen objects cannot be modified
-        defineProperty(value, symbols.source, ctx)
-      } catch {}
-    }
+    ctx[symbols.store][key] = { value, source: ctx }
     ctx.emit(self, 'internal/service', name, oldValue)
     return dispose
   }
@@ -157,9 +152,10 @@ class ReflectService {
     if (name in internal) return
     const key = Symbol(name)
     internal[name] = { type: 'service', builtin }
-    this.ctx.root[key] = value
     this.ctx.root[symbols.isolate][name] = key
-    isObject(value) && defineProperty(value, symbols.tracker, {
+    if (!isObject(value)) return
+    this.ctx[symbols.store][key] = { value, source: null! }
+    defineProperty(value, symbols.tracker, {
       associate: name,
       property: 'ctx',
     })
@@ -172,7 +168,7 @@ class ReflectService {
     return () => delete this.ctx.root[symbols.isolate][name]
   }
 
-  accessor(name: string, options: Omit<Context.Internal.Accessor, 'type'>, leak = false) {
+  accessor(name: string, options: Omit<Context.Internal.Accessor, 'type'>) {
     this.ctx.scope.effect(() => {
       return this._accessor(name, options)
     })

@@ -110,15 +110,14 @@ export function apply(ctx: Context) {
       const delim = entry.loader.delims[key] ??= Symbol(`delim:${key}`)
       entry.ctx[delim] = Symbol(`${key}#${entry.id}`)
       for (const symbol of [oldMap[key], this.newMap[key]]) {
-        const value = symbol && entry.ctx[symbol]
-        if (!(value instanceof Object)) continue
-        const source = Reflect.getOwnPropertyDescriptor(value, Context.source)?.value
-        if (!source) {
+        const item = symbol && entry.ctx[Context.store][symbol]
+        if (!item) continue
+        if (!item.source) {
           entry.ctx.emit(entry.ctx, 'internal/warning', new Error(`expected service ${key} to be implemented`))
           continue
         }
-        this.diff.push([key, oldMap[key], this.newMap[key], entry.ctx[delim], source[delim]])
-        if (entry.ctx[delim] !== source[delim]) break
+        this.diff.push([key, oldMap[key], this.newMap[key], entry.ctx[delim], item.source[delim]])
+        if (entry.ctx[delim] !== item.source[delim]) break
       }
     }
 
@@ -142,9 +141,9 @@ export function apply(ctx: Context) {
   ctx.on('loader/after-patch', function (entry) {
     // step 5: replace service impl
     for (const [, symbol1, symbol2, flag1, flag2] of this.diff) {
-      if (flag1 === flag2 && entry.ctx[symbol1] && !entry.ctx[symbol2]) {
-        entry.ctx.root[symbol2] = entry.ctx.root[symbol1]
-        delete entry.ctx.root[symbol1]
+      if (flag1 === flag2 && entry.ctx[Context.store][symbol1] && !entry.ctx[Context.store][symbol2]) {
+        entry.ctx[Context.store][symbol2] = entry.ctx[Context.store][symbol1]
+        delete entry.ctx[Context.store][symbol1]
       }
     }
 

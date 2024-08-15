@@ -16,6 +16,11 @@ export namespace Context {
     prototype?: {}
   }
 
+  export interface Item<C extends Context> {
+    value?: any
+    source: C
+  }
+
   export type Internal = Internal.Service | Internal.Accessor | Internal.Alias
 
   export namespace Internal {
@@ -43,6 +48,7 @@ export namespace Context {
 export interface Intercept<C extends Context = Context> {}
 
 export interface Context {
+  [Context.store]: Dict<Context.Item<this>, symbol>
   [Context.isolate]: Dict<symbol>
   [Context.intercept]: Intercept<this>
   [Context.internal]: Dict<Context.Internal>
@@ -54,7 +60,7 @@ export interface Context {
 }
 
 export class Context {
-  static readonly source: unique symbol = symbols.source as any
+  static readonly store: unique symbol = symbols.store as any
   static readonly events: unique symbol = symbols.events as any
   static readonly static: unique symbol = symbols.static as any
   static readonly filter: unique symbol = symbols.filter as any
@@ -81,8 +87,9 @@ export class Context {
 
   constructor(config?: any) {
     config = resolveConfig(this.constructor, config)
-    this[symbols.internal] = Object.create(null)
+    this[symbols.store] = Object.create(null)
     this[symbols.isolate] = Object.create(null)
+    this[symbols.internal] = Object.create(null)
     this[symbols.intercept] = Object.create(null)
     const self: Context = new Proxy(this, ReflectService.handler)
     self.root = self
@@ -128,7 +135,7 @@ export class Context {
   extend(meta = {}): this {
     const source = Reflect.getOwnPropertyDescriptor(this, symbols.shadow)?.value
     const self = Object.assign(Object.create(getTraceable(this, this)), meta)
-    if (!source || Object.hasOwn(meta, symbols.source)) return self
+    if (!source) return self
     return Object.assign(Object.create(self), { [symbols.shadow]: source })
   }
 
