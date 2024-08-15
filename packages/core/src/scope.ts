@@ -287,7 +287,13 @@ export class ForkScope<C extends Context = Context> extends EffectScope<C> {
     const oldConfig = this.config
     const state: EffectScope<C> = this.runtime.isForkable ? this : this.runtime
     if (state.config !== oldConfig) return
-    const resolved = resolveConfig(this.runtime.plugin, config)
+    let resolved: any
+    try {
+      resolved = resolveConfig(this.runtime.plugin, config)
+    } catch (error) {
+      this.context.emit('internal/error', error)
+      return this.cancel(error)
+    }
     const [hasUpdate, shouldRestart] = state.checkUpdate(resolved, forced)
     this.context.emit('internal/before-update', this, config)
     this.config = resolved
@@ -393,7 +399,13 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
       this.context.emit(this.ctx, 'internal/warning', warning)
     }
     const oldConfig = this.config
-    const resolved = resolveConfig(this.runtime.plugin || this.context.constructor, config)
+    let resolved: any
+    try {
+      resolved = resolveConfig(this.runtime.plugin || this.context.constructor, config)
+    } catch (error) {
+      this.context.emit('internal/error', error)
+      return this.cancel(error)
+    }
     const [hasUpdate, shouldRestart] = this.checkUpdate(resolved, forced)
     const state = this.children.find(fork => fork.config === oldConfig)
     this.config = resolved

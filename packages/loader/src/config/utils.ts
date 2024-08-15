@@ -3,11 +3,9 @@ import * as yaml from 'js-yaml'
 
 // eslint-disable-next-line no-new-func
 export const evaluate = new Function('ctx', 'expr', `
-  try {
-    with (ctx) {
-      return eval(expr)
-    }
-  } catch {}
+  with (ctx) {
+    return eval(expr)
+  }
 `) as ((ctx: object, expr: string) => any)
 
 export function interpolate(ctx: object, value: any) {

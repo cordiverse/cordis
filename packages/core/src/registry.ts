@@ -161,19 +161,20 @@ class Registry<C extends Context = Context> {
     return this.plugin({ inject, apply: callback, name: callback.name })
   }
 
-  plugin(plugin: Plugin<C>, config?: any) {
+  plugin(plugin: Plugin<C>, config?: any, error?: any) {
     // check if it's a valid plugin
     this.resolve(plugin, true)
     this.ctx.scope.assertActive()
 
     // resolve plugin config
-    let error: any
-    try {
-      config = resolveConfig(plugin, config)
-    } catch (reason) {
-      this.context.emit(this.ctx, 'internal/error', reason)
-      error = reason
-      config = null
+    if (!error) {
+      try {
+        config = resolveConfig(plugin, config)
+      } catch (reason) {
+        this.context.emit(this.ctx, 'internal/error', reason)
+        error = reason
+        config = null
+      }
     }
 
     // check duplication

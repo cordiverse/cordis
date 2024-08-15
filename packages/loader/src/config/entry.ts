@@ -3,7 +3,7 @@ import { isNullable } from 'cosmokit'
 import { Loader } from '../loader.ts'
 import { EntryGroup } from './group.ts'
 import { EntryTree } from './tree.ts'
-import { interpolate } from './utils.ts'
+import { evaluate, interpolate } from './utils.ts'
 
 export interface EntryOptions {
   id: string
@@ -76,9 +76,18 @@ export class Entry<C extends Context = Context> {
     return !this.parent.ctx.bail('loader/entry-check', this)
   }
 
-  _resolveConfig(plugin: any) {
-    if (!plugin[EntryGroup.key]) return this.options.config
-    return interpolate({}, this.options.config) // FIXME
+  evaluate(expr: string) {
+    return evaluate(this.ctx, expr)
+  }
+
+  _resolveConfig(plugin: any): [any, any?] {
+    if (plugin[EntryGroup.key]) return [this.options.config]
+    try {
+      return [interpolate(this.ctx, this.options.config)]
+    } catch (error) {
+      this.context.emit(this.ctx, 'internal/error', error)
+      return [null, error]
+    }
   }
 
   patch(options: Partial<EntryOptions> = {}) {
@@ -92,7 +101,12 @@ export class Entry<C extends Context = Context> {
     if (this.fork && 'config' in options) {
       // step 2: update fork (when options.config is updated)
       this.suspend = true
-      this.fork.update(this._resolveConfig(this.fork.runtime.plugin))
+      const [config, error] = this._resolveConfig(this.fork.runtime.plugin)
+      if (error) {
+        this.fork.cancel(error)
+      } else {
+        this.fork.update(config)
+      }
     } else if (this.subgroup && 'disabled' in options) {
       // step 3: check children (when options.disabled is updated)
       const tree = this.subtree ?? this.parent.tree
@@ -152,7 +166,8 @@ export class Entry<C extends Context = Context> {
     const plugin = this.loader.unwrapExports(exports)
     this.patch()
     this.ctx[Entry.key] = this
-    this.fork = this.ctx.plugin(plugin, this._resolveConfig(plugin))
+    const [config, error] = this._resolveConfig(plugin)
+    this.fork = this.ctx.registry.plugin(plugin, config, error)
     this.context.emit('loader/entry-fork', this, 'apply')
   }
 
