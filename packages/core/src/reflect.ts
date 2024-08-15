@@ -43,14 +43,14 @@ class ReflectService {
   }
 
   static handler: ProxyHandler<Context> = {
-    get(target, prop, ctx: Context) {
+    get: (target, prop, ctx: Context) => {
       if (typeof prop !== 'string') return Reflect.get(target, prop, ctx)
 
       if (Reflect.has(target, prop)) {
         return getTraceable(ctx, Reflect.get(target, prop, ctx), true)
       }
 
-      const [name, internal] = ReflectService.resolveInject(ctx, prop)
+      const [name, internal] = ReflectService.resolveInject(target, prop)
       // trace caller
       const error = new Error(`property ${name} is not registered, declare it as \`inject\` to suppress this warning`)
       const lines = error.stack!.split('\n')
@@ -67,10 +67,10 @@ class ReflectService {
       }
     },
 
-    set(target, prop, value, ctx: Context) {
+    set: (target, prop, value, ctx: Context) => {
       if (typeof prop !== 'string') return Reflect.set(target, prop, value, ctx)
 
-      const [name, internal] = ReflectService.resolveInject(ctx, prop)
+      const [name, internal] = ReflectService.resolveInject(target, prop)
       if (!internal) {
         // TODO warning
         return Reflect.set(target, name, value, ctx)
@@ -83,6 +83,13 @@ class ReflectService {
         ctx.reflect.set(name, value)
         return true
       }
+    },
+
+    has: (target, prop) => {
+      if (typeof prop !== 'string') return Reflect.has(target, prop)
+      if (Reflect.has(target, prop)) return true
+      const [, internal] = ReflectService.resolveInject(target, prop)
+      return !!internal
     },
   }
 
@@ -136,7 +143,10 @@ class ReflectService {
     ctx.emit(self, 'internal/before-service', name, value)
     ctx.root[key] = value
     if (isObject(value)) {
-      defineProperty(value, symbols.source, ctx)
+      try {
+        // Frozen objects cannot be modified
+        defineProperty(value, symbols.source, ctx)
+      } catch {}
     }
     ctx.emit(self, 'internal/service', name, oldValue)
     return dispose

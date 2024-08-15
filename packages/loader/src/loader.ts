@@ -124,6 +124,7 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
 
   async start() {
     await this.init(process.cwd(), this.config)
+    this.ctx.set('env', process.env)
     await super.start()
   }
 
