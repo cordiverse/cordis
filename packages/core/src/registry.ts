@@ -1,13 +1,31 @@
 import { defineProperty, Dict } from 'cosmokit'
 import { Context } from './context.ts'
 import { ForkScope, MainScope } from './scope.ts'
-import { resolveConfig, symbols } from './utils.ts'
+import { resolveConfig, symbols, withProps } from './utils.ts'
 
 function isApplicable(object: Plugin) {
   return object && typeof object === 'object' && typeof object.apply === 'function'
 }
 
 export type Inject = string[] | Dict<Inject.Meta>
+
+export function Inject(inject: Inject) {
+  return function (value: any, ctx: ClassDecoratorContext<any> | ClassMethodDecoratorContext<any>) {
+    if (ctx.kind === 'class') {
+      value.inject = inject
+    } else if (ctx.kind === 'method') {
+      ctx.addInitializer(function () {
+        const property = this[symbols.tracker]?.property
+        if (!property) throw new Error('missing context tracker')
+        ;(this[property] as Context).inject(inject, (ctx) => {
+          value.call(withProps(this, { [property]: ctx }))
+        })
+      })
+    } else {
+      throw new Error('@Inject can only be used on class or class methods')
+    }
+  }
+}
 
 export namespace Inject {
   export interface Meta {
