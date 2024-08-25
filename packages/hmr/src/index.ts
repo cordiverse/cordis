@@ -1,9 +1,9 @@
 import { Context, ForkScope, MainScope, Plugin, Schema, Service } from 'cordis'
 import { Dict, makeArray } from 'cosmokit'
-import { ModuleJob } from 'cordis/loader'
+import { ModuleJob, ModuleLoader } from 'cordis/loader'
 import { FSWatcher, watch, WatchOptions } from 'chokidar'
 import { relative, resolve } from 'path'
-import { handleError } from './error.js'
+import { handleError } from './error.ts'
 import {} from '@cordisjs/timer'
 import { fileURLToPath, pathToFileURL } from 'url'
 import enUS from './locales/en-US.yml'
@@ -40,6 +40,7 @@ class Watcher extends Service {
   static inject = ['loader']
 
   private base: string
+  private internal: ModuleLoader
   private watcher!: FSWatcher
 
   /**
@@ -70,6 +71,10 @@ class Watcher extends Service {
 
   constructor(ctx: Context, public config: Watcher.Config) {
     super(ctx, 'hmr')
+    if (!this.ctx.loader.internal) {
+      throw new Error('--expose-internals is required for HMR service')
+    }
+    this.internal = this.ctx.loader.internal
     this.base = resolve(ctx.baseDir, config.base || '')
   }
 
@@ -120,7 +125,7 @@ class Watcher extends Service {
 
   async getLinked(filename: string) {
     // The second parameter `type` should always be `javascript`.
-    const job = this.ctx.loader.internal!.loadCache.get(pathToFileURL(filename).toString())
+    const job = this.internal.loadCache.get(pathToFileURL(filename).toString())
     if (!job) return []
     const linked = await job.linked
     return linked.map(job => fileURLToPath(job.url))
@@ -204,9 +209,9 @@ class Watcher extends Service {
     for (const baseURL in nameMap) {
       for (const name of nameMap[baseURL]) {
         try {
-          const { url } = await this.ctx.loader.internal!.resolve(name, baseURL, {})
+          const { url } = await this.internal.resolve(name, baseURL, {})
           if (this.declined.has(url)) continue
-          const job = this.ctx.loader.internal!.loadCache.get(url)
+          const job = this.internal.loadCache.get(url)
           const plugin = this.ctx.loader.unwrapExports(job?.module?.getNamespace())
           const runtime = this.ctx.registry.get(plugin)
           if (!job || !plugin) continue
@@ -262,15 +267,15 @@ class Watcher extends Service {
     // and delete cache before re-import
     const backup: Dict = Object.create(null)
     for (const filename of this.accepted) {
-      const job = Map.prototype.get.call(this.ctx.loader.internal!.loadCache, filename)
+      const job = Map.prototype.get.call(this.internal.loadCache, filename)
       backup[filename] = job
-      Map.prototype.delete.call(this.ctx.loader.internal!.loadCache, filename)
+      Map.prototype.delete.call(this.internal.loadCache, filename)
     }
 
     /** rollback cache */
     const rollback = () => {
       for (const filename in backup) {
-        Map.prototype.set.call(this.ctx.loader.internal!.loadCache, filename, backup[filename])
+        Map.prototype.set.call(this.internal.loadCache, filename, backup[filename])
       }
     }
 
