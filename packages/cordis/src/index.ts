@@ -29,22 +29,15 @@ export class Context extends core.Context {
   }
 }
 
-export abstract class Service<T = unknown, C extends Context = Context> extends core.Service<T, C> {
+export abstract class Service<C extends Context = Context> extends core.Service<C> {
   /** @deprecated use `this.ctx.logger` instead */
   public logger: Logger
   public schema: SchemaService
 
-  constructor(...args: core.Spread<T>)
-  constructor(ctx: C, ...args: core.Spread<T>)
-  constructor(ctx: C, name: string, immediate?: boolean)
-  constructor(...args: any) {
-    super(...args)
+  constructor(ctx: C, name: string, immediate?: boolean) {
+    super(ctx, name, immediate)
     this.logger = this.ctx.logger(this.name)
     this.schema = new SchemaService(this.ctx)
-  }
-
-  [core.Service.setup]() {
-    this.ctx = new Context() as C
   }
 }
 

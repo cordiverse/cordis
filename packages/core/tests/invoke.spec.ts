@@ -10,9 +10,10 @@ describe('functional service', () => {
       (init?: Config): Config
     }
 
-    class Foo extends Service<Config> {
-      static [Service.provide] = 'foo'
-      static [Service.immediate] = true
+    class Foo extends Service {
+      constructor(ctx: Context, public config: Config) {
+        super(ctx, 'foo', true)
+      }
 
       protected [Service.invoke](init?: Config) {
         const caller = this.ctx
