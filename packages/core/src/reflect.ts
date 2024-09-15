@@ -39,6 +39,9 @@ class ReflectService {
     if (!ctx.runtime.plugin) return
     // Case 4: custom inject checks
     if (ctx.bail(ctx, 'internal/inject', name)) return
+    const lines = error.stack!.split('\n')
+    lines.splice(1, 1)
+    error.stack = lines.join('\n')
     ctx.emit(ctx, 'internal/warning', error)
   }
 
@@ -53,9 +56,6 @@ class ReflectService {
       const [name, internal] = ReflectService.resolveInject(target, prop)
       // trace caller
       const error = new Error(`property ${name} is not registered, declare it as \`inject\` to suppress this warning`)
-      const lines = error.stack!.split('\n')
-      lines.splice(1, 1)
-      error.stack = lines.join('\n')
       if (!internal) {
         ReflectService.checkInject(ctx, name, error)
         return Reflect.get(target, name, ctx)
