@@ -55,7 +55,7 @@ class Lifecycle {
       property: 'ctx',
     })
 
-    defineProperty(this.on('internal/listener', function (this: Context, name, listener, options: EventOptions) {
+    ctx.scope.leak(this.on('internal/listener', function (this: Context, name, listener, options: EventOptions) {
       const method = options.prepend ? 'unshift' : 'push'
       if (name === 'ready') {
         if (!this.lifecycle.isActive) return
@@ -69,18 +69,18 @@ class Lifecycle {
         this.scope.runtime.forkables[method](listener as any)
         return this.scope.collect('event <fork>', () => remove(this.scope.runtime.forkables, listener))
       }
-    }), Context.static, ctx.scope)
+    }))
 
     for (const level of ['info', 'error', 'warning']) {
-      defineProperty(this.on(`internal/${level}`, (format, ...param) => {
+      ctx.scope.leak(this.on(`internal/${level}`, (format, ...param) => {
         if (this._hooks[`internal/${level}`].length > 1) return
         // eslint-disable-next-line no-console
         console.info(format, ...param)
-      }), Context.static, ctx.scope)
+      }))
     }
 
     // non-reusable plugin forks are not responsive to isolated service changes
-    defineProperty(this.on('internal/before-service', function (this: Context, name) {
+    ctx.scope.leak(this.on('internal/before-service', function (this: Context, name) {
       for (const runtime of this.registry.values()) {
         if (!runtime.inject[name]?.required) continue
         const scopes = runtime.isReusable ? runtime.children : [runtime]
@@ -90,9 +90,9 @@ class Lifecycle {
           scope.reset()
         }
       }
-    }, { global: true }), Context.static, ctx.scope)
+    }, { global: true }))
 
-    defineProperty(this.on('internal/service', function (this: Context, name) {
+    ctx.scope.leak(this.on('internal/service', function (this: Context, name) {
       for (const runtime of this.registry.values()) {
         if (!runtime.inject[name]?.required) continue
         const scopes = runtime.isReusable ? runtime.children : [runtime]
@@ -101,7 +101,18 @@ class Lifecycle {
           scope.start()
         }
       }
-    }, { global: true }), Context.static, ctx.scope)
+    }, { global: true }))
+
+    ctx.scope.leak(this.on('internal/status', function (scope: EffectScope) {
+      if (scope.status !== ScopeStatus.ACTIVE) return
+      for (const key of Reflect.ownKeys(ctx[symbols.store])) {
+        const item = ctx[symbols.store][key as symbol]
+        if (item.source.scope !== scope) continue
+        if (item.value) {
+          item.source.emit(item.source, 'internal/service', item.name, item.value)
+        }
+      }
+    }, { global: true }))
 
     // inject in ancestor contexts
     const checkInject = (scope: EffectScope, name: string) => {
@@ -112,9 +123,9 @@ class Lifecycle {
       return checkInject(scope.parent.scope, name)
     }
 
-    defineProperty(this.on('internal/inject', function (this: Context, name) {
+    ctx.scope.leak(this.on('internal/inject', function (this: Context, name) {
       return checkInject(this.scope, name)
-    }, { global: true }), Context.static, ctx.scope)
+    }, { global: true }))
   }
 
   async flush() {

@@ -17,7 +17,6 @@ export const symbols = {
   events: Symbol.for('cordis.events') as typeof Context.events,
   static: Symbol.for('cordis.static') as typeof Context.static,
   filter: Symbol.for('cordis.filter') as typeof Context.filter,
-  expose: Symbol.for('cordis.expose') as typeof Context.expose,
   isolate: Symbol.for('cordis.isolate') as typeof Context.isolate,
   internal: Symbol.for('cordis.internal') as typeof Context.internal,
   intercept: Symbol.for('cordis.intercept') as typeof Context.intercept,
@@ -26,7 +25,6 @@ export const symbols = {
   invoke: Symbol.for('cordis.invoke') as typeof Service.invoke,
   extend: Symbol.for('cordis.extend') as typeof Service.extend,
   tracker: Symbol.for('cordis.tracker') as typeof Service.tracker,
-  provide: Symbol.for('cordis.provide') as typeof Service.provide,
   immediate: Symbol.for('cordis.immediate') as typeof Service.immediate,
 }
 

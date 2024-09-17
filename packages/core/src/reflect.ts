@@ -1,6 +1,7 @@
 import { defineProperty, Dict, isNullable } from 'cosmokit'
 import { Context } from './context'
 import { getTraceable, isObject, isUnproxyable, symbols, withProps } from './utils'
+import { ScopeStatus } from './scope'
 
 declare module './context' {
   interface Context {
@@ -105,12 +106,14 @@ class ReflectService {
     this._mixin('lifecycle', ['on', 'once', 'parallel', 'emit', 'serial', 'bail', 'start', 'stop'])
   }
 
-  get(name: string) {
+  get(name: string, strict = false) {
     const internal = this.ctx[symbols.internal][name]
     if (internal?.type !== 'service') return
     const key = this.ctx[symbols.isolate][name]
-    const value = this.ctx[symbols.store][key]?.value
-    return getTraceable(this.ctx, value)
+    const item = this.ctx[symbols.store][key]
+    if (!item) return
+    if (strict && item.source.scope.status !== ScopeStatus.ACTIVE) return
+    return getTraceable(this.ctx, item.value)
   }
 
   set(name: string, value: any) {
@@ -141,9 +144,13 @@ class ReflectService {
       return ctx[symbols.isolate][name] === ctx2[symbols.isolate][name]
     }
 
-    ctx.emit(self, 'internal/before-service', name, value)
-    ctx[symbols.store][key] = { value, source: ctx }
-    ctx.emit(self, 'internal/service', name, oldValue)
+    if (ctx.scope.status === ScopeStatus.ACTIVE) {
+      ctx.emit(self, 'internal/before-service', name, value)
+    }
+    ctx[symbols.store][key] = { name, value, source: self }
+    if (ctx.scope.status === ScopeStatus.ACTIVE) {
+      ctx.emit(self, 'internal/service', name, oldValue)
+    }
     return dispose
   }
 
@@ -154,7 +161,7 @@ class ReflectService {
     internal[name] = { type: 'service', builtin }
     this.ctx.root[symbols.isolate][name] = key
     if (!isObject(value)) return
-    this.ctx[symbols.store][key] = { value, source: null! }
+    this.ctx[symbols.store][key] = { name, value, source: null! }
     defineProperty(value, symbols.tracker, {
       associate: name,
       property: 'ctx',
@@ -165,7 +172,7 @@ class ReflectService {
     const internal = this.ctx.root[symbols.internal]
     if (name in internal) return () => {}
     internal[name] = { type: 'accessor', ...options }
-    return () => delete this.ctx.root[symbols.isolate][name]
+    return () => delete internal[name]
   }
 
   accessor(name: string, options: Omit<Context.Internal.Accessor, 'type'>) {

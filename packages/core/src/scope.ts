@@ -147,7 +147,8 @@ export abstract class EffectScope<C extends Context = Context> {
   }
 
   ensure(callback: () => Promise<void>) {
-    const task = callback()
+    const task = Promise.resolve()
+      .then(callback)
       .catch((reason) => {
         this.context.emit(this.ctx, 'internal/error', reason)
         this.cancel(reason)
@@ -168,8 +169,12 @@ export abstract class EffectScope<C extends Context = Context> {
 
   get ready() {
     return Object.entries(this.runtime.inject).every(([name, inject]) => {
-      return !inject.required || !isNullable(this.ctx.get(name))
+      return !inject.required || !isNullable(this.ctx.reflect.get(name, true))
     })
+  }
+
+  leak<T>(disposable: T) {
+    return defineProperty(disposable, Context.static, this)
   }
 
   reset() {
@@ -259,7 +264,7 @@ export class ForkScope<C extends Context = Context> extends EffectScope<C> {
   constructor(parent: Context, public runtime: MainScope<C>, config: C['config'], error?: any) {
     super(parent as C, config)
 
-    this.dispose = defineProperty(parent.scope.collect(`fork <${parent.runtime.name}>`, () => {
+    this.dispose = runtime.leak(parent.scope.collect(`fork <${parent.runtime.name}>`, () => {
       this.uid = null
       this.reset()
       this.context.emit('internal/fork', this)
@@ -268,7 +273,7 @@ export class ForkScope<C extends Context = Context> extends EffectScope<C> {
         parent.registry.delete(runtime.plugin)
       }
       return result
-    }), Context.static, runtime)
+    }))
 
     runtime.children.push(this)
     runtime.disposables.push(this.dispose)
@@ -363,10 +368,6 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
     } else if (isConstructor(this.plugin)) {
       // eslint-disable-next-line new-cap
       const instance = new this.plugin(context, config)
-      const name = instance[Context.expose]
-      if (name) {
-        context.set(name, instance)
-      }
       if (instance['fork']) {
         this.forkables.push(instance['fork'].bind(instance))
       }

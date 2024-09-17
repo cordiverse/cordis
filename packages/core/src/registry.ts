@@ -60,6 +60,7 @@ export namespace Plugin {
     reusable?: boolean
     Config?: (config: any) => T
     inject?: Inject
+    provide?: string | string[]
     intercept?: Dict<boolean>
   }
 
