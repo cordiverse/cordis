@@ -27,7 +27,6 @@ declare module './context.ts' {
     bail<K extends keyof GetEvents<this>>(thisArg: ThisType<GetEvents<this>[K]>, name: K, ...args: Parameters<GetEvents<this>[K]>): ReturnType<GetEvents<this>[K]>
     on<K extends keyof GetEvents<this>>(name: K, listener: GetEvents<this>[K], options?: boolean | EventOptions): () => boolean
     once<K extends keyof GetEvents<this>>(name: K, listener: GetEvents<this>[K], options?: boolean | EventOptions): () => boolean
-    off<K extends keyof GetEvents<this>>(name: K, listener: GetEvents<this>[K]): boolean
     start(): Promise<void>
     stop(): Promise<void>
     /* eslint-enable max-len */
