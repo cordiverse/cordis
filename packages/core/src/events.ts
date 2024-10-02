@@ -28,6 +28,7 @@ declare module './context.ts' {
     on<K extends keyof GetEvents<this>>(name: K, listener: GetEvents<this>[K], options?: boolean | EventOptions): () => boolean
     once<K extends keyof GetEvents<this>>(name: K, listener: GetEvents<this>[K], options?: boolean | EventOptions): () => boolean
     off<K extends keyof GetEvents<this>>(name: K, listener: GetEvents<this>[K]): boolean
+    /** @deprecated */
     start(): Promise<void>
     stop(): Promise<void>
     /* eslint-enable max-len */
@@ -45,7 +46,6 @@ export interface Hook extends EventOptions {
 }
 
 class Lifecycle {
-  isActive = false
   _tasks = new Set<Promise<void>>()
   _hooks: Record<keyof any, Hook[]> = {}
 
@@ -58,8 +58,7 @@ class Lifecycle {
     ctx.scope.leak(this.on('internal/listener', function (this: Context, name, listener, options: EventOptions) {
       const method = options.prepend ? 'unshift' : 'push'
       if (name === 'ready') {
-        if (!this.lifecycle.isActive) return
-        this.scope.ensure(async () => listener())
+        Promise.resolve().then(listener)
         return () => false
       } else if (name === 'dispose') {
         this.scope.disposables[method](listener as any)
@@ -212,17 +211,10 @@ class Lifecycle {
   }
 
   async start() {
-    this.isActive = true
-    const hooks = this._hooks.ready || []
-    while (hooks.length) {
-      const { ctx, callback } = hooks.shift()!
-      ctx.scope.ensure(async () => callback())
-    }
     await this.flush()
   }
 
   async stop() {
-    this.isActive = false
     // `dispose` event is handled by state.disposables
     this.ctx.scope.reset()
   }

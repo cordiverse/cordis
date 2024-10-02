@@ -25,6 +25,7 @@ export const symbols = {
   invoke: Symbol.for('cordis.invoke') as typeof Service.invoke,
   extend: Symbol.for('cordis.extend') as typeof Service.extend,
   tracker: Symbol.for('cordis.tracker') as typeof Service.tracker,
+  activate: Symbol.for('cordis.activate') as typeof Service.activate,
   immediate: Symbol.for('cordis.immediate') as typeof Service.immediate,
 }
 

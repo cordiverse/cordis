@@ -41,5 +41,4 @@ export async function start(options: Options) {
   }
   if (options.logger) ctx.plugin(logger, options.logger)
   if (options.daemon) ctx.plugin(daemon, options.daemon)
-  await ctx.start()
 }

@@ -6,6 +6,7 @@ export abstract class Service<C extends Context = Context> {
   static readonly invoke: unique symbol = symbols.invoke as any
   static readonly extend: unique symbol = symbols.extend as any
   static readonly tracker: unique symbol = symbols.tracker as any
+  static readonly activate: unique symbol = symbols.activate as any
   static readonly immediate: unique symbol = symbols.immediate as any
   static readonly provide = 'provide' as any
 
@@ -34,12 +35,6 @@ export abstract class Service<C extends Context = Context> {
     self.ctx.provide(name)
     self.ctx.runtime.name = name
     self.ctx.set(name, self)
-
-    self.ctx.on('ready', async () => {
-      // await until next tick because derived class has not been initialized yet
-      await Promise.resolve()
-      await self.start()
-    })
 
     self.ctx.on('dispose', () => self.stop())
     return self
