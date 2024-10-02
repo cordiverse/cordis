@@ -2,7 +2,7 @@ import { Context, Service } from '../src'
 import { noop } from 'cosmokit'
 import { expect } from 'chai'
 import { mock } from 'node:test'
-import { checkError, Counter, getHookSnapshot } from './utils'
+import { checkError, Counter, getHookSnapshot, sleep } from './utils'
 
 describe('Service', () => {
   it('non-service access', async () => {
@@ -76,7 +76,7 @@ describe('Service', () => {
     // root is a property
     expect(root.get('root')).to.be.undefined
 
-    root.using({ optional: ['foo'] }, (ctx) => {
+    root.using({ foo: { required: false } }, (ctx) => {
       warn.mock.resetCalls()
       ctx.baz = 2
       expect(warn.mock.calls).to.have.length(0)
@@ -100,9 +100,6 @@ describe('Service', () => {
 
     const root = new Context()
     root.plugin(Foo)
-    expect(root.foo).to.be.undefined
-
-    await root.start()
     expect(root.foo).to.be.instanceof(Foo)
 
     root.registry.delete(Foo)
@@ -112,7 +109,7 @@ describe('Service', () => {
   it('immediate service', async () => {
     class Foo extends Service {
       constructor(ctx: Context) {
-        super(ctx, 'foo', true)
+        super(ctx, 'foo')
       }
     }
 
@@ -121,6 +118,7 @@ describe('Service', () => {
     root.on('internal/service', callback)
 
     root.plugin(Foo)
+    await sleep(0)
     expect(root.foo).to.be.instanceof(Foo)
     expect(callback.mock.calls).to.have.length(1)
 
@@ -133,7 +131,7 @@ describe('Service', () => {
       static inject = ['counter']
 
       constructor(ctx: Context) {
-        super(ctx, 'foo', true)
+        super(ctx, 'foo')
       }
 
       get value() {
@@ -151,6 +149,7 @@ describe('Service', () => {
     root.set('counter', new Counter(root))
 
     root.plugin(Foo)
+    await sleep(0)
     root.foo.increase()
     expect(root.foo.value).to.equal(1)
     expect(warning.mock.calls).to.have.length(0)
@@ -172,7 +171,7 @@ describe('Service', () => {
   it('traceable effect (without inject)', async () => {
     class Foo extends Service {
       constructor(ctx: Context) {
-        super(ctx, 'foo', true)
+        super(ctx, 'foo')
       }
 
       get value() {
@@ -190,6 +189,7 @@ describe('Service', () => {
     root.set('counter', new Counter(root))
 
     root.plugin(Foo)
+    await sleep(0)
     root.foo.increase()
     expect(root.foo.value).to.equal(1)
     expect(warning.mock.calls).to.have.length(2)
@@ -212,7 +212,7 @@ describe('Service', () => {
     const callback = mock.fn((foo: any) => {})
     const dispose = mock.fn((foo: any) => {})
     const plugin = mock.fn((ctx: Context) => {
-      ctx.on('ready', () => callback(ctx.foo))
+      callback(ctx.foo)
       ctx.on('dispose', () => dispose(ctx.foo))
     })
 
@@ -259,7 +259,7 @@ describe('Service', () => {
         super(ctx, 'foo')
       }
 
-      start = start
+      [Service.activate] = start
       stop = stop
       fork = fork
     }
@@ -290,7 +290,7 @@ describe('Service', () => {
   it('memory leak test', async () => {
     class Test extends Service {
       constructor(ctx: Context) {
-        super(ctx, 'test', true)
+        super(ctx, 'test')
         ctx.using(['test'], () => {})
       }
     }
@@ -314,24 +314,24 @@ describe('Service', () => {
     class Foo extends Service {
       static inject = ['qux']
       constructor(ctx: Context) {
-        super(ctx, 'foo', true)
+        super(ctx, 'foo')
       }
-      start = foo
+      [Service.activate] = foo
     }
 
     class Bar extends Service {
       static inject = ['foo', 'qux']
       constructor(ctx: Context) {
-        super(ctx, 'bar', true)
+        super(ctx, 'bar')
       }
-      start = bar
+      [Service.activate] = bar
     }
 
     class Qux extends Service {
       constructor(ctx: Context) {
-        super(ctx, 'qux', true)
+        super(ctx, 'qux')
       }
-      start = qux
+      [Service.activate] = qux
     }
 
     const root = new Context()
@@ -339,7 +339,7 @@ describe('Service', () => {
     root.plugin(Bar)
     root.plugin(Qux)
 
-    await root.start()
+    await sleep(0)
     expect(foo.mock.calls).to.have.length(1)
     expect(bar.mock.calls).to.have.length(1)
     expect(qux.mock.calls).to.have.length(1)

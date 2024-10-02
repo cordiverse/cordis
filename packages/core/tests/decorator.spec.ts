@@ -9,13 +9,13 @@ describe('Decorator', () => {
 
     class Foo extends Service {
       constructor(ctx: Context) {
-        super(ctx, 'foo', true)
+        super(ctx, 'foo')
       }
     }
 
     class Bar extends Service {
       constructor(ctx: Context) {
-        super(ctx, 'bar', true)
+        super(ctx, 'bar')
       }
 
       @Inject(['foo'])

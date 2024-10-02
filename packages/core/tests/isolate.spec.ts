@@ -122,7 +122,6 @@ describe('Isolation', () => {
     ctx.on(event, inner)
     ctx.plugin(Foo)
 
-    await ctx.start()
     expect(outer.mock.calls).to.have.length(0)
     expect(inner.mock.calls).to.have.length(1)
   })

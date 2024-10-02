@@ -46,7 +46,6 @@ export interface Hook extends EventOptions {
 }
 
 class Lifecycle {
-  _tasks = new Set<Promise<void>>()
   _hooks: Record<keyof any, Hook[]> = {}
 
   constructor(private ctx: Context) {
@@ -127,11 +126,7 @@ class Lifecycle {
     }, { global: true }))
   }
 
-  async flush() {
-    while (this._tasks.size) {
-      await Promise.all(Array.from(this._tasks))
-    }
-  }
+  async flush() {}
 
   filterHooks(hooks: Hook[], thisArg?: object) {
     thisArg = getTraceable(this.ctx, thisArg)

@@ -147,25 +147,6 @@ export abstract class EffectScope<C extends Context = Context> {
     }
   }
 
-  ensure(callback: () => Promise<void>) {
-    let resolve: () => void
-    const task = new Promise<void>((_resolve) => {
-      resolve = _resolve
-    })
-    this.updateStatus(() => this.tasks.add(task))
-    this.context.events._tasks.add(task)
-    callback()
-      .catch((reason) => {
-        this.context.emit(this.ctx, 'internal/error', reason)
-        this.cancel(reason)
-      })
-      .finally(() => {
-        resolve()
-        this.updateStatus(() => this.tasks.delete(task))
-        this.context.events._tasks.delete(task)
-      })
-  }
-
   cancel(reason?: any) {
     this.error = reason
     this.updateStatus(() => this.hasError = true)
@@ -204,6 +185,7 @@ export abstract class EffectScope<C extends Context = Context> {
     if (!this.isReady || this.isActive || this.uid === null) return true
     this.isActive = true
     await this.activate()
+    this.updateStatus()
   }
 
   accept(callback?: (config: C['config']) => void | boolean, options?: AcceptOptions): () => boolean

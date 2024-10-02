@@ -104,6 +104,6 @@ export class Import extends ImportTree {
     }
     this.file = new LoaderFile(filename, LoaderFile.writable[ext])
     this.file.ref(this)
-    await super.start()
+    await super[Service.activate]()
   }
 }
