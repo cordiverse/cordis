@@ -271,7 +271,7 @@ export class ForkScope<C extends Context = Context> extends EffectScope<C> {
   async activate() {
     for (const fork of this.runtime.forkables) {
       const value = await fork(this.context, this._config)
-      await value?.[symbols.activate]?.()
+      await value?.[symbols.setup]?.()
     }
   }
 
@@ -374,7 +374,10 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
   async activate() {
     if (!this.isReusable && this.plugin) {
       const value = await this.apply(this.ctx, this._config)
-      await value?.[symbols.activate]?.()
+      for (const hook of value?.[symbols.initHooks] ?? []) {
+        hook()
+      }
+      await value?.[symbols.setup]?.()
     }
     for (const fork of this.children) {
       fork.start()

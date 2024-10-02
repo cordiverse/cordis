@@ -48,7 +48,7 @@ class NodeLoader extends Loader {
     }
   }
 
-  async [Service.activate]() {
+  async [Service.setup]() {
     const originalLoad: ModuleLoad = Module['_load']
     Module['_load'] = ((request, parent, isMain) => {
       try {
@@ -68,7 +68,7 @@ class NodeLoader extends Loader {
       }
     }) as ModuleLoad
 
-    await super[Service.activate]()
+    await super[Service.setup]()
   }
 
   exit(code = NodeLoader.exitCode) {

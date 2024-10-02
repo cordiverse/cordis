@@ -259,7 +259,7 @@ describe('Service', () => {
         super(ctx, 'foo')
       }
 
-      [Service.activate] = start
+      start = start
       stop = stop
       fork = fork
     }
@@ -316,7 +316,7 @@ describe('Service', () => {
       constructor(ctx: Context) {
         super(ctx, 'foo')
       }
-      [Service.activate] = foo
+      start = foo
     }
 
     class Bar extends Service {
@@ -324,14 +324,14 @@ describe('Service', () => {
       constructor(ctx: Context) {
         super(ctx, 'bar')
       }
-      [Service.activate] = bar
+      start = bar
     }
 
     class Qux extends Service {
       constructor(ctx: Context) {
         super(ctx, 'qux')
       }
-      [Service.activate] = qux
+      start = qux
     }
 
     const root = new Context()

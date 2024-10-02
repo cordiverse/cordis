@@ -17,8 +17,10 @@ export function Inject(inject: Inject) {
       ctx.addInitializer(function () {
         const property = this[symbols.tracker]?.property
         if (!property) throw new Error('missing context tracker')
-        ;(this[property] as Context).inject(inject, (ctx) => {
-          value.call(withProps(this, { [property]: ctx }))
+        ;(this[symbols.initHooks] ??= []).push(() => {
+          (this[property] as Context).inject(inject, (ctx) => {
+            value.call(withProps(this, { [property]: ctx }))
+          })
         })
       })
     } else {

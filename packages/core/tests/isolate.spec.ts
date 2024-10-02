@@ -1,4 +1,4 @@
-import { Context, Service } from '../src'
+import { Context, Service, symbols } from '../src'
 import { expect } from 'chai'
 import { mock } from 'node:test'
 import { event } from './utils'
@@ -106,7 +106,7 @@ describe('Isolation', () => {
   it('isolated event', async () => {
     class Foo extends Service {
       constructor(ctx: Context) {
-        super(ctx, 'foo', true)
+        super(ctx, 'foo')
       }
 
       start() {

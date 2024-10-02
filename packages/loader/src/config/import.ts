@@ -16,7 +16,7 @@ export class ImportTree<C extends Context = Context> extends EntryTree<C> {
     ctx.on('dispose', () => this.stop())
   }
 
-  async [Service.activate]() {
+  async [Service.setup]() {
     await this.refresh()
     await this.file.checkAccess()
   }
@@ -104,6 +104,6 @@ export class Import extends ImportTree {
     }
     this.file = new LoaderFile(filename, LoaderFile.writable[ext])
     this.file.ref(this)
-    await super[Service.activate]()
+    await super[Service.setup]()
   }
 }

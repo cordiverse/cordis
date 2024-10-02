@@ -3,10 +3,10 @@ import { Context } from './context.ts'
 import { createCallable, joinPrototype, symbols, Tracker } from './utils.ts'
 
 export abstract class Service<C extends Context = Context> {
+  static readonly setup: unique symbol = symbols.setup as any
   static readonly invoke: unique symbol = symbols.invoke as any
   static readonly extend: unique symbol = symbols.extend as any
   static readonly tracker: unique symbol = symbols.tracker as any
-  static readonly activate: unique symbol = symbols.activate as any
   static readonly immediate: unique symbol = symbols.immediate as any
   static readonly provide = 'provide' as any
 
@@ -29,7 +29,6 @@ export abstract class Service<C extends Context = Context> {
     }
     self.ctx = ctx
     self.name = name
-    // self.config = config
     defineProperty(self, symbols.tracker, tracker)
 
     self.ctx.provide(name)
@@ -38,6 +37,10 @@ export abstract class Service<C extends Context = Context> {
 
     self.ctx.on('dispose', () => self.stop())
     return self
+  }
+
+  protected [symbols.setup]() {
+    return this.start()
   }
 
   protected [symbols.filter](ctx: Context) {

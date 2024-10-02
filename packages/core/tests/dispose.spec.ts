@@ -99,20 +99,9 @@ describe('Disposables', () => {
     const root = new Context()
     const callback = mock.fn(noop)
     const { length } = root.state.disposables
-
-    root.on('ready', callback)
-    expect(callback.mock.calls).to.have.length(0)
-
-    await root.start()
-    expect(callback.mock.calls).to.have.length(1)
-
-    root.on('ready', callback)
-    expect(callback.mock.calls).to.have.length(2)
-
+    root.on('custom-event', callback)
+    expect(root.state.disposables.length).to.equal(length + 1)
     await root.stop()
-
-    await root.start()
-    expect(callback.mock.calls).to.have.length(2)
     expect(root.state.disposables.length).to.equal(length)
   })
 

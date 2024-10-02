@@ -11,6 +11,7 @@ export const symbols = {
   shadow: Symbol.for('cordis.shadow'),
   receiver: Symbol.for('cordis.receiver'),
   original: Symbol.for('cordis.original'),
+  initHooks: Symbol.for('cordis.initHooks'),
 
   // context symbols
   store: Symbol.for('cordis.store') as typeof Context.store,
@@ -22,10 +23,10 @@ export const symbols = {
   intercept: Symbol.for('cordis.intercept') as typeof Context.intercept,
 
   // service symbols
+  setup: Symbol.for('cordis.setup') as typeof Service.setup,
   invoke: Symbol.for('cordis.invoke') as typeof Service.invoke,
   extend: Symbol.for('cordis.extend') as typeof Service.extend,
   tracker: Symbol.for('cordis.tracker') as typeof Service.tracker,
-  activate: Symbol.for('cordis.activate') as typeof Service.activate,
   immediate: Symbol.for('cordis.immediate') as typeof Service.immediate,
 }
 

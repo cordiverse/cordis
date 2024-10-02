@@ -122,10 +122,10 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
     ctx.plugin(isolate)
   }
 
-  async [Service.activate]() {
+  async [Service.setup]() {
     await this.init(process.cwd(), this.config)
     this.ctx.set('env', process.env)
-    await super[Service.activate]()
+    await super[Service.setup]()
   }
 
   locate(ctx = this.ctx) {
