@@ -11,22 +11,22 @@ export const symbols = {
   shadow: Symbol.for('cordis.shadow'),
   receiver: Symbol.for('cordis.receiver'),
   original: Symbol.for('cordis.original'),
+  initHooks: Symbol.for('cordis.initHooks'),
 
   // context symbols
   store: Symbol.for('cordis.store') as typeof Context.store,
   events: Symbol.for('cordis.events') as typeof Context.events,
   static: Symbol.for('cordis.static') as typeof Context.static,
   filter: Symbol.for('cordis.filter') as typeof Context.filter,
-  expose: Symbol.for('cordis.expose') as typeof Context.expose,
   isolate: Symbol.for('cordis.isolate') as typeof Context.isolate,
   internal: Symbol.for('cordis.internal') as typeof Context.internal,
   intercept: Symbol.for('cordis.intercept') as typeof Context.intercept,
 
   // service symbols
+  setup: Symbol.for('cordis.setup') as typeof Service.setup,
   invoke: Symbol.for('cordis.invoke') as typeof Service.invoke,
   extend: Symbol.for('cordis.extend') as typeof Service.extend,
   tracker: Symbol.for('cordis.tracker') as typeof Service.tracker,
-  provide: Symbol.for('cordis.provide') as typeof Service.provide,
   immediate: Symbol.for('cordis.immediate') as typeof Service.immediate,
 }
 

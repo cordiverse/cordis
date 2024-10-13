@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { Loader } from './loader.ts'
 import * as dotenv from 'dotenv'
 import * as path from 'node:path'
+import { Service } from '@cordisjs/core'
 
 export * from './internal.ts'
 export * from './loader.ts'
@@ -47,7 +48,7 @@ class NodeLoader extends Loader {
     }
   }
 
-  async start() {
+  async [Service.setup]() {
     const originalLoad: ModuleLoad = Module['_load']
     Module['_load'] = ((request, parent, isMain) => {
       try {
@@ -67,7 +68,7 @@ class NodeLoader extends Loader {
       }
     }) as ModuleLoad
 
-    await super.start()
+    await super[Service.setup]()
   }
 
   exit(code = NodeLoader.exitCode) {

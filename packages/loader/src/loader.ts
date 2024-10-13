@@ -1,4 +1,4 @@
-import { Context, EffectScope } from '@cordisjs/core'
+import { Context, EffectScope, Service } from '@cordisjs/core'
 import { Dict, isNullable } from 'cosmokit'
 import { ModuleLoader } from './internal.ts'
 import { Entry, EntryOptions, EntryUpdateMeta } from './config/entry.ts'
@@ -122,10 +122,10 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
     ctx.plugin(isolate)
   }
 
-  async start() {
+  async [Service.setup]() {
     await this.init(process.cwd(), this.config)
     this.ctx.set('env', process.env)
-    await super.start()
+    await super[Service.setup]()
   }
 
   locate(ctx = this.ctx) {

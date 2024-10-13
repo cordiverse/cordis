@@ -1,7 +1,7 @@
 import { deepEqual, defineProperty, Dict, isNullable, remove } from 'cosmokit'
 import { Context } from './context.ts'
 import { Inject, Plugin } from './registry.ts'
-import { isConstructor, resolveConfig } from './utils.ts'
+import { isConstructor, resolveConfig, symbols } from './utils.ts'
 
 declare module './context.ts' {
   export interface Context {
@@ -71,6 +71,7 @@ export abstract class EffectScope<C extends Context = Context> {
   protected hasError = false
 
   abstract runtime: MainScope<C>
+  abstract activate(): Promise<void>
   abstract dispose(): boolean
   abstract update(config: C['config'], forced?: boolean): void
 
@@ -87,7 +88,7 @@ export abstract class EffectScope<C extends Context = Context> {
   }
 
   assertActive() {
-    if (this.uid !== null || this.isActive) return
+    if (this.isActive) return
     throw new CordisError('INACTIVE_EFFECT')
   }
 
@@ -121,19 +122,19 @@ export abstract class EffectScope<C extends Context = Context> {
     return dispose
   }
 
-  restart() {
-    this.reset()
+  async restart() {
+    await this.reset()
     this.error = null
     this.hasError = false
     this.status = ScopeStatus.PENDING
-    this.start()
+    await this.start()
   }
 
   protected _getStatus() {
     if (this.uid === null) return ScopeStatus.DISPOSED
     if (this.hasError) return ScopeStatus.FAILED
     if (this.tasks.size) return ScopeStatus.LOADING
-    if (this.ready) return ScopeStatus.ACTIVE
+    if (this.isReady) return ScopeStatus.ACTIVE
     return ScopeStatus.PENDING
   }
 
@@ -146,33 +147,23 @@ export abstract class EffectScope<C extends Context = Context> {
     }
   }
 
-  ensure(callback: () => Promise<void>) {
-    const task = callback()
-      .catch((reason) => {
-        this.context.emit(this.ctx, 'internal/error', reason)
-        this.cancel(reason)
-      })
-      .finally(() => {
-        this.updateStatus(() => this.tasks.delete(task))
-        this.context.events._tasks.delete(task)
-      })
-    this.updateStatus(() => this.tasks.add(task))
-    this.context.events._tasks.add(task)
-  }
-
   cancel(reason?: any) {
     this.error = reason
     this.updateStatus(() => this.hasError = true)
     this.reset()
   }
 
-  get ready() {
+  get isReady() {
     return Object.entries(this.runtime.inject).every(([name, inject]) => {
-      return !inject.required || !isNullable(this.ctx.get(name))
+      return !inject.required || !isNullable(this.ctx.reflect.get(name, true))
     })
   }
 
-  reset() {
+  leak<T>(disposable: T) {
+    return defineProperty(disposable, Context.static, this)
+  }
+
+  async reset() {
     this.isActive = false
     this.disposables = this.disposables.splice(0).filter((dispose) => {
       if (this.uid !== null && dispose[Context.static] === this) return true
@@ -190,10 +181,11 @@ export abstract class EffectScope<C extends Context = Context> {
     }
   }
 
-  start() {
-    if (!this.ready || this.isActive || this.uid === null) return true
+  async start() {
+    if (!this.isReady || this.isActive || this.uid === null) return true
     this.isActive = true
-    this.updateStatus(() => this.hasError = false)
+    await this.activate()
+    this.updateStatus()
   }
 
   accept(callback?: (config: C['config']) => void | boolean, options?: AcceptOptions): () => boolean
@@ -259,7 +251,7 @@ export class ForkScope<C extends Context = Context> extends EffectScope<C> {
   constructor(parent: Context, public runtime: MainScope<C>, config: C['config'], error?: any) {
     super(parent as C, config)
 
-    this.dispose = defineProperty(parent.scope.collect(`fork <${parent.runtime.name}>`, () => {
+    this.dispose = runtime.leak(parent.scope.collect(`fork <${parent.runtime.name}>`, () => {
       this.uid = null
       this.reset()
       this.context.emit('internal/fork', this)
@@ -268,7 +260,7 @@ export class ForkScope<C extends Context = Context> extends EffectScope<C> {
         parent.registry.delete(runtime.plugin)
       }
       return result
-    }), Context.static, runtime)
+    }))
 
     runtime.children.push(this)
     runtime.disposables.push(this.dispose)
@@ -276,10 +268,10 @@ export class ForkScope<C extends Context = Context> extends EffectScope<C> {
     this.init(error)
   }
 
-  start() {
-    if (super.start()) return true
+  async activate() {
     for (const fork of this.runtime.forkables) {
-      this.ensure(async () => fork(this.context, this._config))
+      const value = await fork(this.context, this._config)
+      await value?.[symbols.setup]?.()
     }
   }
 
@@ -363,10 +355,6 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
     } else if (isConstructor(this.plugin)) {
       // eslint-disable-next-line new-cap
       const instance = new this.plugin(context, config)
-      const name = instance[Context.expose]
-      if (name) {
-        context.set(name, instance)
-      }
       if (instance['fork']) {
         this.forkables.push(instance['fork'].bind(instance))
       }
@@ -376,17 +364,20 @@ export class MainScope<C extends Context = Context> extends EffectScope<C> {
     }
   }
 
-  reset() {
+  async reset() {
     super.reset()
     for (const fork of this.children) {
       fork.reset()
     }
   }
 
-  start() {
-    if (super.start()) return true
+  async activate() {
     if (!this.isReusable && this.plugin) {
-      this.ensure(async () => this.value = this.apply(this.ctx, this._config))
+      const value = await this.apply(this.ctx, this._config)
+      for (const hook of value?.[symbols.initHooks] ?? []) {
+        hook()
+      }
+      await value?.[symbols.setup]?.()
     }
     for (const fork of this.children) {
       fork.start()

@@ -17,6 +17,7 @@ export namespace Context {
   }
 
   export interface Item<C extends Context> {
+    name: string
     value?: any
     source: C
   }
@@ -64,7 +65,6 @@ export class Context {
   static readonly events: unique symbol = symbols.events as any
   static readonly static: unique symbol = symbols.static as any
   static readonly filter: unique symbol = symbols.filter as any
-  static readonly expose: unique symbol = symbols.expose as any
   static readonly isolate: unique symbol = symbols.isolate as any
   static readonly internal: unique symbol = symbols.internal as any
   static readonly intercept: unique symbol = symbols.intercept as any

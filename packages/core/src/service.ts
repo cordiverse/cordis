@@ -3,11 +3,12 @@ import { Context } from './context.ts'
 import { createCallable, joinPrototype, symbols, Tracker } from './utils.ts'
 
 export abstract class Service<C extends Context = Context> {
+  static readonly setup: unique symbol = symbols.setup as any
   static readonly invoke: unique symbol = symbols.invoke as any
   static readonly extend: unique symbol = symbols.extend as any
   static readonly tracker: unique symbol = symbols.tracker as any
-  static readonly provide: unique symbol = symbols.provide as any
   static readonly immediate: unique symbol = symbols.immediate as any
+  static readonly provide = 'provide' as any
 
   protected start(): Awaitable<void> {}
   protected stop(): Awaitable<void> {}
@@ -28,25 +29,18 @@ export abstract class Service<C extends Context = Context> {
     }
     self.ctx = ctx
     self.name = name
-    self.config = config
     defineProperty(self, symbols.tracker, tracker)
 
     self.ctx.provide(name)
     self.ctx.runtime.name = name
-    if (immediate) {
-      if (_ctx) self[symbols.expose] = name
-      else self.ctx.set(name, self)
-    }
-
-    self.ctx.on('ready', async () => {
-      // await until next tick because derived class has not been initialized yet
-      await Promise.resolve()
-      await self.start()
-      if (!immediate) self.ctx.set(name!, self)
-    })
+    self.ctx.set(name, self)
 
     self.ctx.on('dispose', () => self.stop())
     return self
+  }
+
+  protected [symbols.setup]() {
+    return this.start()
   }
 
   protected [symbols.filter](ctx: Context) {

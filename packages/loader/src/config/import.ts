@@ -1,4 +1,4 @@
-import { Context } from '@cordisjs/core'
+import { Context, Service } from '@cordisjs/core'
 import { dirname, extname, resolve } from 'node:path'
 import { readdir, stat } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -13,11 +13,10 @@ export class ImportTree<C extends Context = Context> extends EntryTree<C> {
 
   constructor(public ctx: C) {
     super(ctx)
-    ctx.on('ready', () => this.start())
     ctx.on('dispose', () => this.stop())
   }
 
-  async start() {
+  async [Service.setup]() {
     await this.refresh()
     await this.file.checkAccess()
   }
@@ -105,6 +104,6 @@ export class Import extends ImportTree {
     }
     this.file = new LoaderFile(filename, LoaderFile.writable[ext])
     this.file.ref(this)
-    await super.start()
+    await super[Service.setup]()
   }
 }

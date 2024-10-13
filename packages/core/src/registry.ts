@@ -1,6 +1,6 @@
 import { defineProperty, Dict } from 'cosmokit'
 import { Context } from './context.ts'
-import { ForkScope, MainScope } from './scope.ts'
+import { ForkScope, MainScope, ScopeStatus } from './scope.ts'
 import { resolveConfig, symbols, withProps } from './utils.ts'
 
 function isApplicable(object: Plugin) {
@@ -17,8 +17,10 @@ export function Inject(inject: Inject) {
       ctx.addInitializer(function () {
         const property = this[symbols.tracker]?.property
         if (!property) throw new Error('missing context tracker')
-        ;(this[property] as Context).inject(inject, (ctx) => {
-          value.call(withProps(this, { [property]: ctx }))
+        ;(this[symbols.initHooks] ??= []).push(() => {
+          (this[property] as Context).inject(inject, (ctx) => {
+            value.call(withProps(this, { [property]: ctx }))
+          })
         })
       })
     } else {
@@ -60,6 +62,7 @@ export namespace Plugin {
     reusable?: boolean
     Config?: (config: any) => T
     inject?: Inject
+    provide?: string | string[]
     intercept?: Dict<boolean>
   }
 
@@ -73,7 +76,7 @@ export namespace Plugin {
   }
 
   export interface Constructor<C extends Context = Context, T = any> extends Base<T> {
-    new (ctx: C, config: T): void
+    new (ctx: C, config: T): any
   }
 
   export interface Object<C extends Context = Context, T = any> extends Base<T> {
@@ -112,6 +115,7 @@ class Registry<C extends Context = Context> {
     const runtime = new MainScope(ctx, null!, config)
     ctx.scope = runtime
     runtime.ctx = ctx
+    runtime.status = ScopeStatus.ACTIVE
     this.set(null!, runtime)
   }
 
