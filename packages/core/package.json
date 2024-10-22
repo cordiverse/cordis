@@ -1,17 +1,17 @@
 {
   "name": "@cordisjs/core",
   "description": "Meta-Framework for Modern JavaScript Applications",
-  "version": "3.18.0",
+  "version": "3.18.1",
   "sideEffects": false,
   "type": "module",
   "main": "lib/index.cjs",
   "module": "lib/index.mjs",
-  "typings": "lib/index.d.ts",
+  "types": "lib/index.d.ts",
   "exports": {
     ".": {
+      "types": "./lib/index.d.ts",
       "require": "./lib/index.cjs",
-      "import": "./lib/index.mjs",
-      "types": "./lib/index.d.ts"
+      "import": "./lib/index.mjs"
     },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
@@ -38,6 +38,6 @@
     "chai-as-promised": "^7.1.1"
   },
   "dependencies": {
-    "cosmokit": "^1.6.2"
+    "cosmokit": "^1.6.3"
   }
 }

@@ -1,7 +1,7 @@
 {
   "name": "cordis",
   "description": "Meta-Framework for Modern JavaScript Applications",
-  "version": "3.18.0",
+  "version": "3.18.1",
   "type": "module",
   "bin": "lib/bin/cordis.mjs",
   "main": "lib/index.cjs",
@@ -75,14 +75,14 @@
     "cordis": "*"
   },
   "dependencies": {
-    "@cordisjs/core": "3.18.0",
-    "@cordisjs/loader": "^0.13.0",
+    "@cordisjs/core": "3.18.1",
+    "@cordisjs/loader": "^0.13.1",
     "@cordisjs/logger": "^0.3.3",
     "@cordisjs/schema": "^0.1.1",
     "@cordisjs/timer": "^0.3.2",
     "cac": "^6.7.14",
-    "cosmokit": "^1.6.2",
+    "cosmokit": "^1.6.3",
     "kleur": "^4.1.5",
-    "reggol": "^1.7.0"
+    "reggol": "^1.7.1"
   }
 }

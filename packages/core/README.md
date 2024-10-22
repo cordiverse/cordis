@@ -14,8 +14,6 @@ const ctx = new Context()
 
 ctx.plugin(plugin)              // use plugins
 ctx.on(event, callback)         // listen to events
-
-ctx.start()                     // start app
 ```
 
 ## Contents

@@ -23,20 +23,20 @@
   "devDependencies": {
     "@cordisjs/eslint-config": "^1.1.1",
     "@sinonjs/fake-timers": "^6.0.1",
-    "@types/node": "^22.1.0",
+    "@types/node": "^22.7.8",
     "@types/sinonjs__fake-timers": "^6.0.4",
     "c8": "^7.14.0",
-    "esbuild": "^0.23.0",
+    "esbuild": "^0.23.1",
     "esbuild-register": "^3.5.0",
     "eslint": "^8.57.0",
     "mocha": "^9.2.2",
     "shx": "^0.3.4",
     "tsx": "patch:tsx@npm%3A4.7.0#./.yarn/patches/tsx-npm-4.7.0-86d7b66640.patch",
-    "typescript": "^5.5.3",
+    "typescript": "^5.6.3",
     "yakumo": "^1.0.0-beta.18",
-    "yakumo-esbuild": "^1.0.0-beta.6",
+    "yakumo-esbuild": "^1.0.0-beta.7",
     "yakumo-mocha": "^1.0.0-beta.2",
-    "yakumo-tsc": "^1.0.0-beta.4",
+    "yakumo-tsc": "^1.0.0-beta.5",
     "yml-register": "^1.2.5"
   }
 }
