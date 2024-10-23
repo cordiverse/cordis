@@ -39,6 +39,7 @@
   "devDependencies": {
     "@cordisjs/core": "^3.18.1",
     "@types/chai": "^4.3.16",
+    "@types/js-yaml": "^4.0.9",
     "chai": "^5.1.1"
   },
   "peerDependencies": {

@@ -37,7 +37,7 @@ class ReflectService {
     // Case 2: `$` or `_` prefix
     if (name[0] === '$' || name[0] === '_') return
     // Case 3: access directly from root
-    if (!ctx.runtime.plugin) return
+    if (!ctx.scope.meta) return
     // Case 4: custom inject checks
     if (ctx.bail(ctx, 'internal/inject', name)) return
     const lines = error.stack!.split('\n')

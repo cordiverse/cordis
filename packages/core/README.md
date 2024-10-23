@@ -204,7 +204,7 @@ ctx.plugin(Bar)
 
 #### Unload a plugin [↑](#contents)
 
-`ctx.plugin()` returns a `ForkScope` instance. To unload a plugin, we can use the `dispose()` method of it:
+`ctx.plugin()` returns a `EffectScope` instance. To unload a plugin, we can use the `dispose()` method of it:
 
 ```ts
 // load a plugin
@@ -218,7 +218,7 @@ const fork = ctx.plugin((ctx) => {
 fork.dispose()
 ```
 
-Some plugins can be loaded multiple times. To unload every fork of a plugin without access to the `ForkScope` instance, we can use `ctx.registry`:
+Some plugins can be loaded multiple times. To unload every fork of a plugin without access to the `EffectScope` instance, we can use `ctx.registry`:
 
 ```ts
 // remove all forks of the plugin
@@ -666,7 +666,7 @@ If any listener is fulfilled with a value other than `false`, `null` or `undefin
 
 - plugin: `object` the plugin to apply
 - config: `object` config for the plugin
-- returns: `ForkScope`
+- returns: `EffectScope`
 
 Apply a plugin.
 
@@ -716,7 +716,7 @@ The plugin runtime associated with the effect scope. If the scope is a runtime, 
 
 #### scope.dispose()
 
-### ForkScope
+### EffectScope
 
 ### MainScope
 
@@ -730,7 +730,7 @@ It can be accessed via `ctx.scope.main` or passed-in in some events.
 
 #### runtime.children
 
-- type: [`ForkScope[]`](#forkscope)
+- type: [`EffectScope[]`](#forkscope)
 
 #### runtime.isForkable
 
@@ -777,11 +777,11 @@ See: [Reusable plugins](#reusable-plugins-)
 
 - runtime: `MainScope`
 
-#### internal/fork(fork)
+#### internal/plugin(fork)
 
-- fork: `ForkScope`
+- fork: `EffectScope`
 
 #### internal/update(fork, config)
 
-- fork: `ForkScope`
+- fork: `EffectScope`
 - config: `any`

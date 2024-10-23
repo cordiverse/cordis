@@ -32,7 +32,6 @@ export abstract class Service<C extends Context = Context> {
     defineProperty(self, symbols.tracker, tracker)
 
     self.ctx.provide(name)
-    self.ctx.runtime.name = name
     self.ctx.set(name, self)
 
     self.ctx.on('dispose', () => self.stop())

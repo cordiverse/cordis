@@ -3,6 +3,7 @@ import Lifecycle from './events.ts'
 import ReflectService from './reflect.ts'
 import Registry from './registry.ts'
 import { getTraceable, resolveConfig, symbols } from './utils.ts'
+import { EffectScope } from './index.ts'
 
 export { Lifecycle, ReflectService, Registry }
 
@@ -93,6 +94,7 @@ export class Context {
     this[symbols.intercept] = Object.create(null)
     const self: Context = new Proxy(this, ReflectService.handler)
     self.root = self
+    this.scope = new EffectScope(this, config, () => {})
     self.reflect = new ReflectService(self)
     self.registry = new Registry(self, config)
     self.lifecycle = new Lifecycle(self)
@@ -116,11 +118,12 @@ export class Context {
   }
 
   get name() {
-    let runtime = this.runtime
-    while (runtime && !runtime.name) {
-      runtime = runtime.parent.runtime
-    }
-    return runtime?.name!
+    let scope = this.scope
+    do {
+      if (scope.meta?.name) return scope.meta.name
+      scope = scope.parent.scope
+    } while (scope)
+    return 'root'
   }
 
   get events() {

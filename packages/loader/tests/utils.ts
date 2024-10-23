@@ -1,5 +1,5 @@
 import { Dict } from 'cosmokit'
-import { Context, ForkScope, Plugin } from '@cordisjs/core'
+import { Context, EffectScope, Plugin } from '@cordisjs/core'
 import { EntryOptions, Group, Loader, LoaderFile } from '../src'
 import { Mock, mock } from 'node:test'
 import { expect } from 'chai'
@@ -9,7 +9,7 @@ declare module '../src/index.ts' {
     mock<F extends Function>(name: string, plugin: F): Mock<F>
     expectEnable(plugin: any, config?: any): void
     expectDisable(plugin: any): void
-    expectFork(id: string): ForkScope
+    expectFork(id: string): EffectScope
   }
 }
 

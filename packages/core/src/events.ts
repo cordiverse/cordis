@@ -1,6 +1,6 @@
 import { Awaitable, defineProperty, Promisify, remove } from 'cosmokit'
 import { Context } from './context.ts'
-import { EffectScope, ForkScope, MainScope, ScopeStatus } from './scope.ts'
+import { EffectScope, ScopeStatus } from './scope.ts'
 import { getTraceable, symbols } from './index.ts'
 import ReflectService from './reflect.ts'
 
@@ -54,6 +54,7 @@ class Lifecycle {
       property: 'ctx',
     })
 
+    // TODO: deprecate these events
     ctx.scope.leak(this.on('internal/listener', function (this: Context, name, listener, options: EventOptions) {
       const method = options.prepend ? 'unshift' : 'push'
       if (name === 'ready') {
@@ -63,9 +64,6 @@ class Lifecycle {
         this.scope.disposables[method](listener as any)
         defineProperty(listener, 'name', 'event <dispose>')
         return () => remove(this.scope.disposables, listener)
-      } else if (name === 'fork') {
-        this.scope.runtime.forkables[method](listener as any)
-        return this.scope.collect('event <fork>', () => remove(this.scope.runtime.forkables, listener))
       }
     }))
 
@@ -79,10 +77,9 @@ class Lifecycle {
 
     // non-reusable plugin forks are not responsive to isolated service changes
     ctx.scope.leak(this.on('internal/before-service', function (this: Context, name) {
-      for (const runtime of this.registry.values()) {
-        if (!runtime.inject[name]?.required) continue
-        const scopes = runtime.isReusable ? runtime.children : [runtime]
-        for (const scope of scopes) {
+      for (const meta of this.registry.values()) {
+        if (!meta.inject[name]?.required) continue
+        for (const scope of meta.scopes) {
           if (!this[symbols.filter](scope.ctx)) continue
           scope.updateStatus()
           scope.reset()
@@ -91,10 +88,9 @@ class Lifecycle {
     }, { global: true }))
 
     ctx.scope.leak(this.on('internal/service', function (this: Context, name) {
-      for (const runtime of this.registry.values()) {
-        if (!runtime.inject[name]?.required) continue
-        const scopes = runtime.isReusable ? runtime.children : [runtime]
-        for (const scope of scopes) {
+      for (const meta of this.registry.values()) {
+        if (!meta.inject[name]?.required) continue
+        for (const scope of meta.scopes) {
           if (!this[symbols.filter](scope.ctx)) continue
           scope.start()
         }
@@ -114,8 +110,8 @@ class Lifecycle {
 
     // inject in ancestor contexts
     const checkInject = (scope: EffectScope, name: string) => {
-      if (!scope.runtime.plugin) return false
-      for (const key in scope.runtime.inject) {
+      if (!scope.meta) return false
+      for (const key in scope.meta.inject) {
         if (name === ReflectService.resolveInject(scope.ctx, key)[0]) return true
       }
       return checkInject(scope.parent.scope, name)
@@ -218,19 +214,17 @@ class Lifecycle {
 export default Lifecycle
 
 export interface Events<in C extends Context = Context> {
-  'fork'(ctx: C, config: C['config']): void
   'ready'(): Awaitable<void>
   'dispose'(): Awaitable<void>
-  'internal/fork'(fork: ForkScope<C>): void
-  'internal/runtime'(runtime: MainScope<C>): void
+  'internal/plugin'(fork: EffectScope<C>): void
   'internal/status'(scope: EffectScope<C>, oldValue: ScopeStatus): void
   'internal/info'(this: C, format: any, ...param: any[]): void
   'internal/error'(this: C, format: any, ...param: any[]): void
   'internal/warning'(this: C, format: any, ...param: any[]): void
   'internal/before-service'(this: C, name: string, value: any): void
   'internal/service'(this: C, name: string, value: any): void
-  'internal/before-update'(fork: ForkScope<C>, config: any): void
-  'internal/update'(fork: ForkScope<C>, oldConfig: any): void
+  'internal/before-update'(fork: EffectScope<C>, config: any): void
+  'internal/update'(fork: EffectScope<C>, oldConfig: any): void
   'internal/inject'(this: C, name: string): boolean | undefined
   'internal/listener'(this: C, name: string, listener: any, prepend: boolean): void
   'internal/event'(type: 'emit' | 'parallel' | 'serial' | 'bail', name: string, args: any[], thisArg: any): void

@@ -1,4 +1,4 @@
-import { Context, ForkScope } from '@cordisjs/core'
+import { Context, EffectScope } from '@cordisjs/core'
 import { isNullable } from 'cosmokit'
 import { Loader } from '../loader.ts'
 import { EntryGroup } from './group.ts'
@@ -36,7 +36,7 @@ export class Entry<C extends Context = Context> {
   static readonly key = Symbol.for('cordis.entry')
 
   public ctx: C
-  public fork?: ForkScope<C>
+  public fork?: EffectScope<C>
   public suspend = false
   public parent!: EntryGroup
   public options!: EntryOptions
@@ -101,7 +101,7 @@ export class Entry<C extends Context = Context> {
     if (this.fork && 'config' in options) {
       // step 2: update fork (when options.config is updated)
       this.suspend = true
-      const [config, error] = this._resolveConfig(this.fork.runtime.plugin)
+      const [config, error] = this._resolveConfig(this.fork.meta?.plugin)
       if (error) {
         this.fork.cancel(error)
       } else {

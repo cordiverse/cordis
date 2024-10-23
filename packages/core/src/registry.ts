@@ -1,7 +1,7 @@
 import { defineProperty, Dict } from 'cosmokit'
 import { Context } from './context.ts'
-import { ForkScope, MainScope, ScopeStatus } from './scope.ts'
-import { resolveConfig, symbols, withProps } from './utils.ts'
+import { EffectScope } from './scope.ts'
+import { isConstructor, resolveConfig, symbols, withProps } from './utils.ts'
 
 function isApplicable(object: Plugin) {
   return object && typeof object === 'object' && typeof object.apply === 'function'
@@ -10,11 +10,11 @@ function isApplicable(object: Plugin) {
 export type Inject = string[] | Dict<Inject.Meta>
 
 export function Inject(inject: Inject) {
-  return function (value: any, ctx: ClassDecoratorContext<any> | ClassMethodDecoratorContext<any>) {
-    if (ctx.kind === 'class') {
+  return function (value: any, decorator: ClassDecoratorContext<any> | ClassMethodDecoratorContext<any>) {
+    if (decorator.kind === 'class') {
       value.inject = inject
-    } else if (ctx.kind === 'method') {
-      ctx.addInitializer(function () {
+    } else if (decorator.kind === 'method') {
+      decorator.addInitializer(function () {
         const property = this[symbols.tracker]?.property
         if (!property) throw new Error('missing context tracker')
         ;(this[symbols.initHooks] ??= []).push(() => {
@@ -72,7 +72,7 @@ export namespace Plugin {
   }
 
   export interface Function<C extends Context = Context, T = any> extends Base<T> {
-    (ctx: C, config: T): void
+    (ctx: C, config: T): void | Promise<void>
   }
 
   export interface Constructor<C extends Context = Context, T = any> extends Base<T> {
@@ -80,7 +80,25 @@ export namespace Plugin {
   }
 
   export interface Object<C extends Context = Context, T = any> extends Base<T> {
-    apply: (ctx: C, config: T) => void
+    apply: (ctx: C, config: T) => void | Promise<void>
+  }
+
+  export interface Meta<C extends Context = Context> {
+    name?: string
+    schema: any
+    inject: Dict<Inject.Meta>
+    isReactive?: boolean
+    scopes: EffectScope<C>[]
+    plugin: Plugin<C>
+  }
+
+  export function resolve<C extends Context = Context>(plugin: Plugin<C>): Meta<C> {
+    let name = plugin.name
+    if (name === 'apply') name = undefined
+    const schema = plugin['Config'] || plugin['schema']
+    const inject = Inject.resolve(plugin['using'] || plugin['inject'])
+    const isReactive = plugin['reactive']
+    return { name, schema, inject, isReactive, plugin, scopes: [] }
   }
 }
 
@@ -89,20 +107,20 @@ export type Spread<T> = undefined extends T ? [config?: T] : [config: T]
 declare module './context.ts' {
   export interface Context {
     /** @deprecated use `ctx.inject()` instead */
-    using(deps: Inject, callback: Plugin.Function<this, void>): ForkScope<this>
-    inject(deps: Inject, callback: Plugin.Function<this, void>): ForkScope<this>
-    plugin<T = undefined, S = T>(plugin: Plugin.Function<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): ForkScope<this>
-    plugin<T = undefined, S = T>(plugin: Plugin.Constructor<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): ForkScope<this>
-    plugin<T = undefined, S = T>(plugin: Plugin.Object<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): ForkScope<this>
-    plugin<T = undefined>(plugin: Plugin.Function<this, T>, ...args: Spread<T>): ForkScope<this>
-    plugin<T = undefined>(plugin: Plugin.Constructor<this, T>, ...args: Spread<T>): ForkScope<this>
-    plugin<T = undefined>(plugin: Plugin.Object<this, T>, ...args: Spread<T>): ForkScope<this>
+    using(deps: Inject, callback: Plugin.Function<this, void>): EffectScope<this>
+    inject(deps: Inject, callback: Plugin.Function<this, void>): EffectScope<this>
+    plugin<T = undefined, S = T>(plugin: Plugin.Function<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): EffectScope<this>
+    plugin<T = undefined, S = T>(plugin: Plugin.Constructor<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): EffectScope<this>
+    plugin<T = undefined, S = T>(plugin: Plugin.Object<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): EffectScope<this>
+    plugin<T = undefined>(plugin: Plugin.Function<this, T>, ...args: Spread<T>): EffectScope<this>
+    plugin<T = undefined>(plugin: Plugin.Constructor<this, T>, ...args: Spread<T>): EffectScope<this>
+    plugin<T = undefined>(plugin: Plugin.Object<this, T>, ...args: Spread<T>): EffectScope<this>
   }
 }
 
 class Registry<C extends Context = Context> {
   private _counter = 0
-  private _internal = new Map<Function, MainScope<C>>()
+  private _internal = new Map<Function, Plugin.Meta<C>>()
   protected context: Context
 
   constructor(public ctx: C, config: any) {
@@ -112,11 +130,6 @@ class Registry<C extends Context = Context> {
     })
 
     this.context = ctx
-    const runtime = new MainScope(ctx, null!, config)
-    ctx.scope = runtime
-    runtime.ctx = ctx
-    runtime.status = ScopeStatus.ACTIVE
-    this.set(null!, runtime)
   }
 
   get counter() {
@@ -127,9 +140,9 @@ class Registry<C extends Context = Context> {
     return this._internal.size
   }
 
+  resolve(plugin: Plugin, assert: true): Function
+  resolve(plugin: Plugin, assert?: boolean): Function | undefined
   resolve(plugin: Plugin, assert = false): Function | undefined {
-    // Allow `null` as a special case.
-    if (plugin === null) return plugin
     if (typeof plugin === 'function') return plugin
     if (isApplicable(plugin)) return plugin.apply
     if (assert) throw new Error('invalid plugin, expect function or object with an "apply" method, received ' + typeof plugin)
@@ -145,18 +158,12 @@ class Registry<C extends Context = Context> {
     return !!key && this._internal.has(key)
   }
 
-  set(plugin: Plugin, state: MainScope<C>) {
-    const key = this.resolve(plugin)
-    this._internal.set(key!, state)
-  }
-
   delete(plugin: Plugin) {
     const key = this.resolve(plugin)
-    const runtime = key && this._internal.get(key)
-    if (!runtime) return
+    const meta = key && this._internal.get(key)
+    if (!meta) return
     this._internal.delete(key)
-    runtime.dispose()
-    return runtime
+    return meta
   }
 
   keys() {
@@ -171,7 +178,7 @@ class Registry<C extends Context = Context> {
     return this._internal.entries()
   }
 
-  forEach(callback: (value: MainScope<C>, key: Function, map: Map<Plugin, MainScope<C>>) => void) {
+  forEach(callback: (value: Plugin.Meta<C>, key: Function) => void) {
     return this._internal.forEach(callback)
   }
 
@@ -185,7 +192,7 @@ class Registry<C extends Context = Context> {
 
   plugin(plugin: Plugin<C>, config?: any, error?: any) {
     // check if it's a valid plugin
-    this.resolve(plugin, true)
+    const key = this.resolve(plugin, true)
     this.ctx.scope.assertActive()
 
     // resolve plugin config
@@ -199,18 +206,44 @@ class Registry<C extends Context = Context> {
       }
     }
 
-    // check duplication
-    let runtime = this.get(plugin)
-    if (runtime) {
-      if (!runtime.isForkable) {
-        this.context.emit(this.ctx, 'internal/warning', new Error(`duplicate plugin detected: ${plugin.name}`))
-      }
-      return runtime.fork(this.ctx, config, error)
-    }
+    const meta = Plugin.resolve<C>(plugin)
+    this._internal.set(key!, meta)
 
-    runtime = new MainScope(this.ctx, plugin, config, error)
-    this.set(plugin, runtime)
-    return runtime.fork(this.ctx, config, error)
+    const scope = new EffectScope(this.ctx, config, async (ctx, config) => {
+      if (typeof plugin !== 'function') {
+        await plugin.apply(ctx, config)
+      } else if (isConstructor(plugin)) {
+        // eslint-disable-next-line new-cap
+        const instance = new plugin(ctx, config)
+        for (const hook of instance?.[symbols.initHooks] ?? []) {
+          hook()
+        }
+        await instance?.[symbols.setup]?.()
+      } else {
+        await plugin(ctx, config)
+      }
+    }, meta)
+    if (!config) {
+      scope.cancel(error)
+    } else {
+      scope.start()
+    }
+    return scope
+  }
+
+  private async apply(plugin: Plugin, context: C, config: any) {
+    if (typeof plugin !== 'function') {
+      await plugin.apply(context, config)
+    } else if (isConstructor(plugin)) {
+      // eslint-disable-next-line new-cap
+      const instance = new plugin(context, config)
+      for (const hook of instance?.[symbols.initHooks] ?? []) {
+        hook()
+      }
+      await instance?.[symbols.setup]?.()
+    } else {
+      await plugin(context, config)
+    }
   }
 }
 

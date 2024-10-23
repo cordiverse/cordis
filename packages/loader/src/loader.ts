@@ -1,4 +1,4 @@
-import { Context, EffectScope, Service } from '@cordisjs/core'
+import { Context, Service } from '@cordisjs/core'
 import { Dict, isNullable } from 'cosmokit'
 import { ModuleLoader } from './internal.ts'
 import { Entry, EntryOptions, EntryUpdateMeta } from './config/entry.ts'
@@ -34,10 +34,8 @@ declare module '@cordisjs/core' {
     startTime?: number
   }
 
-  // Theoretically, these properties will only appear on `ForkScope`.
-  // We define them directly on `EffectScope` for typing convenience.
-  interface EffectScope {
-    entry?: Entry
+  interface EffectScope<C extends Context> {
+    entry?: Entry<C>
   }
 }
 
@@ -81,12 +79,12 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
     ctx.on('internal/before-update', (fork, config) => {
       if (!fork.entry) return
       if (fork.entry.suspend) return fork.entry.suspend = false
-      const { schema } = fork.runtime
+      const schema = fork.meta?.schema
       fork.entry.options.config = schema ? schema.simplify(config) : config
       fork.entry.parent.tree.write()
     })
 
-    ctx.on('internal/fork', (fork) => {
+    ctx.on('internal/plugin', (fork) => {
       // 1. set `fork.entry`
       if (fork.parent[Entry.key]) {
         fork.entry = fork.parent[Entry.key]
@@ -105,7 +103,7 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
       // case 3: fork is disposed on behalf of plugin deletion (such as plugin hmr)
       // self-dispose: ctx.scope.dispose() -> fork / runtime dispose -> delete(plugin)
       // plugin hmr: delete(plugin) -> runtime dispose -> fork dispose
-      if (!ctx.registry.has(fork.runtime.plugin)) return
+      if (!ctx.registry.has(fork.meta?.plugin!)) return
 
       fork.entry.fork = undefined
       fork.parent.emit('loader/entry-fork', fork.entry, 'unload')
@@ -129,20 +127,13 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
   }
 
   locate(ctx = this.ctx) {
-    return this._locate(ctx.scope).map(entry => entry.id)
-  }
-
-  _locate(scope: EffectScope<C>): Entry[] {
-    // root scope
-    if (!scope.runtime.plugin) return []
-
-    // runtime scope
-    if (scope.runtime === scope) {
-      return scope.runtime.children.flatMap(child => this._locate(child))
+    let scope = ctx.scope
+    while (scope) {
+      if (scope.entry) return scope.entry.id
+      const next = scope.parent.scope
+      if (scope === next) return
+      scope = next
     }
-
-    if (scope.entry) return [scope.entry]
-    return this._locate(scope.parent.scope)
   }
 
   exit() {}
