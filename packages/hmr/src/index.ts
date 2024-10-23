@@ -1,4 +1,4 @@
-import { Context, ForkScope, MainScope, Plugin, Schema, Service } from 'cordis'
+import { Context, EffectScope, Plugin, Schema, Service } from 'cordis'
 import { Dict, makeArray } from 'cosmokit'
 import { ModuleJob, ModuleLoader } from 'cordis/loader'
 import { FSWatcher, watch, WatchOptions } from 'chokidar'
@@ -33,7 +33,7 @@ async function loadDependencies(job: ModuleJob, ignored = new Set<string>()) {
 
 interface Reload {
   filename: string
-  children: ForkScope[]
+  children: EffectScope[]
 }
 
 class Watcher extends Service {
@@ -195,7 +195,7 @@ class Watcher extends Service {
     await this.analyzeChanges()
 
     /** plugins pending classification */
-    const pending = new Map<ModuleJob, [Plugin, MainScope | undefined]>()
+    const pending = new Map<ModuleJob, [Plugin, Plugin.Meta | undefined]>()
 
     /** plugins that should be reloaded */
     const reloads = new Map<Plugin, Reload>()
@@ -236,28 +236,7 @@ class Watcher extends Service {
 
       // prepare for reload
       if (runtime) {
-        let isMarked = false
-        const visited = new Set<MainScope>()
-        const queued = [runtime]
-        while (queued.length) {
-          const runtime = queued.shift()!
-          if (visited.has(runtime)) continue
-          visited.add(runtime)
-          if (reloads.has(plugin)) {
-            isMarked = true
-            break
-          }
-          for (const fork of runtime.children) {
-            queued.push(fork.runtime)
-          }
-        }
-        if (!isMarked) {
-          const children: ForkScope[] = []
-          reloads.set(plugin, { filename: job.url, children })
-          for (const fork of runtime.children) {
-            children.push(fork)
-          }
-        }
+        reloads.set(plugin, { filename: job.url, children: runtime.scopes })
       } else {
         reloads.set(plugin, { filename: job.url, children: [] })
       }
@@ -290,11 +269,11 @@ class Watcher extends Service {
       return rollback()
     }
 
-    const reload = (plugin: any, children: ForkScope[]) => {
-      for (const oldFork of children) {
-        const fork = oldFork.parent.plugin(plugin, oldFork.config)
-        fork.entry = oldFork.entry
-        if (fork.entry) fork.entry.fork = fork
+    const reload = (plugin: any, children: EffectScope[]) => {
+      for (const oldFiber of children) {
+        const scope = oldFiber.parent.plugin(plugin, oldFiber.config)
+        scope.entry = oldFiber.entry
+        if (scope.entry) scope.entry.fork = scope
       }
     }
 

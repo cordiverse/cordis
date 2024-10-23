@@ -24,7 +24,7 @@ export interface LoggerService extends Pick<Logger, Logger.Type | 'extend'> {
 
 export class LoggerService extends Service {
   constructor(ctx: Context) {
-    super(ctx, 'logger', true)
+    super(ctx, 'logger')
 
     ctx.on('internal/info', function (format, ...args) {
       this.logger('app').info(format, ...args)

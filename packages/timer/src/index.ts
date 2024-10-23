@@ -16,7 +16,7 @@ type WithDispose<T> = T & { dispose: () => void }
 
 export class TimerService extends Service {
   constructor(ctx: Context) {
-    super(ctx, 'timer', true)
+    super(ctx, 'timer')
     ctx.mixin('timer', ['setTimeout', 'setInterval', 'sleep', 'throttle', 'debounce'])
   }
 

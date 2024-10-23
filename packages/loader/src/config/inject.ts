@@ -16,10 +16,7 @@ export function apply(ctx: Context) {
   }
 
   const checkInject = (scope: EffectScope, name: string) => {
-    if (!scope.runtime.plugin) return false
-    if (scope.runtime === scope) {
-      return scope.runtime.children.every(fork => checkInject(fork, name))
-    }
+    if (!scope.meta) return false
     if (name in Inject.resolve(scope.entry?.options.inject)) return true
     return checkInject(scope.parent.scope, name)
   }

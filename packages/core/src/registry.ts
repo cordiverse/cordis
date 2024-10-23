@@ -89,7 +89,7 @@ export namespace Plugin {
     inject: Dict<Inject.Meta>
     isReactive?: boolean
     scopes: EffectScope<C>[]
-    plugin: Plugin<C>
+    plugin: Plugin
   }
 
   export function resolve<C extends Context = Context>(plugin: Plugin<C>): Meta<C> {
