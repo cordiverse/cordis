@@ -190,8 +190,7 @@ export class EffectScope<C extends Context = Context> {
 
   async reset() {
     this.isActive = false
-    this.disposables = this.disposables.splice(0).filter((dispose) => {
-      if (this.uid !== null && dispose[Context.static] === this) return true
+    this.disposables.splice(0).forEach((dispose) => {
       ;(async () => dispose())().catch((reason) => {
         this.context.emit(this.ctx, 'internal/error', reason)
       })
