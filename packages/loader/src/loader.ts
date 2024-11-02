@@ -71,44 +71,44 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
       fork.parent.emit('loader/entry-fork', fork.entry, 'reload')
     })
 
-    ctx.on('internal/before-update', (fork, config) => {
-      if (!fork.entry) return
-      if (fork.entry.suspend) return fork.entry.suspend = false
-      const schema = fork.meta?.schema
-      fork.entry.options.config = schema ? schema.simplify(config) : config
-      fork.entry.parent.tree.write()
+    ctx.on('internal/before-update', (scope, config) => {
+      if (!scope.entry) return
+      if (scope.entry.suspend) return scope.entry.suspend = false
+      const schema = scope.runtime?.schema
+      scope.entry.options.config = schema ? schema.simplify(config) : config
+      scope.entry.parent.tree.write()
     })
 
-    ctx.on('internal/plugin', (fork) => {
+    ctx.on('internal/plugin', (scope) => {
       // 1. set `fork.entry`
-      if (fork.parent[Entry.key]) {
-        fork.entry = fork.parent[Entry.key]
-        delete fork.parent[Entry.key]
+      if (scope.parent[Entry.key]) {
+        scope.entry = scope.parent[Entry.key]
+        delete scope.parent[Entry.key]
       }
 
       // 2. handle self-dispose
       // We only care about `ctx.scope.dispose()`, so we need to filter out other cases.
 
       // case 1: fork is created
-      if (fork.uid) return
+      if (scope.uid) return
 
       // case 2: fork is not tracked by loader
-      if (!fork.entry) return
+      if (!scope.entry) return
 
       // case 3: fork is disposed on behalf of plugin deletion (such as plugin hmr)
       // self-dispose: ctx.scope.dispose() -> fork / runtime dispose -> delete(plugin)
       // plugin hmr: delete(plugin) -> runtime dispose -> fork dispose
-      if (!ctx.registry.has(fork.meta?.plugin!)) return
+      if (!ctx.registry.has(scope.runtime?.plugin!)) return
 
-      fork.entry.fork = undefined
-      fork.parent.emit('loader/entry-fork', fork.entry, 'unload')
+      scope.entry.fork = undefined
+      scope.parent.emit('loader/entry-fork', scope.entry, 'unload')
 
       // case 4: fork is disposed by loader behavior
       // such as inject checker, config file update, ancestor group disable
-      if (!fork.entry._check()) return
+      if (!scope.entry._check()) return
 
-      fork.entry.options.disabled = true
-      fork.entry.parent.tree.write()
+      scope.entry.options.disabled = true
+      scope.entry.parent.tree.write()
     })
 
     ctx.plugin(inject)

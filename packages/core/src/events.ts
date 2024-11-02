@@ -113,7 +113,7 @@ class Lifecycle {
       let scope = this.scope
       while (1) {
         if (scope === provider) return true
-        for (const key in scope.meta?.inject ?? {}) {
+        for (const key in scope.runtime?.inject ?? {}) {
           if (visited.has(key)) continue
           visited.add(key)
           if (name === ReflectService.resolveInject(scope.ctx, key)[0]) return true

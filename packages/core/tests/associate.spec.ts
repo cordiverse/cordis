@@ -9,13 +9,13 @@ describe('Association', () => {
     class Foo extends Service {
       qux = 1
       constructor(ctx: Context) {
-        super(ctx, 'foo', true)
+        super(ctx, 'foo')
       }
     }
 
     class FooBar extends Service {
       constructor(ctx: Context) {
-        super(ctx, 'foo.bar', true)
+        super(ctx, 'foo.bar')
       }
     }
 
@@ -33,7 +33,7 @@ describe('Association', () => {
 
     class Foo extends Service {
       constructor(ctx: Context) {
-        super(ctx, 'foo', true)
+        super(ctx, 'foo')
       }
     }
 
@@ -66,7 +66,7 @@ describe('Association', () => {
 
     class Foo extends Service {
       constructor(ctx: Context) {
-        super(ctx, 'foo', true)
+        super(ctx, 'foo')
       }
 
       createSession() {
@@ -82,7 +82,7 @@ describe('Association', () => {
       inject = ['foo']
 
       constructor(ctx: Context) {
-        super(ctx, 'bar', true)
+        super(ctx, 'bar')
         ctx.mixin('bar', {
           answer: 'session.answer',
         })
@@ -124,7 +124,7 @@ describe('Association', () => {
 
     class Foo extends Service {
       constructor(ctx: Context) {
-        super(ctx, 'foo', true)
+        super(ctx, 'foo')
       }
 
       session() {
@@ -176,7 +176,7 @@ describe('Association', () => {
   it('inspect', () => {
     class Foo extends Service {
       constructor(ctx: Context) {
-        super(ctx, 'foo', true)
+        super(ctx, 'foo')
       }
 
       bar(arg: any) {

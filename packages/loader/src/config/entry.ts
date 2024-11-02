@@ -101,7 +101,7 @@ export class Entry<C extends Context = Context> {
     if (this.fork && 'config' in options) {
       // step 2: update fork (when options.config is updated)
       this.suspend = true
-      const [config, error] = this._resolveConfig(this.fork.meta?.plugin)
+      const [config, error] = this._resolveConfig(this.fork.runtime?.plugin)
       if (error) {
         this.fork.cancel(error)
       } else {

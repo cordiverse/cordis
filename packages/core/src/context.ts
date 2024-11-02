@@ -119,7 +119,7 @@ export class Context {
   get name() {
     let scope = this.scope
     do {
-      if (scope.meta?.name) return scope.meta.name
+      if (scope.runtime?.name) return scope.runtime.name
       scope = scope.parent.scope
     } while (scope)
     return 'root'

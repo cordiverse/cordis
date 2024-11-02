@@ -70,22 +70,20 @@ export class EffectScope<C extends Context = Context> {
   protected tasks = new Set<Promise<void>>()
   protected hasError = false
 
-  constructor(public parent: C, public config: C['config'], private apply: (ctx: C, config: any) => any, public meta?: Plugin.Meta) {
+  constructor(public parent: C, public config: C['config'], private apply: (ctx: C, config: any) => any, public runtime?: Plugin.Meta) {
     if (parent.scope) {
       this.uid = parent.registry.counter
       this.ctx = this.context = parent.extend({ scope: this })
       this.dispose = parent.scope.effect(() => {
-        this.meta?.scopes.push(this)
+        this.runtime?.scopes.push(this)
         return () => {
           this.uid = null
           this.reset()
           this.context.emit('internal/plugin', this)
-          remove(this.meta?.scopes!, this)
-          // TODO
-          // const result = remove(runtime.disposables, this.dispose)
-          // if (remove(runtime.children, this) && !runtime.children.length) {
-          //   parent.registry.delete(runtime.plugin)
-          // }
+          if (!this.runtime) return
+          remove(this.runtime.scopes, this)
+          if (this.runtime.scopes.length) return
+          this.ctx.registry.delete(this.runtime.plugin)
         }
       })
       this.proxy = new Proxy({}, {
@@ -105,7 +103,7 @@ export class EffectScope<C extends Context = Context> {
   }
 
   protected get _config() {
-    return this.meta?.isReactive ? this.proxy : this.config
+    return this.runtime?.isReactive ? this.proxy : this.config
   }
 
   assertActive() {
@@ -177,8 +175,8 @@ export class EffectScope<C extends Context = Context> {
   }
 
   get isReady() {
-    if (!this.meta) return true
-    return Object.entries(this.meta.inject).every(([name, inject]) => {
+    if (!this.runtime) return true
+    return Object.entries(this.runtime.inject).every(([name, inject]) => {
       return !inject.required || !isNullable(this.ctx.reflect.get(name, true))
     })
   }
@@ -233,7 +231,7 @@ export class EffectScope<C extends Context = Context> {
 
     const ignored = new Set<string>()
     let hasUpdate = false, shouldRestart = false
-    let fallback: boolean | null = this.meta?.isReactive || null
+    let fallback: boolean | null = this.runtime?.isReactive || null
     for (const { keys, callback, passive } of this.acceptors) {
       if (!keys) {
         fallback ||= !passive
@@ -264,7 +262,7 @@ export class EffectScope<C extends Context = Context> {
     const oldConfig = this.config
     let resolved: any
     try {
-      resolved = resolveConfig(this.meta?.plugin, config)
+      resolved = resolveConfig(this.runtime?.plugin, config)
     } catch (error) {
       this.context.emit('internal/error', error)
       return this.cancel(error)

@@ -16,7 +16,7 @@ export function apply(ctx: Context) {
   }
 
   const checkInject = (scope: EffectScope, name: string) => {
-    if (!scope.meta) return false
+    if (!scope.runtime) return false
     if (name in Inject.resolve(scope.entry?.options.inject)) return true
     return checkInject(scope.parent.scope, name)
   }
