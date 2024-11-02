@@ -129,11 +129,6 @@ export class Context {
     return this.lifecycle
   }
 
-  /** @deprecated */
-  get state() {
-    return this.scope
-  }
-
   extend(meta = {}): this {
     const source = Reflect.getOwnPropertyDescriptor(this, symbols.shadow)?.value
     const self = Object.assign(Object.create(getTraceable(this, this)), meta)

@@ -566,7 +566,7 @@ function apply(ctx) {
 > Note: please don't abuse this feature, as adding a lot of mixins can lead to name conflicts.
 
 ```ts
-Context.mixin('state', {
+Context.mixin('scope', {
   // delegate `ctx.scope.collect()` to `ctx.collect()`
   methods: ['collect', 'accept', 'update'],
 })

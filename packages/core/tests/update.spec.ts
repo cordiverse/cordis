@@ -19,7 +19,7 @@ describe('Update', () => {
     const plugin = mock.fn((ctx: Context, config: Config) => {
       ctx.on('dispose', dispose)
       ctx.on(event, () => {
-        ctx.state.update({ foo: 2 })
+        ctx.scope.update({ foo: 2 })
       })
       // make coverage happy
       ctx.on('fork', noop)

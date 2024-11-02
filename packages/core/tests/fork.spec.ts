@@ -135,10 +135,10 @@ describe('Fork', () => {
     expect(listener.mock.calls).to.have.length(3)
   })
 
-  it('state.uid', () => {
+  it('scope.uid', () => {
     const root = new Context()
     const callback1 = defineProperty(mock.fn(), 'reusable', true)
-    expect(root.state.uid).to.equal(0)
+    expect(root.scope.uid).to.equal(0)
 
     const fork1 = root.plugin(callback1)
     expect(fork1.runtime.uid).to.equal(1)

@@ -170,7 +170,7 @@ class Lifecycle {
   register(label: string, hooks: Hook[], callback: any, options: EventOptions) {
     const method = options.prepend ? 'unshift' : 'push'
     hooks[method]({ ctx: this.ctx, callback, ...options })
-    return this.ctx.state.collect(label, () => this.unregister(hooks, callback))
+    return this.ctx.scope.collect(label, () => this.unregister(hooks, callback))
   }
 
   unregister(hooks: Hook[], callback: any) {
@@ -210,7 +210,7 @@ class Lifecycle {
   }
 
   async stop() {
-    // `dispose` event is handled by state.disposables
+    // `dispose` event is handled by scope.disposables
     this.ctx.scope.reset()
   }
 }

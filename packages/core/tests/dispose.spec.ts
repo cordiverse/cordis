@@ -98,11 +98,11 @@ describe('Disposables', () => {
   it('root dispose', async () => {
     const root = new Context()
     const callback = mock.fn(noop)
-    const { length } = root.state.disposables
+    const { length } = root.scope.disposables
     root.on('custom-event', callback)
-    expect(root.state.disposables.length).to.equal(length + 1)
+    expect(root.scope.disposables.length).to.equal(length + 1)
     await root.stop()
-    expect(root.state.disposables.length).to.equal(length)
+    expect(root.scope.disposables.length).to.equal(length)
   })
 
   describe('ctx.effect()', () => {
