@@ -1,9 +1,9 @@
 import { defineProperty, Dict } from 'cosmokit'
-import Lifecycle from './events.ts'
-import ReflectService from './reflect.ts'
-import Registry from './registry.ts'
-import { getTraceable, resolveConfig, symbols } from './utils.ts'
-import { EffectScope } from './index.ts'
+import Lifecycle from './events'
+import ReflectService from './reflect'
+import Registry from './registry'
+import { getTraceable, resolveConfig, symbols } from './utils'
+import { EffectScope } from './scope'
 
 export { Lifecycle, ReflectService, Registry }
 

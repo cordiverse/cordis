@@ -1,5 +1,5 @@
 import { defineProperty } from 'cosmokit'
-import type { Context, Service } from './index.ts'
+import type { Context, Service } from '.'
 
 export interface Tracker {
   associate?: string
@@ -110,6 +110,7 @@ function createShadowMethod(ctx: Context, value: any, outer: any, shadow: {}) {
     apply: (target, thisArg, args) => {
       // contravariant
       if (thisArg === outer) thisArg = shadow
+      // TODO remove args transform
       // contravariant
       args = args.map((arg) => {
         if (typeof arg !== 'function' || arg[symbols.original]) return arg

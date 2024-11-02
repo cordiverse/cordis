@@ -1,9 +1,9 @@
 import { deepEqual, defineProperty, isNullable, remove } from 'cosmokit'
-import { Context } from './context.ts'
-import { Plugin } from './registry.ts'
-import { isConstructor, resolveConfig } from './utils.ts'
+import { Context } from './context'
+import { Plugin } from './registry'
+import { isConstructor, resolveConfig } from './utils'
 
-declare module './context.ts' {
+declare module './context' {
   export interface Context {
     scope: EffectScope<this>
     effect<T extends DisposableLike>(callback: Callable<T, [ctx: this]>): T

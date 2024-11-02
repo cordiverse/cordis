@@ -1,8 +1,8 @@
 import { Awaitable, defineProperty, Promisify, remove } from 'cosmokit'
-import { Context } from './context.ts'
-import { EffectScope, ScopeStatus } from './scope.ts'
-import { getTraceable, symbols } from './index.ts'
-import ReflectService from './reflect.ts'
+import { Context } from './context'
+import { EffectScope, ScopeStatus } from './scope'
+import { getTraceable, symbols } from './utils'
+import ReflectService from './reflect'
 
 export function isBailed(value: any) {
   return value !== null && value !== false && value !== undefined
@@ -13,7 +13,7 @@ export type ReturnType<F> = F extends (...args: any) => infer R ? R : never
 export type ThisType<F> = F extends (this: infer T, ...args: any) => any ? T : never
 export type GetEvents<C extends Context> = C[typeof Context.events]
 
-declare module './context.ts' {
+declare module './context' {
   export interface Context {
     /* eslint-disable max-len */
     [Context.events]: Events<this>
