@@ -3,9 +3,7 @@
   "description": "Meta-Framework for Modern JavaScript Applications",
   "version": "3.18.1",
   "type": "module",
-  "bin": {
-    "cordis": "lib/bin/cordis.js"
-  },
+  "bin": "lib/bin/cordis.js",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "exports": {
