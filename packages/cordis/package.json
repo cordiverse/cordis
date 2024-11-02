@@ -79,7 +79,6 @@
     "@cordisjs/loader": "^0.13.1",
     "@cordisjs/logger": "^0.3.3",
     "@cordisjs/schema": "^0.1.1",
-    "@cordisjs/timer": "^0.3.2",
     "cac": "^6.7.14",
     "cosmokit": "^1.6.3",
     "kleur": "^4.1.5",

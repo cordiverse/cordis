@@ -1,1 +1,1 @@
-# @cordisjs/timer
+# @cordisjs/plugin-timer

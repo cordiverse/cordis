@@ -1,5 +1,5 @@
 {
-  "name": "@cordisjs/timer",
+  "name": "@cordisjs/plugin-timer",
   "description": "Timer service for cordis",
   "version": "0.3.2",
   "type": "module",

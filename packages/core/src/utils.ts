@@ -16,7 +16,6 @@ export const symbols = {
   // context symbols
   store: Symbol.for('cordis.store') as typeof Context.store,
   events: Symbol.for('cordis.events') as typeof Context.events,
-  static: Symbol.for('cordis.static') as typeof Context.static,
   filter: Symbol.for('cordis.filter') as typeof Context.filter,
   isolate: Symbol.for('cordis.isolate') as typeof Context.isolate,
   internal: Symbol.for('cordis.internal') as typeof Context.internal,

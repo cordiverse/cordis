@@ -4,7 +4,7 @@ import { ModuleJob, ModuleLoader } from 'cordis/loader'
 import { FSWatcher, watch, WatchOptions } from 'chokidar'
 import { relative, resolve } from 'path'
 import { handleError } from './error.ts'
-import {} from '@cordisjs/timer'
+import {} from '@cordisjs/plugin-timer'
 import { fileURLToPath, pathToFileURL } from 'url'
 import enUS from './locales/en-US.yml'
 import zhCN from './locales/zh-CN.yml'
@@ -37,7 +37,7 @@ interface Reload {
 }
 
 class Watcher extends Service {
-  static inject = ['loader']
+  static inject = ['loader', 'timer']
 
   private base: string
   private internal: ModuleLoader

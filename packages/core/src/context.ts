@@ -64,7 +64,6 @@ export interface Context {
 export class Context {
   static readonly store: unique symbol = symbols.store as any
   static readonly events: unique symbol = symbols.events as any
-  static readonly static: unique symbol = symbols.static as any
   static readonly filter: unique symbol = symbols.filter as any
   static readonly isolate: unique symbol = symbols.isolate as any
   static readonly internal: unique symbol = symbols.internal as any
