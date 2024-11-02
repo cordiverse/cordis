@@ -115,7 +115,6 @@ describe('Update', () => {
       ctx.on(event, () => listener(config.foo))
     })
     const plugin = {
-      reusable: true,
       reactive: true,
       apply: inner,
     }
@@ -182,7 +181,6 @@ describe('Update', () => {
     })
     const plugin = {
       inject: ['foo'],
-      reusable: true,
       apply: callback,
     }
 

@@ -22,6 +22,8 @@ export type DisposableLike = Disposable | { dispose: Disposable }
 
 export type Callable<T, R extends unknown[]> = ((...args: R) => T) | (new (...args: R) => T)
 
+export type Effect = () => Disposable | Generator<Disposable, Disposable, void>
+
 export interface AcceptOptions {
   passive?: boolean
   immediate?: boolean

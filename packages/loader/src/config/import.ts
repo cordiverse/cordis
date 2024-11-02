@@ -7,8 +7,6 @@ import { LoaderFile } from './file.ts'
 import Loader from '../loader.ts'
 
 export class ImportTree<C extends Context = Context> extends EntryTree<C> {
-  static reusable = true
-
   public file!: LoaderFile
 
   constructor(public ctx: C) {

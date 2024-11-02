@@ -63,7 +63,6 @@ export class EntryGroup {
 }
 
 export class Group extends EntryGroup {
-  static reusable = true
   static initial: Omit<EntryOptions, 'id'>[] = []
   static readonly [EntryGroup.key] = true
 

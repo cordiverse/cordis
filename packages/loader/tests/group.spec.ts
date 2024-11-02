@@ -10,9 +10,9 @@ describe('group management: basic support', () => {
   const loader = root.loader
 
   const dispose = mock.fn()
-  const foo = loader.mock('foo', defineProperty((ctx: Context) => {
+  const foo = loader.mock('foo', (ctx: Context) => {
     ctx.on('dispose', dispose)
-  }, 'reusable', true))
+  })
 
   before(() => loader.start())
 
@@ -85,9 +85,9 @@ describe('group management: transfer', () => {
   const loader = root.loader
 
   const dispose = mock.fn()
-  const foo = loader.mock('foo', defineProperty((ctx: Context) => {
+  const foo = loader.mock('foo', (ctx: Context) => {
     ctx.on('dispose', dispose)
-  }, 'reusable', true))
+  })
 
   before(() => loader.start())
 

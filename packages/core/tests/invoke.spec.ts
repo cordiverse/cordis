@@ -12,7 +12,7 @@ describe('functional service', () => {
 
     class Foo extends Service {
       constructor(ctx: Context, public config: Config) {
-        super(ctx, 'foo', true)
+        super(ctx, 'foo')
       }
 
       protected [Service.invoke](init?: Config) {

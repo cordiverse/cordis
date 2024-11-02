@@ -145,14 +145,11 @@ describe('service isolation: realm', async () => {
     ctx.on('dispose', dispose)
   }), {
     inject: ['bar'],
-    reusable: true,
   })
 
   const bar = Object.assign(loader.mock('bar', (ctx: Context, config: {}) => {
     ctx.set('bar', config)
-  }), {
-    reusable: true,
-  })
+  }))
 
   before(() => loader.start())
 
@@ -254,14 +251,11 @@ describe('service isolation: realm', async () => {
       ctx.on('dispose', dispose)
     }), {
       inject: ['bar'],
-      reusable: true,
     })
   
     Object.assign(loader.mock('bar', (ctx: Context, config: {}) => {
       ctx.set('bar', config)
-    }), {
-      reusable: true,
-    })
+    }))
 
     await loader.start()
 
@@ -336,14 +330,11 @@ describe('service isolation: realm', async () => {
       ctx.on('dispose', dispose)
     }), {
       inject: ['bar'],
-      reusable: true,
     })
   
     Object.assign(loader.mock('bar', (ctx: Context, config: {}) => {
       ctx.set('bar', config)
-    }), {
-      reusable: true,
-    })
+    }))
 
     await loader.start()
 
@@ -407,14 +398,11 @@ describe('service isolation: realm', async () => {
       ctx.on('dispose', dispose)
     }), {
       inject: ['bar'],
-      reusable: true,
     })
   
     Object.assign(loader.mock('bar', (ctx: Context, config: {}) => {
       ctx.set('bar', config)
-    }), {
-      reusable: true,
-    })
+    }))
 
     await loader.start()
 

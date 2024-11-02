@@ -27,7 +27,6 @@ declare module './context' {
     bail<K extends keyof GetEvents<this>>(thisArg: ThisType<GetEvents<this>[K]>, name: K, ...args: Parameters<GetEvents<this>[K]>): ReturnType<GetEvents<this>[K]>
     on<K extends keyof GetEvents<this>>(name: K, listener: GetEvents<this>[K], options?: boolean | EventOptions): () => boolean
     once<K extends keyof GetEvents<this>>(name: K, listener: GetEvents<this>[K], options?: boolean | EventOptions): () => boolean
-    off<K extends keyof GetEvents<this>>(name: K, listener: GetEvents<this>[K]): boolean
     /* eslint-enable max-len */
   }
 }
@@ -72,7 +71,6 @@ class EventsService {
       }))
     }
 
-    // non-reusable plugin forks are not responsive to isolated service changes
     ctx.scope.leak(this.on('internal/before-service', function (this: Context, name) {
       for (const meta of this.registry.values()) {
         if (!meta.inject[name]?.required) continue

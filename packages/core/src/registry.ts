@@ -59,7 +59,6 @@ export namespace Plugin {
   export interface Base<T = any> {
     name?: string
     reactive?: boolean
-    reusable?: boolean
     Config?: (config: any) => T
     inject?: Inject
     provide?: string | string[]
