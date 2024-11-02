@@ -1,7 +1,7 @@
 import { defineProperty, Dict, isNullable } from 'cosmokit'
 import { Context } from './context'
 import { getTraceable, isObject, isUnproxyable, symbols, withProps } from './utils'
-import { ScopeStatus } from './scope'
+import { EffectScope, ScopeStatus } from './scope'
 
 declare module './context' {
   interface Context {
@@ -28,7 +28,7 @@ class ReflectService {
     return [name, internal] as const
   }
 
-  static checkInject(ctx: Context, name: string, error: Error) {
+  static checkInject(ctx: Context, name: string, error: Error, provider?: EffectScope) {
     ctx = ctx[symbols.shadow] ?? ctx
     // Case 1: built-in services and special properties
     // - prototype: prototype detection
@@ -39,7 +39,7 @@ class ReflectService {
     // Case 3: access directly from root
     if (!ctx.scope.meta) return
     // Case 4: custom inject checks
-    if (ctx.bail(ctx, 'internal/inject', name)) return
+    if (ctx.bail(ctx, 'internal/inject', name, provider)) return
     const lines = error.stack!.split('\n')
     lines.splice(1, 1)
     error.stack = lines.join('\n')
@@ -63,7 +63,11 @@ class ReflectService {
       } else if (internal.type === 'accessor') {
         return internal.get.call(ctx, ctx[symbols.receiver])
       } else {
-        if (!internal.builtin) ReflectService.checkInject(ctx, name, error)
+        if (!internal.builtin) {
+          const key = target[symbols.isolate][name]
+          const item = target[symbols.store][key]
+          ReflectService.checkInject(ctx, name, error, item?.source.scope)
+        }
         return ctx.reflect.get(name)
       }
     },

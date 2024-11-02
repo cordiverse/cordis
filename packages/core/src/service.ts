@@ -31,9 +31,7 @@ export abstract class Service<C extends Context = Context> {
     self.name = name
     defineProperty(self, symbols.tracker, tracker)
 
-    self.ctx.provide(name)
     self.ctx.set(name, self)
-
     self.ctx.on('dispose', () => self.stop())
     return self
   }

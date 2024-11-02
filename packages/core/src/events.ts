@@ -108,17 +108,21 @@ class Lifecycle {
       }
     }, { global: true }))
 
-    // inject in ancestor contexts
-    const checkInject = (scope: EffectScope, name: string) => {
-      if (!scope.meta) return false
-      for (const key in scope.meta.inject) {
-        if (name === ReflectService.resolveInject(scope.ctx, key)[0]) return true
+    ctx.scope.leak(this.on('internal/inject', function (this: Context, name, provider) {
+      const visited = new Set<string>()
+      let scope = this.scope
+      while (1) {
+        if (scope === provider) return true
+        for (const key in scope.meta?.inject ?? {}) {
+          if (visited.has(key)) continue
+          visited.add(key)
+          if (name === ReflectService.resolveInject(scope.ctx, key)[0]) return true
+        }
+        const next = scope.parent.scope
+        if (scope === next) break
+        scope = next
       }
-      return checkInject(scope.parent.scope, name)
-    }
-
-    ctx.scope.leak(this.on('internal/inject', function (this: Context, name) {
-      return checkInject(this.scope, name)
+      return false
     }, { global: true }))
   }
 
@@ -225,7 +229,7 @@ export interface Events<in C extends Context = Context> {
   'internal/service'(this: C, name: string, value: any): void
   'internal/before-update'(fork: EffectScope<C>, config: any): void
   'internal/update'(fork: EffectScope<C>, oldConfig: any): void
-  'internal/inject'(this: C, name: string): boolean | undefined
+  'internal/inject'(this: C, name: string, provider?: EffectScope): boolean | undefined
   'internal/listener'(this: C, name: string, listener: any, prepend: boolean): void
   'internal/event'(type: 'emit' | 'parallel' | 'serial' | 'bail', name: string, args: any[], thisArg: any): void
 }
