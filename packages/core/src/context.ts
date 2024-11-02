@@ -1,11 +1,11 @@
 import { defineProperty, Dict } from 'cosmokit'
-import Lifecycle from './events'
+import EventsService from './events'
 import ReflectService from './reflect'
 import Registry from './registry'
 import { getTraceable, resolveConfig, symbols } from './utils'
 import { EffectScope } from './scope'
 
-export { Lifecycle, ReflectService, Registry }
+export { EventsService, ReflectService, Registry }
 
 export namespace Context {
   export type Parameterized<C, T = any> = C & { config: T }
@@ -55,7 +55,7 @@ export interface Context {
   [Context.intercept]: Intercept<this>
   [Context.internal]: Dict<Context.Internal>
   root: this
-  lifecycle: Lifecycle
+  events: EventsService
   reflect: ReflectService
   registry: Registry<this>
   config: any
@@ -96,7 +96,7 @@ export class Context {
     this.scope = new EffectScope(this, config, () => {})
     self.reflect = new ReflectService(self)
     self.registry = new Registry(self, config)
-    self.lifecycle = new Lifecycle(self)
+    self.events = new EventsService(self)
 
     const attach = (internal: Context[typeof symbols.internal]) => {
       if (!internal) return
@@ -123,10 +123,6 @@ export class Context {
       scope = scope.parent.scope
     } while (scope)
     return 'root'
-  }
-
-  get events() {
-    return this.lifecycle
   }
 
   extend(meta = {}): this {

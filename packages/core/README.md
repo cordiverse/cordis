@@ -567,8 +567,8 @@ function apply(ctx) {
 
 ```ts
 Context.mixin('scope', {
-  // delegate `ctx.scope.collect()` to `ctx.collect()`
-  methods: ['collect', 'accept', 'update'],
+  // delegate `ctx.scope.effect()` to `ctx.effect()`
+  methods: ['effect', 'accept', 'update'],
 })
 ```
 
@@ -708,7 +708,7 @@ The plugin runtime associated with the effect scope. If the scope is a runtime, 
 
 #### scope.config
 
-#### scope.collect()
+#### scope.effect()
 
 #### scope.restart()
 

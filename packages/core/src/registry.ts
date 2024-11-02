@@ -160,10 +160,11 @@ class Registry<C extends Context = Context> {
 
   delete(plugin: Plugin) {
     const key = this.resolve(plugin)
-    const meta = key && this._internal.get(key)
-    if (!meta) return
+    const runtime = key && this._internal.get(key)
+    if (!runtime) return
     this._internal.delete(key)
-    return meta
+    runtime.scopes.forEach(scope => scope.dispose())
+    return runtime
   }
 
   keys() {
@@ -206,8 +207,8 @@ class Registry<C extends Context = Context> {
       }
     }
 
-    const meta = Plugin.resolve<C>(plugin)
-    this._internal.set(key!, meta)
+    const runtime = Plugin.resolve<C>(plugin)
+    this._internal.set(key!, runtime)
 
     const scope = new EffectScope(this.ctx, config, async (ctx, config) => {
       if (typeof plugin !== 'function') {
@@ -222,28 +223,13 @@ class Registry<C extends Context = Context> {
       } else {
         await plugin(ctx, config)
       }
-    }, meta)
+    }, runtime)
     if (!config) {
       scope.cancel(error)
     } else {
       scope.start()
     }
     return scope
-  }
-
-  private async apply(plugin: Plugin, context: C, config: any) {
-    if (typeof plugin !== 'function') {
-      await plugin.apply(context, config)
-    } else if (isConstructor(plugin)) {
-      // eslint-disable-next-line new-cap
-      const instance = new plugin(context, config)
-      for (const hook of instance?.[symbols.initHooks] ?? []) {
-        hook()
-      }
-      await instance?.[symbols.setup]?.()
-    } else {
-      await plugin(context, config)
-    }
   }
 }
 

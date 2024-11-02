@@ -28,9 +28,6 @@ declare module './context' {
     on<K extends keyof GetEvents<this>>(name: K, listener: GetEvents<this>[K], options?: boolean | EventOptions): () => boolean
     once<K extends keyof GetEvents<this>>(name: K, listener: GetEvents<this>[K], options?: boolean | EventOptions): () => boolean
     off<K extends keyof GetEvents<this>>(name: K, listener: GetEvents<this>[K]): boolean
-    /** @deprecated */
-    start(): Promise<void>
-    stop(): Promise<void>
     /* eslint-enable max-len */
   }
 }
@@ -45,12 +42,12 @@ export interface Hook extends EventOptions {
   callback: (...args: any[]) => any
 }
 
-class Lifecycle {
+class EventsService {
   _hooks: Record<keyof any, Hook[]> = {}
 
   constructor(private ctx: Context) {
     defineProperty(this, symbols.tracker, {
-      associate: 'lifecycle',
+      associate: 'events',
       property: 'ctx',
     })
 
@@ -125,8 +122,6 @@ class Lifecycle {
       return false
     }, { global: true }))
   }
-
-  async flush() {}
 
   filterHooks(hooks: Hook[], thisArg?: object) {
     thisArg = getTraceable(this.ctx, thisArg)
@@ -204,18 +199,9 @@ class Lifecycle {
     }, options)
     return dispose
   }
-
-  async start() {
-    await this.flush()
-  }
-
-  async stop() {
-    // `dispose` event is handled by scope.disposables
-    this.ctx.scope.reset()
-  }
 }
 
-export default Lifecycle
+export default EventsService
 
 export interface Events<in C extends Context = Context> {
   'ready'(): Awaitable<void>

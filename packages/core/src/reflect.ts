@@ -33,7 +33,7 @@ class ReflectService {
     // Case 1: built-in services and special properties
     // - prototype: prototype detection
     // - then: async function return
-    if (['prototype', 'then', 'registry', 'lifecycle'].includes(name)) return
+    if (['prototype', 'then', 'registry', 'events', 'reflect'].includes(name)) return
     // Case 2: `$` or `_` prefix
     if (name[0] === '$' || name[0] === '_') return
     // Case 3: access directly from root
@@ -107,7 +107,7 @@ class ReflectService {
     this._mixin('reflect', ['get', 'set', 'provide', 'accessor', 'mixin', 'alias'])
     this._mixin('scope', ['config', 'runtime', 'effect', 'collect', 'accept', 'decline'])
     this._mixin('registry', ['using', 'inject', 'plugin'])
-    this._mixin('lifecycle', ['on', 'once', 'parallel', 'emit', 'serial', 'bail', 'start', 'stop'])
+    this._mixin('events', ['on', 'once', 'parallel', 'emit', 'serial', 'bail'])
   }
 
   get(name: string, strict = false) {
