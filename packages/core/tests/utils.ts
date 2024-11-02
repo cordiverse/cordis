@@ -89,7 +89,6 @@ export function getHookSnapshot(ctx: Context) {
 }
 
 export async function checkError(ctx: Context) {
-  await ctx.lifecycle.flush()
   ctx.registry.forEach((scope) => {
     if (scope.error) throw scope.error
   })

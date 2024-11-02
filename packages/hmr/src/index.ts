@@ -195,7 +195,7 @@ class Watcher extends Service {
     await this.analyzeChanges()
 
     /** plugins pending classification */
-    const pending = new Map<ModuleJob, [Plugin, Plugin.Meta | undefined]>()
+    const pending = new Map<ModuleJob, [Plugin, Plugin.Runtime | undefined]>()
 
     /** plugins that should be reloaded */
     const reloads = new Map<Plugin, Reload>()

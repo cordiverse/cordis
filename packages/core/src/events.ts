@@ -72,9 +72,9 @@ class EventsService {
     }
 
     ctx.scope.leak(this.on('internal/before-service', function (this: Context, name) {
-      for (const meta of this.registry.values()) {
-        if (!meta.inject[name]?.required) continue
-        for (const scope of meta.scopes) {
+      for (const runtime of this.registry.values()) {
+        if (!runtime.inject[name]?.required) continue
+        for (const scope of runtime.scopes) {
           if (!this[symbols.filter](scope.ctx)) continue
           scope.updateStatus()
           scope.reset()
@@ -83,9 +83,9 @@ class EventsService {
     }, { global: true }))
 
     ctx.scope.leak(this.on('internal/service', function (this: Context, name) {
-      for (const meta of this.registry.values()) {
-        if (!meta.inject[name]?.required) continue
-        for (const scope of meta.scopes) {
+      for (const runtime of this.registry.values()) {
+        if (!runtime.inject[name]?.required) continue
+        for (const scope of runtime.scopes) {
           if (!this[symbols.filter](scope.ctx)) continue
           scope.start()
         }

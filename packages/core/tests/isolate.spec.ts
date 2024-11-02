@@ -1,4 +1,4 @@
-import { Context, Service, symbols } from '../src'
+import { Context, Service } from '../src'
 import { expect } from 'chai'
 import { mock } from 'node:test'
 import { event } from './utils'
@@ -45,7 +45,6 @@ describe('Isolation', () => {
     const callback = mock.fn(() => {})
     const dispose = mock.fn(() => {})
     const plugin = {
-      reusable: true,
       inject: ['foo'],
       apply: (ctx: Context) => {
         callback()
@@ -74,7 +73,6 @@ describe('Isolation', () => {
     const callback = mock.fn(() => {})
     const dispose = mock.fn(() => {})
     const plugin = {
-      reusable: true,
       inject: ['foo'],
       apply: (ctx: Context) => {
         callback()

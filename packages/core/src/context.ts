@@ -121,7 +121,7 @@ export class Context {
     do {
       if (scope.runtime?.name) return scope.runtime.name
       scope = scope.parent.scope
-    } while (scope)
+    } while (scope !== scope.parent.scope)
     return 'root'
   }
 

@@ -72,7 +72,7 @@ export class EffectScope<C extends Context = Context> {
   protected tasks = new Set<Promise<void>>()
   protected hasError = false
 
-  constructor(public parent: C, public config: C['config'], private apply: (ctx: C, config: any) => any, public runtime?: Plugin.Meta) {
+  constructor(public parent: C, public config: C['config'], private apply: (ctx: C, config: any) => any, public runtime?: Plugin.Runtime) {
     if (parent.scope) {
       this.uid = parent.registry.counter
       this.ctx = this.context = parent.extend({ scope: this })

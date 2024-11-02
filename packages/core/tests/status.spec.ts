@@ -70,7 +70,6 @@ describe('Status', () => {
     })
 
     const fork = root.plugin(apply)
-    await root.lifecycle.flush()
     expect(fork.runtime?.status).to.equal(ScopeStatus.FAILED)
     expect(fork.status).to.equal(ScopeStatus.ACTIVE)
     expect(apply.mock.calls).to.have.length(1)
@@ -92,7 +91,6 @@ describe('Status', () => {
 
     const fork1 = root.plugin(apply)
     const fork2 = root.plugin(apply, { foo: true })
-    await root.lifecycle.flush()
     expect(fork1.status).to.equal(ScopeStatus.FAILED)
     expect(fork2.status).to.equal(ScopeStatus.ACTIVE)
     expect(apply.mock.calls).to.have.length(2)

@@ -82,7 +82,7 @@ export namespace Plugin {
     apply: (ctx: C, config: T) => void | Promise<void>
   }
 
-  export interface Meta<C extends Context = Context> {
+  export interface Runtime<C extends Context = Context> {
     name?: string
     schema: any
     inject: Dict<Inject.Meta>
@@ -91,7 +91,7 @@ export namespace Plugin {
     plugin: Plugin
   }
 
-  export function resolve<C extends Context = Context>(plugin: Plugin<C>): Meta<C> {
+  export function resolve<C extends Context = Context>(plugin: Plugin<C>): Runtime<C> {
     let name = plugin.name
     if (name === 'apply') name = undefined
     const schema = plugin['Config'] || plugin['schema']
@@ -119,7 +119,7 @@ declare module './context' {
 
 class Registry<C extends Context = Context> {
   private _counter = 0
-  private _internal = new Map<Function, Plugin.Meta<C>>()
+  private _internal = new Map<Function, Plugin.Runtime<C>>()
   protected context: Context
 
   constructor(public ctx: C, config: any) {
@@ -178,7 +178,7 @@ class Registry<C extends Context = Context> {
     return this._internal.entries()
   }
 
-  forEach(callback: (value: Plugin.Meta<C>, key: Function) => void) {
+  forEach(callback: (value: Plugin.Runtime<C>, key: Function) => void) {
     return this._internal.forEach(callback)
   }
 
@@ -206,8 +206,11 @@ class Registry<C extends Context = Context> {
       }
     }
 
-    const runtime = Plugin.resolve<C>(plugin)
-    this._internal.set(key!, runtime)
+    let runtime = this._internal.get(key)
+    if (!runtime) {
+      runtime = Plugin.resolve<C>(plugin)
+      this._internal.set(key!, runtime)
+    }
 
     const scope = new EffectScope(this.ctx, config, async (ctx, config) => {
       if (typeof plugin !== 'function') {

@@ -33,19 +33,6 @@ describe('Plugin', () => {
     expect(() => root.plugin({ apply: {} } as any)).to.throw()
   })
 
-  it('apply duplicate plugin', () => {
-    const root = new Context()
-    const callback = mock.fn()
-    const warning = mock.fn()
-    root.on('internal/warning', warning)
-    root.plugin({ apply: callback })
-    expect(callback.mock.calls).to.have.length(1)
-    expect(warning.mock.calls).to.have.length(0)
-    root.plugin({ apply: callback }) // duplicate
-    expect(callback.mock.calls).to.have.length(1)
-    expect(warning.mock.calls).to.have.length(1)
-  })
-
   it('apply plugin when dispose', () => {
     const root = new Context()
     const callback = mock.fn()
