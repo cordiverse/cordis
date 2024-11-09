@@ -196,7 +196,7 @@ class Registry<C extends Context = Context> {
       this._internal.set(key!, runtime)
     }
 
-    const scope = new EffectScope(this.ctx, config, async (ctx, config) => {
+    return new EffectScope(this.ctx, config, async (ctx, config) => {
       config = resolveConfig(plugin, config)
       if (typeof plugin !== 'function') {
         await plugin.apply(ctx, config)
@@ -211,9 +211,6 @@ class Registry<C extends Context = Context> {
         await plugin(ctx, config)
       }
     }, runtime)
-
-    scope.start()
-    return scope
   }
 }
 

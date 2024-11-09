@@ -76,8 +76,7 @@ class EventsService {
         if (!runtime.inject[name]?.required) continue
         for (const scope of runtime.scopes) {
           if (!this[symbols.filter](scope.ctx)) continue
-          scope.updateStatus()
-          scope.reset()
+          scope.setActive(false)
         }
       }
     }, { global: true }))
@@ -87,7 +86,7 @@ class EventsService {
         if (!runtime.inject[name]?.required) continue
         for (const scope of runtime.scopes) {
           if (!this[symbols.filter](scope.ctx)) continue
-          scope.start()
+          scope.setActive(true)
         }
       }
     }, { global: true }))

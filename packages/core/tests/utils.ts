@@ -6,7 +6,7 @@ import { Dict } from 'cosmokit'
 use(promised)
 
 export function sleep(ms = 0) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+  return new Promise<void>((resolve) => setTimeout(resolve, ms))
 }
 
 export const event = 'custom-event'

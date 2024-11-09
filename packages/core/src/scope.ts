@@ -6,13 +6,13 @@ import { DisposableList } from './utils'
 declare module './context' {
   export interface Context {
     scope: EffectScope<this>
-    effect(callback: Effect): () => boolean
+    effect(callback: Effect): () => Promise<void>
   }
 }
 
-export type Disposable = () => void
+export type Disposable<T = any> = () => T
 
-export type Effect = () => Disposable | Generator<Disposable, void, void>
+export type Effect<T = void> = () => Disposable<T> | Generator<Disposable, void, void>
 
 export const enum ScopeStatus {
   PENDING,
@@ -42,13 +42,13 @@ export class EffectScope<C extends Context = Context> {
   public acceptors = new DisposableList<() => boolean>()
   public disposables = new DisposableList<Disposable>()
   public status = ScopeStatus.PENDING
-  public isActive = false
-  public dispose: () => void
+  public dispose: () => Promise<void>
 
   // Same as `this.ctx`, but with a more specific type.
   protected context: Context
-  protected tasks = new Set<Promise<void>>()
-  protected hasError = false
+
+  #active = false
+  #inertia: Promise<void> | undefined
 
   constructor(public parent: C, public config: C['config'], private apply: (ctx: C, config: any) => any, public runtime?: Plugin.Runtime) {
     if (parent.scope) {
@@ -56,21 +56,23 @@ export class EffectScope<C extends Context = Context> {
       this.ctx = this.context = parent.extend({ scope: this })
       this.dispose = parent.scope.effect(() => {
         const remove = this.runtime?.scopes.push(this)
-        return () => {
-          this.uid = null
-          this.reset()
-          this.context.emit('internal/plugin', this)
-          if (!this.runtime) return
+        this.context.emit('internal/plugin', this)
+        this.setActive(true)
+        return async () => {
           remove?.()
-          if (this.runtime.scopes.length) return
-          this.ctx.registry.delete(this.runtime.plugin)
+          this.context.emit('internal/plugin', this)
+          this.uid = null
+          if (this.runtime && !this.runtime.scopes.length) {
+            this.ctx.registry.delete(this.runtime.plugin)
+          }
+          this.setActive(false)
+          await this.#inertia
         }
       })
-      this.context.emit('internal/plugin', this)
     } else {
       this.uid = 0
       this.ctx = this.context = parent
-      this.isActive = true
+      this.#active = true
       this.status = ScopeStatus.ACTIVE
       this.dispose = () => {
         throw new Error('cannot dispose root scope')
@@ -79,11 +81,11 @@ export class EffectScope<C extends Context = Context> {
   }
 
   assertActive() {
-    if (this.isActive) return
+    if (this.uid !== null) return
     throw new CordisError('INACTIVE_EFFECT')
   }
 
-  effect(callback: Effect): () => boolean {
+  effect<T = void>(callback: Effect<T>): () => T {
     this.assertActive()
     const result = callback()
     let isDisposed = false
@@ -106,42 +108,29 @@ export class EffectScope<C extends Context = Context> {
     }
     const wrapped = (...args: []) => {
       // make sure the original callback is not called twice
-      if (isDisposed) return false
+      if (isDisposed) return
       isDisposed = true
       remove()
-      dispose(...args)
-      return true
+      return dispose(...args)
     }
     const remove = this.disposables.push(wrapped)
     return wrapped
   }
 
-  async restart() {
-    await this.reset()
-    this.hasError = false
-    this.status = ScopeStatus.PENDING
-    await this.start()
-  }
-
-  protected _getStatus() {
+  #getStatus() {
+    if (this.#inertia) return ScopeStatus.LOADING
     if (this.uid === null) return ScopeStatus.DISPOSED
-    if (this.hasError) return ScopeStatus.FAILED
-    if (this.isReady) return ScopeStatus.ACTIVE
+    if (this.#active) return ScopeStatus.ACTIVE
     return ScopeStatus.PENDING
   }
 
-  updateStatus(callback?: () => void) {
+  #updateStatus(callback: () => void) {
     const oldValue = this.status
-    callback?.()
-    this.status = this._getStatus()
+    callback()
+    this.status = this.#getStatus()
     if (oldValue !== this.status) {
       this.context.emit('internal/status', this, oldValue)
     }
-  }
-
-  cancel() {
-    this.updateStatus(() => this.hasError = true)
-    this.reset()
   }
 
   get isReady() {
@@ -155,20 +144,45 @@ export class EffectScope<C extends Context = Context> {
     this.disposables.leak(disposable)
   }
 
-  async reset() {
-    this.isActive = false
-    this.disposables.popAll().forEach((dispose) => {
-      (async () => dispose())().catch((reason) => {
-        this.context.emit(this.ctx, 'internal/error', reason)
-      })
+  async #reload() {
+    await this.apply(this.ctx, this.config)
+    this.#updateStatus(() => {
+      this.#inertia = this.#active ? undefined : this.#unload()
     })
   }
 
-  async start() {
-    if (!this.isReady || this.isActive || this.uid === null) return true
-    this.isActive = true
-    await this.apply(this.ctx, this.config)
-    this.updateStatus()
+  async #unload() {
+    await Promise.all(this.disposables.popAll().map(async (dispose) => {
+      try {
+        await dispose()
+      } catch (reason) {
+        this.context.emit(this.ctx, 'internal/error', reason)
+      }
+    }))
+    this.#updateStatus(() => {
+      this.#inertia = this.#active ? this.#reload() : undefined
+    })
+  }
+
+  setActive(value: boolean) {
+    if (value && (!this.uid || !this.isReady)) return
+    this.#updateStatus(() => {
+      if (!this.#inertia && value !== this.#active) {
+        this.#inertia = value ? this.#reload() : this.#unload()
+      }
+      this.#active = value
+    })
+  }
+
+  async wait() {
+    while (this.#inertia) {
+      await this.#inertia
+    }
+  }
+
+  async restart() {
+    this.setActive(false)
+    this.setActive(true)
   }
 
   update(config: any) {
