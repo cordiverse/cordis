@@ -36,7 +36,7 @@ export class Entry<C extends Context = Context> {
   static readonly key = Symbol.for('cordis.entry')
 
   public ctx: C
-  public fork?: EffectScope<C>
+  public scope?: EffectScope<C>
   public suspend = false
   public parent!: EntryGroup
   public options!: EntryOptions
@@ -98,14 +98,14 @@ export class Entry<C extends Context = Context> {
     // step 1: set prototype for transferred context
     Object.setPrototypeOf(this.ctx, this.parent.ctx)
 
-    if (this.fork && 'config' in options) {
+    if (this.scope && 'config' in options) {
       // step 2: update fork (when options.config is updated)
       this.suspend = true
-      const [config, error] = this._resolveConfig(this.fork.runtime?.plugin)
+      const [config, error] = this._resolveConfig(this.scope.runtime?.plugin)
       if (error) {
-        this.fork.cancel(error)
+        this.scope.cancel(error)
       } else {
-        this.fork.update(config)
+        this.scope.update(config)
       }
     } else if (this.subgroup && 'disabled' in options) {
       // step 3: check children (when options.disabled is updated)
@@ -122,9 +122,9 @@ export class Entry<C extends Context = Context> {
 
   async refresh() {
     const ready = this._check()
-    if (ready && !this.fork) {
+    if (ready && !this.scope) {
       await this.start()
-    } else if (!ready && this.fork) {
+    } else if (!ready && this.scope) {
       await this.stop()
     }
   }
@@ -149,7 +149,7 @@ export class Entry<C extends Context = Context> {
     // step 2: execute
     if (!this._check()) {
       await this.stop()
-    } else if (this.fork) {
+    } else if (this.scope) {
       this.context.emit('loader/partial-dispose', this, legacy, true)
       this.patch(options)
     } else {
@@ -167,12 +167,12 @@ export class Entry<C extends Context = Context> {
     this.patch()
     this.ctx[Entry.key] = this
     const [config, error] = this._resolveConfig(plugin)
-    this.fork = this.ctx.registry.plugin(plugin, config, error)
+    this.scope = this.ctx.registry.plugin(plugin, config, error)
     this.context.emit('loader/entry-fork', this, 'apply')
   }
 
   async stop() {
-    this.fork?.dispose()
-    this.fork = undefined
+    this.scope?.dispose()
+    this.scope = undefined
   }
 }

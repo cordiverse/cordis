@@ -22,10 +22,10 @@ export class DisposableList<T> {
     this.map.delete(this.sn)
   }
 
-  clear() {
+  popAll() {
     const values = [...this.map.values()]
     this.map.clear()
-    return values
+    return values.reverse()
   }
 
   [Symbol.iterator]() {

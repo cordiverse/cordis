@@ -100,7 +100,7 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
       // plugin hmr: delete(plugin) -> runtime dispose -> fork dispose
       if (!ctx.registry.has(scope.runtime?.plugin!)) return
 
-      scope.entry.fork = undefined
+      scope.entry.scope = undefined
       scope.parent.emit('loader/entry-fork', scope.entry, 'unload')
 
       // case 4: fork is disposed by loader behavior

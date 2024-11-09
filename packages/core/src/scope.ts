@@ -7,8 +7,6 @@ declare module './context' {
   export interface Context {
     scope: EffectScope<this>
     effect(callback: Effect): () => boolean
-    /** @deprecated use `ctx.effect()` instead */
-    collect(label: string, callback: () => void): () => void
     accept(callback?: (config: this['config']) => void | boolean, options?: AcceptOptions): () => boolean
     accept(keys: (keyof this['config'])[], callback?: (config: this['config']) => void | boolean, options?: AcceptOptions): () => boolean
     decline(keys: (keyof this['config'])[]): () => boolean
@@ -17,7 +15,7 @@ declare module './context' {
 
 export type Disposable = () => void
 
-export type DisposableLike = Disposable | Generator<Disposable, Disposable | void, void>
+export type DisposableLike = Disposable | Generator<Disposable, void, void>
 
 export type Effect = () => DisposableLike
 
@@ -154,7 +152,6 @@ export class EffectScope<C extends Context = Context> {
   protected _getStatus() {
     if (this.uid === null) return ScopeStatus.DISPOSED
     if (this.hasError) return ScopeStatus.FAILED
-    if (this.tasks.size) return ScopeStatus.LOADING
     if (this.isReady) return ScopeStatus.ACTIVE
     return ScopeStatus.PENDING
   }
@@ -187,7 +184,7 @@ export class EffectScope<C extends Context = Context> {
 
   async reset() {
     this.isActive = false
-    this.disposables.clear().forEach((dispose) => {
+    this.disposables.popAll().forEach((dispose) => {
       ;(async () => dispose())().catch((reason) => {
         this.context.emit(this.ctx, 'internal/error', reason)
       })

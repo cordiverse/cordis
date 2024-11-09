@@ -39,7 +39,7 @@ describe('Disposables', () => {
     const dispose = root.effect(function* () {
       yield dispose1
       yield dispose2
-      return dispose3
+      yield dispose3
     })
     expect(seq).to.deep.equal([])
     dispose()

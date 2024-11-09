@@ -162,7 +162,7 @@ class Registry<C extends Context = Context> {
     const runtime = key && this._internal.get(key)
     if (!runtime) return
     this._internal.delete(key)
-    runtime.scopes.clear().forEach(scope => scope.dispose())
+    runtime.scopes.popAll().forEach(scope => scope.dispose())
     return runtime
   }
 
