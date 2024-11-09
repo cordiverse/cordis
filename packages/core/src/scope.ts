@@ -1,13 +1,12 @@
 import { deepEqual, isNullable, remove } from 'cosmokit'
 import { Context } from './context'
 import { Plugin } from './registry'
-import { DisposableList, isConstructor, resolveConfig } from './utils'
+import { DisposableList, resolveConfig } from './utils'
 
 declare module './context' {
   export interface Context {
     scope: EffectScope<this>
-    effect<T extends DisposableLike>(callback: Callable<T, [ctx: this]>): T
-    effect<T extends DisposableLike, R>(callback: Callable<T, [ctx: this, config: R]>, config: R): T
+    effect(callback: Effect): () => boolean
     /** @deprecated use `ctx.effect()` instead */
     collect(label: string, callback: () => void): () => void
     accept(callback?: (config: this['config']) => void | boolean, options?: AcceptOptions): () => boolean
@@ -18,11 +17,9 @@ declare module './context' {
 
 export type Disposable = () => void
 
-export type DisposableLike = Disposable | { dispose: Disposable }
+export type DisposableLike = Disposable | Generator<Disposable, Disposable | void, void>
 
-export type Callable<T, R extends unknown[]> = ((...args: R) => T) | (new (...args: R) => T)
-
-export type Effect = () => Disposable | Generator<Disposable, Disposable, void>
+export type Effect = () => DisposableLike
 
 export interface AcceptOptions {
   passive?: boolean
@@ -113,27 +110,37 @@ export class EffectScope<C extends Context = Context> {
     throw new CordisError('INACTIVE_EFFECT')
   }
 
-  effect<D extends DisposableLike>(callback: Callable<D, [ctx: C, config: any]>, config?: any): D {
+  effect(callback: Effect): () => boolean {
     this.assertActive()
-    const result = isConstructor(callback)
-      // eslint-disable-next-line new-cap
-      ? new callback(this.ctx, config)
-      : callback(this.ctx, config)
-    let disposed = false
-    const original: Disposable = typeof result === 'function'
-      ? result
-      : result.dispose.bind(result)
+    const result = callback()
+    let isDisposed = false
+    let dispose: Disposable
+    if (typeof result === 'function') {
+      dispose = result
+    } else {
+      const disposables: Disposable[] = []
+      try {
+        while (true) {
+          const value = result.next()
+          if (value.value) disposables.unshift(value.value)
+          if (value.done) break
+        }
+      } catch (error) {
+        disposables.forEach(dispose => dispose())
+        throw error
+      }
+      dispose = () => disposables.forEach(dispose => dispose())
+    }
     const wrapped = (...args: []) => {
       // make sure the original callback is not called twice
-      if (disposed) return
-      disposed = true
+      if (isDisposed) return false
+      isDisposed = true
       remove()
-      return original(...args)
+      dispose(...args)
+      return true
     }
     const remove = this.disposables.push(wrapped)
-    if (typeof result === 'function') return wrapped as D
-    result.dispose = wrapped
-    return result
+    return wrapped
   }
 
   async restart() {

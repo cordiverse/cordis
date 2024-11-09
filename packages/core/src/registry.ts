@@ -24,7 +24,7 @@ export function Inject(inject: Inject) {
         })
       })
     } else {
-      throw new Error('@Inject can only be used on class or class methods')
+      throw new Error('@Inject() can only be used on class or class methods')
     }
   }
 }

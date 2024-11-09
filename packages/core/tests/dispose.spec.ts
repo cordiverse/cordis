@@ -1,11 +1,69 @@
 import { Context } from '../src'
 import { expect } from 'chai'
 import { mock } from 'node:test'
-import { noop, remove } from 'cosmokit'
+import { noop } from 'cosmokit'
 import { event, getHookSnapshot } from './utils'
 
 describe('Disposables', () => {
-  it('scope.dispose', () => {
+  it('dispose by plugin', () => {
+    const root = new Context()
+    const dispose = mock.fn()
+    const plugin = (ctx: Context) => {
+      ctx.effect(() => dispose)
+    }
+    const scope = root.plugin(plugin)
+    expect(dispose.mock.calls).to.have.length(0)
+    scope.dispose()
+    expect(dispose.mock.calls).to.have.length(1)
+    scope.dispose()
+    expect(dispose.mock.calls).to.have.length(1)
+  })
+
+  it('dispose manually', () => {
+    const root = new Context()
+    const dispose1 = mock.fn()
+    const dispose2 = root.effect(() => dispose1)
+    expect(dispose1.mock.calls).to.have.length(0)
+    dispose2()
+    expect(dispose1.mock.calls).to.have.length(1)
+    dispose2()
+    expect(dispose1.mock.calls).to.have.length(1)
+  })
+
+  it('yield dispose', () => {
+    const root = new Context()
+    const seq: number[] = []
+    const dispose1 = mock.fn(() => seq.push(1))
+    const dispose2 = mock.fn(() => seq.push(2))
+    const dispose3 = mock.fn(() => seq.push(3))
+    const dispose = root.effect(function* () {
+      yield dispose1
+      yield dispose2
+      return dispose3
+    })
+    expect(seq).to.deep.equal([])
+    dispose()
+    expect(seq).to.deep.equal([3, 2, 1])
+    dispose()
+    expect(seq).to.deep.equal([3, 2, 1])
+  })
+
+  it('effect with error', () => {
+    const root = new Context()
+    const seq: number[] = []
+    const dispose1 = mock.fn(() => seq.push(1))
+    const dispose2 = mock.fn(() => seq.push(2))
+    expect(() => {
+      root.effect(function* () {
+        yield dispose1
+        throw new Error('test')
+        yield dispose2
+      })
+    }).to.throw('test')
+    expect(seq).to.deep.equal([1])
+  })
+
+  it('nested scopes', () => {
     const plugin = (ctx: Context) => {
       ctx.on(event, callback)
       ctx.plugin((ctx) => {
@@ -44,7 +102,6 @@ describe('Disposables', () => {
 
   it('memory leak test', async () => {
     function plugin(ctx: Context) {
-      ctx.on('ready', noop)
       ctx.on(event, noop)
       ctx.on('dispose', noop)
     }
@@ -59,7 +116,7 @@ describe('Disposables', () => {
     expect(after).to.deep.equal(getHookSnapshot(root))
   })
 
-  it('dispose event', () => {
+  it('dispose event (deprecated)', () => {
     const root = new Context()
     const dispose = mock.fn(noop)
     const plugin = (ctx: Context) => {
@@ -75,13 +132,13 @@ describe('Disposables', () => {
     expect(dispose.mock.calls).to.have.length(1)
   })
 
-  it('dispose event error', async () => {
+  it('dispose error', async () => {
     const root = new Context()
     const error = mock.fn()
+    root.on('internal/error', error)
     const dispose = mock.fn(() => {
       throw new Error('test')
     })
-    root.on('internal/error', error)
     const plugin = (ctx: Context) => {
       ctx.on('dispose', dispose)
     }
@@ -93,19 +150,5 @@ describe('Disposables', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(dispose.mock.calls).to.have.length(1)
     expect(error.mock.calls).to.have.length(1)
-  })
-
-  describe('ctx.effect()', () => {
-    it('plugin dispose', () => {
-      const root = new Context()
-      const dispose = mock.fn(noop)
-  
-      const scope = root.plugin((ctx: Context) => {
-        ctx.effect(() => dispose)
-      })
-  
-      scope.dispose()
-      expect(dispose.mock.calls).to.have.length(1)
-    })
   })
 })
