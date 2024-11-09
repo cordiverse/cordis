@@ -66,11 +66,13 @@ export class Group extends EntryGroup {
   static initial: Omit<EntryOptions, 'id'>[] = []
   static readonly [EntryGroup.key] = true
 
-  constructor(public ctx: Context) {
+  constructor(public ctx: Context, config: EntryOptions[]) {
     super(ctx, ctx.scope.entry!.parent.tree)
     ctx.on('dispose', () => this.stop())
-    ctx.accept((config: EntryOptions[]) => {
+    ctx.on('internal/update', (_, config) => {
       this.update(config)
-    }, { passive: true, immediate: true })
+      return true
+    })
+    this.update(config)
   }
 }

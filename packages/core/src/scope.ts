@@ -51,6 +51,7 @@ export namespace CordisError {
 export class EffectScope<C extends Context = Context> {
   public uid: number | null
   public ctx: C
+  public acceptors = new DisposableList<() => boolean>()
   public disposables = new DisposableList<Disposable>()
   public status = ScopeStatus.PENDING
   public isActive = false
@@ -59,7 +60,6 @@ export class EffectScope<C extends Context = Context> {
   // Same as `this.ctx`, but with a more specific type.
   protected context: Context
   protected proxy: any
-  protected acceptors: Acceptor[] = []
   protected tasks = new Set<Promise<void>>()
   protected hasError = false
 
@@ -192,12 +192,9 @@ export class EffectScope<C extends Context = Context> {
     this.updateStatus()
   }
 
-  update(config: any, forced?: boolean) {
-    const oldConfig = this.config
-    this.context.emit('internal/before-update', this, config)
+  update(config: any) {
+    if (this.context.bail(this, 'internal/update', this, config)) return
     this.config = config
-    // FIXME: use single emit
-    this.context.emit('internal/update', this, oldConfig)
     this.restart()
   }
 }

@@ -34,7 +34,7 @@ export function apply(ctx: Context, config: Config = {}) {
     new Logger('app').warn(error)
   })
 
-  ctx.on('loader/entry-fork', (entry, type) => {
+  ctx.on('loader/entry-scope', (entry, type) => {
     if (entry.options.group) return
     ctx.logger('loader').info('%s plugin %c', type, entry.options.name)
   })

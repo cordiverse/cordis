@@ -81,7 +81,7 @@ export class Entry<C extends Context = Context> {
   }
 
   _resolveConfig(plugin: any): [any, any?] {
-    if (plugin[EntryGroup.key]) return [this.options.config]
+    if (plugin[EntryGroup.key]) return this.options.config
     return interpolate(this.ctx, this.options.config)
   }
 
@@ -157,7 +157,7 @@ export class Entry<C extends Context = Context> {
     this.patch()
     this.ctx[Entry.key] = this
     this.scope = this.ctx.registry.plugin(plugin, this._resolveConfig(plugin))
-    this.context.emit('loader/entry-fork', this, 'apply')
+    this.context.emit('loader/entry-scope', this, 'apply')
   }
 
   async stop() {

@@ -58,6 +58,8 @@ class EventsService {
       } else if (name === 'dispose') {
         defineProperty(listener, 'name', 'event <dispose>')
         return this.scope.disposables.push(listener)
+      } else if (name === 'internal/update' && !options.global) {
+        return this.scope.acceptors.push(listener)
       }
     }))
 
@@ -117,6 +119,12 @@ class EventsService {
       }
       return false
     }, { global: true }))
+
+    ctx.scope.leak(this.on('internal/update', (scope, config) => {
+      for (const acceptor of scope.acceptors) {
+        if (acceptor(scope, config)) return true
+      }
+    }, { global: true }))
   }
 
   filterHooks(hooks: Hook[], thisArg?: object) {
@@ -129,8 +137,8 @@ class EventsService {
 
   * dispatch(type: string, args: any[]) {
     const thisArg = typeof args[0] === 'object' || typeof args[0] === 'function' ? args.shift() : null
-    const name = args.shift()
-    if (name !== 'internal/event') {
+    const name: string = args.shift()
+    if (!name.startsWith('internal/')) {
       this.emit('internal/event', type, name, args, thisArg)
     }
     for (const hook of this.filterHooks(this._hooks[name] || [], thisArg)) {
@@ -204,16 +212,15 @@ export default EventsService
 export interface Events<in C extends Context = Context> {
   'ready'(): Awaitable<void>
   'dispose'(): Awaitable<void>
-  'internal/plugin'(fork: EffectScope<C>): void
+  'internal/plugin'(scope: EffectScope<C>): void
   'internal/status'(scope: EffectScope<C>, oldValue: ScopeStatus): void
   'internal/info'(this: C, format: any, ...param: any[]): void
   'internal/error'(this: C, format: any, ...param: any[]): void
   'internal/warning'(this: C, format: any, ...param: any[]): void
   'internal/before-service'(this: C, name: string, value: any): void
   'internal/service'(this: C, name: string, value: any): void
-  'internal/before-update'(fork: EffectScope<C>, config: any): void
-  'internal/update'(fork: EffectScope<C>, oldConfig: any): void
-  'internal/inject'(this: C, name: string, provider?: EffectScope): boolean | undefined
+  'internal/update'(scope: EffectScope<C>, config: any): boolean | void
+  'internal/inject'(this: C, name: string, provider?: EffectScope): boolean | void
   'internal/listener'(this: C, name: string, listener: any, prepend: boolean): void
   'internal/event'(type: 'emit' | 'parallel' | 'serial' | 'bail', name: string, args: any[], thisArg: any): void
 }
