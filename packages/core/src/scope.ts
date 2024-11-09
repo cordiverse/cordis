@@ -48,6 +48,7 @@ export class EffectScope<C extends Context = Context> {
   protected context: Context
 
   #active = false
+  #error: any
   #inertia: Promise<void> | undefined
 
   constructor(public parent: C, public config: C['config'], private apply: (ctx: C, config: any) => any, public runtime?: Plugin.Runtime) {
@@ -121,6 +122,7 @@ export class EffectScope<C extends Context = Context> {
     if (this.#inertia) return ScopeStatus.LOADING
     if (this.uid === null) return ScopeStatus.DISPOSED
     if (this.#active) return ScopeStatus.ACTIVE
+    if (this.#error) return ScopeStatus.FAILED
     return ScopeStatus.PENDING
   }
 
@@ -133,7 +135,7 @@ export class EffectScope<C extends Context = Context> {
     }
   }
 
-  get isReady() {
+  check() {
     if (!this.runtime) return true
     return Object.entries(this.runtime.inject).every(([name, inject]) => {
       return !inject.required || !isNullable(this.ctx.reflect.get(name, true))
@@ -145,7 +147,14 @@ export class EffectScope<C extends Context = Context> {
   }
 
   async #reload() {
-    await this.apply(this.ctx, this.config)
+    try {
+      await this.apply(this.ctx, this.config)
+    } catch (reason) {
+      if (isNullable(reason)) reason = new Error('plugin error')
+      this.context.emit(this.ctx, 'internal/error', reason)
+      this.#error = reason
+      this.#active = false
+    }
     this.#updateStatus(() => {
       this.#inertia = this.#active ? undefined : this.#unload()
     })
@@ -165,7 +174,7 @@ export class EffectScope<C extends Context = Context> {
   }
 
   setActive(value: boolean) {
-    if (value && (!this.uid || !this.isReady)) return
+    if (value && (!this.uid || !this.check())) return
     this.#updateStatus(() => {
       if (!this.#inertia && value !== this.#active) {
         this.#inertia = value ? this.#reload() : this.#unload()
@@ -188,6 +197,7 @@ export class EffectScope<C extends Context = Context> {
   update(config: any) {
     if (this.context.bail(this, 'internal/update', this, config)) return
     this.config = config
+    this.#error = undefined
     this.restart()
   }
 }

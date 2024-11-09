@@ -196,19 +196,44 @@ class Registry<C extends Context = Context> {
       this._internal.set(key!, runtime)
     }
 
+    const outerError = new Error()
     return new EffectScope(this.ctx, config, async (ctx, config) => {
-      config = resolveConfig(plugin, config)
-      if (typeof plugin !== 'function') {
-        await plugin.apply(ctx, config)
-      } else if (isConstructor(plugin)) {
-        // eslint-disable-next-line new-cap
-        const instance = new plugin(ctx, config)
-        for (const hook of instance?.[symbols.initHooks] ?? []) {
-          hook()
+      const innerError = new Error()
+      try {
+        config = resolveConfig(plugin, config)
+        if (typeof plugin !== 'function') {
+          await plugin.apply(ctx, config)
+        } else if (isConstructor(plugin)) {
+          // eslint-disable-next-line new-cap
+          const instance = new plugin(ctx, config)
+          for (const hook of instance?.[symbols.initHooks] ?? []) {
+            hook()
+          }
+          await instance?.[symbols.setup]?.()
+        } else {
+          await plugin(ctx, config)
         }
-        await instance?.[symbols.setup]?.()
-      } else {
-        await plugin(ctx, config)
+      } catch (error: any) {
+        const outerLines = outerError.stack!.split('\n')
+        const innerLines = innerError.stack!.split('\n')
+
+        // malformed error
+        if (typeof error?.stack !== 'string') {
+          outerLines[0] = `Error: ${error}`
+          outerError.stack = outerLines.join('\n')
+          throw outerError
+        }
+
+        // long stack trace
+        const lines: string[] = error.stack.split('\n')
+        const index = lines.indexOf(innerLines[2])
+        if (index === -1) throw error
+
+        lines.splice(index - 1, Infinity)
+        // lines.push('    at <cordis>')
+        lines.push(...outerLines.slice(3))
+        error.stack = lines.join('\n')
+        throw error
       }
     }, runtime)
   }
