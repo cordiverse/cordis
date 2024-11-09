@@ -1,6 +1,38 @@
 import { defineProperty } from 'cosmokit'
 import type { Context, Service } from '.'
 
+export class DisposableList<T> {
+  private sn = 0
+  private map = new Map<number, T>()
+
+  get length() {
+    return this.map.size
+  }
+
+  push(value: T) {
+    this.map.set(++this.sn, value)
+    return () => this.map.delete(this.sn)
+  }
+
+  leak(value: T) {
+    const v = this.map.get(this.sn)
+    if (v !== value) {
+      throw new Error('unexpected disposable leak')
+    }
+    this.map.delete(this.sn)
+  }
+
+  clear() {
+    const values = [...this.map.values()]
+    this.map.clear()
+    return values
+  }
+
+  [Symbol.iterator]() {
+    return this.map.values()
+  }
+}
+
 export interface Tracker {
   associate?: string
   property?: string

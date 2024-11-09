@@ -1,4 +1,4 @@
-import { Awaitable, defineProperty, Promisify, remove } from 'cosmokit'
+import { Awaitable, defineProperty, Promisify } from 'cosmokit'
 import { Context } from './context'
 import { EffectScope, ScopeStatus } from './scope'
 import { getTraceable, symbols } from './utils'
@@ -52,14 +52,12 @@ class EventsService {
 
     // TODO: deprecate these events
     ctx.scope.leak(this.on('internal/listener', function (this: Context, name, listener, options: EventOptions) {
-      const method = options.prepend ? 'unshift' : 'push'
       if (name === 'ready') {
         Promise.resolve().then(listener)
         return () => false
       } else if (name === 'dispose') {
-        this.scope.disposables[method](listener as any)
         defineProperty(listener, 'name', 'event <dispose>')
-        return () => remove(this.scope.disposables, listener)
+        return this.scope.disposables.push(listener)
       }
     }))
 
@@ -162,8 +160,10 @@ class EventsService {
 
   register(label: string, hooks: Hook[], callback: any, options: EventOptions) {
     const method = options.prepend ? 'unshift' : 'push'
-    hooks[method]({ ctx: this.ctx, callback, ...options })
-    return this.ctx.scope.collect(label, () => this.unregister(hooks, callback))
+    return this.ctx.scope.effect(() => {
+      hooks[method]({ ctx: this.ctx, callback, ...options })
+      return () => this.unregister(hooks, callback)
+    })
   }
 
   unregister(hooks: Hook[], callback: any) {

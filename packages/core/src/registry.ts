@@ -1,7 +1,7 @@
 import { defineProperty, Dict } from 'cosmokit'
 import { Context } from './context'
 import { EffectScope } from './scope'
-import { isConstructor, resolveConfig, symbols, withProps } from './utils'
+import { DisposableList, isConstructor, resolveConfig, symbols, withProps } from './utils'
 
 function isApplicable(object: Plugin) {
   return object && typeof object === 'object' && typeof object.apply === 'function'
@@ -87,7 +87,7 @@ export namespace Plugin {
     schema: any
     inject: Dict<Inject.Meta>
     isReactive?: boolean
-    scopes: EffectScope<C>[]
+    scopes: DisposableList<EffectScope<C>>
     plugin: Plugin
   }
 
@@ -97,7 +97,7 @@ export namespace Plugin {
     const schema = plugin['Config'] || plugin['schema']
     const inject = Inject.resolve(plugin['using'] || plugin['inject'])
     const isReactive = plugin['reactive']
-    return { name, schema, inject, isReactive, plugin, scopes: [] }
+    return { name, schema, inject, isReactive, plugin, scopes: new DisposableList() }
   }
 }
 
@@ -162,7 +162,7 @@ class Registry<C extends Context = Context> {
     const runtime = key && this._internal.get(key)
     if (!runtime) return
     this._internal.delete(key)
-    runtime.scopes.forEach(scope => scope.dispose())
+    runtime.scopes.clear().forEach(scope => scope.dispose())
     return runtime
   }
 

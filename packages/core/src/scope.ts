@@ -1,7 +1,7 @@
-import { deepEqual, defineProperty, isNullable, remove } from 'cosmokit'
+import { deepEqual, isNullable, remove } from 'cosmokit'
 import { Context } from './context'
 import { Plugin } from './registry'
-import { isConstructor, resolveConfig } from './utils'
+import { DisposableList, isConstructor, resolveConfig } from './utils'
 
 declare module './context' {
   export interface Context {
@@ -59,7 +59,7 @@ export namespace CordisError {
 export class EffectScope<C extends Context = Context> {
   public uid: number | null
   public ctx: C
-  public disposables: Disposable[] = []
+  public disposables = new DisposableList<Disposable>()
   public error: any
   public status = ScopeStatus.PENDING
   public isActive = false
@@ -77,13 +77,13 @@ export class EffectScope<C extends Context = Context> {
       this.uid = parent.registry.counter
       this.ctx = this.context = parent.extend({ scope: this })
       this.dispose = parent.scope.effect(() => {
-        this.runtime?.scopes.push(this)
+        const remove = this.runtime?.scopes.push(this)
         return () => {
           this.uid = null
           this.reset()
           this.context.emit('internal/plugin', this)
           if (!this.runtime) return
-          remove(this.runtime.scopes, this)
+          remove?.()
           if (this.runtime.scopes.length) return
           this.ctx.registry.delete(this.runtime.plugin)
         }
@@ -127,22 +127,13 @@ export class EffectScope<C extends Context = Context> {
       // make sure the original callback is not called twice
       if (disposed) return
       disposed = true
-      remove(this.disposables, wrapped)
+      remove()
       return original(...args)
     }
-    this.disposables.push(wrapped)
+    const remove = this.disposables.push(wrapped)
     if (typeof result === 'function') return wrapped as D
     result.dispose = wrapped
     return result
-  }
-
-  collect(label: string, callback: () => any) {
-    const dispose = defineProperty(() => {
-      remove(this.disposables, dispose)
-      return callback()
-    }, 'name', label)
-    this.disposables.push(dispose)
-    return dispose
   }
 
   async restart() {
@@ -184,13 +175,12 @@ export class EffectScope<C extends Context = Context> {
   }
 
   leak(disposable: Disposable) {
-    if (remove(this.disposables, disposable)) return
-    throw new Error('unexpected disposable leak')
+    this.disposables.leak(disposable)
   }
 
   async reset() {
     this.isActive = false
-    this.disposables.splice(0).forEach((dispose) => {
+    this.disposables.clear().forEach((dispose) => {
       ;(async () => dispose())().catch((reason) => {
         this.context.emit(this.ctx, 'internal/error', reason)
       })

@@ -30,7 +30,7 @@ export abstract class Service<C extends Context = Context> extends core.Service<
   public logger: Logger
   public schema: SchemaService
 
-  constructor(ctx: C, name: string, immediate?: boolean) {
+  constructor(ctx: C, name: string) {
     super(ctx, name)
     this.logger = this.ctx.logger(this.name)
     this.schema = new SchemaService(this.ctx)
