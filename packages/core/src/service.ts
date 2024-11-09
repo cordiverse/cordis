@@ -7,12 +7,10 @@ export abstract class Service<C extends Context = Context> {
   static readonly invoke: unique symbol = symbols.invoke as any
   static readonly extend: unique symbol = symbols.extend as any
   static readonly tracker: unique symbol = symbols.tracker as any
-  static readonly immediate: unique symbol = symbols.immediate as any
   static readonly provide = 'provide' as any
 
   protected start(): Awaitable<void> {}
   protected stop(): Awaitable<void> {}
-  protected fork?(ctx: C, config: any): void
 
   public name!: string
 

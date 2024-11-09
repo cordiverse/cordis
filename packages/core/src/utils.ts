@@ -58,7 +58,6 @@ export const symbols = {
   invoke: Symbol.for('cordis.invoke') as typeof Service.invoke,
   extend: Symbol.for('cordis.extend') as typeof Service.extend,
   tracker: Symbol.for('cordis.tracker') as typeof Service.tracker,
-  immediate: Symbol.for('cordis.immediate') as typeof Service.immediate,
 }
 
 const GeneratorFunction = function* () {}.constructor

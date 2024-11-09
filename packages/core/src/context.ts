@@ -10,13 +10,6 @@ export { EventsService, ReflectService, Registry }
 export namespace Context {
   export type Parameterized<C, T = any> = C & { config: T }
 
-  /** @deprecated use `string[]` instead */
-  export interface MixinOptions {
-    methods?: string[]
-    accessors?: string[]
-    prototype?: {}
-  }
-
   export interface Item<C extends Context> {
     name: string
     value?: any
@@ -78,11 +71,6 @@ export class Context {
   static {
     Context.is[Symbol.toPrimitive] = () => Symbol.for('cordis.is')
     Context.prototype[Context.is as any] = true
-  }
-
-  /** @deprecated use `Service.traceable` instead */
-  static associate<T extends {}>(object: T, name: string) {
-    return object
   }
 
   constructor() {

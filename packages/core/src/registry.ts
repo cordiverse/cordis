@@ -58,7 +58,6 @@ export type Plugin<C extends Context = Context, T = any> =
 export namespace Plugin {
   export interface Base<T = any> {
     name?: string
-    reactive?: boolean
     Config?: (config: any) => T
     inject?: Inject
     provide?: string | string[]
@@ -86,7 +85,6 @@ export namespace Plugin {
     name?: string
     schema: any
     inject: Dict<Inject.Meta>
-    isReactive?: boolean
     scopes: DisposableList<EffectScope<C>>
     plugin: Plugin
   }
@@ -96,8 +94,7 @@ export namespace Plugin {
     if (name === 'apply') name = undefined
     const schema = plugin['Config'] || plugin['schema']
     const inject = Inject.resolve(plugin['using'] || plugin['inject'])
-    const isReactive = plugin['reactive']
-    return { name, schema, inject, isReactive, plugin, scopes: new DisposableList() }
+    return { name, schema, inject, plugin, scopes: new DisposableList() }
   }
 }
 

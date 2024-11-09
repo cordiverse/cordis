@@ -12,19 +12,7 @@ declare module './context' {
 
 export type Disposable = () => void
 
-export type DisposableLike = Disposable | Generator<Disposable, void, void>
-
-export type Effect = () => DisposableLike
-
-export interface AcceptOptions {
-  passive?: boolean
-  immediate?: boolean
-}
-
-export interface Acceptor extends AcceptOptions {
-  keys?: string[]
-  callback?: (config: any) => void | boolean
-}
+export type Effect = () => Disposable | Generator<Disposable, void, void>
 
 export const enum ScopeStatus {
   PENDING,
@@ -59,7 +47,6 @@ export class EffectScope<C extends Context = Context> {
 
   // Same as `this.ctx`, but with a more specific type.
   protected context: Context
-  protected proxy: any
   protected tasks = new Set<Promise<void>>()
   protected hasError = false
 
@@ -79,10 +66,6 @@ export class EffectScope<C extends Context = Context> {
           this.ctx.registry.delete(this.runtime.plugin)
         }
       })
-      this.proxy = new Proxy({}, {
-        get: (target, key, receiver) => Reflect.get(this.config, key, receiver),
-        ownKeys: (target) => Reflect.ownKeys(this.config),
-      })
       this.context.emit('internal/plugin', this)
     } else {
       this.uid = 0
@@ -93,10 +76,6 @@ export class EffectScope<C extends Context = Context> {
         throw new Error('cannot dispose root scope')
       }
     }
-  }
-
-  protected get _config() {
-    return this.runtime?.isReactive ? this.proxy : this.config
   }
 
   assertActive() {
@@ -179,7 +158,7 @@ export class EffectScope<C extends Context = Context> {
   async reset() {
     this.isActive = false
     this.disposables.popAll().forEach((dispose) => {
-      ;(async () => dispose())().catch((reason) => {
+      (async () => dispose())().catch((reason) => {
         this.context.emit(this.ctx, 'internal/error', reason)
       })
     })
@@ -188,7 +167,7 @@ export class EffectScope<C extends Context = Context> {
   async start() {
     if (!this.isReady || this.isActive || this.uid === null) return true
     this.isActive = true
-    await this.apply(this.ctx, this._config)
+    await this.apply(this.ctx, this.config)
     this.updateStatus()
   }
 
