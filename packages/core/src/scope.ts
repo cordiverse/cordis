@@ -47,9 +47,9 @@ export class EffectScope<C extends Context = Context> {
   // Same as `this.ctx`, but with a more specific type.
   protected context: Context
 
-  #active = false
-  #error: any
-  #inertia: Promise<void> | undefined
+  private _active = false
+  private _error: any
+  private _pending: Promise<void> | undefined
 
   constructor(public parent: C, public config: C['config'], private apply: (ctx: C, config: any) => any, public runtime?: Plugin.Runtime) {
     if (parent.scope) {
@@ -61,24 +61,28 @@ export class EffectScope<C extends Context = Context> {
         this.setActive(true)
         return async () => {
           remove?.()
-          this.context.emit('internal/plugin', this)
           this.uid = null
+          this.context.emit('internal/plugin', this)
           if (this.runtime && !this.runtime.scopes.length) {
             this.ctx.registry.delete(this.runtime.plugin)
           }
           this.setActive(false)
-          await this.#inertia
+          await this._pending
         }
       })
     } else {
       this.uid = 0
       this.ctx = this.context = parent
-      this.#active = true
+      this._active = true
       this.status = ScopeStatus.ACTIVE
       this.dispose = () => {
         throw new Error('cannot dispose root scope')
       }
     }
+  }
+
+  get pending() {
+    return this._pending
   }
 
   assertActive() {
@@ -118,49 +122,49 @@ export class EffectScope<C extends Context = Context> {
     return wrapped
   }
 
-  #getStatus() {
-    if (this.#inertia) return ScopeStatus.LOADING
+  leak(disposable: Disposable) {
+    this.disposables.leak(disposable)
+  }
+
+  private _getStatus() {
+    if (this._pending) return ScopeStatus.LOADING
     if (this.uid === null) return ScopeStatus.DISPOSED
-    if (this.#active) return ScopeStatus.ACTIVE
-    if (this.#error) return ScopeStatus.FAILED
+    if (this._error) return ScopeStatus.FAILED
+    if (this._active) return ScopeStatus.ACTIVE
     return ScopeStatus.PENDING
   }
 
-  #updateStatus(callback: () => void) {
+  private _updateStatus(callback: () => void) {
     const oldValue = this.status
     callback()
-    this.status = this.#getStatus()
+    this.status = this._getStatus()
     if (oldValue !== this.status) {
       this.context.emit('internal/status', this, oldValue)
     }
   }
 
-  check() {
+  private _checkInject() {
     if (!this.runtime) return true
     return Object.entries(this.runtime.inject).every(([name, inject]) => {
       return !inject.required || !isNullable(this.ctx.reflect.get(name, true))
     })
   }
 
-  leak(disposable: Disposable) {
-    this.disposables.leak(disposable)
-  }
-
-  async #reload() {
+  private async _reload() {
     try {
       await this.apply(this.ctx, this.config)
     } catch (reason) {
-      if (isNullable(reason)) reason = new Error('plugin error')
+      // the registry impl guarantees that the error is non-null
       this.context.emit(this.ctx, 'internal/error', reason)
-      this.#error = reason
-      this.#active = false
+      this._error = reason
+      this._active = false
     }
-    this.#updateStatus(() => {
-      this.#inertia = this.#active ? undefined : this.#unload()
+    this._updateStatus(() => {
+      this._pending = this._active ? undefined : this._unload()
     })
   }
 
-  async #unload() {
+  private async _unload() {
     await Promise.all(this.disposables.popAll().map(async (dispose) => {
       try {
         await dispose()
@@ -168,25 +172,19 @@ export class EffectScope<C extends Context = Context> {
         this.context.emit(this.ctx, 'internal/error', reason)
       }
     }))
-    this.#updateStatus(() => {
-      this.#inertia = this.#active ? this.#reload() : undefined
+    this._updateStatus(() => {
+      this._pending = this._active ? this._reload() : undefined
     })
   }
 
   setActive(value: boolean) {
-    if (value && (!this.uid || !this.check())) return
-    this.#updateStatus(() => {
-      if (!this.#inertia && value !== this.#active) {
-        this.#inertia = value ? this.#reload() : this.#unload()
+    if (value && (!this.uid || !this._checkInject())) return
+    this._updateStatus(() => {
+      if (!this._pending && value !== this._active) {
+        this._pending = value ? this._reload() : this._unload()
       }
-      this.#active = value
+      this._active = value
     })
-  }
-
-  async wait() {
-    while (this.#inertia) {
-      await this.#inertia
-    }
   }
 
   async restart() {
@@ -197,7 +195,7 @@ export class EffectScope<C extends Context = Context> {
   update(config: any) {
     if (this.context.bail(this, 'internal/update', this, config)) return
     this.config = config
-    this.#error = undefined
+    this._error = undefined
     this.restart()
   }
 }

@@ -48,6 +48,7 @@ class EventsService {
     defineProperty(this, symbols.tracker, {
       associate: 'events',
       property: 'ctx',
+      noShadow: true,
     })
 
     // TODO: deprecate these events

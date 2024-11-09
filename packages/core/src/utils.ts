@@ -36,6 +36,7 @@ export class DisposableList<T> {
 export interface Tracker {
   associate?: string
   property?: string
+  noShadow?: boolean
 }
 
 export const symbols = {
@@ -179,7 +180,7 @@ function createTraceable(ctx: Context, value: any, tracker: Tracker) {
       const innerTracker = innerValue?.[symbols.tracker]
       if (innerTracker) {
         return createTraceable(ctx, innerValue, innerTracker)
-      } else if (typeof innerValue === 'function') {
+      } else if (!tracker.noShadow && typeof innerValue === 'function') {
         shadow ??= createShadow(ctx, target, tracker.property, receiver)
         return createShadowMethod(ctx, innerValue, receiver, shadow)
       } else {

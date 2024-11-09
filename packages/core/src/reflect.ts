@@ -102,6 +102,7 @@ class ReflectService {
     defineProperty(this, symbols.tracker, {
       associate: 'reflect',
       property: 'ctx',
+      noShadow: true,
     })
 
     this._mixin('reflect', ['get', 'set', 'provide', 'accessor', 'mixin', 'alias'])
@@ -116,8 +117,9 @@ class ReflectService {
     const key = this.ctx[symbols.isolate][name]
     const item = this.ctx[symbols.store][key]
     if (!item) return
-    if (strict && item.source.scope.status !== ScopeStatus.ACTIVE) return
-    return getTraceable(this.ctx, item.value)
+    if (!strict) return getTraceable(this.ctx, item.value)
+    if (item.source.scope.status !== ScopeStatus.ACTIVE) return
+    return item.value
   }
 
   set(name: string, value: any) {

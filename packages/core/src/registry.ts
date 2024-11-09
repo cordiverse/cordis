@@ -121,6 +121,7 @@ class Registry<C extends Context = Context> {
     defineProperty(this, symbols.tracker, {
       associate: 'registry',
       property: 'ctx',
+      noShadow: true,
     })
 
     this.context = ctx

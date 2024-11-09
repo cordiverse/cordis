@@ -101,10 +101,10 @@ export class Context {
   }
 
   extend(meta = {}): this {
-    const source = Reflect.getOwnPropertyDescriptor(this, symbols.shadow)?.value
+    const shadow = Reflect.getOwnPropertyDescriptor(this, symbols.shadow)?.value
     const self = Object.assign(Object.create(getTraceable(this, this)), meta)
-    if (!source) return self
-    return Object.assign(Object.create(self), { [symbols.shadow]: source })
+    if (!shadow) return self
+    return Object.assign(Object.create(self), { [symbols.shadow]: shadow })
   }
 
   isolate(name: string, label?: symbol) {
