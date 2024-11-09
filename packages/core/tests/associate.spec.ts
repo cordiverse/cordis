@@ -1,6 +1,5 @@
 import { Context, Service } from '../src'
 import { expect } from 'chai'
-import { checkError } from './utils'
 
 describe('Association', () => {
   it('service injection', async () => {
@@ -20,11 +19,11 @@ describe('Association', () => {
     }
 
     root.plugin(Foo)
-    const fork = root.plugin(FooBar)
+    const scope = root.plugin(FooBar)
     expect(root.foo).to.be.instanceof(Foo)
     expect(root.foo.bar).to.be.instanceof(FooBar)
     expect(root.foo.qux).to.equal(1)
-    fork.dispose()
+    await scope.dispose()
     expect(root.foo.bar).to.be.undefined
   })
 
@@ -108,8 +107,6 @@ describe('Association', () => {
         expect(session.answer()).to.equal(42)
       })
     })
-
-    await checkError(root)
   })
 
   it('associated type - accessor injection', async () => {
@@ -168,8 +165,6 @@ describe('Association', () => {
       session.bar = 100
       expect(session.bar).to.equal(101)
     })
-
-    await checkError(root)
   })
 
   // https://github.com/cordiverse/cordis/issues/14

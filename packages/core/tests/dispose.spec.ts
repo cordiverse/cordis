@@ -2,24 +2,23 @@ import { Context } from '../src'
 import { expect } from 'chai'
 import { mock } from 'node:test'
 import { noop } from 'cosmokit'
-import { event, getHookSnapshot } from './utils'
+import { event, getHookSnapshot, sleep } from './utils'
 
 describe('Disposables', () => {
-  it('dispose by plugin', () => {
+  it('dispose by plugin', async () => {
     const root = new Context()
     const dispose = mock.fn()
-    const plugin = (ctx: Context) => {
+    const scope = root.plugin((ctx: Context) => {
       ctx.effect(() => dispose)
-    }
-    const scope = root.plugin(plugin)
+    })
     expect(dispose.mock.calls).to.have.length(0)
-    scope.dispose()
+    await scope.dispose()
     expect(dispose.mock.calls).to.have.length(1)
-    scope.dispose()
+    await scope.dispose()
     expect(dispose.mock.calls).to.have.length(1)
   })
 
-  it('dispose manually', () => {
+  it('dispose manually', async () => {
     const root = new Context()
     const dispose1 = mock.fn()
     const dispose2 = root.effect(() => dispose1)
@@ -30,7 +29,7 @@ describe('Disposables', () => {
     expect(dispose1.mock.calls).to.have.length(1)
   })
 
-  it('yield dispose', () => {
+  it('yield dispose', async () => {
     const root = new Context()
     const seq: number[] = []
     const dispose1 = mock.fn(() => seq.push(1))
@@ -48,7 +47,7 @@ describe('Disposables', () => {
     expect(seq).to.deep.equal([3, 2, 1])
   })
 
-  it('effect with error', () => {
+  it('effect with error', async () => {
     const root = new Context()
     const seq: number[] = []
     const dispose1 = mock.fn(() => seq.push(1))
@@ -63,7 +62,7 @@ describe('Disposables', () => {
     expect(seq).to.deep.equal([1])
   })
 
-  it('nested scopes', () => {
+  it('nested scopes', async () => {
     const plugin = (ctx: Context) => {
       ctx.on(event, callback)
       ctx.plugin((ctx) => {
@@ -87,14 +86,14 @@ describe('Disposables', () => {
 
     // only 1 handler left
     callback.mock.resetCalls()
-    scope.dispose()
+    await scope.dispose()
     expect(root.registry.size).to.equal(0)
     root.emit(event)
     expect(callback.mock.calls).to.have.length(1)
 
     // subsequent calls should be noop
     callback.mock.resetCalls()
-    scope.dispose()
+    await scope.dispose()
     expect(root.registry.size).to.equal(0)
     root.emit(event)
     expect(callback.mock.calls).to.have.length(1)
@@ -111,12 +110,13 @@ describe('Disposables', () => {
     root.plugin(plugin)
     const after = getHookSnapshot(root)
     root.registry.delete(plugin)
+    await sleep()
     expect(before).to.deep.equal(getHookSnapshot(root))
     root.plugin(plugin)
     expect(after).to.deep.equal(getHookSnapshot(root))
   })
 
-  it('dispose event (deprecated)', () => {
+  it('dispose event (deprecated)', async () => {
     const root = new Context()
     const dispose = mock.fn(noop)
     const plugin = (ctx: Context) => {
@@ -126,6 +126,7 @@ describe('Disposables', () => {
     root.plugin(plugin)
     expect(dispose.mock.calls).to.have.length(0)
     expect(root.registry.delete(plugin)).to.be.ok
+    await sleep()
     expect(dispose.mock.calls).to.have.length(1)
     // callback should only be called once
     expect(root.registry.delete(plugin)).to.be.not.ok
@@ -147,7 +148,7 @@ describe('Disposables', () => {
     expect(dispose.mock.calls).to.have.length(0)
     expect(root.registry.delete(plugin)).to.be.ok
     // error is asynchronous
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await sleep()
     expect(dispose.mock.calls).to.have.length(1)
     expect(error.mock.calls).to.have.length(1)
   })

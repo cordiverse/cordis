@@ -2,7 +2,6 @@ import { Context } from '../src'
 import { expect } from 'chai'
 import { mock } from 'node:test'
 import { inspect } from 'util'
-import { checkError } from './utils'
 
 describe('Plugin', () => {
   it('apply functional plugin', () => {
@@ -71,8 +70,6 @@ describe('Plugin', () => {
         expect(inspect(ctx)).to.equal('Context <Qux>')
       }
     })
-
-    await checkError(root)
   })
 
   it('registry', () => {

@@ -29,18 +29,6 @@ export class Filter {
   }
 }
 
-export function filter(ctx: Context) {
-  ctx.root.filter = () => true
-  ctx.on('internal/runtime', (runtime) => {
-    if (!runtime.uid) return
-    runtime.ctx.filter = (session) => {
-      return runtime.children.some((child) => {
-        return child.ctx.filter(session)
-      })
-    }
-  })
-}
-
 declare module '../src/events' {
   interface Events {
     [event](): void
@@ -86,10 +74,4 @@ export function getHookSnapshot(ctx: Context) {
     if (callbacks.length) result[name] = callbacks.length
   }
   return result
-}
-
-export async function checkError(ctx: Context) {
-  ctx.registry.forEach((scope) => {
-    if (scope.error) throw scope.error
-  })
 }

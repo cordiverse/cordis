@@ -1,7 +1,7 @@
 import { Context, Service } from '../src'
 import { expect } from 'chai'
 import { mock } from 'node:test'
-import { event } from './utils'
+import { event, sleep } from './utils'
 
 describe('Isolation', () => {
   it('isolated context', async () => {
@@ -39,7 +39,7 @@ describe('Isolation', () => {
     expect(inner.mock.calls).to.have.length(2)
   })
 
-  it('isolated fork', () => {
+  it('isolated scope', async () => {
     const root = new Context()
     root.provide('foo')
     const callback = mock.fn(() => {})
@@ -67,7 +67,7 @@ describe('Isolation', () => {
     expect(dispose.mock.calls).to.have.length(0)
   })
 
-  it('shared label', () => {
+  it('shared label', async () => {
     const root = new Context()
     root.provide('foo')
     const callback = mock.fn(() => {})
@@ -85,19 +85,25 @@ describe('Isolation', () => {
     ctx1.plugin(plugin)
     const ctx2 = root.isolate('foo', label)
     ctx2.plugin(plugin)
+    await sleep()
     expect(callback.mock.calls).to.have.length(0)
 
     root.foo = { bar: 100 }
+    await sleep()
     expect(callback.mock.calls).to.have.length(0)
     ctx1.foo = { bar: 200 }
+    await sleep()
     expect(callback.mock.calls).to.have.length(2)
     expect(dispose.mock.calls).to.have.length(0)
     ctx2.foo = null
+    await sleep()
     expect(dispose.mock.calls).to.have.length(2)
     ctx2.foo = { bar: 300 }
+    await sleep()
     expect(callback.mock.calls).to.have.length(4)
     expect(dispose.mock.calls).to.have.length(2)
     ctx1.foo = null
+    await sleep()
     expect(dispose.mock.calls).to.have.length(4)
   })
 
