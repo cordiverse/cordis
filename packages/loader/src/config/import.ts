@@ -14,13 +14,10 @@ export class ImportTree<C extends Context = Context> extends EntryTree<C> {
     ctx.on('dispose', () => this.stop())
   }
 
-  async [Service.setup]() {
-    await this.refresh()
+  async start() {
+    const data = await this.file.read()
     await this.file.checkAccess()
-  }
-
-  async refresh() {
-    this.root.update(await this.file.read())
+    await this.root.update(data)
   }
 
   stop() {
@@ -80,6 +77,10 @@ export class ImportTree<C extends Context = Context> extends EntryTree<C> {
     }
     throw new Error('config file not found')
   }
+
+  async [Service.setup]() {
+    await this.start()
+  }
 }
 
 export namespace Import {
@@ -102,6 +103,6 @@ export class Import extends ImportTree {
     }
     this.file = new LoaderFile(filename, LoaderFile.writable[ext])
     this.file.ref(this)
-    await super[Service.setup]()
+    await super.start()
   }
 }

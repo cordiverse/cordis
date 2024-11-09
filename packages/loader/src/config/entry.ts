@@ -43,6 +43,8 @@ export class Entry<C extends Context = Context> {
   public subgroup?: EntryGroup
   public subtree?: EntryTree<C>
 
+  _initTask?: Promise<void>
+
   constructor(public loader: Loader<C>) {
     this.ctx = loader.ctx.extend({ [Entry.key]: this })
     this.context.emit('loader/entry-init', this)
@@ -69,11 +71,6 @@ export class Entry<C extends Context = Context> {
       entry = entry.parent.ctx.scope.entry
     } while (entry)
     return false
-  }
-
-  _check() {
-    if (this.disabled) return false
-    return !this.parent.ctx.bail('loader/entry-check', this)
   }
 
   evaluate(expr: string) {
@@ -110,13 +107,14 @@ export class Entry<C extends Context = Context> {
     this.context.emit(meta, 'loader/after-patch', this)
   }
 
+  check() {
+    return !this.disabled && !this.parent.ctx.bail('loader/entry-check', this)
+  }
+
   async refresh() {
-    const ready = this._check()
-    if (ready && !this.scope) {
-      await this.start()
-    } else if (!ready && this.scope) {
-      await this.stop()
-    }
+    if (this.scope) return
+    if (!this.check()) return
+    await (this._initTask ??= this._init())
   }
 
   async update(options: Partial<EntryOptions>, override = false) {
@@ -137,31 +135,34 @@ export class Entry<C extends Context = Context> {
     sortKeys(this.options)
 
     // step 2: execute
-    if (!this._check()) {
-      await this.stop()
-    } else if (this.scope) {
+    // this._check() is only a init-time optimization
+    if (this.disabled) {
+      this.scope?.dispose()
+      return
+    }
+
+    if (this.scope?.uid) {
       this.context.emit('loader/partial-dispose', this, legacy, true)
       this.patch(options)
     } else {
-      await this.start()
+      // FIXME: lock init task
+      await (this._initTask = this._init())
     }
   }
 
-  async start() {
-    const exports = await this.parent.tree.import(this.options.name).catch((error: any) => {
+  private async _init() {
+    let exports: any
+    try {
+      exports = await this.parent.tree.import(this.options.name)
+    } catch (error) {
       this.context.emit(this.ctx, 'internal/error', new Error(`Cannot find package "${this.options.name}"`))
       this.context.emit(this.ctx, 'internal/error', error)
-    })
-    if (!exports) return
+      return
+    }
     const plugin = this.loader.unwrapExports(exports)
     this.patch()
-    this.ctx[Entry.key] = this
-    this.scope = this.ctx.registry.plugin(plugin, this._resolveConfig(plugin))
+    this.scope = this.ctx.plugin(plugin, this._resolveConfig(plugin))
     this.context.emit('loader/entry-scope', this, 'apply')
-  }
-
-  async stop() {
-    this.scope?.dispose()
-    this.scope = undefined
+    this._initTask = undefined
   }
 }

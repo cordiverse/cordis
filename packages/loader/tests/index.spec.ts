@@ -14,7 +14,7 @@ describe('loader: basic support', () => {
   before(() => loader.start())
 
   it('loader initiate', async () => {
-    loader.file.write([{
+    await loader.read([{
       id: '1',
       name: 'foo',
     }, {
@@ -32,7 +32,6 @@ describe('loader: basic support', () => {
         disabled: true,
       }],
     }])
-    await loader.start()
 
     loader.expectEnable(foo)
     loader.expectEnable(bar)
@@ -45,14 +44,13 @@ describe('loader: basic support', () => {
   it('loader update', async () => {
     foo.mock.resetCalls()
     bar.mock.resetCalls()
-    loader.file.write([{
+    await loader.read([{
       id: '1',
       name: 'foo',
     }, {
       id: '4',
       name: 'qux',
     }])
-    await loader.start()
 
     loader.expectEnable(foo)
     loader.expectDisable(bar)

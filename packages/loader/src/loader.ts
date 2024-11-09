@@ -99,12 +99,11 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
       // plugin hmr: delete(plugin) -> runtime dispose -> scope dispose
       if (!ctx.registry.has(scope.runtime?.plugin!)) return
 
-      scope.entry.scope = undefined
       scope.parent.emit('loader/entry-scope', scope.entry, 'unload')
 
       // case 4: scope is disposed by loader behavior
       // such as inject checker, config file update, ancestor group disable
-      if (!scope.entry._check()) return
+      if (!scope.entry.check()) return
 
       scope.entry.options.disabled = true
       scope.entry.parent.tree.write()

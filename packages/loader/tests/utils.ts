@@ -32,14 +32,19 @@ export default class MockLoader<C extends Context = Context> extends Loader<C> {
 
   constructor(ctx: C) {
     super(ctx, { name: 'cordis' })
-    this.file = new MockLoaderFile('config-1.yml')
-    this.file.ref(this)
     this.mock('cordis/group', Group)
   }
 
   async start() {
-    await this.refresh()
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    this.file = new MockLoaderFile('config-1.yml')
+    this.file.ref(this)
+    await super.start()
+  }
+
+  async read(data: any) {
+    this.file.write(data)
+    await this.root.update(data)
+    await this.wait()
   }
 
   async import(name: string) {

@@ -1,4 +1,4 @@
-import { Context } from '@cordisjs/core'
+import { Context, Service } from '@cordisjs/core'
 import { Entry, EntryOptions } from './entry.ts'
 import { EntryTree } from './tree.ts'
 
@@ -31,28 +31,29 @@ export class EntryGroup {
   remove(id: string) {
     const entry = this.tree.store[id]
     if (!entry) return
-    entry.stop()
+    entry.scope?.dispose()
     this.unlink(entry.options)
     delete this.tree.store[id]
     this.ctx.emit('loader/partial-dispose', entry, entry.options, false)
   }
 
-  update(config: EntryOptions[]) {
+  async update(config: EntryOptions[]) {
     const oldConfig = this.data as EntryOptions[]
     this.data = config
     const oldMap = Object.fromEntries(oldConfig.map(options => [options.id, options]))
     const newMap = Object.fromEntries(config.map(options => [options.id ?? Symbol('anonymous'), options]))
 
     // update inner plugins
-    for (const id of Reflect.ownKeys({ ...oldMap, ...newMap }) as string[]) {
+    const ids = Reflect.ownKeys({ ...oldMap, ...newMap }) as string[]
+    await Promise.all(ids.map(async (id) => {
       if (newMap[id]) {
-        this.create(newMap[id]).catch((error) => {
+        await this.create(newMap[id]).catch((error) => {
           this.ctx.emit(this.ctx, 'internal/error', error)
         })
       } else {
         this.remove(id)
       }
-    }
+    }))
   }
 
   stop() {
@@ -66,13 +67,16 @@ export class Group extends EntryGroup {
   static initial: Omit<EntryOptions, 'id'>[] = []
   static readonly [EntryGroup.key] = true
 
-  constructor(public ctx: Context, config: EntryOptions[]) {
+  constructor(public ctx: Context, public config: EntryOptions[]) {
     super(ctx, ctx.scope.entry!.parent.tree)
     ctx.on('dispose', () => this.stop())
     ctx.on('internal/update', (_, config) => {
       this.update(config)
       return true
     })
-    this.update(config)
+  }
+
+  async [Service.setup]() {
+    await this.update(this.config)
   }
 }

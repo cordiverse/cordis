@@ -187,6 +187,13 @@ export class EffectScope<C extends Context = Context> {
     })
   }
 
+  async wait() {
+    while (this.pending) {
+      await this.pending
+    }
+    if (this._error) throw this._error
+  }
+
   async restart() {
     this.setActive(false)
     this.setActive(true)
