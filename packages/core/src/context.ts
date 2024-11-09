@@ -1,8 +1,8 @@
-import { defineProperty, Dict } from 'cosmokit'
+import { Dict } from 'cosmokit'
 import EventsService from './events'
 import ReflectService from './reflect'
 import Registry from './registry'
-import { getTraceable, resolveConfig, symbols } from './utils'
+import { getTraceable, symbols } from './utils'
 import { EffectScope } from './scope'
 
 export { EventsService, ReflectService, Registry }
@@ -85,30 +85,17 @@ export class Context {
     return object
   }
 
-  constructor(config?: any) {
-    config = resolveConfig(this.constructor, config)
+  constructor() {
     this[symbols.store] = Object.create(null)
     this[symbols.isolate] = Object.create(null)
     this[symbols.internal] = Object.create(null)
     this[symbols.intercept] = Object.create(null)
     const self: Context = new Proxy(this, ReflectService.handler)
     self.root = self
-    self.scope = new EffectScope(self, config, () => {})
+    self.scope = new EffectScope(self, {}, () => {})
     self.reflect = new ReflectService(self)
-    self.registry = new Registry(self, config)
+    self.registry = new Registry(self)
     self.events = new EventsService(self)
-
-    const attach = (internal: Context[typeof symbols.internal]) => {
-      if (!internal) return
-      attach(Object.getPrototypeOf(internal))
-      for (const key of Object.getOwnPropertyNames(internal)) {
-        const constructor = internal[key]['prototype']?.constructor
-        if (!constructor) continue
-        self[internal[key]['key']] = new constructor(self, config)
-        defineProperty(self[internal[key]['key']], 'ctx', self)
-      }
-    }
-    attach(this[symbols.internal])
     return self
   }
 

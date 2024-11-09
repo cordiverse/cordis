@@ -122,7 +122,7 @@ class Registry<C extends Context = Context> {
   private _internal = new Map<Function, Plugin.Runtime<C>>()
   protected context: Context
 
-  constructor(public ctx: C, config: any) {
+  constructor(public ctx: C) {
     defineProperty(this, symbols.tracker, {
       associate: 'registry',
       property: 'ctx',
@@ -190,21 +190,10 @@ class Registry<C extends Context = Context> {
     return this.plugin({ inject, apply: callback, name: callback.name })
   }
 
-  plugin(plugin: Plugin<C>, config?: any, error?: any) {
+  plugin(plugin: Plugin<C>, config?: any) {
     // check if it's a valid plugin
     const key = this.resolve(plugin, true)
     this.ctx.scope.assertActive()
-
-    // resolve plugin config
-    if (!error) {
-      try {
-        config = resolveConfig(plugin, config)
-      } catch (reason) {
-        this.context.emit(this.ctx, 'internal/error', reason)
-        error = reason
-        config = null
-      }
-    }
 
     let runtime = this._internal.get(key)
     if (!runtime) {
@@ -213,6 +202,7 @@ class Registry<C extends Context = Context> {
     }
 
     const scope = new EffectScope(this.ctx, config, async (ctx, config) => {
+      config = resolveConfig(plugin, config)
       if (typeof plugin !== 'function') {
         await plugin.apply(ctx, config)
       } else if (isConstructor(plugin)) {
@@ -226,11 +216,8 @@ class Registry<C extends Context = Context> {
         await plugin(ctx, config)
       }
     }, runtime)
-    if (!config) {
-      scope.cancel(error)
-    } else {
-      scope.start()
-    }
+
+    scope.start()
     return scope
   }
 }

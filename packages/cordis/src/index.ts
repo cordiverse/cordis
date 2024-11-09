@@ -15,8 +15,8 @@ export interface Context {
 export class Context extends core.Context {
   baseDir: string
 
-  constructor(config?: any) {
-    super(config)
+  constructor() {
+    super()
     this.baseDir = globalThis.process?.cwd?.() || ''
 
     this.provide('logger', undefined, true)

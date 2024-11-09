@@ -82,12 +82,7 @@ export class Entry<C extends Context = Context> {
 
   _resolveConfig(plugin: any): [any, any?] {
     if (plugin[EntryGroup.key]) return [this.options.config]
-    try {
-      return [interpolate(this.ctx, this.options.config)]
-    } catch (error) {
-      this.context.emit(this.ctx, 'internal/error', error)
-      return [null, error]
-    }
+    return interpolate(this.ctx, this.options.config)
   }
 
   patch(options: Partial<EntryOptions> = {}) {
@@ -101,12 +96,7 @@ export class Entry<C extends Context = Context> {
     if (this.scope && 'config' in options) {
       // step 2: update fork (when options.config is updated)
       this.suspend = true
-      const [config, error] = this._resolveConfig(this.scope.runtime?.plugin)
-      if (error) {
-        this.scope.cancel(error)
-      } else {
-        this.scope.update(config)
-      }
+      this.scope.update(this._resolveConfig(this.scope.runtime?.plugin))
     } else if (this.subgroup && 'disabled' in options) {
       // step 3: check children (when options.disabled is updated)
       const tree = this.subtree ?? this.parent.tree
@@ -166,8 +156,7 @@ export class Entry<C extends Context = Context> {
     const plugin = this.loader.unwrapExports(exports)
     this.patch()
     this.ctx[Entry.key] = this
-    const [config, error] = this._resolveConfig(plugin)
-    this.scope = this.ctx.registry.plugin(plugin, config, error)
+    this.scope = this.ctx.registry.plugin(plugin, this._resolveConfig(plugin))
     this.context.emit('loader/entry-fork', this, 'apply')
   }
 

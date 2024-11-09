@@ -1,15 +1,12 @@
-import { deepEqual, isNullable, remove } from 'cosmokit'
+import { isNullable } from 'cosmokit'
 import { Context } from './context'
 import { Plugin } from './registry'
-import { DisposableList, resolveConfig } from './utils'
+import { DisposableList } from './utils'
 
 declare module './context' {
   export interface Context {
     scope: EffectScope<this>
     effect(callback: Effect): () => boolean
-    accept(callback?: (config: this['config']) => void | boolean, options?: AcceptOptions): () => boolean
-    accept(keys: (keyof this['config'])[], callback?: (config: this['config']) => void | boolean, options?: AcceptOptions): () => boolean
-    decline(keys: (keyof this['config'])[]): () => boolean
   }
 }
 
@@ -55,7 +52,6 @@ export class EffectScope<C extends Context = Context> {
   public uid: number | null
   public ctx: C
   public disposables = new DisposableList<Disposable>()
-  public error: any
   public status = ScopeStatus.PENDING
   public isActive = false
   public dispose: () => void
@@ -143,7 +139,6 @@ export class EffectScope<C extends Context = Context> {
 
   async restart() {
     await this.reset()
-    this.error = null
     this.hasError = false
     this.status = ScopeStatus.PENDING
     await this.start()
@@ -165,8 +160,7 @@ export class EffectScope<C extends Context = Context> {
     }
   }
 
-  cancel(reason?: any) {
-    this.error = reason
+  cancel() {
     this.updateStatus(() => this.hasError = true)
     this.reset()
   }
@@ -198,77 +192,12 @@ export class EffectScope<C extends Context = Context> {
     this.updateStatus()
   }
 
-  accept(callback?: (config: C['config']) => void | boolean, options?: AcceptOptions): () => boolean
-  accept(keys: string[], callback?: (config: C['config']) => void | boolean, options?: AcceptOptions): () => boolean
-  accept(...args: any[]) {
-    const keys = Array.isArray(args[0]) ? args.shift() : null
-    const acceptor: Acceptor = { keys, callback: args[0], ...args[1] }
-    return this.effect(() => {
-      this.acceptors.push(acceptor)
-      if (acceptor.immediate) acceptor.callback?.(this.config)
-      return () => remove(this.acceptors, acceptor)
-    })
-  }
-
-  decline(keys: string[]) {
-    return this.accept(keys, () => true)
-  }
-
-  checkUpdate(resolved: any, forced?: boolean) {
-    if (forced || !this.config) return [true, true]
-    if (forced === false) return [false, false]
-
-    const modified: Record<string, boolean> = Object.create(null)
-    const checkPropertyUpdate = (key: string) => {
-      const result = modified[key] ??= !deepEqual(this.config[key], resolved[key])
-      hasUpdate ||= result
-      return result
-    }
-
-    const ignored = new Set<string>()
-    let hasUpdate = false, shouldRestart = false
-    let fallback: boolean | null = this.runtime?.isReactive || null
-    for (const { keys, callback, passive } of this.acceptors) {
-      if (!keys) {
-        fallback ||= !passive
-      } else if (passive) {
-        keys?.forEach(key => ignored.add(key))
-      } else {
-        let hasUpdate = false
-        for (const key of keys) {
-          hasUpdate ||= checkPropertyUpdate(key)
-        }
-        if (!hasUpdate) continue
-      }
-      const result = callback?.(resolved)
-      if (result) shouldRestart = true
-    }
-
-    for (const key in { ...this.config, ...resolved }) {
-      if (fallback === false) continue
-      if (!(key in modified) && !ignored.has(key)) {
-        const hasUpdate = checkPropertyUpdate(key)
-        if (fallback === null) shouldRestart ||= hasUpdate
-      }
-    }
-    return [hasUpdate, shouldRestart]
-  }
-
   update(config: any, forced?: boolean) {
     const oldConfig = this.config
-    let resolved: any
-    try {
-      resolved = resolveConfig(this.runtime?.plugin, config)
-    } catch (error) {
-      this.context.emit('internal/error', error)
-      return this.cancel(error)
-    }
-    const [hasUpdate, shouldRestart] = this.checkUpdate(resolved, forced)
     this.context.emit('internal/before-update', this, config)
-    this.config = resolved
-    if (hasUpdate) {
-      this.context.emit('internal/update', this, oldConfig)
-    }
-    if (shouldRestart) this.restart()
+    this.config = config
+    // FIXME: use single emit
+    this.context.emit('internal/update', this, oldConfig)
+    this.restart()
   }
 }
