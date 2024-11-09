@@ -129,8 +129,8 @@ class EventsService {
 
   filterHooks(hooks: Hook[], thisArg?: object) {
     thisArg = getTraceable(this.ctx, thisArg)
+    const filter = thisArg?.[Context.filter]
     return hooks.slice().filter((hook) => {
-      const filter = thisArg?.[Context.filter]
       return hook.global || !filter || filter.call(thisArg, hook.ctx)
     })
   }

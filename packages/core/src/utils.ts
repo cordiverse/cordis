@@ -99,14 +99,23 @@ export function isObject(value: any): value is {} {
   return value && (typeof value === 'object' || typeof value === 'function')
 }
 
-export function getTraceable<T>(ctx: Context, value: T, noTrap?: boolean): T {
+export function getPropertyDescriptor(target: any, prop: string | symbol) {
+  let proto = target
+  while (proto) {
+    const desc = Reflect.getOwnPropertyDescriptor(proto, prop)
+    if (desc) return desc
+    proto = Object.getPrototypeOf(proto)
+  }
+}
+
+export function getTraceable<T>(ctx: Context, value: T): T {
   if (!isObject(value)) return value
   if (Object.hasOwn(value, symbols.shadow)) {
     return Object.getPrototypeOf(value)
   }
   const tracker = value[symbols.tracker]
   if (!tracker) return value
-  return createTraceable(ctx, value, tracker, noTrap)
+  return createTraceable(ctx, value, tracker)
 }
 
 export function withProps(target: any, props?: {}) {
@@ -140,41 +149,13 @@ function createShadow(ctx: Context, target: any, property: string | undefined, r
 function createShadowMethod(ctx: Context, value: any, outer: any, shadow: {}) {
   return new Proxy(value, {
     apply: (target, thisArg, args) => {
-      // contravariant
       if (thisArg === outer) thisArg = shadow
-      // TODO remove args transform
-      // contravariant
-      args = args.map((arg) => {
-        if (typeof arg !== 'function' || arg[symbols.original]) return arg
-        return new Proxy(arg, {
-          get: (target, prop, receiver) => {
-            if (prop === symbols.original) return target
-            const value = Reflect.get(target, prop, receiver)
-            // https://github.com/cordiverse/cordis/issues/14
-            if (prop === 'toString' && value === Function.prototype.toString) {
-              return function (...args: any[]) {
-                return Reflect.apply(value, this === receiver ? target : this, args)
-              }
-            }
-            return value
-          },
-          apply: (target: Function, thisArg, args) => {
-            // covariant
-            return Reflect.apply(target, getTraceable(ctx, thisArg), args.map(arg => getTraceable(ctx, arg)))
-          },
-          construct: (target: Function, args, newTarget) => {
-            // covariant
-            return Reflect.construct(target, args.map(arg => getTraceable(ctx, arg)), newTarget)
-          },
-        })
-      })
-      // covariant
       return getTraceable(ctx, Reflect.apply(target, thisArg, args))
     },
   })
 }
 
-function createTraceable(ctx: Context, value: any, tracker: Tracker, noTrap?: boolean) {
+function createTraceable(ctx: Context, value: any, tracker: Tracker) {
   if (ctx[symbols.shadow]) {
     ctx = Object.getPrototypeOf(ctx)
   }
@@ -188,12 +169,19 @@ function createTraceable(ctx: Context, value: any, tracker: Tracker, noTrap?: bo
       if (tracker.associate && ctx[symbols.internal][`${tracker.associate}.${prop}`]) {
         return Reflect.get(ctx, `${tracker.associate}.${prop}`, withProp(ctx, symbols.receiver, receiver))
       }
-      const shadow = createShadow(ctx, target, tracker.property, receiver)
-      const innerValue = Reflect.get(target, prop, shadow)
+      let shadow: any, innerValue: any
+      const desc = getPropertyDescriptor(target, prop)
+      if (desc && 'value' in desc) {
+        innerValue = desc.value
+      } else {
+        shadow = createShadow(ctx, target, tracker.property, receiver)
+        innerValue = Reflect.get(target, prop, shadow)
+      }
       const innerTracker = innerValue?.[symbols.tracker]
       if (innerTracker) {
         return createTraceable(ctx, innerValue, innerTracker)
-      } else if (!noTrap && typeof innerValue === 'function') {
+      } else if (typeof innerValue === 'function') {
+        shadow ??= createShadow(ctx, target, tracker.property, receiver)
         return createShadowMethod(ctx, innerValue, receiver, shadow)
       } else {
         return innerValue

@@ -105,8 +105,6 @@ export type Spread<T> = undefined extends T ? [config?: T] : [config: T]
 
 declare module './context' {
   export interface Context {
-    /** @deprecated use `ctx.inject()` instead */
-    using(deps: Inject, callback: Plugin.Function<this, void>): EffectScope<this>
     inject(deps: Inject, callback: Plugin.Function<this, void>): EffectScope<this>
     plugin<T = undefined, S = T>(plugin: Plugin.Function<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): EffectScope<this>
     plugin<T = undefined, S = T>(plugin: Plugin.Constructor<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): EffectScope<this>

@@ -51,7 +51,7 @@ class ReflectService {
       if (typeof prop !== 'string') return Reflect.get(target, prop, ctx)
 
       if (Reflect.has(target, prop)) {
-        return getTraceable(ctx, Reflect.get(target, prop, ctx), true)
+        return getTraceable(ctx, Reflect.get(target, prop, ctx))
       }
 
       const [name, internal] = ReflectService.resolveInject(target, prop)
