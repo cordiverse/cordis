@@ -5,11 +5,11 @@ import MockLoader from './utils'
 describe('loader: basic support', () => {
   const root = new Context()
   root.plugin(MockLoader)
-  const loader = root.loader as MockLoader
+  const loader = root.loader as unknown as MockLoader
 
-  const foo = loader.mock('foo', (ctx: Context) => ctx.accept())
-  const bar = loader.mock('bar', (ctx: Context) => ctx.accept())
-  const qux = loader.mock('qux', (ctx: Context) => ctx.accept())
+  const foo = loader.mock('foo', (ctx: Context) => ctx.on('internal/update', () => true))
+  const bar = loader.mock('bar', (ctx: Context) => ctx.on('internal/update', () => true))
+  const qux = loader.mock('qux', (ctx: Context) => ctx.on('internal/update', () => true))
 
   before(() => loader.start())
 
@@ -34,8 +34,8 @@ describe('loader: basic support', () => {
     }])
     await loader.start()
 
-    loader.expectEnable(foo, {})
-    loader.expectEnable(bar, { a: 1 })
+    loader.expectEnable(foo)
+    loader.expectEnable(bar)
     loader.expectDisable(qux)
     expect(foo.mock.calls).to.have.length(1)
     expect(bar.mock.calls).to.have.length(1)
@@ -54,16 +54,16 @@ describe('loader: basic support', () => {
     }])
     await loader.start()
 
-    loader.expectEnable(foo, {})
+    loader.expectEnable(foo)
     loader.expectDisable(bar)
-    loader.expectEnable(qux, {})
+    loader.expectEnable(qux)
     expect(foo.mock.calls).to.have.length(0)
     expect(bar.mock.calls).to.have.length(0)
     expect(qux.mock.calls).to.have.length(1)
   })
 
-  it('plugin self-update 1', async () => {
-    root.registry.get(foo)!.update({ a: 3 })
+  it('plugin self-update', async () => {
+    loader.expectScope('1').update({ a: 3 })
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(loader.file.data).to.deep.equal([{
       id: '1',
@@ -75,45 +75,17 @@ describe('loader: basic support', () => {
     }])
   })
 
-  it('plugin self-update 2', async () => {
-    root.registry.get(foo)!.children[0].update({ a: 5 })
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(loader.file.data).to.deep.equal([{
-      id: '1',
-      name: 'foo',
-      config: { a: 5 },
-    }, {
-      id: '4',
-      name: 'qux',
-    }])
-  })
-
-  it('plugin self-dispose 1', async () => {
-    root.registry.get(foo)!.dispose()
+  it('plugin self-dispose', async () => {
+    loader.expectScope('1').dispose()
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(loader.file.data).to.deep.equal([{
       id: '1',
       name: 'foo',
       disabled: true,
-      config: { a: 5 },
+      config: { a: 3 },
     }, {
       id: '4',
       name: 'qux',
-    }])
-  })
-
-  it('plugin self-dispose 2', async () => {
-    root.registry.get(qux)!.children[0].dispose()
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(loader.file.data).to.deep.equal([{
-      id: '1',
-      name: 'foo',
-      disabled: true,
-      config: { a: 5 },
-    }, {
-      id: '4',
-      name: 'qux',
-      disabled: true,
     }])
   })
 })

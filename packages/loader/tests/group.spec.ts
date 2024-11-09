@@ -1,13 +1,12 @@
 import { mock } from 'node:test'
 import { expect } from 'chai'
 import { Context } from '@cordisjs/core'
-import { defineProperty } from 'cosmokit'
 import MockLoader from './utils'
 
 describe('group management: basic support', () => {
   const root = new Context()
   root.plugin(MockLoader)
-  const loader = root.loader
+  const loader = root.loader as unknown as MockLoader
 
   const dispose = mock.fn()
   const foo = loader.mock('foo', (ctx: Context) => {
@@ -82,7 +81,7 @@ describe('group management: basic support', () => {
 describe('group management: transfer', () => {
   const root = new Context()
   root.plugin(MockLoader)
-  const loader = root.loader
+  const loader = root.loader as unknown as MockLoader
 
   const dispose = mock.fn()
   const foo = loader.mock('foo', (ctx: Context) => {

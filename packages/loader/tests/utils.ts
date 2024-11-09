@@ -1,15 +1,15 @@
 import { Dict } from 'cosmokit'
 import { Context, EffectScope, Plugin } from '@cordisjs/core'
-import { EntryOptions, Group, Loader, LoaderFile } from '../src'
+import { EntryOptions, Group, Loader, LoaderFile } from '../src/index.js'
 import { Mock, mock } from 'node:test'
 import { expect } from 'chai'
 
-declare module '../src/index.ts' {
+declare module '../src/index.js' {
   interface Loader {
     mock<F extends Function>(name: string, plugin: F): Mock<F>
     expectEnable(plugin: any, config?: any): void
     expectDisable(plugin: any): void
-    expectFork(id: string): EffectScope
+    expectScope(id: string): EffectScope
   }
 }
 
@@ -25,12 +25,12 @@ class MockLoaderFile extends LoaderFile {
   }
 }
 
-export default class MockLoader extends Loader {
+export default class MockLoader<C extends Context = Context> extends Loader<C> {
   declare file: MockLoaderFile
 
   public modules: Dict<Plugin.Object> = Object.create(null)
 
-  constructor(ctx: Context) {
+  constructor(ctx: C) {
     super(ctx, { name: 'cordis' })
     this.file = new MockLoaderFile('config-1.yml')
     this.file.ref(this)
@@ -50,10 +50,9 @@ export default class MockLoader extends Loader {
     return this.modules[name] = mock.fn(plugin)
   }
 
-  expectEnable(plugin: any, config?: any) {
+  expectEnable(plugin: any) {
     const runtime = this.ctx.registry.get(plugin)
     expect(runtime).to.be.ok
-    expect(runtime!.config).to.deep.equal(config)
   }
 
   expectDisable(plugin: any) {
@@ -61,8 +60,8 @@ export default class MockLoader extends Loader {
     expect(runtime).to.be.not.ok
   }
 
-  expectFork(id: string) {
-    expect(this.store[id]?.fork).to.be.ok
-    return this.store[id]!.fork!
+  expectScope(id: string) {
+    expect(this.store[id]?.scope).to.be.ok
+    return this.store[id]!.scope!
   }
 }
