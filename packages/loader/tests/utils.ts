@@ -47,6 +47,9 @@ export default class MockLoader<C extends Context = Context> extends Loader<C> {
   }
 
   mock<F extends Function>(name: string, plugin: F) {
+    if (!plugin.name) {
+      Object.defineProperty(plugin, 'name', { value: name })
+    }
     return this.modules[name] = mock.fn(plugin)
   }
 

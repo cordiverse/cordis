@@ -1,5 +1,5 @@
 import { Context, EffectScope, Inject } from '@cordisjs/core'
-import { filterKeys } from 'cosmokit'
+import { filterKeys, isNullable } from 'cosmokit'
 import { Entry } from './entry.ts'
 
 declare module './entry.ts' {
@@ -27,7 +27,7 @@ export function apply(ctx: Context) {
 
   ctx.on('loader/entry-check', (entry) => {
     for (const name in getRequired(entry)) {
-      if (!entry.ctx.get(name)) return true
+      if (isNullable(entry.ctx.get(name, true))) return true
     }
   })
 

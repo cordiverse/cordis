@@ -44,7 +44,7 @@ export class Entry<C extends Context = Context> {
   public subtree?: EntryTree<C>
 
   constructor(public loader: Loader<C>) {
-    this.ctx = loader.ctx.extend()
+    this.ctx = loader.ctx.extend({ [Entry.key]: this })
     this.context.emit('loader/entry-init', this)
   }
 

@@ -5,8 +5,8 @@ import { EffectScope, ScopeStatus } from './scope'
 
 declare module './context' {
   interface Context {
-    get<K extends string & keyof this>(name: K): undefined | this[K]
-    get(name: string): any
+    get<K extends string & keyof this>(name: K, strict?: boolean): undefined | this[K]
+    get(name: string, strict?: boolean): any
     set<K extends string & keyof this>(name: K, value: undefined | this[K]): () => void
     set(name: string, value: any): () => void
     /** @deprecated use `ctx.set()` instead */

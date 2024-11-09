@@ -1,4 +1,4 @@
-import { Context, Service } from '@cordisjs/core'
+import { Context } from '@cordisjs/core'
 import { Dict, isNullable } from 'cosmokit'
 import { ModuleLoader } from './internal.ts'
 import { Entry, EntryOptions, EntryUpdateMeta } from './config/entry.ts'
@@ -83,7 +83,6 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
       // 1. set `scope.entry`
       if (scope.parent[Entry.key]) {
         scope.entry = scope.parent[Entry.key]
-        delete scope.parent[Entry.key]
       }
 
       // 2. handle self-dispose
@@ -113,12 +112,6 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
 
     ctx.plugin(inject)
     ctx.plugin(isolate)
-  }
-
-  async [Service.setup]() {
-    await this.init(process.cwd(), this.config)
-    this.ctx.set('env', process.env)
-    await super[Service.setup]()
   }
 
   locate(ctx = this.ctx) {
