@@ -22,7 +22,7 @@ export class DisposableList<T> {
     this.map.delete(this.sn)
   }
 
-  popAll() {
+  clear() {
     const values = [...this.map.values()]
     this.map.clear()
     return values.reverse()

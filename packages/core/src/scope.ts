@@ -56,15 +56,17 @@ export class EffectScope<C extends Context = Context> {
       this.uid = parent.registry.counter
       this.ctx = this.context = parent.extend({ scope: this })
       this.dispose = parent.scope.effect(() => {
-        const remove = this.runtime?.scopes.push(this)
+        const remove = runtime!.scopes.push(this)
         this.context.emit('internal/plugin', this)
         this.setActive(true)
         return async () => {
-          remove?.()
           this.uid = null
           this.context.emit('internal/plugin', this)
-          if (this.runtime && !this.runtime.scopes.length) {
-            this.ctx.registry.delete(this.runtime.plugin)
+          if (this.ctx.registry.has(runtime!.plugin)) {
+            remove()
+            if (!runtime!.scopes.length) {
+              this.ctx.registry.delete(runtime!.plugin)
+            }
           }
           this.setActive(false)
           await this._pending
@@ -165,7 +167,7 @@ export class EffectScope<C extends Context = Context> {
   }
 
   private async _unload() {
-    await Promise.all(this.disposables.popAll().map(async (dispose) => {
+    await Promise.all(this.disposables.clear().map(async (dispose) => {
       try {
         await dispose()
       } catch (reason) {

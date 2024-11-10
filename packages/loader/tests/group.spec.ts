@@ -3,7 +3,7 @@ import { expect } from 'chai'
 import { Context } from '@cordisjs/core'
 import MockLoader from './utils'
 
-describe.only('group management: basic support', () => {
+describe('group management: basic support', () => {
   const root = new Context()
   root.plugin(MockLoader)
   const loader = root.loader as unknown as MockLoader
