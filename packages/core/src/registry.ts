@@ -233,8 +233,8 @@ class Registry<C extends Context = Context> {
         if (index === -1) throw error
 
         lines.splice(index - 1, Infinity)
-        // lines.push('    at <cordis>')
-        lines.push(...outerLines.slice(3))
+        // lines.push('    at Registry.plugin (<anonymous>)')
+        lines.push(...outerLines.slice(2))
         error.stack = lines.join('\n')
         throw error
       }

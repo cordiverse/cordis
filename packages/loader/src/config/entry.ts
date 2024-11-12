@@ -155,7 +155,6 @@ export class Entry<C extends Context = Context> {
     try {
       exports = await this.parent.tree.import(this.options.name)
     } catch (error) {
-      this.context.emit(this.ctx, 'internal/error', new Error(`Cannot find package "${this.options.name}"`))
       this.context.emit(this.ctx, 'internal/error', error)
       return
     }

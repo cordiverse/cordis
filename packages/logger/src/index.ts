@@ -1,5 +1,5 @@
 import { Context, Service } from '@cordisjs/core'
-import { defineProperty } from 'cosmokit'
+import { defineProperty, hyphenate } from 'cosmokit'
 import Logger from 'reggol'
 
 export { Logger }
@@ -46,7 +46,7 @@ export class LoggerService extends Service {
   static {
     for (const type of ['success', 'error', 'info', 'warn', 'debug', 'extend']) {
       LoggerService.prototype[type] = function (this: LoggerService, ...args: any[]) {
-        return this(this.ctx.name)[type](...args)
+        return this(hyphenate(this.ctx.name))[type](...args)
       }
     }
   }

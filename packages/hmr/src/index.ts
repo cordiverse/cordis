@@ -124,7 +124,7 @@ class Watcher extends Service {
   }
 
   async stop() {
-    return await this.watcher.close()
+    await this.watcher.close()
   }
 
   async getLinked(filename: string) {
