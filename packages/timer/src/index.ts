@@ -1,5 +1,4 @@
 import { Context, Service } from '@cordisjs/core'
-import { remove } from 'cosmokit'
 
 declare module '@cordisjs/core' {
   interface Context {
@@ -60,16 +59,16 @@ export class TimerService extends Service {
     let timer: number | NodeJS.Timeout | undefined
     const dispose = () => {
       isDisposed = true
-      remove(this.ctx.scope.disposables, dispose)
+      remove()
       clearTimeout(timer)
     }
 
     const wrapper: any = (...args: any[]) => {
       clearTimeout(timer)
-      timer = callback(args, () => !isDisposed && this.ctx.scope.isActive)
+      timer = callback(args, () => !isDisposed && this.ctx.scope.active)
     }
     wrapper.dispose = dispose
-    this.ctx.scope.disposables.push(dispose)
+    const remove = this.ctx.scope.disposables.push(dispose)
     return wrapper
   }
 

@@ -2,7 +2,7 @@ import { mock } from 'node:test'
 import { FakeTimerInstallOpts, install, InstalledClock } from '@sinonjs/fake-timers'
 import { Context } from '@cordisjs/core'
 import assert from 'node:assert'
-import Timer from '../src'
+import Timer from '../src/index.js'
 
 declare module '@cordisjs/core' {
   interface Context {

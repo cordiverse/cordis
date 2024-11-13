@@ -58,7 +58,7 @@ export class EffectScope<C extends Context = Context> {
       this.dispose = parent.scope.effect(() => {
         const remove = runtime!.scopes.push(this)
         this.context.emit('internal/plugin', this)
-        this.setActive(true)
+        this.active = true
         return async () => {
           this.uid = null
           this.context.emit('internal/plugin', this)
@@ -68,7 +68,7 @@ export class EffectScope<C extends Context = Context> {
               this.ctx.registry.delete(runtime!.plugin)
             }
           }
-          this.setActive(false)
+          this.active = false
           await this._pending
         }
       })
@@ -179,7 +179,11 @@ export class EffectScope<C extends Context = Context> {
     })
   }
 
-  setActive(value: boolean) {
+  get active() {
+    return this._active
+  }
+
+  set active(value) {
     if (value && (!this.uid || !this._checkInject())) return
     this._updateStatus(() => {
       if (!this._pending && value !== this._active) {
@@ -197,8 +201,8 @@ export class EffectScope<C extends Context = Context> {
   }
 
   async restart() {
-    this.setActive(false)
-    this.setActive(true)
+    this.active = false
+    this.active = true
   }
 
   update(config: any) {
