@@ -1,7 +1,7 @@
 {
   "name": "@cordisjs/core",
   "description": "Meta-Framework for Modern JavaScript Applications",
-  "version": "3.18.1",
+  "version": "4.0.0-alpha.0",
   "sideEffects": false,
   "type": "module",
   "main": "lib/index.js",
@@ -29,10 +29,10 @@
   "author": "Shigma <shigma10826@gmail.com>",
   "license": "MIT",
   "devDependencies": {
-    "@types/chai": "^4.3.16",
-    "@types/chai-as-promised": "^7.1.8",
-    "chai": "^5.1.1",
-    "chai-as-promised": "^7.1.1"
+    "@types/chai": "^5.0.1",
+    "@types/chai-as-promised": "^8.0.1",
+    "chai": "^5.1.2",
+    "chai-as-promised": "^8.0.0"
   },
   "dependencies": {
     "cosmokit": "^1.6.3"

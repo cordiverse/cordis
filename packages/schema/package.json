@@ -1,7 +1,7 @@
 {
   "name": "@cordisjs/schema",
   "description": "Schema service for cordis",
-  "version": "0.1.1",
+  "version": "1.0.0-alpha.0",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -35,10 +35,10 @@
     "config"
   ],
   "devDependencies": {
-    "@cordisjs/core": "^3.18.1"
+    "@cordisjs/core": "^4.0.0-alpha.0"
   },
   "peerDependencies": {
-    "@cordisjs/core": "^3.18.1"
+    "@cordisjs/core": "^4.0.0-alpha.0"
   },
   "dependencies": {
     "cosmokit": "^1.6.3",
