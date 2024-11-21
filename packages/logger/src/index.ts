@@ -1,12 +1,16 @@
-import { Context, Service } from '@cordisjs/core'
+import { Context, Service } from 'cordis'
 import { defineProperty, hyphenate } from 'cosmokit'
 import Logger from 'reggol'
 
 export { Logger }
 
-declare module '@cordisjs/core' {
+declare module 'cordis' {
   interface Context {
     logger: LoggerService
+  }
+
+  interface Intercept {
+    logger: LoggerService.Config
   }
 }
 
@@ -15,6 +19,12 @@ declare module 'reggol' {
     interface Meta {
       ctx?: Context
     }
+  }
+}
+
+export namespace LoggerService {
+  export interface Config {
+    name?: string
   }
 }
 
@@ -46,7 +56,14 @@ export class LoggerService extends Service {
   static {
     for (const type of ['success', 'error', 'info', 'warn', 'debug', 'extend']) {
       LoggerService.prototype[type] = function (this: LoggerService, ...args: any[]) {
-        return this(hyphenate(this.ctx.name))[type](...args)
+        let config: LoggerService.Config = {}
+        let intercept = this.ctx[Context.intercept]
+        while (intercept) {
+          config = Object.assign({}, intercept.logger, config)
+          intercept = Object.getPrototypeOf(intercept)
+        }
+        const name = config.name || hyphenate(this.ctx.name)
+        return this(name)[type](...args)
       }
     }
   }

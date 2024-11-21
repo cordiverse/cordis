@@ -1,4 +1,4 @@
-import { Logger } from '@cordisjs/logger'
+import Logger from 'reggol'
 import { Context } from '../index.ts'
 
 declare module '@cordisjs/loader' {
@@ -20,7 +20,7 @@ export interface Config {
   showTime?: string | boolean
 }
 
-export const inject = ['loader']
+// export const inject = ['loader']
 
 export function apply(ctx: Context, config: Config = {}) {
   function handleException(error: any) {
@@ -34,20 +34,15 @@ export function apply(ctx: Context, config: Config = {}) {
     new Logger('app').warn(error)
   })
 
-  ctx.on('loader/entry-scope', (entry, type) => {
-    if (entry.options.group) return
-    ctx.logger('loader').info('%s plugin %c', type, entry.options.name)
-  })
+  // ctx.loader.prolog = []
 
-  ctx.loader.prolog = []
-
-  Logger.targets.push({
-    colors: 3,
-    record: (record) => {
-      ctx.loader.prolog.push(record)
-      ctx.loader.prolog = ctx.loader.prolog.slice(-1000)
-    },
-  })
+  // Logger.targets.push({
+  //   colors: 3,
+  //   record: (record) => {
+  //     ctx.loader.prolog.push(record)
+  //     ctx.loader.prolog = ctx.loader.prolog.slice(-1000)
+  //   },
+  // })
 
   const { levels } = config
   // configurate logger levels

@@ -68,7 +68,7 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
 
     ctx.on('internal/update', (scope, config) => {
       if (!scope.entry) return
-      scope.parent.emit('loader/entry-scope', scope.entry, 'reload')
+      this.showLog(scope.entry, 'reload')
     }, { global: true })
 
     ctx.on('internal/update', (scope, config) => {
@@ -99,7 +99,7 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
       // plugin hmr: delete(plugin) -> runtime dispose -> scope dispose
       if (!ctx.registry.has(scope.runtime?.plugin!)) return
 
-      scope.parent.emit('loader/entry-scope', scope.entry, 'unload')
+      this.showLog(scope.entry, 'unload')
 
       // case 4: scope is disposed by loader behavior
       // such as inject checker, config file update, ancestor group disable
@@ -111,6 +111,11 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
 
     ctx.plugin(inject)
     ctx.plugin(isolate)
+  }
+
+  showLog(entry: Entry, type: string) {
+    if (entry.options.group) return
+    this.ctx.get('logger')?.('loader').info('%s plugin %c', type, entry.options.name)
   }
 
   locate(ctx = this.ctx) {

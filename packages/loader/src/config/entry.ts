@@ -161,7 +161,7 @@ export class Entry<C extends Context = Context> {
     const plugin = this.loader.unwrapExports(exports)
     this.patch()
     this.scope = this.ctx.plugin(plugin, this._resolveConfig(plugin))
-    this.context.emit('loader/entry-scope', this, 'apply')
+    this.loader.showLog(this, 'apply')
     this._initTask = undefined
   }
 }

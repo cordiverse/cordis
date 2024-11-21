@@ -4,6 +4,7 @@ import { ModuleJob, ModuleLoader } from 'cordis/loader'
 import { FSWatcher, watch, WatchOptions } from 'chokidar'
 import { relative, resolve } from 'node:path'
 import { handleError } from './error.ts'
+import {} from '@cordisjs/plugin-logger'
 import {} from '@cordisjs/plugin-timer'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import enUS from './locales/en-US.yml'
@@ -11,7 +12,7 @@ import zhCN from './locales/zh-CN.yml'
 
 declare module 'cordis' {
   interface Context {
-    hmr: Watcher
+    hmr: HMR
   }
 
   interface Events {
@@ -36,8 +37,8 @@ interface Reload {
   runtime?: Plugin.Runtime
 }
 
-class Watcher extends Service {
-  static inject = ['loader', 'timer']
+class HMR extends Service {
+  static inject = ['loader', 'timer', 'logger']
 
   private base: string
   private internal: ModuleLoader
@@ -69,7 +70,7 @@ class Watcher extends Service {
   /** stashed changes */
   private stashed = new Set<string>()
 
-  constructor(ctx: Context, public config: Watcher.Config) {
+  constructor(ctx: Context, public config: HMR.Config) {
     super(ctx, 'hmr')
     if (!this.ctx.loader.internal) {
       throw new Error('--expose-internals is required for HMR service')
@@ -322,7 +323,7 @@ class Watcher extends Service {
   }
 }
 
-namespace Watcher {
+namespace HMR {
   export interface Config extends WatchOptions {
     base?: string
     root: string[]
@@ -351,4 +352,4 @@ namespace Watcher {
   })
 }
 
-export default Watcher
+export default HMR
