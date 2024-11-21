@@ -18,7 +18,6 @@ declare module '@cordisjs/core' {
     'exit'(signal: NodeJS.Signals): Promise<void>
     'loader/config-update'(): void
     'loader/entry-init'(entry: Entry): void
-    'loader/entry-scope'(entry: Entry, type: string): void
     'loader/entry-check'(entry: Entry): boolean | undefined
     'loader/partial-dispose'(entry: Entry, legacy: Partial<EntryOptions>, active: boolean): void
     'loader/before-patch'(this: EntryUpdateMeta, entry: Entry): void

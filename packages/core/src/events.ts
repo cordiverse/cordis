@@ -1,4 +1,4 @@
-import { Awaitable, defineProperty, Promisify } from 'cosmokit'
+import { Awaitable, deepEqual, defineProperty, Promisify } from 'cosmokit'
 import { Context } from './context'
 import { EffectScope, ScopeStatus } from './scope'
 import { getTraceable, symbols } from './utils'
@@ -124,6 +124,7 @@ class EventsService {
       for (const acceptor of scope.acceptors) {
         if (acceptor(scope, config)) return true
       }
+      return deepEqual(scope.config, config)
     }, { global: true }))
   }
 
