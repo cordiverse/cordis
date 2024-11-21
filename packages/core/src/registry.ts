@@ -188,7 +188,7 @@ class Registry<C extends Context = Context> {
     return this.plugin({ inject, apply: callback, name: callback.name })
   }
 
-  plugin(plugin: Plugin<C>, config?: any) {
+  plugin(plugin: Plugin<C>, config?: any, outerError = new Error()) {
     // check if it's a valid plugin
     const key = this.resolve(plugin, true)
     this.ctx.scope.assertActive()
@@ -199,7 +199,6 @@ class Registry<C extends Context = Context> {
       this._internal.set(key!, runtime)
     }
 
-    const outerError = new Error()
     return new EffectScope(this.ctx, config, async (ctx, config) => {
       const innerError = new Error()
       try {

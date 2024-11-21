@@ -16,10 +16,9 @@ describe('functional service', () => {
       }
 
       protected [Service.invoke](init?: Config) {
-        const caller = this.ctx
-        expect(caller).to.be.instanceof(Context)
+        expect(this.ctx).to.be.instanceof(Context)
         let result = { ...this.config }
-        let intercept = caller[Context.intercept]
+        let intercept = this.ctx[Context.intercept]
         while (intercept) {
           Object.assign(result, intercept.foo)
           intercept = Object.getPrototypeOf(intercept)

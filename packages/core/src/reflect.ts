@@ -43,7 +43,7 @@ class ReflectService {
     const lines = error.stack!.split('\n')
     lines.splice(1, 1)
     error.stack = lines.join('\n')
-    ctx.emit(ctx, 'internal/warning', error)
+    throw error
   }
 
   static handler: ProxyHandler<Context> = {
