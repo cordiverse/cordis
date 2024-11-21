@@ -60,9 +60,8 @@ cli.command('start [file]', 'start a cordis application')
     process.env.CORDIS_LOADER_ENTRY = file || ''
     start({
       name: 'cordis',
-      daemon: {
-        execArgv: unparse(rest),
-      },
+      execArgv: unparse(rest),
+      daemon: {},
       logger: {
         showTime: logTime,
       },

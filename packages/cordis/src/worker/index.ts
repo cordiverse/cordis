@@ -11,6 +11,7 @@ declare module '@cordisjs/loader' {
 }
 
 export interface Options extends Loader.Config {
+  execArgv?: string[]
   logger?: logger.Config
   daemon?: daemon.Config
 }
@@ -32,6 +33,8 @@ function getInternal() {
 
 export async function start(options: Options) {
   const ctx = new Context()
+  if (options.logger) ctx.plugin(logger, options.logger)
+  if (options.daemon) ctx.plugin(daemon, options.daemon)
   ctx.plugin(Loader, {
     ...options,
     filename: process.env.CORDIS_LOADER_ENTRY,
@@ -39,6 +42,4 @@ export async function start(options: Options) {
   if (process.execArgv.includes('--expose-internals')) {
     ctx.loader.internal = getInternal()
   }
-  if (options.logger) ctx.plugin(logger, options.logger)
-  if (options.daemon) ctx.plugin(daemon, options.daemon)
 }
