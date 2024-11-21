@@ -16,6 +16,7 @@ interface LoadResult {
 
 type LoadCacheData = ModuleJob // | Function
 
+/** @see https://github.com/nodejs/node/blob/main/lib/internal/modules/esm/module_map.js */
 interface LoadCache extends Omit<Map<string, Dict<LoadCacheData>>, 'get' | 'set' | 'has'> {
   get(url: string, type?: string): LoadCacheData | undefined
   set(url: string, type?: string, job?: LoadCacheData): this
@@ -27,6 +28,7 @@ export interface ModuleWrap {
   getNamespace(): any
 }
 
+/** @see https://github.com/nodejs/node/blob/main/lib/internal/modules/esm/module_job.js */
 export interface ModuleJob {
   url: string
   loader: ModuleLoader
@@ -37,14 +39,13 @@ export interface ModuleJob {
   run(): Promise<{ module: ModuleWrap }>
 }
 
+/** @see https://github.com/nodejs/node/blob/main/lib/internal/modules/esm/loader.js */
 export interface ModuleLoader {
   loadCache: LoadCache
   import(specifier: string, parentURL: string, importAttributes: ImportAttributes): Promise<any>
   register(specifier: string | URL, parentURL?: string | URL, data?: any, transferList?: any[]): void
-  getModuleJob(specifier: string, parentURL: string, importAttributes: ImportAttributes): Promise<ModuleJob>
-  getModuleJobSync(specifier: string, parentURL: string, importAttributes: ImportAttributes): ModuleJob
+  getModuleJobForImport(specifier: string, parentURL: string, importAttributes: ImportAttributes): Promise<ModuleJob>
   resolve(originalSpecifier: string, parentURL: string, importAttributes: ImportAttributes): Promise<ResolveResult>
   resolveSync(originalSpecifier: string, parentURL: string, importAttributes: ImportAttributes): ResolveResult
   load(specifier: string, context: Pick<LoadHookContext, 'format' | 'importAttributes'>): Promise<LoadResult>
-  loadSync(specifier: string, context: Pick<LoadHookContext, 'format' | 'importAttributes'>): LoadResult
 }

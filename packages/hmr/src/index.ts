@@ -1,4 +1,4 @@
-import { Context, EffectScope, Plugin, Schema, Service } from 'cordis'
+import { Context, Plugin, Schema, Service } from 'cordis'
 import { Dict, makeArray } from 'cosmokit'
 import { ModuleJob, ModuleLoader } from 'cordis/loader'
 import { FSWatcher, watch, WatchOptions } from 'chokidar'
@@ -93,7 +93,7 @@ class Watcher extends Service {
     })
 
     // files independent from any plugins will trigger a full reload
-    const mainJob = await loader.internal!.getModuleJob('cordis/worker', import.meta.url, {})!
+    const mainJob = await loader.internal!.getModuleJobForImport('cordis/worker', import.meta.url, {})!
     this.externals = await loadDependencies(mainJob)
     const partialReload = this.ctx.debounce(() => this.partialReload(), this.config.debounce)
 
