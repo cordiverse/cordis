@@ -203,6 +203,10 @@ export class EffectScope<C extends Context = Context> {
     if (this._error) throw this._error
   }
 
+  then(onFulfilled: () => any, onRejected?: (reason: any) => any) {
+    return this.wait().then(onFulfilled, onRejected)
+  }
+
   async restart() {
     this.active = false
     this.active = true

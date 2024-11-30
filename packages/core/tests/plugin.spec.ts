@@ -50,22 +50,22 @@ describe('Plugin', () => {
 
     expect(inspect(root)).to.equal('Context <root>')
 
-    root.plugin((ctx) => {
+    await root.plugin((ctx) => {
       expect(inspect(ctx)).to.equal('Context <root>')
     })
 
-    root.plugin(function foo(ctx) {
+    await root.plugin(function foo(ctx) {
       expect(inspect(ctx)).to.equal('Context <foo>')
     })
 
-    root.plugin({
+    await root.plugin({
       name: 'bar',
       apply: (ctx) => {
         expect(inspect(ctx)).to.equal('Context <bar>')
       },
     })
 
-    root.plugin(class Qux {
+    await root.plugin(class Qux {
       constructor(ctx: Context) {
         expect(inspect(ctx)).to.equal('Context <Qux>')
       }

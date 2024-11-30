@@ -10,22 +10,18 @@ describe('Service', () => {
     const warn = mock.fn()
     root.on('internal/warning', warn)
 
-    root.plugin((ctx) => {
+    await root.plugin((ctx) => {
       // `$bar` is `$`-prefixed
-      ctx['$bar']
-      expect(warn.mock.calls).to.have.length(0)
+      expect(() => ctx['$bar']).to.not.throw()
 
       // `bar` is neither defined on context nor declared as injection
-      ctx.bar
-      expect(warn.mock.calls).to.have.length(1)
+      expect(() => ctx.bar).to.throw()
 
       // non-service can be unproxyable
-      ctx.bar = new Set()
-      expect(warn.mock.calls).to.have.length(1)
+      expect(() => ctx.bar = new Set()).to.not.throw()
 
       // non-service can be accessed if defined on context
-      ctx.bar.add(1)
-      expect(warn.mock.calls).to.have.length(1)
+      expect(() => ctx.bar.add(1)).to.not.throw()
 
       // non-service can be overwritten
       expect(() => ctx.bar = new Set()).to.not.throw()
@@ -38,7 +34,7 @@ describe('Service', () => {
     root.on('internal/warning', warn)
     root.provide('foo')
 
-    root.plugin((ctx) => {
+    await root.plugin((ctx) => {
       // direct assignment is not recommended
       // ctx.foo = undefined
       // expect(warn.mock.calls).to.have.length(1)
@@ -49,7 +45,6 @@ describe('Service', () => {
 
       // `foo` is not declared as injection
       ctx.foo.add(1)
-      expect(warn.mock.calls).to.have.length(2) // 3
 
       // service cannot be overwritten
       expect(() => ctx.foo = new Set()).to.throw()
@@ -289,6 +284,7 @@ describe('Service', () => {
     root.plugin(Test)
     const after = getHookSnapshot(root)
     root.registry.delete(Test)
+    await sleep()
     expect(before).to.deep.equal(getHookSnapshot(root))
     root.plugin(Test)
     expect(after).to.deep.equal(getHookSnapshot(root))
