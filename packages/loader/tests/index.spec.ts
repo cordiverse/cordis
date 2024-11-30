@@ -1,17 +1,26 @@
 import { expect } from 'chai'
 import { Context } from '@cordisjs/core'
 import MockLoader from './utils'
+import { Mock } from 'node:test'
 
 describe('loader: basic support', () => {
   const root = new Context()
-  root.plugin(MockLoader)
-  const loader = root.loader as unknown as MockLoader
 
-  const foo = loader.mock('foo', (ctx: Context) => ctx.on('internal/update', () => true))
-  const bar = loader.mock('bar', (ctx: Context) => ctx.on('internal/update', () => true))
-  const qux = loader.mock('qux', (ctx: Context) => ctx.on('internal/update', () => true))
+  let loader!: MockLoader
+  let foo!: Mock<Function>
+  let bar!: Mock<Function>
+  let qux!: Mock<Function>
 
-  before(() => loader.start())
+  before(async () => {
+    await root.plugin(MockLoader)
+    loader = root.loader as any
+
+    foo = loader.mock('foo', (ctx: Context) => ctx.on('internal/update', () => true))
+    bar = loader.mock('bar', (ctx: Context) => ctx.on('internal/update', () => true))
+    qux = loader.mock('qux', (ctx: Context) => ctx.on('internal/update', () => true))
+
+    await loader.start()
+  })
 
   it('loader initiate', async () => {
     await loader.read([{

@@ -35,17 +35,18 @@ export interface LoggerService extends Pick<Logger, Logger.Type | 'extend'> {
 export class LoggerService extends Service {
   constructor(ctx: Context) {
     super(ctx, 'logger')
+    const self = this
 
     ctx.on('internal/info', function (format, ...args) {
-      this.logger('app').info(format, ...args)
+      self('app').info(format, ...args)
     })
 
     ctx.on('internal/error', function (format, ...args) {
-      this.logger('app').error(format, ...args)
+      self('app').error(format, ...args)
     })
 
     ctx.on('internal/warning', function (format, ...args) {
-      this.logger('app').warn(format, ...args)
+      self('app').warn(format, ...args)
     })
   }
 

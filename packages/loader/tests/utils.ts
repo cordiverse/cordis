@@ -1,10 +1,10 @@
 import { Dict } from 'cosmokit'
 import { Context, EffectScope, Plugin } from '@cordisjs/core'
-import { EntryOptions, Group, Loader, LoaderFile } from '../src/index.js'
+import { EntryOptions, Group, Loader, LoaderFile } from '../src'
 import { Mock, mock } from 'node:test'
 import { expect } from 'chai'
 
-declare module '../src/index.js' {
+declare module '../src' {
   interface Loader {
     mock<F extends Function>(name: string, plugin: F): Mock<F>
     expectEnable(plugin: any, config?: any): void

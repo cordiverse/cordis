@@ -7,7 +7,7 @@ export class EntryGroup<C extends Context = Context> {
 
   public data: EntryOptions[] = []
 
-  constructor(public ctx: C, public tree: EntryTree) {
+  constructor(public ctx: C, public tree: EntryTree<C>) {
     const entry = ctx.scope.entry
     if (entry) entry.subgroup = this
   }
@@ -18,7 +18,7 @@ export class EntryGroup<C extends Context = Context> {
 
   async create(options: Omit<EntryOptions, 'id'>) {
     const id = this.tree.ensureId(options)
-    const entry = this.tree.store[id] ??= new Entry(this.ctx.loader)
+    const entry: Entry<C> = this.tree.store[id] ??= new Entry(this.ctx.loader)
     // Entry may be moved from another group,
     // so we need to update the parent reference.
     entry.parent = this

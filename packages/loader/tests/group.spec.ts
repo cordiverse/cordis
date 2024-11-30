@@ -1,19 +1,25 @@
-import { mock } from 'node:test'
+import { Mock, mock } from 'node:test'
 import { expect } from 'chai'
 import { Context } from '@cordisjs/core'
 import MockLoader from './utils'
 
 describe('group management: basic support', () => {
   const root = new Context()
-  root.plugin(MockLoader)
-  const loader = root.loader as unknown as MockLoader
-
   const dispose = mock.fn()
-  const foo = loader.mock('foo', (ctx: Context) => {
-    ctx.on('dispose', dispose)
-  })
 
-  before(() => loader.start())
+  let loader!: MockLoader
+  let foo!: Mock<Function>
+
+  before(async () => {
+    await root.plugin(MockLoader)
+    loader = root.loader as any
+
+    foo = loader.mock('foo', (ctx: Context) => {
+      ctx.on('dispose', dispose)
+    })
+
+    await loader.start()
+  })
 
   beforeEach(() => {
     foo.mock.resetCalls()
@@ -40,6 +46,8 @@ describe('group management: basic support', () => {
       }],
     }, outer)
 
+    await loader.expectScope(outer)
+    await loader.expectScope(inner)
     expect(foo.mock.calls).to.have.length(2)
     expect(dispose.mock.calls).to.have.length(0)
     expect([...loader.entries()]).to.have.length(4)
@@ -72,6 +80,7 @@ describe('group management: basic support', () => {
   it('enable outer', async () => {
     await loader.update(outer, { disabled: null })
 
+    await new Promise((resolve) => setTimeout(resolve, 0))
     expect(foo.mock.calls).to.have.length(2)
     expect(dispose.mock.calls).to.have.length(0)
     expect([...loader.entries()]).to.have.length(4)
@@ -80,15 +89,21 @@ describe('group management: basic support', () => {
 
 describe('group management: transfer', () => {
   const root = new Context()
-  root.plugin(MockLoader)
-  const loader = root.loader as unknown as MockLoader
-
   const dispose = mock.fn()
-  const foo = loader.mock('foo', (ctx: Context) => {
-    ctx.on('dispose', dispose)
-  })
 
-  before(() => loader.start())
+  let loader!: MockLoader
+  let foo!: Mock<Function>
+
+  before(async () => {
+    await root.plugin(MockLoader)
+    loader = root.loader as any
+
+    foo = loader.mock('foo', (ctx: Context) => {
+      ctx.on('dispose', dispose)
+    })
+
+    await loader.start()
+  })
 
   beforeEach(() => {
     foo.mock.resetCalls()
