@@ -1,1 +1,1 @@
-# @cordisjs/schema
+# @cordisjs/plugin-schema

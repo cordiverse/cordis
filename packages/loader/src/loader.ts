@@ -47,7 +47,6 @@ export namespace Loader {
 }
 
 export abstract class Loader<C extends Context = Context> extends ImportTree<C> {
-  // process
   public envData = process.env.CORDIS_SHARED
     ? JSON.parse(process.env.CORDIS_SHARED)
     : { startTime: Date.now() }
