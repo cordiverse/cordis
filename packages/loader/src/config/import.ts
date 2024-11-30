@@ -50,7 +50,6 @@ export class ImportTree<C extends Context = Context> extends EntryTree<C> {
     } else {
       await this._init(baseDir, options)
     }
-    this.ctx.provide('baseDir', baseDir, true)
   }
 
   private async _init(baseDir: string, options: Loader.Config) {

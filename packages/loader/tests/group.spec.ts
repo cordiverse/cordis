@@ -176,3 +176,66 @@ describe('group management: transfer', () => {
     expect([...loader.entries()]).to.have.length(4)
   })
 })
+
+describe('group management: intercept', () => {
+  const root = new Context()
+  const callback = mock.fn()
+
+  let loader!: MockLoader
+
+  before(async () => {
+    await root.plugin(MockLoader)
+    loader = root.loader as any
+    loader.mock('foo', (ctx: Context) => {
+      callback(ctx[Context.intercept])
+    })
+    await loader.start()
+  })
+
+  beforeEach(() => {
+    callback.mock.resetCalls()
+  })
+
+  let outer!: string
+  let inner!: string
+  let id!: string
+
+  it('initialize', async () => {
+    outer = await loader.create({
+      name: 'cordis/group',
+      group: true,
+      intercept: {
+        foo: {
+          a: 1,
+        },
+      },
+      config: [],
+    })
+
+    inner = await loader.create({
+      name: 'cordis/group',
+      group: true,
+      intercept: {
+        foo: {
+          b: 2,
+        },
+      },
+      config: [],
+    }, outer)
+    
+    id = await loader.create({
+      name: 'foo',
+      intercept: {
+        foo: {
+          c: 3,
+        },
+      },
+    }, inner)
+
+    expect(callback.mock.calls).to.have.length(1)
+    const intercept = callback.mock.calls[0].arguments[0]
+    expect(intercept.foo).to.deep.equal({ c: 3 })
+    expect(Object.getPrototypeOf(intercept).foo).to.deep.equal({ b: 2 })
+    expect(Object.getPrototypeOf(Object.getPrototypeOf(intercept)).foo).to.deep.equal({ a: 1 })
+  })
+})

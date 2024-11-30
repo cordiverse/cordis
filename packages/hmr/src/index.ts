@@ -125,7 +125,7 @@ class HMR extends Service {
   }
 
   async stop() {
-    await this.watcher.close()
+    await this.watcher?.close()
   }
 
   async getLinked(filename: string) {
