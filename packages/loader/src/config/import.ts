@@ -77,10 +77,6 @@ export class ImportTree<C extends Context = Context> extends EntryTree<C> {
     }
     throw new Error('config file not found')
   }
-
-  async [Service.setup]() {
-    await this.start()
-  }
 }
 
 export namespace Import {
@@ -94,7 +90,7 @@ export class Import extends ImportTree {
     super(ctx)
   }
 
-  async start() {
+  async [Service.setup]() {
     const { url } = this.config
     const filename = fileURLToPath(new URL(url, this.ctx.scope.entry!.parent.tree.url))
     const ext = extname(filename)
@@ -103,6 +99,6 @@ export class Import extends ImportTree {
     }
     this.file = new LoaderFile(filename, LoaderFile.writable[ext])
     this.file.ref(this)
-    await super.start()
+    await this.start()
   }
 }

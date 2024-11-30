@@ -56,7 +56,7 @@ export class EffectScope<C extends Context = Context> {
     public config: C['config'],
     public inject: Dict<Inject.Meta>,
     public runtime: Plugin.Runtime | null,
-    private getOuterLines: () => string[],
+    private getOuterStack: () => Iterable<string>,
   ) {
     if (parent.scope) {
       this.uid = parent.registry.counter
@@ -167,7 +167,7 @@ export class EffectScope<C extends Context = Context> {
         } else {
           await this.runtime!.callback(this.ctx, this.config)
         }
-      }, this.getOuterLines)
+      }, 2, this.getOuterStack)
     } catch (reason) {
       // the registry impl guarantees that the error is non-null
       this.context.emit(this.ctx, 'internal/error', reason)

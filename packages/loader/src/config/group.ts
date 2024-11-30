@@ -2,14 +2,18 @@ import { Context, Service } from '@cordisjs/core'
 import { Entry, EntryOptions } from './entry.ts'
 import { EntryTree } from './tree.ts'
 
-export class EntryGroup {
+export class EntryGroup<C extends Context = Context> {
   static readonly key = Symbol.for('cordis.group')
 
   public data: EntryOptions[] = []
 
-  constructor(public ctx: Context, public tree: EntryTree) {
+  constructor(public ctx: C, public tree: EntryTree) {
     const entry = ctx.scope.entry
     if (entry) entry.subgroup = this
+  }
+
+  get context(): Context {
+    return this.ctx
   }
 
   async create(options: Omit<EntryOptions, 'id'>) {
@@ -34,7 +38,7 @@ export class EntryGroup {
     entry.scope?.dispose()
     this.unlink(entry.options)
     delete this.tree.store[id]
-    this.ctx.emit('loader/partial-dispose', entry, entry.options, false)
+    this.context.emit('loader/partial-dispose', entry, entry.options, false)
   }
 
   async update(config: EntryOptions[]) {
@@ -48,7 +52,7 @@ export class EntryGroup {
     await Promise.all(ids.map(async (id) => {
       if (newMap[id]) {
         await this.create(newMap[id]).catch((error) => {
-          this.ctx.emit(this.ctx, 'internal/error', error)
+          this.context.emit(this.ctx, 'internal/error', error)
         })
       } else {
         this.remove(id)

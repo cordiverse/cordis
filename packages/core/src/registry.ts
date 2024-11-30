@@ -7,6 +7,11 @@ function isApplicable(object: Plugin) {
   return object && typeof object === 'object' && typeof object.apply === 'function'
 }
 
+function buildOuterStack() {
+  const outerError = new Error()
+  return () => outerError.stack!.split('\n').slice(3)
+}
+
 export type Inject = string[] | Dict<Inject.Meta>
 
 export function Inject(inject: Inject) {
@@ -165,7 +170,7 @@ class Registry<C extends Context = Context> {
     return this.plugin({ inject, apply: callback, name: callback.name })
   }
 
-  plugin(plugin: Plugin<C>, config?: any, outerError = new Error()) {
+  plugin(plugin: Plugin<C>, config?: any, getOuterStack: () => Iterable<string> = buildOuterStack()) {
     // check if it's a valid plugin
     const callback = this.resolve(plugin)
     if (!callback) throw new Error('invalid plugin, expect function or object with an "apply" method, received ' + typeof plugin)
@@ -179,7 +184,7 @@ class Registry<C extends Context = Context> {
       this._internal.set(callback, runtime)
     }
 
-    return new EffectScope(this.ctx, config, Inject.resolve(plugin.inject), runtime, () => outerError.stack!.split('\n').slice(2))
+    return new EffectScope(this.ctx, config, Inject.resolve(plugin.inject), runtime, getOuterStack)
   }
 }
 

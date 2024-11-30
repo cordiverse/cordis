@@ -215,7 +215,7 @@ export function createCallable(name: string, proto: {}, tracker: Tracker) {
   return Object.setPrototypeOf(self, proto)
 }
 
-export async function composeError<T>(callback: () => Promise<T>, getOuterLines: () => string[]) {
+export async function composeError<T>(callback: () => Promise<T>, innerOffset: number, getOuterStack: () => Iterable<string>) {
   // force async stack trace
   await Promise.resolve()
 
@@ -229,7 +229,7 @@ export async function composeError<T>(callback: () => Promise<T>, getOuterLines:
     if (typeof error?.stack !== 'string') {
       const outerError = new Error(error)
       const lines = outerError.stack!.split('\n')
-      lines.splice(1, Infinity, ...getOuterLines())
+      lines.splice(1, Infinity, ...getOuterStack())
       outerError.stack = lines.join('\n')
       throw outerError
     }
@@ -239,8 +239,8 @@ export async function composeError<T>(callback: () => Promise<T>, getOuterLines:
     const index = lines.indexOf(innerLines[2])
     if (index === -1) throw error
 
-    lines.splice(index - 1, Infinity)
-    lines.push(...getOuterLines())
+    lines.splice(index - innerOffset, Infinity)
+    lines.push(...getOuterStack())
     error.stack = lines.join('\n')
     throw error
   }

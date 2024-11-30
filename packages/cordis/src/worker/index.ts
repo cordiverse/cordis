@@ -33,13 +33,14 @@ function getInternal() {
 
 export async function start(options: Options) {
   const ctx = new Context()
-  if (options.logger) ctx.plugin(logger, options.logger)
-  if (options.daemon) ctx.plugin(daemon, options.daemon)
-  ctx.plugin(Loader, {
+  if (options.logger) await ctx.plugin(logger, options.logger)
+  if (options.daemon) await ctx.plugin(daemon, options.daemon)
+  await ctx.plugin(Loader, {
     ...options,
     filename: process.env.CORDIS_LOADER_ENTRY,
   })
   if (process.execArgv.includes('--expose-internals')) {
     ctx.loader.internal = getInternal()
   }
+  await ctx.loader.start()
 }

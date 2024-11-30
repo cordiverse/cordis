@@ -7,7 +7,7 @@ export abstract class EntryTree<C extends Context = Context> {
   static readonly sep = ':'
 
   public url!: string
-  public root: EntryGroup
+  public root: EntryGroup<C>
   public store: Dict<Entry<C>> = Object.create(null)
 
   constructor(public ctx: C) {

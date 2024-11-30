@@ -95,7 +95,7 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
       // case 3: scope is disposed on behalf of plugin deletion (such as plugin hmr)
       // self-dispose: ctx.scope.dispose() -> scope / runtime dispose -> delete(plugin)
       // plugin hmr: delete(plugin) -> runtime dispose -> scope dispose
-      if (!ctx.registry.has(scope.runtime?.plugin!)) return
+      if (!ctx.registry.has(scope.runtime!.callback)) return
 
       this.showLog(scope.entry, 'unload')
 

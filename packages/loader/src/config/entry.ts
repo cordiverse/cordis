@@ -1,4 +1,4 @@
-import { Context, EffectScope } from '@cordisjs/core'
+import { composeError, Context, EffectScope } from '@cordisjs/core'
 import { isNullable } from 'cosmokit'
 import { Loader } from '../loader.ts'
 import { EntryGroup } from './group.ts'
@@ -38,9 +38,9 @@ export class Entry<C extends Context = Context> {
   public ctx: C
   public scope?: EffectScope<C>
   public suspend = false
-  public parent!: EntryGroup
+  public parent!: EntryGroup<C>
   public options!: EntryOptions
-  public subgroup?: EntryGroup
+  public subgroup?: EntryGroup<C>
   public subtree?: EntryTree<C>
 
   _initTask?: Promise<void>
@@ -93,7 +93,7 @@ export class Entry<C extends Context = Context> {
     if (this.scope && 'config' in options) {
       // step 2: update fork (when options.config is updated)
       this.suspend = true
-      this.scope.update(this._resolveConfig(this.scope.runtime?.plugin))
+      this.scope.update(this._resolveConfig(this.scope.runtime?.callback))
     } else if (this.subgroup && 'disabled' in options) {
       // step 3: check children (when options.disabled is updated)
       const tree = this.subtree ?? this.parent.tree
@@ -108,7 +108,7 @@ export class Entry<C extends Context = Context> {
   }
 
   check() {
-    return !this.disabled && !this.parent.ctx.bail('loader/entry-check', this)
+    return !this.disabled && !this.context.bail('loader/entry-check', this)
   }
 
   async refresh() {
@@ -150,18 +150,30 @@ export class Entry<C extends Context = Context> {
     }
   }
 
+  getOuterStack = () => {
+    let entry: Entry<C> | undefined = this
+    const result: string[] = []
+    do {
+      result.push(`    at ${entry.parent.tree.url}#${entry.options.id}`)
+      entry = entry.parent.ctx.scope.entry
+    } while (entry)
+    return result
+  }
+
   private async _init() {
     let exports: any
     try {
-      exports = await this.parent.tree.import(this.options.name)
+      exports = await composeError(async () => {
+        return this.parent.tree.import(this.options.name)
+      }, 2, this.getOuterStack)
     } catch (error) {
       this.context.emit(this.ctx, 'internal/error', error)
       return
     }
     const plugin = this.loader.unwrapExports(exports)
     this.patch()
-    this.scope = this.ctx.plugin(plugin, this._resolveConfig(plugin))
     this.loader.showLog(this, 'apply')
+    this.scope = this.ctx.registry.plugin(plugin, this._resolveConfig(plugin), this.getOuterStack)
     this._initTask = undefined
   }
 }
