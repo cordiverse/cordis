@@ -55,6 +55,7 @@ export const symbols = {
   intercept: Symbol.for('cordis.intercept') as typeof Context.intercept,
 
   // service symbols
+  check: Symbol.for('cordis.check') as typeof Service.check,
   setup: Symbol.for('cordis.setup') as typeof Service.setup,
   invoke: Symbol.for('cordis.invoke') as typeof Service.invoke,
   extend: Symbol.for('cordis.extend') as typeof Service.extend,
@@ -74,12 +75,6 @@ export function isConstructor(func: any): func is new (...args: any) => any {
   // polyfilled AsyncGeneratorFunction === Function
   if (AsyncGeneratorFunction !== Function && func instanceof AsyncGeneratorFunction) return false
   return true
-}
-
-export function resolveConfig(plugin: any, config: any) {
-  const schema = plugin['Config'] || plugin['schema']
-  if (schema && plugin['schema'] !== false) config = schema(config)
-  return config ?? {}
 }
 
 export function isUnproxyable(value: any) {

@@ -1,7 +1,7 @@
-import { isNullable } from 'cosmokit'
+import { Dict, isNullable } from 'cosmokit'
 import { Context } from './context'
-import { Plugin } from './registry'
-import { DisposableList } from './utils'
+import { Inject, Plugin } from './registry'
+import { DisposableList, symbols } from './utils'
 
 declare module './context' {
   export interface Context {
@@ -51,7 +51,13 @@ export class EffectScope<C extends Context = Context> {
   private _error: any
   private _pending: Promise<void> | undefined
 
-  constructor(public parent: C, public config: C['config'], private apply: (ctx: C, config: any) => any, public runtime?: Plugin.Runtime) {
+  constructor(
+    public parent: C,
+    public config: C['config'],
+    private apply: (ctx: C, config: any) => any,
+    public inject: Dict<Inject.Meta>,
+    public runtime?: Plugin.Runtime,
+  ) {
     if (parent.scope) {
       this.uid = parent.registry.counter
       this.ctx = this.context = parent.extend({ scope: this })
@@ -148,13 +154,6 @@ export class EffectScope<C extends Context = Context> {
     }
   }
 
-  private _checkInject() {
-    if (!this.runtime) return true
-    return Object.entries(this.runtime.inject).every(([name, inject]) => {
-      return !inject.required || !isNullable(this.ctx.reflect.get(name, true))
-    })
-  }
-
   private async _reload() {
     try {
       await this.apply(this.ctx, this.config)
@@ -180,6 +179,23 @@ export class EffectScope<C extends Context = Context> {
     this._updateStatus(() => {
       this._pending = this._active ? this._reload() : undefined
     })
+  }
+
+  private _checkInject() {
+    try {
+      return Object.entries(this.inject).every(([name, inject]) => {
+        if (!inject.required) return true
+        const service = this.ctx.reflect.get(name, true)
+        if (isNullable(service)) return false
+        if (!service[symbols.check]) return true
+        return service[symbols.check](this.ctx)
+      })
+    } catch (error) {
+      this.context.emit(this.ctx, 'internal/error', error)
+      this._error = error
+      this._active = false
+      return false
+    }
   }
 
   get active() {

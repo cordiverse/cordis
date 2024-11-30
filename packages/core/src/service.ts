@@ -3,6 +3,7 @@ import { Context } from './context'
 import { createCallable, joinPrototype, symbols, Tracker } from './utils'
 
 export abstract class Service<C extends Context = Context> {
+  static readonly check: unique symbol = symbols.check as any
   static readonly setup: unique symbol = symbols.setup as any
   static readonly invoke: unique symbol = symbols.invoke as any
   static readonly extend: unique symbol = symbols.extend as any

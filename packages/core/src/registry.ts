@@ -1,7 +1,7 @@
 import { defineProperty, Dict } from 'cosmokit'
 import { Context } from './context'
 import { EffectScope } from './scope'
-import { DisposableList, isConstructor, resolveConfig, symbols, withProps } from './utils'
+import { DisposableList, isConstructor, symbols, withProps } from './utils'
 
 function isApplicable(object: Plugin) {
   return object && typeof object === 'object' && typeof object.apply === 'function'
@@ -30,8 +30,9 @@ export function Inject(inject: Inject) {
 }
 
 export namespace Inject {
-  export interface Meta {
+  export interface Meta<T = any> {
     required: boolean
+    config?: T
   }
 
   export function resolve(inject: Inject | null | undefined) {
@@ -39,14 +40,7 @@ export namespace Inject {
     if (Array.isArray(inject)) {
       return Object.fromEntries(inject.map(name => [name, { required: true }]))
     }
-    const { required, optional, ...rest } = inject
-    if (Array.isArray(required)) {
-      Object.assign(rest, Object.fromEntries(required.map(name => [name, { required: true }])))
-    }
-    if (Array.isArray(optional)) {
-      Object.assign(rest, Object.fromEntries(optional.map(name => [name, { required: false }])))
-    }
-    return rest
+    return inject
   }
 }
 
@@ -83,8 +77,6 @@ export namespace Plugin {
 
   export interface Runtime<C extends Context = Context> {
     name?: string
-    schema: any
-    inject: Dict<Inject.Meta>
     scopes: DisposableList<EffectScope<C>>
     plugin: Plugin
   }
@@ -92,9 +84,7 @@ export namespace Plugin {
   export function resolve<C extends Context = Context>(plugin: Plugin<C>): Runtime<C> {
     let name = plugin.name
     if (name === 'apply') name = undefined
-    const schema = plugin['Config'] || plugin['schema']
-    const inject = Inject.resolve(plugin['using'] || plugin['inject'])
-    return { name, schema, inject, plugin, scopes: new DisposableList() }
+    return { name, plugin, scopes: new DisposableList() }
   }
 }
 
@@ -202,7 +192,6 @@ class Registry<C extends Context = Context> {
     return new EffectScope(this.ctx, config, async (ctx, config) => {
       const innerError = new Error()
       try {
-        config = resolveConfig(plugin, config)
         if (typeof plugin !== 'function') {
           await plugin.apply(ctx, config)
         } else if (isConstructor(plugin)) {
@@ -237,7 +226,7 @@ class Registry<C extends Context = Context> {
         error.stack = lines.join('\n')
         throw error
       }
-    }, runtime)
+    }, Inject.resolve(plugin.inject), runtime)
   }
 }
 

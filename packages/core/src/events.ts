@@ -1,7 +1,7 @@
 import { Awaitable, deepEqual, defineProperty, Promisify } from 'cosmokit'
 import { Context } from './context'
 import { EffectScope, ScopeStatus } from './scope'
-import { getTraceable, symbols } from './utils'
+import { symbols } from './utils'
 import ReflectService from './reflect'
 
 export function isBailed(value: any) {
@@ -74,8 +74,8 @@ class EventsService {
 
     ctx.scope.leak(this.on('internal/before-service', function (this: Context, name) {
       for (const runtime of this.registry.values()) {
-        if (!runtime.inject[name]?.required) continue
         for (const scope of runtime.scopes) {
+          if (!scope.inject[name]?.required) continue
           if (!this[symbols.filter](scope.ctx)) continue
           scope.active = false
         }
@@ -84,8 +84,8 @@ class EventsService {
 
     ctx.scope.leak(this.on('internal/service', function (this: Context, name) {
       for (const runtime of this.registry.values()) {
-        if (!runtime.inject[name]?.required) continue
         for (const scope of runtime.scopes) {
+          if (!scope.inject[name]?.required) continue
           if (!this[symbols.filter](scope.ctx)) continue
           scope.active = true
         }
@@ -108,7 +108,7 @@ class EventsService {
       let scope = this.scope
       while (1) {
         if (scope === provider) return true
-        for (const key in scope.runtime?.inject ?? {}) {
+        for (const key in scope.inject ?? {}) {
           if (visited.has(key)) continue
           visited.add(key)
           if (name === ReflectService.resolveInject(scope.ctx, key)[0]) return true
@@ -129,7 +129,6 @@ class EventsService {
   }
 
   filterHooks(hooks: Hook[], thisArg?: object) {
-    thisArg = getTraceable(this.ctx, thisArg)
     const filter = thisArg?.[Context.filter]
     return hooks.slice().filter((hook) => {
       return hook.global || !filter || filter.call(thisArg, hook.ctx)
