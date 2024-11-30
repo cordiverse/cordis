@@ -214,3 +214,34 @@ export function createCallable(name: string, proto: {}, tracker: Tracker) {
   defineProperty(self, 'name', name)
   return Object.setPrototypeOf(self, proto)
 }
+
+export async function composeError<T>(callback: () => Promise<T>, getOuterLines: () => string[]) {
+  // force async stack trace
+  await Promise.resolve()
+
+  try {
+    return await callback()
+  } catch (error: any) {
+    const innerError = new Error()
+    const innerLines = innerError.stack!.split('\n')
+
+    // malformed error
+    if (typeof error?.stack !== 'string') {
+      const outerError = new Error(error)
+      const lines = outerError.stack!.split('\n')
+      lines.splice(1, Infinity, ...getOuterLines())
+      outerError.stack = lines.join('\n')
+      throw outerError
+    }
+
+    // long stack trace
+    const lines: string[] = error.stack.split('\n')
+    const index = lines.indexOf(innerLines[2])
+    if (index === -1) throw error
+
+    lines.splice(index - 1, Infinity)
+    lines.push(...getOuterLines())
+    error.stack = lines.join('\n')
+    throw error
+  }
+}

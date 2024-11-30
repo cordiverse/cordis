@@ -99,28 +99,12 @@ describe('Service', () => {
     root.inject(['foo'], callback)
     expect(callback.mock.calls).to.have.length(0)
 
+    // the scope should be blocked by `start` method
     root.plugin(Foo)
     await sleep()
     expect(callback.mock.calls).to.have.length(0)
 
     root.emit('custom-event')
-    await sleep()
-    expect(callback.mock.calls).to.have.length(1)
-  })
-
-  it('immediate service', async () => {
-    class Foo extends Service {
-      constructor(ctx: Context) {
-        super(ctx, 'foo')
-      }
-    }
-
-    const root = new Context()
-    const callback = mock.fn(noop)
-    root.inject(['foo'], callback)
-    expect(callback.mock.calls).to.have.length(0)
-
-    root.plugin(Foo)
     await sleep()
     expect(callback.mock.calls).to.have.length(1)
   })
@@ -147,19 +131,19 @@ describe('Service', () => {
     root.on('internal/warning', warning)
     root.set('counter', new Counter(root))
 
-    root.plugin(Foo)
-    await sleep()
+    await root.plugin(Foo)
     root.foo.increase()
     expect(root.foo.value).to.equal(1)
     expect(warning.mock.calls).to.have.length(0)
 
-    const fork = root.inject(['foo'], (ctx) => {
+    const scope = root.inject(['foo'], (ctx) => {
       root.foo.increase()
       expect(ctx.foo.value).to.equal(2)
       expect(warning.mock.calls).to.have.length(0)
     })
 
-    fork.dispose()
+    await scope
+    await scope.dispose()
     root.foo.increase()
     expect(root.foo.value).to.equal(3)
     expect(warning.mock.calls).to.have.length(0)
@@ -183,17 +167,17 @@ describe('Service', () => {
     const root = new Context()
     root.set('counter', new Counter(root))
 
-    root.plugin(Foo)
-    await sleep()
+    await root.plugin(Foo)
     root.foo.increase()
     expect(root.foo.value).to.equal(1)
 
-    const fork = root.inject(['foo'], (ctx) => {
+    const scope = root.inject(['foo'], (ctx) => {
       root.foo.increase()
       expect(root.foo.value).to.equal(2)
     })
 
-    fork.dispose()
+    await scope
+    await scope.dispose()
     root.foo.increase()
     expect(root.foo.value).to.equal(3)
   })
@@ -256,11 +240,11 @@ describe('Service', () => {
     }
 
     const root = new Context()
-    root.isolate('foo').plugin(Foo)
+    await root.isolate('foo').plugin(Foo)
     expect(start.mock.calls).to.have.length(1)
     expect(stop.mock.calls).to.have.length(0)
 
-    root.isolate('foo').plugin(Foo)
+    await root.isolate('foo').plugin(Foo)
     expect(start.mock.calls).to.have.length(2)
     expect(stop.mock.calls).to.have.length(0)
 
@@ -281,7 +265,7 @@ describe('Service', () => {
 
     const root = new Context()
     const before = getHookSnapshot(root)
-    root.plugin(Test)
+    await root.plugin(Test)
     const after = getHookSnapshot(root)
     root.registry.delete(Test)
     await sleep()

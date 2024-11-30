@@ -53,16 +53,19 @@ describe('Isolation', () => {
     }
 
     const ctx1 = root.isolate('foo')
-    ctx1.plugin(plugin)
+    await ctx1.plugin(plugin)
     const ctx2 = root.isolate('foo')
-    ctx2.plugin(plugin)
+    await ctx2.plugin(plugin)
     expect(callback.mock.calls).to.have.length(0)
 
     root.foo = { bar: 100 }
+    await sleep()
     expect(callback.mock.calls).to.have.length(0)
     ctx1.foo = { bar: 200 }
+    await sleep()
     expect(callback.mock.calls).to.have.length(1)
     ctx2.foo = { bar: 300 }
+    await sleep()
     expect(callback.mock.calls).to.have.length(2)
     expect(dispose.mock.calls).to.have.length(0)
   })
@@ -82,9 +85,9 @@ describe('Isolation', () => {
 
     const label = Symbol('test')
     const ctx1 = root.isolate('foo', label)
-    ctx1.plugin(plugin)
+    await ctx1.plugin(plugin)
     const ctx2 = root.isolate('foo', label)
-    ctx2.plugin(plugin)
+    await ctx2.plugin(plugin)
     await sleep()
     expect(callback.mock.calls).to.have.length(0)
 
@@ -124,7 +127,7 @@ describe('Isolation', () => {
     const inner = mock.fn()
     root.on(event, outer)
     ctx.on(event, inner)
-    ctx.plugin(Foo)
+    await ctx.plugin(Foo)
 
     expect(outer.mock.calls).to.have.length(0)
     expect(inner.mock.calls).to.have.length(1)

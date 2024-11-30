@@ -8,9 +8,10 @@ describe('Disposables', () => {
   it('dispose by plugin', async () => {
     const root = new Context()
     const dispose = mock.fn()
-    const scope = root.plugin((ctx: Context) => {
+    const scope = root.plugin((ctx) => {
       ctx.effect(() => dispose)
     })
+    await scope
     expect(dispose.mock.calls).to.have.length(0)
     await scope.dispose()
     expect(dispose.mock.calls).to.have.length(1)
@@ -63,11 +64,11 @@ describe('Disposables', () => {
   })
 
   it('nested scopes', async () => {
-    const plugin = (ctx: Context) => {
+    const plugin = async (ctx: Context) => {
       ctx.on(event, callback)
-      ctx.plugin((ctx) => {
+      await ctx.plugin(async (ctx) => {
         ctx.on(event, callback)
-        ctx.plugin((ctx) => {
+        await ctx.plugin((ctx) => {
           ctx.on(event, callback)
         })
       })
@@ -79,6 +80,7 @@ describe('Disposables', () => {
     const scope = root.plugin(plugin)
 
     // 4 handlers by now
+    await scope
     expect(callback.mock.calls).to.have.length(0)
     expect(root.registry.size).to.equal(3)
     root.emit(event)
@@ -107,12 +109,12 @@ describe('Disposables', () => {
 
     const root = new Context()
     const before = getHookSnapshot(root)
-    root.plugin(plugin)
+    await root.plugin(plugin)
     const after = getHookSnapshot(root)
     root.registry.delete(plugin)
     await sleep()
     expect(before).to.deep.equal(getHookSnapshot(root))
-    root.plugin(plugin)
+    await root.plugin(plugin)
     expect(after).to.deep.equal(getHookSnapshot(root))
   })
 
@@ -123,7 +125,7 @@ describe('Disposables', () => {
       ctx.on('dispose', dispose)
     }
 
-    root.plugin(plugin)
+    await root.plugin(plugin)
     expect(dispose.mock.calls).to.have.length(0)
     expect(root.registry.delete(plugin)).to.be.ok
     await sleep()
@@ -144,7 +146,7 @@ describe('Disposables', () => {
       ctx.on('dispose', dispose)
     }
 
-    root.plugin(plugin)
+    await root.plugin(plugin)
     expect(dispose.mock.calls).to.have.length(0)
     expect(root.registry.delete(plugin)).to.be.ok
     // error is asynchronous

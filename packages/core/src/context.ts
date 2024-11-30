@@ -80,7 +80,7 @@ export class Context {
     this[symbols.intercept] = Object.create(null)
     const self: Context = new Proxy(this, ReflectService.handler)
     self.root = self
-    self.scope = new EffectScope(self, {}, () => {}, {})
+    self.scope = new EffectScope(self, {}, {}, null, () => [])
     self.reflect = new ReflectService(self)
     self.registry = new Registry(self)
     self.events = new EventsService(self)

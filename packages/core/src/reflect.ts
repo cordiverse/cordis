@@ -231,7 +231,10 @@ class ReflectService {
   bind<T extends Function>(callback: T) {
     return new Proxy(callback, {
       apply: (target, thisArg, args) => {
-        return target.apply(this.trace(thisArg), args.map(arg => this.trace(arg)))
+        return Reflect.apply(target, this.trace(thisArg), args.map(arg => this.trace(arg)))
+      },
+      construct: (target, args, newTarget) => {
+        return Reflect.construct(target, args.map(arg => this.trace(arg)), newTarget)
       },
     })
   }

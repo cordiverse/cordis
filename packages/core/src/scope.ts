@@ -1,7 +1,7 @@
 import { Dict, isNullable } from 'cosmokit'
 import { Context } from './context'
 import { Inject, Plugin } from './registry'
-import { DisposableList, symbols } from './utils'
+import { composeError, DisposableList, isConstructor, symbols } from './utils'
 
 declare module './context' {
   export interface Context {
@@ -54,9 +54,9 @@ export class EffectScope<C extends Context = Context> {
   constructor(
     public parent: C,
     public config: C['config'],
-    private apply: (ctx: C, config: any) => any,
     public inject: Dict<Inject.Meta>,
-    public runtime?: Plugin.Runtime,
+    public runtime: Plugin.Runtime | null,
+    private getOuterLines: () => string[],
   ) {
     if (parent.scope) {
       this.uid = parent.registry.counter
@@ -68,10 +68,10 @@ export class EffectScope<C extends Context = Context> {
         return async () => {
           this.uid = null
           this.context.emit('internal/plugin', this)
-          if (this.ctx.registry.has(runtime!.plugin)) {
+          if (this.ctx.registry.has(runtime!.callback)) {
             remove()
             if (!runtime!.scopes.length) {
-              this.ctx.registry.delete(runtime!.plugin)
+              this.ctx.registry.delete(runtime!.callback)
             }
           }
           this.active = false
@@ -156,7 +156,18 @@ export class EffectScope<C extends Context = Context> {
 
   private async _reload() {
     try {
-      await this.apply(this.ctx, this.config)
+      await composeError(async () => {
+        if (isConstructor(this.runtime!.callback)) {
+          // eslint-disable-next-line new-cap
+          const instance = new this.runtime!.callback(this.ctx, this.config)
+          for (const hook of instance?.[symbols.initHooks] ?? []) {
+            hook()
+          }
+          await instance?.[symbols.setup]?.()
+        } else {
+          await this.runtime!.callback(this.ctx, this.config)
+        }
+      }, this.getOuterLines)
     } catch (reason) {
       // the registry impl guarantees that the error is non-null
       this.context.emit(this.ctx, 'internal/error', reason)
@@ -212,7 +223,7 @@ export class EffectScope<C extends Context = Context> {
     })
   }
 
-  async wait() {
+  async _await() {
     while (this.pending) {
       await this.pending
     }
@@ -220,7 +231,7 @@ export class EffectScope<C extends Context = Context> {
   }
 
   then(onFulfilled: () => any, onRejected?: (reason: any) => any) {
-    return this.wait().then(onFulfilled, onRejected)
+    return this._await().then(onFulfilled, onRejected)
   }
 
   async restart() {

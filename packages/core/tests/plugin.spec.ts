@@ -4,44 +4,45 @@ import { mock } from 'node:test'
 import { inspect } from 'util'
 
 describe('Plugin', () => {
-  it('apply functional plugin', () => {
+  it('apply functional plugin', async () => {
     const root = new Context()
     const callback = mock.fn()
     const options = { foo: 'bar' }
-    root.plugin(callback, options)
+    await root.plugin(callback, options)
 
     expect(callback.mock.calls).to.have.length(1)
     expect(callback.mock.calls[0].arguments[1]).to.deep.equal(options)
   })
 
-  it('apply object plugin', () => {
+  it('apply object plugin', async () => {
     const root = new Context()
     const callback = mock.fn()
     const options = { bar: 'foo' }
     const plugin = { apply: callback }
-    root.plugin(plugin, options)
+    await root.plugin(plugin, options)
 
     expect(callback.mock.calls).to.have.length(1)
     expect(callback.mock.calls[0].arguments[1]).to.deep.equal(options)
   })
 
-  it('apply invalid plugin', () => {
+  it('apply invalid plugin', async () => {
     const root = new Context()
     expect(() => root.plugin(undefined as any)).to.throw()
     expect(() => root.plugin({} as any)).to.throw()
     expect(() => root.plugin({ apply: {} } as any)).to.throw()
   })
 
-  it('apply plugin when dispose', () => {
+  it('apply plugin when dispose', async () => {
     const root = new Context()
     const callback = mock.fn()
-    const fork = root.plugin((ctx) => {
+    const scope = root.plugin((ctx) => {
       ctx.on('dispose', () => {
         expect(() => ctx.plugin(callback)).to.throw('inactive context')
         expect(() => ctx.on('ready', () => {})).to.throw('inactive context')
       })
     })
-    fork.dispose()
+    await scope
+    await scope.dispose()
     expect(callback.mock.calls).to.have.length(0)
   })
 

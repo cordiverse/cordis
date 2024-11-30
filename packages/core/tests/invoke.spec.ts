@@ -39,7 +39,7 @@ describe('functional service', () => {
     }
 
     const root = new Context()
-    root.plugin(Foo, { a: 1 })
+    await root.plugin(Foo, { a: 1 })
 
     // access from context
     expect(root.foo()).to.deep.equal({ a: 1 })

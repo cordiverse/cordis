@@ -1,7 +1,7 @@
 import { defineProperty, Dict } from 'cosmokit'
 import { Context } from './context'
 import { EffectScope } from './scope'
-import { DisposableList, isConstructor, symbols, withProps } from './utils'
+import { DisposableList, symbols, withProps } from './utils'
 
 function isApplicable(object: Plugin) {
   return object && typeof object === 'object' && typeof object.apply === 'function'
@@ -78,13 +78,7 @@ export namespace Plugin {
   export interface Runtime<C extends Context = Context> {
     name?: string
     scopes: DisposableList<EffectScope<C>>
-    plugin: Plugin
-  }
-
-  export function resolve<C extends Context = Context>(plugin: Plugin<C>): Runtime<C> {
-    let name = plugin.name
-    if (name === 'apply') name = undefined
-    return { name, plugin, scopes: new DisposableList() }
+    callback: globalThis.Function
   }
 }
 
@@ -125,12 +119,9 @@ class Registry<C extends Context = Context> {
     return this._internal.size
   }
 
-  resolve(plugin: Plugin, assert: true): Function
-  resolve(plugin: Plugin, assert?: boolean): Function | undefined
-  resolve(plugin: Plugin, assert = false): Function | undefined {
+  resolve(plugin: Plugin): Function | undefined {
     if (typeof plugin === 'function') return plugin
     if (isApplicable(plugin)) return plugin.apply
-    if (assert) throw new Error('invalid plugin, expect function or object with an "apply" method, received ' + typeof plugin)
   }
 
   get(plugin: Plugin) {
@@ -170,63 +161,25 @@ class Registry<C extends Context = Context> {
     return this._internal.forEach(callback)
   }
 
-  using(inject: Inject, callback: Plugin.Function<C, void>) {
-    return this.inject(inject, callback)
-  }
-
   inject(inject: Inject, callback: Plugin.Function<C, void>) {
     return this.plugin({ inject, apply: callback, name: callback.name })
   }
 
   plugin(plugin: Plugin<C>, config?: any, outerError = new Error()) {
     // check if it's a valid plugin
-    const key = this.resolve(plugin, true)
+    const callback = this.resolve(plugin)
+    if (!callback) throw new Error('invalid plugin, expect function or object with an "apply" method, received ' + typeof plugin)
     this.ctx.scope.assertActive()
 
-    let runtime = this._internal.get(key)
+    let runtime = this._internal.get(callback)
     if (!runtime) {
-      runtime = Plugin.resolve<C>(plugin)
-      this._internal.set(key!, runtime)
+      let name = plugin.name
+      if (name === 'apply') name = undefined
+      runtime = { name, callback, scopes: new DisposableList() }
+      this._internal.set(callback, runtime)
     }
 
-    return new EffectScope(this.ctx, config, async (ctx, config) => {
-      const innerError = new Error()
-      try {
-        if (typeof plugin !== 'function') {
-          await plugin.apply(ctx, config)
-        } else if (isConstructor(plugin)) {
-          // eslint-disable-next-line new-cap
-          const instance = new plugin(ctx, config)
-          for (const hook of instance?.[symbols.initHooks] ?? []) {
-            hook()
-          }
-          await instance?.[symbols.setup]?.()
-        } else {
-          await plugin(ctx, config)
-        }
-      } catch (error: any) {
-        const outerLines = outerError.stack!.split('\n')
-        const innerLines = innerError.stack!.split('\n')
-
-        // malformed error
-        if (typeof error?.stack !== 'string') {
-          outerLines[0] = `Error: ${error}`
-          outerError.stack = outerLines.join('\n')
-          throw outerError
-        }
-
-        // long stack trace
-        const lines: string[] = error.stack.split('\n')
-        const index = lines.indexOf(innerLines[2])
-        if (index === -1) throw error
-
-        lines.splice(index - 1, Infinity)
-        // lines.push('    at Registry.plugin (<anonymous>)')
-        lines.push(...outerLines.slice(2))
-        error.stack = lines.join('\n')
-        throw error
-      }
-    }, Inject.resolve(plugin.inject), runtime)
+    return new EffectScope(this.ctx, config, Inject.resolve(plugin.inject), runtime, () => outerError.stack!.split('\n').slice(2))
   }
 }
 

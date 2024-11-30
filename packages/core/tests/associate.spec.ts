@@ -18,8 +18,9 @@ describe('Association', () => {
       }
     }
 
-    root.plugin(Foo)
+    await root.plugin(Foo)
     const scope = root.plugin(FooBar)
+    await scope
     expect(root.foo).to.be.instanceof(Foo)
     expect(root.foo.bar).to.be.instanceof(FooBar)
     expect(root.foo.qux).to.equal(1)
@@ -38,7 +39,7 @@ describe('Association', () => {
 
     root.provide('foo.bar')
     root.provide('foo.baz')
-    root.plugin(Foo)
+    await root.plugin(Foo)
     expect(root.foo).to.be.instanceof(Foo)
     root.foo.qux = 2
     root.foo.bar = 3
@@ -93,15 +94,15 @@ describe('Association', () => {
     }
 
     const root = new Context()
-    root.plugin(Foo)
+    await root.plugin(Foo)
 
-    root.inject(['foo'], (ctx) => {
+    await root.inject(['foo'], async (ctx) => {
       const session = ctx.foo.createSession()
       expect(session).to.be.instanceof(Session)
       expect(session.bar).to.be.undefined
 
-      ctx.plugin(Bar)
-      ctx.inject(['bar'], (ctx) => {
+      await ctx.plugin(Bar)
+      await ctx.inject(['bar'], (ctx) => {
         const session = ctx.foo.createSession()
         expect(session).to.be.instanceof(Session)
         expect(session.answer()).to.equal(42)
@@ -154,10 +155,10 @@ describe('Association', () => {
     }
 
     const root = new Context()
-    root.plugin(Foo)
-    root.plugin(Bar)
+    await root.plugin(Foo)
+    await root.plugin(Bar)
 
-    root.inject(['foo'], (ctx) => {
+    await root.inject(['foo'], (ctx) => {
       const session = ctx.foo.session()
       expect(session).to.be.instanceof(Session)
       expect(session.bar).to.be.undefined
@@ -168,7 +169,7 @@ describe('Association', () => {
   })
 
   // https://github.com/cordiverse/cordis/issues/14
-  it('inspect', () => {
+  it('inspect', async () => {
     class Foo extends Service {
       constructor(ctx: Context) {
         super(ctx, 'foo')
@@ -185,7 +186,7 @@ describe('Association', () => {
     }
 
     const root = new Context()
-    root.plugin(Foo)
+    await root.plugin(Foo)
     class X {}
     root.foo.bar(X)
   })
