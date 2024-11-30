@@ -12,7 +12,7 @@ declare module './context' {
 
 export type Disposable<T = any> = () => T
 
-export type Effect<T = void> = () => Disposable<T> | Generator<Disposable, void, void>
+export type Effect<T = void> = () => Disposable<T> | Iterable<Disposable, void, void>
 
 export const enum ScopeStatus {
   PENDING,
@@ -99,11 +99,12 @@ export class EffectScope<C extends Context = Context> {
     let dispose: Disposable
     if (typeof result === 'function') {
       dispose = result
-    } else {
+    } else if (result[Symbol.iterator]) {
+      const iter = result[Symbol.iterator]()
       const disposables: Disposable[] = []
       try {
         while (true) {
-          const value = result.next()
+          const value = iter.next()
           if (value.value) disposables.unshift(value.value)
           if (value.done) break
         }
@@ -112,6 +113,8 @@ export class EffectScope<C extends Context = Context> {
         throw error
       }
       dispose = () => disposables.forEach(dispose => dispose())
+    } else {
+      throw new TypeError('effect must return a function or an iterable')
     }
     const wrapped = (...args: []) => {
       // make sure the original callback is not called twice
