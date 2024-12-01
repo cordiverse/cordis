@@ -1,13 +1,12 @@
 import * as core from '@cordisjs/core'
 import { Logger, LoggerService } from '@cordisjs/logger'
 import { TimerService } from '@cordisjs/timer'
+import { paramCase } from 'cosmokit'
 
 export * from '@cordisjs/core'
 export { default as Schema, default as z } from 'schemastery'
 export { Logger } from '@cordisjs/logger'
 export { TimerService } from '@cordisjs/timer'
-
-import { paramCase } from 'cosmokit'
 
 export interface Events<C extends Context = Context> extends core.Events<C> {}
 
