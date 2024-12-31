@@ -31,6 +31,10 @@ export class DisposableList<T> {
   [Symbol.iterator]() {
     return this.map.values()
   }
+
+  [Symbol.for('nodejs.util.inspect.custom')]() {
+    return [...this]
+  }
 }
 
 export interface Tracker {

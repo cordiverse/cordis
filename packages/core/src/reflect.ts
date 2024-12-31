@@ -106,7 +106,7 @@ class ReflectService {
     })
 
     this._mixin('reflect', ['get', 'set', 'provide', 'accessor', 'mixin', 'alias'])
-    this._mixin('scope', ['config', 'runtime', 'effect'])
+    this._mixin('scope', ['runtime', 'effect'])
     this._mixin('registry', ['inject', 'plugin'])
     this._mixin('events', ['on', 'once', 'parallel', 'emit', 'serial', 'bail'])
   }

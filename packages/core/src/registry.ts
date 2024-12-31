@@ -84,7 +84,15 @@ export namespace Plugin {
     name?: string
     scopes: DisposableList<EffectScope<C>>
     callback: globalThis.Function
+    Config?: (config: any) => any
   }
+}
+
+export function resolveConfig(runtime: Plugin.Runtime, config: any) {
+  if (runtime.Config) {
+    config = runtime.Config(config)
+  }
+  return config ?? {}
 }
 
 export type Spread<T> = undefined extends T ? [config?: T] : [config: T]
@@ -180,7 +188,7 @@ class Registry<C extends Context = Context> {
     if (!runtime) {
       let name = plugin.name
       if (name === 'apply') name = undefined
-      runtime = { name, callback, scopes: new DisposableList() }
+      runtime = { name, callback, scopes: new DisposableList(), Config: plugin.Config }
       this._internal.set(callback, runtime)
     }
 

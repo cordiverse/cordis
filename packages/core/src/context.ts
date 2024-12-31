@@ -8,8 +8,6 @@ import { EffectScope } from './scope'
 export { EventsService, ReflectService, Registry }
 
 export namespace Context {
-  export type Parameterized<C, T = any> = C & { config: T }
-
   export interface Item<C extends Context> {
     name: string
     value?: any
@@ -51,7 +49,6 @@ export interface Context {
   events: EventsService
   reflect: ReflectService
   registry: Registry<this>
-  config: any
 }
 
 export class Context {

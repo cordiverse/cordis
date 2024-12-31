@@ -1,6 +1,6 @@
 import { Dict, isNullable } from 'cosmokit'
 import { Context } from './context'
-import { Inject, Plugin } from './registry'
+import { Inject, Plugin, resolveConfig } from './registry'
 import { composeError, DisposableList, isConstructor, symbols } from './utils'
 
 declare module './context' {
@@ -39,6 +39,7 @@ export namespace CordisError {
 export class EffectScope<C extends Context = Context> {
   public uid: number | null
   public ctx: C
+  public config: any
   public acceptors = new DisposableList<() => boolean>()
   public disposables = new DisposableList<Disposable>()
   public status = ScopeStatus.PENDING
@@ -53,7 +54,7 @@ export class EffectScope<C extends Context = Context> {
 
   constructor(
     public parent: C,
-    public config: C['config'],
+    config: any,
     public inject: Dict<Inject.Meta>,
     public runtime: Plugin.Runtime | null,
     private getOuterStack: () => Iterable<string>,
@@ -64,7 +65,13 @@ export class EffectScope<C extends Context = Context> {
       this.dispose = parent.scope.effect(() => {
         const remove = runtime!.scopes.push(this)
         this.context.emit('internal/plugin', this)
-        this.active = true
+        try {
+          this.config = resolveConfig(runtime!, config)
+          this.active = true
+        } catch (error) {
+          this.context.emit('internal/error', error)
+          this._error = error
+        }
         return async () => {
           this.uid = null
           this.context.emit('internal/plugin', this)
@@ -182,7 +189,7 @@ export class EffectScope<C extends Context = Context> {
   private async _unload() {
     await Promise.all(this.disposables.clear().map(async (dispose) => {
       try {
-        await dispose()
+        await composeError(dispose, 1, this.getOuterStack)
       } catch (reason) {
         this.context.emit(this.ctx, 'internal/error', reason)
       }
@@ -241,7 +248,14 @@ export class EffectScope<C extends Context = Context> {
 
   update(config: any) {
     if (this.context.bail(this, 'internal/update', this, config)) return
-    this.config = config
+    try {
+      this.config = resolveConfig(this.runtime!, config)
+    } catch (error) {
+      this.context.emit('internal/error', error)
+      this._error = error
+      this.active = false
+      return
+    }
     this._error = undefined
     this.restart()
   }
