@@ -7,8 +7,6 @@ import { LoaderFile } from './file.ts'
 import Loader from '../loader.ts'
 
 export class ImportTree<C extends Context = Context> extends EntryTree<C> {
-  static reusable = true
-
   public file!: LoaderFile
 
   constructor(public ctx: C) {
@@ -16,13 +14,10 @@ export class ImportTree<C extends Context = Context> extends EntryTree<C> {
     ctx.on('dispose', () => this.stop())
   }
 
-  async [Service.setup]() {
-    await this.refresh()
+  async start() {
+    const data = await this.file.read()
     await this.file.checkAccess()
-  }
-
-  async refresh() {
-    this.root.update(await this.file.read())
+    await this.root.update(data)
   }
 
   stop() {
@@ -55,7 +50,6 @@ export class ImportTree<C extends Context = Context> extends EntryTree<C> {
     } else {
       await this._init(baseDir, options)
     }
-    this.ctx.provide('baseDir', baseDir, true)
   }
 
   private async _init(baseDir: string, options: Loader.Config) {
@@ -95,7 +89,7 @@ export class Import extends ImportTree {
     super(ctx)
   }
 
-  async start() {
+  async [Service.setup]() {
     const { url } = this.config
     const filename = fileURLToPath(new URL(url, this.ctx.scope.entry!.parent.tree.url))
     const ext = extname(filename)
@@ -104,6 +98,6 @@ export class Import extends ImportTree {
     }
     this.file = new LoaderFile(filename, LoaderFile.writable[ext])
     this.file.ref(this)
-    await super[Service.setup]()
+    await this.start()
   }
 }

@@ -1,23 +1,12 @@
 {
-  "name": "@cordisjs/schema",
+  "name": "@cordisjs/plugin-schema",
   "description": "Schema service for cordis",
-  "version": "0.1.1",
+  "version": "1.0.0-alpha.0",
   "type": "module",
-  "main": "lib/index.cjs",
-  "module": "lib/index.mjs",
+  "main": "lib/index.js",
   "types": "lib/index.d.ts",
-  "exports": {
-    ".": {
-      "require": "./lib/index.cjs",
-      "import": "./lib/index.mjs",
-      "types": "./lib/index.d.ts"
-    },
-    "./src/*": "./src/*",
-    "./package.json": "./package.json"
-  },
   "files": [
-    "lib",
-    "src"
+    "lib"
   ],
   "author": "Shigma <shigma10826@gmail.com>",
   "license": "MIT",
@@ -37,14 +26,21 @@
     "plugin",
     "config"
   ],
+  "cordis": {
+    "service": {
+      "implements": [
+        "schema"
+      ]
+    }
+  },
   "devDependencies": {
-    "@cordisjs/core": "^3.18.0"
+    "cordis": "^4.0.0-alpha.0"
   },
   "peerDependencies": {
-    "@cordisjs/core": "^3.18.0"
+    "cordis": "^4.0.0-alpha.0"
   },
   "dependencies": {
-    "cosmokit": "^1.6.2",
+    "cosmokit": "^1.6.3",
     "schemastery": "^3.14.6"
   }
 }

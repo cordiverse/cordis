@@ -1,13 +1,12 @@
 {
   "name": "@cordisjs/plugin-hmr",
   "description": "Hot Module Replacement Plugin for Cordis",
-  "version": "0.2.6",
+  "version": "1.0.0-alpha.0",
   "type": "module",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
-    "lib",
-    "src"
+    "lib"
   ],
   "author": "Shigma <shigma10826@gmail.com>",
   "license": "MIT",
@@ -32,22 +31,30 @@
     "development"
   ],
   "cordis": {
+    "services": {
+      "required": [
+        "timer"
+      ]
+    },
     "description": {
       "en": "Hot Module Replacement",
       "zh": "模块热替换"
     }
   },
   "peerDependencies": {
-    "cordis": "^3.18.0"
+    "@cordisjs/plugin-schema": "^1.0.0-alpha.0",
+    "@cordisjs/plugin-timer": "^1.0.0-alpha.0",
+    "cordis": "^4.0.0-alpha.0"
   },
   "devDependencies": {
+    "@cordisjs/plugin-timer": "^1.0.0-alpha.0",
     "@types/babel__code-frame": "^7.0.6",
-    "cordis": "^3.18.0",
-    "esbuild": "^0.23.0"
+    "cordis": "^4.0.0-alpha.0",
+    "esbuild": "^0.24.0"
   },
   "dependencies": {
     "@babel/code-frame": "^7.24.2",
     "chokidar": "^3.6.0",
-    "cosmokit": "^1.6.2"
+    "cosmokit": "^1.6.3"
   }
 }

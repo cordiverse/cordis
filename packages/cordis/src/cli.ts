@@ -35,7 +35,7 @@ function createWorker(options: worker.Options) {
   child = fork(resolve(filename, `../worker/main${extname(filename)}`), [], {
     execArgv: [
       ...process.execArgv,
-      ...options.daemon?.execArgv || [],
+      ...options.execArgv || [],
     ],
     env: {
       ...process.env,

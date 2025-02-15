@@ -1,4 +1,4 @@
-import { Context, EffectScope, Service } from '@cordisjs/core'
+import { Context } from '@cordisjs/core'
 import { Dict, isNullable } from 'cosmokit'
 import { ModuleLoader } from './internal.ts'
 import { Entry, EntryOptions, EntryUpdateMeta } from './config/entry.ts'
@@ -18,7 +18,6 @@ declare module '@cordisjs/core' {
     'exit'(signal: NodeJS.Signals): Promise<void>
     'loader/config-update'(): void
     'loader/entry-init'(entry: Entry): void
-    'loader/entry-fork'(entry: Entry, type: string): void
     'loader/entry-check'(entry: Entry): boolean | undefined
     'loader/partial-dispose'(entry: Entry, legacy: Partial<EntryOptions>, active: boolean): void
     'loader/before-patch'(this: EntryUpdateMeta, entry: Entry): void
@@ -34,10 +33,8 @@ declare module '@cordisjs/core' {
     startTime?: number
   }
 
-  // Theoretically, these properties will only appear on `ForkScope`.
-  // We define them directly on `EffectScope` for typing convenience.
-  interface EffectScope {
-    entry?: Entry
+  interface EffectScope<C extends Context> {
+    entry?: Entry<C>
   }
 }
 
@@ -50,12 +47,6 @@ export namespace Loader {
 }
 
 export abstract class Loader<C extends Context = Context> extends ImportTree<C> {
-  // TODO auto inject optional when provided?
-  static inject = {
-    loader: { required: false },
-  }
-
-  // process
   public envData = process.env.CORDIS_SHARED
     ? JSON.parse(process.env.CORDIS_SHARED)
     : { startTime: Date.now() }
@@ -73,76 +64,66 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
 
     ctx.set('loader', this)
 
-    ctx.on('internal/update', (fork) => {
-      if (!fork.entry) return
-      fork.parent.emit('loader/entry-fork', fork.entry, 'reload')
-    })
+    ctx.on('internal/update', (scope, config) => {
+      if (!scope.entry) return
+      this.showLog(scope.entry, 'reload')
+    }, { global: true })
 
-    ctx.on('internal/before-update', (fork, config) => {
-      if (!fork.entry) return
-      if (fork.entry.suspend) return fork.entry.suspend = false
-      const { schema } = fork.runtime
-      fork.entry.options.config = schema ? schema.simplify(config) : config
-      fork.entry.parent.tree.write()
-    })
+    ctx.on('internal/update', (scope, config) => {
+      if (!scope.entry) return
+      if (scope.entry.suspend) return scope.entry.suspend = false
+      const schema = scope.runtime?.schema
+      scope.entry.options.config = schema ? schema.simplify(config) : config
+      scope.entry.parent.tree.write()
+    }, { global: true, prepend: true })
 
-    ctx.on('internal/fork', (fork) => {
-      // 1. set `fork.entry`
-      if (fork.parent[Entry.key]) {
-        fork.entry = fork.parent[Entry.key]
-        delete fork.parent[Entry.key]
+    ctx.on('internal/plugin', (scope) => {
+      // 1. set `scope.entry`
+      if (scope.parent[Entry.key]) {
+        scope.entry = scope.parent[Entry.key]
       }
 
       // 2. handle self-dispose
       // We only care about `ctx.scope.dispose()`, so we need to filter out other cases.
 
-      // case 1: fork is created
-      if (fork.uid) return
+      // case 1: scope is created
+      if (scope.uid) return
 
-      // case 2: fork is not tracked by loader
-      if (!fork.entry) return
+      // case 2: scope is not tracked by loader
+      if (!scope.entry) return
 
-      // case 3: fork is disposed on behalf of plugin deletion (such as plugin hmr)
-      // self-dispose: ctx.scope.dispose() -> fork / runtime dispose -> delete(plugin)
-      // plugin hmr: delete(plugin) -> runtime dispose -> fork dispose
-      if (!ctx.registry.has(fork.runtime.plugin)) return
+      // case 3: scope is disposed on behalf of plugin deletion (such as plugin hmr)
+      // self-dispose: ctx.scope.dispose() -> scope / runtime dispose -> delete(plugin)
+      // plugin hmr: delete(plugin) -> runtime dispose -> scope dispose
+      if (!ctx.registry.has(scope.runtime!.callback)) return
 
-      fork.entry.fork = undefined
-      fork.parent.emit('loader/entry-fork', fork.entry, 'unload')
+      this.showLog(scope.entry, 'unload')
 
-      // case 4: fork is disposed by loader behavior
+      // case 4: scope is disposed by loader behavior
       // such as inject checker, config file update, ancestor group disable
-      if (!fork.entry._check()) return
+      if (!scope.entry.check()) return
 
-      fork.entry.options.disabled = true
-      fork.entry.parent.tree.write()
+      scope.entry.options.disabled = true
+      scope.entry.parent.tree.write()
     })
 
     ctx.plugin(inject)
     ctx.plugin(isolate)
   }
 
-  async [Service.setup]() {
-    await this.init(process.cwd(), this.config)
-    this.ctx.set('env', process.env)
-    await super[Service.setup]()
+  showLog(entry: Entry, type: string) {
+    if (entry.options.group) return
+    this.ctx.get('logger')?.('loader').info('%s plugin %c', type, entry.options.name)
   }
 
   locate(ctx = this.ctx) {
-    return this._locate(ctx.scope).map(entry => entry.id)
-  }
-
-  _locate(scope: EffectScope<C>): Entry[] {
-    // root scope
-    if (!scope.runtime.plugin) return []
-
-    // runtime scope
-    if (scope.runtime === scope) {
-      return scope.runtime.children.flatMap(child => this._locate(child))
+    let scope = ctx.scope
+    while (1) {
+      if (scope.entry) return scope.entry.id
+      const next = scope.parent.scope
+      if (scope === next) return
+      scope = next
     }
-
-    if (scope.entry) return [scope.entry]
-    return this._locate(scope.parent.scope)
   }
 
   exit() {}

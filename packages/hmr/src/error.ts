@@ -1,7 +1,7 @@
 import { Context } from 'cordis'
 import { BuildFailure } from 'esbuild'
 import { codeFrameColumns } from '@babel/code-frame'
-import { readFileSync } from 'fs'
+import { readFileSync } from 'node:fs'
 
 function isBuildFailure(e: any): e is BuildFailure {
   return Array.isArray(e?.errors) && e.errors.every((error: any) => error.text)

@@ -1,12 +1,16 @@
-import { Context, Service } from '@cordisjs/core'
-import { defineProperty } from 'cosmokit'
+import { Context, Service } from 'cordis'
+import { defineProperty, hyphenate } from 'cosmokit'
 import Logger from 'reggol'
 
 export { Logger }
 
-declare module '@cordisjs/core' {
+declare module 'cordis' {
   interface Context {
     logger: LoggerService
+  }
+
+  interface Intercept {
+    logger: LoggerService.Config
   }
 }
 
@@ -18,24 +22,31 @@ declare module 'reggol' {
   }
 }
 
+export namespace LoggerService {
+  export interface Config {
+    name?: string
+  }
+}
+
 export interface LoggerService extends Pick<Logger, Logger.Type | 'extend'> {
   (name: string): Logger
 }
 
 export class LoggerService extends Service {
   constructor(ctx: Context) {
-    super(ctx, 'logger', true)
+    super(ctx, 'logger')
+    const self = this
 
     ctx.on('internal/info', function (format, ...args) {
-      this.logger('app').info(format, ...args)
+      self('app').info(format, ...args)
     })
 
     ctx.on('internal/error', function (format, ...args) {
-      this.logger('app').error(format, ...args)
+      self('app').error(format, ...args)
     })
 
     ctx.on('internal/warning', function (format, ...args) {
-      this.logger('app').warn(format, ...args)
+      self('app').warn(format, ...args)
     })
   }
 
@@ -46,7 +57,14 @@ export class LoggerService extends Service {
   static {
     for (const type of ['success', 'error', 'info', 'warn', 'debug', 'extend']) {
       LoggerService.prototype[type] = function (this: LoggerService, ...args: any[]) {
-        return this(this.ctx.name)[type](...args)
+        let config: LoggerService.Config = {}
+        let intercept = this.ctx[Context.intercept]
+        while (intercept) {
+          config = Object.assign({}, intercept.logger, config)
+          intercept = Object.getPrototypeOf(intercept)
+        }
+        const name = config.name || hyphenate(this.ctx.name)
+        return this(name)[type](...args)
       }
     }
   }

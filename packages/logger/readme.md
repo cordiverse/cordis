@@ -1,1 +1,1 @@
-# @cordisjs/logger
+# @cordisjs/plugin-logger

@@ -1,20 +1,24 @@
-import { Context } from '@cordisjs/core'
+import { Context, Service } from '@cordisjs/core'
 import { Entry, EntryOptions } from './entry.ts'
 import { EntryTree } from './tree.ts'
 
-export class EntryGroup {
+export class EntryGroup<C extends Context = Context> {
   static readonly key = Symbol.for('cordis.group')
 
   public data: EntryOptions[] = []
 
-  constructor(public ctx: Context, public tree: EntryTree) {
+  constructor(public ctx: C, public tree: EntryTree<C>) {
     const entry = ctx.scope.entry
     if (entry) entry.subgroup = this
   }
 
+  get context(): Context {
+    return this.ctx
+  }
+
   async create(options: Omit<EntryOptions, 'id'>) {
     const id = this.tree.ensureId(options)
-    const entry = this.tree.store[id] ??= new Entry(this.ctx.loader)
+    const entry: Entry<C> = this.tree.store[id] ??= new Entry(this.ctx.loader)
     // Entry may be moved from another group,
     // so we need to update the parent reference.
     entry.parent = this
@@ -31,28 +35,29 @@ export class EntryGroup {
   remove(id: string) {
     const entry = this.tree.store[id]
     if (!entry) return
-    entry.stop()
+    entry.scope?.dispose()
     this.unlink(entry.options)
     delete this.tree.store[id]
-    this.ctx.emit('loader/partial-dispose', entry, entry.options, false)
+    this.context.emit('loader/partial-dispose', entry, entry.options, false)
   }
 
-  update(config: EntryOptions[]) {
+  async update(config: EntryOptions[]) {
     const oldConfig = this.data as EntryOptions[]
     this.data = config
     const oldMap = Object.fromEntries(oldConfig.map(options => [options.id, options]))
     const newMap = Object.fromEntries(config.map(options => [options.id ?? Symbol('anonymous'), options]))
 
     // update inner plugins
-    for (const id of Reflect.ownKeys({ ...oldMap, ...newMap }) as string[]) {
+    const ids = Reflect.ownKeys({ ...oldMap, ...newMap }) as string[]
+    await Promise.all(ids.map(async (id) => {
       if (newMap[id]) {
-        this.create(newMap[id]).catch((error) => {
-          this.ctx.emit(this.ctx, 'internal/error', error)
+        await this.create(newMap[id]).catch((error) => {
+          this.context.emit(this.ctx, 'internal/error', error)
         })
       } else {
         this.remove(id)
       }
-    }
+    }))
   }
 
   stop() {
@@ -63,15 +68,19 @@ export class EntryGroup {
 }
 
 export class Group extends EntryGroup {
-  static reusable = true
   static initial: Omit<EntryOptions, 'id'>[] = []
   static readonly [EntryGroup.key] = true
 
-  constructor(public ctx: Context) {
+  constructor(public ctx: Context, public config: EntryOptions[]) {
     super(ctx, ctx.scope.entry!.parent.tree)
     ctx.on('dispose', () => this.stop())
-    ctx.accept((config: EntryOptions[]) => {
+    ctx.on('internal/update', (_, config) => {
       this.update(config)
-    }, { passive: true, immediate: true })
+      return true
+    })
+  }
+
+  async [Service.setup]() {
+    await this.update(this.config)
   }
 }

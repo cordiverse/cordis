@@ -1,23 +1,20 @@
 {
-  "name": "@cordisjs/logger",
+  "name": "@cordisjs/plugin-logger",
   "description": "Logger service for cordis",
-  "version": "0.3.3",
+  "version": "1.0.0-alpha.0",
   "type": "module",
-  "main": "lib/index.cjs",
-  "module": "lib/index.mjs",
+  "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "exports": {
     ".": {
-      "require": "./lib/index.cjs",
-      "import": "./lib/index.mjs",
-      "types": "./lib/index.d.ts"
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
     },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [
-    "lib",
-    "src"
+    "lib"
   ],
   "author": "Shigma <shigma10826@gmail.com>",
   "license": "MIT",
@@ -36,14 +33,21 @@
     "service",
     "plugin"
   ],
+  "cordis": {
+    "service": {
+      "implements": [
+        "logger"
+      ]
+    }
+  },
   "devDependencies": {
-    "@cordisjs/core": "^3.18.0"
+    "cordis": "^4.0.0-alpha.0"
   },
   "peerDependencies": {
-    "@cordisjs/core": "^3.18.0"
+    "cordis": "^4.0.0-alpha.0"
   },
   "dependencies": {
-    "cosmokit": "^1.6.2",
-    "reggol": "^1.7.0"
+    "cosmokit": "^1.6.3",
+    "reggol": "^1.7.1"
   }
 }

@@ -1,17 +1,18 @@
-import { Context, ForkScope, MainScope, Plugin, Schema, Service } from 'cordis'
+import { Context, Plugin, Schema, Service } from 'cordis'
 import { Dict, makeArray } from 'cosmokit'
 import { ModuleJob, ModuleLoader } from 'cordis/loader'
 import { FSWatcher, watch, WatchOptions } from 'chokidar'
-import { relative, resolve } from 'path'
+import { relative, resolve } from 'node:path'
 import { handleError } from './error.ts'
-import {} from '@cordisjs/timer'
-import { fileURLToPath, pathToFileURL } from 'url'
+import {} from '@cordisjs/plugin-logger'
+import {} from '@cordisjs/plugin-timer'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import enUS from './locales/en-US.yml'
 import zhCN from './locales/zh-CN.yml'
 
 declare module 'cordis' {
   interface Context {
-    hmr: Watcher
+    hmr: HMR
   }
 
   interface Events {
@@ -33,11 +34,11 @@ async function loadDependencies(job: ModuleJob, ignored = new Set<string>()) {
 
 interface Reload {
   filename: string
-  children: ForkScope[]
+  runtime?: Plugin.Runtime
 }
 
-class Watcher extends Service {
-  static inject = ['loader']
+class HMR extends Service {
+  static inject = ['loader', 'timer', 'logger']
 
   private base: string
   private internal: ModuleLoader
@@ -69,7 +70,7 @@ class Watcher extends Service {
   /** stashed changes */
   private stashed = new Set<string>()
 
-  constructor(ctx: Context, public config: Watcher.Config) {
+  constructor(ctx: Context, public config: HMR.Config) {
     super(ctx, 'hmr')
     if (!this.ctx.loader.internal) {
       throw new Error('--expose-internals is required for HMR service')
@@ -93,20 +94,24 @@ class Watcher extends Service {
     })
 
     // files independent from any plugins will trigger a full reload
-    const mainJob = await loader.internal!.getModuleJob('cordis/worker', import.meta.url, {})!
+    const mainJob = await loader.internal!.getModuleJobForImport('cordis/worker', import.meta.url, {})!
     this.externals = await loadDependencies(mainJob)
-    const triggerLocalReload = this.ctx.debounce(() => this.triggerLocalReload(), this.config.debounce)
+    const partialReload = this.ctx.debounce(() => this.partialReload(), this.config.debounce)
 
     this.watcher.on('change', async (path) => {
       this.ctx.logger.debug('change detected:', path)
       const url = pathToFileURL(resolve(this.base, path)).href
+
+      // full reload
       if (this.externals.has(url)) return loader.exit()
 
+      // partial reload
       if (loader.internal!.loadCache.has(url)) {
         this.stashed.add(url)
-        return triggerLocalReload()
+        return partialReload()
       }
 
+      // config reload
       const file = this.ctx.loader.files[url]
       if (!file) return
       if (file.suspend) {
@@ -114,13 +119,13 @@ class Watcher extends Service {
         return
       }
       for (const tree of file.trees) {
-        tree.refresh()
+        tree.start()
       }
     })
   }
 
   async stop() {
-    return await this.watcher.close()
+    await this.watcher?.close()
   }
 
   async getLinked(filename: string) {
@@ -191,11 +196,11 @@ class Watcher extends Service {
     }
   }
 
-  private async triggerLocalReload() {
+  private async partialReload() {
     await this.analyzeChanges()
 
     /** plugins pending classification */
-    const pending = new Map<ModuleJob, [Plugin, MainScope | undefined]>()
+    const pending = new Map<ModuleJob, Plugin>()
 
     /** plugins that should be reloaded */
     const reloads = new Map<Plugin, Reload>()
@@ -213,9 +218,8 @@ class Watcher extends Service {
           if (this.declined.has(url)) continue
           const job = this.internal.loadCache.get(url)
           const plugin = this.ctx.loader.unwrapExports(job?.module?.getNamespace())
-          const runtime = this.ctx.registry.get(plugin)
           if (!job || !plugin) continue
-          pending.set(job, [plugin, runtime])
+          pending.set(job, plugin)
           this.declined.add(url)
         } catch (err) {
           this.ctx.logger.warn(err)
@@ -223,7 +227,7 @@ class Watcher extends Service {
       }
     }
 
-    for (const [job, [plugin, runtime]] of pending) {
+    for (const [job, plugin] of pending) {
       // check if it is a dependent of the changed file
       this.declined.delete(job.url)
       const dependencies = [...await loadDependencies(job, this.declined)]
@@ -235,32 +239,10 @@ class Watcher extends Service {
       dependencies.forEach(dep => this.accepted.add(dep))
 
       // prepare for reload
-      if (runtime) {
-        let isMarked = false
-        const visited = new Set<MainScope>()
-        const queued = [runtime]
-        while (queued.length) {
-          const runtime = queued.shift()!
-          if (visited.has(runtime)) continue
-          visited.add(runtime)
-          if (reloads.has(plugin)) {
-            isMarked = true
-            break
-          }
-          for (const fork of runtime.children) {
-            queued.push(fork.runtime)
-          }
-        }
-        if (!isMarked) {
-          const children: ForkScope[] = []
-          reloads.set(plugin, { filename: job.url, children })
-          for (const fork of runtime.children) {
-            children.push(fork)
-          }
-        }
-      } else {
-        reloads.set(plugin, { filename: job.url, children: [] })
-      }
+      reloads.set(plugin, {
+        filename: job.url,
+        runtime: this.ctx.registry.get(plugin),
+      })
     }
 
     // save cache for rollback
@@ -290,16 +272,17 @@ class Watcher extends Service {
       return rollback()
     }
 
-    const reload = (plugin: any, children: ForkScope[]) => {
-      for (const oldFork of children) {
-        const fork = oldFork.parent.plugin(plugin, oldFork.config)
-        fork.entry = oldFork.entry
-        if (fork.entry) fork.entry.fork = fork
+    const reload = (plugin: any, runtime?: Plugin.Runtime) => {
+      if (!runtime) return
+      for (const oldFiber of runtime.scopes) {
+        const scope = oldFiber.parent.plugin(plugin, oldFiber.config)
+        scope.entry = oldFiber.entry
+        if (scope.entry) scope.entry.scope = scope
       }
     }
 
     try {
-      for (const [plugin, { filename, children }] of reloads) {
+      for (const [plugin, { filename, runtime }] of reloads) {
         const path = this.relative(fileURLToPath(filename))
 
         try {
@@ -310,7 +293,7 @@ class Watcher extends Service {
         }
 
         try {
-          reload(attempts[filename], children)
+          reload(attempts[filename], runtime)
           this.ctx.logger.info('reload plugin at %c', path)
         } catch (err) {
           this.ctx.logger.warn('failed to reload plugin at %c', path)
@@ -321,10 +304,10 @@ class Watcher extends Service {
     } catch {
       // rollback cache and plugin states
       rollback()
-      for (const [plugin, { filename, children }] of reloads) {
+      for (const [plugin, { filename, runtime }] of reloads) {
         try {
           this.ctx.registry.delete(attempts[filename])
-          reload(plugin, children)
+          reload(plugin, runtime)
         } catch (err) {
           this.ctx.logger.warn(err)
         }
@@ -340,7 +323,7 @@ class Watcher extends Service {
   }
 }
 
-namespace Watcher {
+namespace HMR {
   export interface Config extends WatchOptions {
     base?: string
     root: string[]
@@ -369,4 +352,4 @@ namespace Watcher {
   })
 }
 
-export default Watcher
+export default HMR

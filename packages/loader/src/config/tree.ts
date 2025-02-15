@@ -7,7 +7,7 @@ export abstract class EntryTree<C extends Context = Context> {
   static readonly sep = ':'
 
   public url!: string
-  public root: EntryGroup
+  public root: EntryGroup<C>
   public store: Dict<Entry<C>> = Object.create(null)
 
   constructor(public ctx: C) {
@@ -25,6 +25,17 @@ export abstract class EntryTree<C extends Context = Context> {
       yield entry
       if (!entry.subtree) continue
       yield* entry.subtree.entries()
+    }
+  }
+
+  async wait() {
+    while (1) {
+      await new Promise(resolve => setTimeout(resolve, 100))
+      const pendings = [...this.entries()]
+        .map(entry => entry._initTask || entry.scope?.pending!)
+        .filter(Boolean)
+      if (!pendings.length) return
+      await Promise.all(pendings)
     }
   }
 
@@ -86,9 +97,9 @@ export abstract class EntryTree<C extends Context = Context> {
 
   async import(name: string) {
     if (this.ctx.loader.internal) {
-      return this.ctx.loader.internal.import(name, this.url, {})
+      return await this.ctx.loader.internal.import(name, this.url, {})
     } else {
-      return import(name)
+      return await import(name)
     }
   }
 

@@ -1,45 +1,42 @@
 {
   "name": "cordis",
   "description": "Meta-Framework for Modern JavaScript Applications",
-  "version": "3.18.0",
+  "version": "4.0.0-alpha.0",
   "type": "module",
-  "bin": "lib/bin/cordis.mjs",
-  "main": "lib/index.cjs",
-  "module": "lib/index.mjs",
+  "bin": "lib/bin/cordis.js",
+  "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "exports": {
     ".": {
       "types": "./lib/index.d.ts",
-      "require": "./lib/index.cjs",
-      "default": "./lib/index.mjs"
+      "default": "./lib/index.js"
     },
     "./cli": {
       "types": "./lib/cli.d.ts",
-      "default": "./lib/cli.mjs"
+      "default": "./lib/cli.js"
     },
     "./group": {
       "types": "./lib/plugins/group.d.ts",
-      "default": "./lib/plugins/group.mjs"
+      "default": "./lib/plugins/group.js"
     },
     "./import": {
       "types": "./lib/plugins/import.d.ts",
-      "default": "./lib/plugins/import.mjs"
+      "default": "./lib/plugins/import.js"
     },
     "./loader": {
       "types": "./lib/plugins/loader.d.ts",
-      "default": "./lib/plugins/loader.mjs"
+      "default": "./lib/plugins/loader.js"
     },
     "./worker": {
       "types": "./lib/worker/index.d.ts",
-      "default": "./lib/worker/index.mjs"
+      "default": "./lib/worker/index.js"
     },
-    "./worker/main": "./lib/worker/main.mjs",
+    "./main": "./lib/worker/main.js",
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [
-    "lib",
-    "src"
+    "lib"
   ],
   "engines": {
     "node": "^18.0.0 || >=20.0.0"
@@ -71,18 +68,12 @@
       }
     }
   },
-  "peerDependencies": {
-    "cordis": "*"
-  },
   "dependencies": {
-    "@cordisjs/core": "3.18.0",
-    "@cordisjs/loader": "^0.13.0",
-    "@cordisjs/logger": "^0.3.3",
-    "@cordisjs/schema": "^0.1.1",
-    "@cordisjs/timer": "^0.3.2",
+    "@cordisjs/core": "4.0.0-alpha.0",
+    "@cordisjs/loader": "^1.0.0-alpha.0",
     "cac": "^6.7.14",
-    "cosmokit": "^1.6.2",
+    "cosmokit": "^1.6.3",
     "kleur": "^4.1.5",
-    "reggol": "^1.7.0"
+    "reggol": "^1.7.1"
   }
 }

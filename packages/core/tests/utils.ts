@@ -6,7 +6,7 @@ import { Dict } from 'cosmokit'
 use(promised)
 
 export function sleep(ms = 0) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+  return new Promise<void>((resolve) => setTimeout(resolve, ms))
 }
 
 export const event = 'custom-event'
@@ -27,18 +27,6 @@ export class Filter {
     // basic parity check
     return session.flag === this.flag
   }
-}
-
-export function filter(ctx: Context) {
-  ctx.root.filter = () => true
-  ctx.on('internal/runtime', (runtime) => {
-    if (!runtime.uid) return
-    runtime.ctx.filter = (session) => {
-      return runtime.children.some((child) => {
-        return child.ctx.filter(session)
-      })
-    }
-  })
 }
 
 declare module '../src/events' {
@@ -86,11 +74,4 @@ export function getHookSnapshot(ctx: Context) {
     if (callbacks.length) result[name] = callbacks.length
   }
   return result
-}
-
-export async function checkError(ctx: Context) {
-  await ctx.lifecycle.flush()
-  ctx.registry.forEach((scope) => {
-    if (scope.error) throw scope.error
-  })
 }

@@ -5,6 +5,7 @@ import * as yaml from 'js-yaml'
 import { EntryOptions } from './entry.ts'
 import { ImportTree } from './import.ts'
 import { JsExpr } from './utils.ts'
+import { dirname } from 'node:path'
 
 export const schema = yaml.JSON_SCHEMA.extend(JsExpr)
 
@@ -22,6 +23,11 @@ export class LoaderFile {
     this.trees.push(tree)
     tree.url = pathToFileURL(this.name).href
     tree.ctx.loader.files[tree.url] ??= this
+    // use defineProperty to prevent provide check
+    Object.defineProperty(tree.ctx, 'baseDir', {
+      value: dirname(this.name),
+      configurable: true,
+    })
   }
 
   unref(tree: ImportTree) {

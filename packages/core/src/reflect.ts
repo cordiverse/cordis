@@ -1,12 +1,12 @@
 import { defineProperty, Dict, isNullable } from 'cosmokit'
 import { Context } from './context'
 import { getTraceable, isObject, isUnproxyable, symbols, withProps } from './utils'
-import { ScopeStatus } from './scope'
+import { EffectScope, ScopeStatus } from './scope'
 
 declare module './context' {
   interface Context {
-    get<K extends string & keyof this>(name: K): undefined | this[K]
-    get(name: string): any
+    get<K extends string & keyof this>(name: K, strict?: boolean): undefined | this[K]
+    get(name: string, strict?: boolean): any
     set<K extends string & keyof this>(name: K, value: undefined | this[K]): () => void
     set(name: string, value: any): () => void
     /** @deprecated use `ctx.set()` instead */
@@ -28,22 +28,22 @@ class ReflectService {
     return [name, internal] as const
   }
 
-  static checkInject(ctx: Context, name: string, error: Error) {
+  static checkInject(ctx: Context, name: string, error: Error, provider?: EffectScope) {
     ctx = ctx[symbols.shadow] ?? ctx
     // Case 1: built-in services and special properties
     // - prototype: prototype detection
     // - then: async function return
-    if (['prototype', 'then', 'registry', 'lifecycle'].includes(name)) return
+    if (['prototype', 'then', 'registry', 'events', 'reflect', 'scope'].includes(name)) return
     // Case 2: `$` or `_` prefix
     if (name[0] === '$' || name[0] === '_') return
     // Case 3: access directly from root
-    if (!ctx.runtime.plugin) return
+    if (!ctx.scope.runtime) return
     // Case 4: custom inject checks
-    if (ctx.bail(ctx, 'internal/inject', name)) return
+    if (ctx.bail(ctx, 'internal/inject', name, provider)) return
     const lines = error.stack!.split('\n')
     lines.splice(1, 1)
     error.stack = lines.join('\n')
-    ctx.emit(ctx, 'internal/warning', error)
+    throw error
   }
 
   static handler: ProxyHandler<Context> = {
@@ -51,7 +51,7 @@ class ReflectService {
       if (typeof prop !== 'string') return Reflect.get(target, prop, ctx)
 
       if (Reflect.has(target, prop)) {
-        return getTraceable(ctx, Reflect.get(target, prop, ctx), true)
+        return getTraceable(ctx, Reflect.get(target, prop, ctx))
       }
 
       const [name, internal] = ReflectService.resolveInject(target, prop)
@@ -63,7 +63,11 @@ class ReflectService {
       } else if (internal.type === 'accessor') {
         return internal.get.call(ctx, ctx[symbols.receiver])
       } else {
-        if (!internal.builtin) ReflectService.checkInject(ctx, name, error)
+        if (!internal.builtin) {
+          const key = target[symbols.isolate][name]
+          const item = target[symbols.store][key]
+          ReflectService.checkInject(ctx, name, error, item?.source.scope)
+        }
         return ctx.reflect.get(name)
       }
     },
@@ -98,12 +102,13 @@ class ReflectService {
     defineProperty(this, symbols.tracker, {
       associate: 'reflect',
       property: 'ctx',
+      noShadow: true,
     })
 
     this._mixin('reflect', ['get', 'set', 'provide', 'accessor', 'mixin', 'alias'])
-    this._mixin('scope', ['config', 'runtime', 'effect', 'collect', 'accept', 'decline'])
-    this._mixin('registry', ['using', 'inject', 'plugin'])
-    this._mixin('lifecycle', ['on', 'once', 'parallel', 'emit', 'serial', 'bail', 'start', 'stop'])
+    this._mixin('scope', ['runtime', 'effect'])
+    this._mixin('registry', ['inject', 'plugin'])
+    this._mixin('events', ['on', 'once', 'parallel', 'emit', 'serial', 'bail'])
   }
 
   get(name: string, strict = false) {
@@ -112,8 +117,9 @@ class ReflectService {
     const key = this.ctx[symbols.isolate][name]
     const item = this.ctx[symbols.store][key]
     if (!item) return
-    if (strict && item.source.scope.status !== ScopeStatus.ACTIVE) return
-    return getTraceable(this.ctx, item.value)
+    if (!strict) return getTraceable(this.ctx, item.value)
+    if (item.source.scope.status !== ScopeStatus.ACTIVE) return
+    return item.value
   }
 
   set(name: string, value: any) {
@@ -225,7 +231,10 @@ class ReflectService {
   bind<T extends Function>(callback: T) {
     return new Proxy(callback, {
       apply: (target, thisArg, args) => {
-        return target.apply(this.trace(thisArg), args.map(arg => this.trace(arg)))
+        return Reflect.apply(target, this.trace(thisArg), args.map(arg => this.trace(arg)))
+      },
+      construct: (target, args, newTarget) => {
+        return Reflect.construct(target, args.map(arg => this.trace(arg)), newTarget)
       },
     })
   }

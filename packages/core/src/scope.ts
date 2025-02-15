@@ -1,37 +1,18 @@
-import { deepEqual, defineProperty, Dict, isNullable, remove } from 'cosmokit'
-import { Context } from './context.ts'
-import { Inject, Plugin } from './registry.ts'
-import { isConstructor, resolveConfig, symbols } from './utils.ts'
+import { Dict, isNullable } from 'cosmokit'
+import { Context } from './context'
+import { Inject, Plugin, resolveConfig } from './registry'
+import { composeError, DisposableList, isConstructor, symbols } from './utils'
 
-declare module './context.ts' {
+declare module './context' {
   export interface Context {
     scope: EffectScope<this>
-    runtime: MainScope<this>
-    effect<T extends DisposableLike>(callback: Callable<T, [ctx: this]>): T
-    effect<T extends DisposableLike, R>(callback: Callable<T, [ctx: this, config: R]>, config: R): T
-    /** @deprecated use `ctx.effect()` instead */
-    collect(label: string, callback: () => void): () => void
-    accept(callback?: (config: this['config']) => void | boolean, options?: AcceptOptions): () => boolean
-    accept(keys: (keyof this['config'])[], callback?: (config: this['config']) => void | boolean, options?: AcceptOptions): () => boolean
-    decline(keys: (keyof this['config'])[]): () => boolean
+    effect(callback: Effect): () => Promise<void>
   }
 }
 
-export type Disposable = () => void
+export type Disposable<T = any> = () => T
 
-export type DisposableLike = Disposable | { dispose: Disposable }
-
-export type Callable<T, R extends unknown[]> = ((...args: R) => T) | (new (...args: R) => T)
-
-export interface AcceptOptions {
-  passive?: boolean
-  immediate?: boolean
-}
-
-export interface Acceptor extends AcceptOptions {
-  keys?: string[]
-  callback?: (config: any) => void | boolean
-}
+export type Effect<T = void> = () => Disposable<T> | Iterable<Disposable, void, void>
 
 export const enum ScopeStatus {
   PENDING,
@@ -55,358 +36,227 @@ export namespace CordisError {
   } as const
 }
 
-export abstract class EffectScope<C extends Context = Context> {
+export class EffectScope<C extends Context = Context> {
   public uid: number | null
   public ctx: C
-  public disposables: Disposable[] = []
-  public error: any
+  public config: any
+  public acceptors = new DisposableList<() => boolean>()
+  public disposables = new DisposableList<Disposable>()
   public status = ScopeStatus.PENDING
-  public isActive = false
+  public dispose: () => Promise<void>
 
   // Same as `this.ctx`, but with a more specific type.
   protected context: Context
-  protected proxy: any
-  protected acceptors: Acceptor[] = []
-  protected tasks = new Set<Promise<void>>()
-  protected hasError = false
 
-  abstract runtime: MainScope<C>
-  abstract activate(): Promise<void>
-  abstract dispose(): boolean
-  abstract update(config: C['config'], forced?: boolean): void
+  private _active = false
+  private _error: any
+  private _pending: Promise<void> | undefined
 
-  constructor(public parent: C, public config: C['config']) {
-    this.uid = parent.registry ? parent.registry.counter : 0
-    this.ctx = this.context = parent.extend({ scope: this })
-    this.proxy = new Proxy({}, {
-      get: (target, key) => Reflect.get(this.config, key),
-    })
+  constructor(
+    public parent: C,
+    config: any,
+    public inject: Dict<Inject.Meta>,
+    public runtime: Plugin.Runtime | null,
+    private getOuterStack: () => Iterable<string>,
+  ) {
+    if (parent.scope) {
+      this.uid = parent.registry.counter
+      this.ctx = this.context = parent.extend({ scope: this })
+      this.dispose = parent.scope.effect(() => {
+        const remove = runtime!.scopes.push(this)
+        this.context.emit('internal/plugin', this)
+        try {
+          this.config = resolveConfig(runtime!, config)
+          this.active = true
+        } catch (error) {
+          this.context.emit('internal/error', error)
+          this._error = error
+        }
+        return async () => {
+          this.uid = null
+          this.context.emit('internal/plugin', this)
+          if (this.ctx.registry.has(runtime!.callback)) {
+            remove()
+            if (!runtime!.scopes.length) {
+              this.ctx.registry.delete(runtime!.callback)
+            }
+          }
+          this.active = false
+          await this._pending
+        }
+      })
+    } else {
+      this.uid = 0
+      this.ctx = this.context = parent
+      this._active = true
+      this.status = ScopeStatus.ACTIVE
+      this.dispose = () => {
+        throw new Error('cannot dispose root scope')
+      }
+    }
   }
 
-  protected get _config() {
-    return this.runtime.isReactive ? this.proxy : this.config
+  get pending() {
+    return this._pending
   }
 
   assertActive() {
-    if (this.isActive) return
+    if (this.uid !== null) return
     throw new CordisError('INACTIVE_EFFECT')
   }
 
-  effect(callback: Callable<DisposableLike, [ctx: C, config: any]>, config?: any) {
+  effect<T = void>(callback: Effect<T>): () => T {
     this.assertActive()
-    const result = isConstructor(callback)
-      // eslint-disable-next-line new-cap
-      ? new callback(this.ctx, config)
-      : callback(this.ctx, config)
-    let disposed = false
-    const original = typeof result === 'function' ? result : result.dispose.bind(result)
+    const result = callback()
+    let isDisposed = false
+    let dispose: Disposable
+    if (typeof result === 'function') {
+      dispose = result
+    } else if (result[Symbol.iterator]) {
+      const iter = result[Symbol.iterator]()
+      const disposables: Disposable[] = []
+      try {
+        while (true) {
+          const value = iter.next()
+          if (value.value) disposables.unshift(value.value)
+          if (value.done) break
+        }
+      } catch (error) {
+        disposables.forEach(dispose => dispose())
+        throw error
+      }
+      dispose = () => disposables.forEach(dispose => dispose())
+    } else {
+      throw new TypeError('effect must return a function or an iterable')
+    }
     const wrapped = (...args: []) => {
       // make sure the original callback is not called twice
-      if (disposed) return
-      disposed = true
-      remove(this.disposables, wrapped)
-      return original(...args)
+      if (isDisposed) return
+      isDisposed = true
+      remove()
+      return dispose(...args)
     }
-    this.disposables.push(wrapped)
-    if (typeof result === 'function') return wrapped
-    result.dispose = wrapped
-    return result
+    const remove = this.disposables.push(wrapped)
+    return wrapped
   }
 
-  collect(label: string, callback: () => any) {
-    const dispose = defineProperty(() => {
-      remove(this.disposables, dispose)
-      return callback()
-    }, 'name', label)
-    this.disposables.push(dispose)
-    return dispose
+  leak(disposable: Disposable) {
+    this.disposables.leak(disposable)
   }
 
-  async restart() {
-    await this.reset()
-    this.error = null
-    this.hasError = false
-    this.status = ScopeStatus.PENDING
-    await this.start()
-  }
-
-  protected _getStatus() {
+  private _getStatus() {
+    if (this._pending) return ScopeStatus.LOADING
     if (this.uid === null) return ScopeStatus.DISPOSED
-    if (this.hasError) return ScopeStatus.FAILED
-    if (this.tasks.size) return ScopeStatus.LOADING
-    if (this.isReady) return ScopeStatus.ACTIVE
+    if (this._error) return ScopeStatus.FAILED
+    if (this._active) return ScopeStatus.ACTIVE
     return ScopeStatus.PENDING
   }
 
-  updateStatus(callback?: () => void) {
+  private _updateStatus(callback: () => void) {
     const oldValue = this.status
-    callback?.()
+    callback()
     this.status = this._getStatus()
     if (oldValue !== this.status) {
       this.context.emit('internal/status', this, oldValue)
     }
   }
 
-  cancel(reason?: any) {
-    this.error = reason
-    this.updateStatus(() => this.hasError = true)
-    this.reset()
-  }
-
-  get isReady() {
-    return Object.entries(this.runtime.inject).every(([name, inject]) => {
-      return !inject.required || !isNullable(this.ctx.reflect.get(name, true))
-    })
-  }
-
-  leak<T>(disposable: T) {
-    return defineProperty(disposable, Context.static, this)
-  }
-
-  async reset() {
-    this.isActive = false
-    this.disposables = this.disposables.splice(0).filter((dispose) => {
-      if (this.uid !== null && dispose[Context.static] === this) return true
-      ;(async () => dispose())().catch((reason) => {
-        this.context.emit(this.ctx, 'internal/error', reason)
-      })
-    })
-  }
-
-  protected init(error?: any) {
-    if (!this.config) {
-      this.cancel(error)
-    } else {
-      this.start()
-    }
-  }
-
-  async start() {
-    if (!this.isReady || this.isActive || this.uid === null) return true
-    this.isActive = true
-    await this.activate()
-    this.updateStatus()
-  }
-
-  accept(callback?: (config: C['config']) => void | boolean, options?: AcceptOptions): () => boolean
-  accept(keys: string[], callback?: (config: C['config']) => void | boolean, options?: AcceptOptions): () => boolean
-  accept(...args: any[]) {
-    const keys = Array.isArray(args[0]) ? args.shift() : null
-    const acceptor: Acceptor = { keys, callback: args[0], ...args[1] }
-    return this.effect(() => {
-      this.acceptors.push(acceptor)
-      if (acceptor.immediate) acceptor.callback?.(this.config)
-      return () => remove(this.acceptors, acceptor)
-    })
-  }
-
-  decline(keys: string[]) {
-    return this.accept(keys, () => true)
-  }
-
-  checkUpdate(resolved: any, forced?: boolean) {
-    if (forced || !this.config) return [true, true]
-    if (forced === false) return [false, false]
-
-    const modified: Record<string, boolean> = Object.create(null)
-    const checkPropertyUpdate = (key: string) => {
-      const result = modified[key] ??= !deepEqual(this.config[key], resolved[key])
-      hasUpdate ||= result
-      return result
-    }
-
-    const ignored = new Set<string>()
-    let hasUpdate = false, shouldRestart = false
-    let fallback: boolean | null = this.runtime.isReactive || null
-    for (const { keys, callback, passive } of this.acceptors) {
-      if (!keys) {
-        fallback ||= !passive
-      } else if (passive) {
-        keys?.forEach(key => ignored.add(key))
-      } else {
-        let hasUpdate = false
-        for (const key of keys) {
-          hasUpdate ||= checkPropertyUpdate(key)
+  private async _reload() {
+    try {
+      await composeError(async () => {
+        if (isConstructor(this.runtime!.callback)) {
+          // eslint-disable-next-line new-cap
+          const instance = new this.runtime!.callback(this.ctx, this.config)
+          for (const hook of instance?.[symbols.initHooks] ?? []) {
+            hook()
+          }
+          await instance?.[symbols.setup]?.()
+        } else {
+          await this.runtime!.callback(this.ctx, this.config)
         }
-        if (!hasUpdate) continue
-      }
-      const result = callback?.(resolved)
-      if (result) shouldRestart = true
+      }, 2, this.getOuterStack)
+    } catch (reason) {
+      // the registry impl guarantees that the error is non-null
+      this.context.emit(this.ctx, 'internal/error', reason)
+      this._error = reason
+      this._active = false
     }
-
-    for (const key in { ...this.config, ...resolved }) {
-      if (fallback === false) continue
-      if (!(key in modified) && !ignored.has(key)) {
-        const hasUpdate = checkPropertyUpdate(key)
-        if (fallback === null) shouldRestart ||= hasUpdate
-      }
-    }
-    return [hasUpdate, shouldRestart]
+    this._updateStatus(() => {
+      this._pending = this._active ? undefined : this._unload()
+    })
   }
-}
 
-export class ForkScope<C extends Context = Context> extends EffectScope<C> {
-  dispose: () => boolean
-
-  constructor(parent: Context, public runtime: MainScope<C>, config: C['config'], error?: any) {
-    super(parent as C, config)
-
-    this.dispose = runtime.leak(parent.scope.collect(`fork <${parent.runtime.name}>`, () => {
-      this.uid = null
-      this.reset()
-      this.context.emit('internal/fork', this)
-      const result = remove(runtime.disposables, this.dispose)
-      if (remove(runtime.children, this) && !runtime.children.length) {
-        parent.registry.delete(runtime.plugin)
+  private async _unload() {
+    await Promise.all(this.disposables.clear().map(async (dispose) => {
+      try {
+        await composeError(dispose, 1, this.getOuterStack)
+      } catch (reason) {
+        this.context.emit(this.ctx, 'internal/error', reason)
       }
-      return result
     }))
-
-    runtime.children.push(this)
-    runtime.disposables.push(this.dispose)
-    this.context.emit('internal/fork', this)
-    this.init(error)
+    this._updateStatus(() => {
+      this._pending = this._active ? this._reload() : undefined
+    })
   }
 
-  async activate() {
-    for (const fork of this.runtime.forkables) {
-      const value = await fork(this.context, this._config)
-      await value?.[symbols.setup]?.()
+  private _checkInject() {
+    try {
+      return Object.entries(this.inject).every(([name, inject]) => {
+        if (!inject.required) return true
+        const service = this.ctx.reflect.get(name, true)
+        if (isNullable(service)) return false
+        if (!service[symbols.check]) return true
+        return service[symbols.check](this.ctx)
+      })
+    } catch (error) {
+      this.context.emit(this.ctx, 'internal/error', error)
+      this._error = error
+      this._active = false
+      return false
     }
   }
 
-  update(config: any, forced?: boolean) {
-    const oldConfig = this.config
-    const state: EffectScope<C> = this.runtime.isForkable ? this : this.runtime
-    if (state.config !== oldConfig) return
-    let resolved: any
+  get active() {
+    return this._active
+  }
+
+  set active(value) {
+    if (value && (!this.uid || !this._checkInject())) return
+    this._updateStatus(() => {
+      if (!this._pending && value !== this._active) {
+        this._pending = value ? this._reload() : this._unload()
+      }
+      this._active = value
+    })
+  }
+
+  async _await() {
+    while (this.pending) {
+      await this.pending
+    }
+    if (this._error) throw this._error
+  }
+
+  then(onFulfilled: () => any, onRejected?: (reason: any) => any) {
+    return this._await().then(onFulfilled, onRejected)
+  }
+
+  async restart() {
+    this.active = false
+    this.active = true
+  }
+
+  update(config: any) {
+    if (this.context.bail(this, 'internal/update', this, config)) return
     try {
-      resolved = resolveConfig(this.runtime.plugin, config)
+      this.config = resolveConfig(this.runtime!, config)
     } catch (error) {
       this.context.emit('internal/error', error)
-      return this.cancel(error)
+      this._error = error
+      this.active = false
+      return
     }
-    const [hasUpdate, shouldRestart] = state.checkUpdate(resolved, forced)
-    this.context.emit('internal/before-update', this, config)
-    this.config = resolved
-    state.config = resolved
-    if (hasUpdate) {
-      this.context.emit('internal/update', this, oldConfig)
-    }
-    if (shouldRestart) state.restart()
-  }
-}
-
-export class MainScope<C extends Context = Context> extends EffectScope<C> {
-  public value: any
-
-  runtime = this
-  schema: any
-  name?: string
-  inject: Dict<Inject.Meta> = Object.create(null)
-  forkables: Function[] = []
-  children: ForkScope<C>[] = []
-  isReusable?: boolean = false
-  isReactive?: boolean = false
-
-  constructor(ctx: C, public plugin: Plugin, config: any, error?: any) {
-    super(ctx, config)
-    if (!plugin) {
-      this.name = 'root'
-      this.isActive = true
-    } else {
-      this.setup()
-      this.init(error)
-    }
-  }
-
-  get isForkable() {
-    return this.forkables.length > 0
-  }
-
-  fork(parent: Context, config: any, error?: any) {
-    return new ForkScope(parent, this, config, error)
-  }
-
-  dispose() {
-    this.uid = null
-    this.reset()
-    this.context.emit('internal/runtime', this)
-    return true
-  }
-
-  private setup() {
-    const { name } = this.plugin
-    if (name && name !== 'apply') this.name = name
-    this.schema = this.plugin['Config'] || this.plugin['schema']
-    this.inject = Inject.resolve(this.plugin['using'] || this.plugin['inject'])
-    this.isReusable = this.plugin['reusable']
-    this.isReactive = this.plugin['reactive']
-    this.context.emit('internal/runtime', this)
-
-    if (this.isReusable) {
-      this.forkables.push(this.apply)
-    }
-  }
-
-  private apply = (context: C, config: any) => {
-    if (typeof this.plugin !== 'function') {
-      return this.plugin.apply(context, config)
-    } else if (isConstructor(this.plugin)) {
-      // eslint-disable-next-line new-cap
-      const instance = new this.plugin(context, config)
-      if (instance['fork']) {
-        this.forkables.push(instance['fork'].bind(instance))
-      }
-      return instance
-    } else {
-      return this.plugin(context, config)
-    }
-  }
-
-  async reset() {
-    super.reset()
-    for (const fork of this.children) {
-      fork.reset()
-    }
-  }
-
-  async activate() {
-    if (!this.isReusable && this.plugin) {
-      const value = await this.apply(this.ctx, this._config)
-      for (const hook of value?.[symbols.initHooks] ?? []) {
-        hook()
-      }
-      await value?.[symbols.setup]?.()
-    }
-    for (const fork of this.children) {
-      fork.start()
-    }
-  }
-
-  update(config: C['config'], forced?: boolean) {
-    if (this.isForkable) {
-      const warning = new Error(`attempting to update forkable plugin "${this.plugin.name}", which may lead to unexpected behavior`)
-      this.context.emit(this.ctx, 'internal/warning', warning)
-    }
-    const oldConfig = this.config
-    let resolved: any
-    try {
-      resolved = resolveConfig(this.runtime.plugin || this.context.constructor, config)
-    } catch (error) {
-      this.context.emit('internal/error', error)
-      return this.cancel(error)
-    }
-    const [hasUpdate, shouldRestart] = this.checkUpdate(resolved, forced)
-    const state = this.children.find(fork => fork.config === oldConfig)
-    this.config = resolved
-    if (state) {
-      this.context.emit('internal/before-update', state, config)
-      state.config = resolved
-      if (hasUpdate) {
-        this.context.emit('internal/update', state, oldConfig)
-      }
-    }
-    if (shouldRestart) this.restart()
+    this._error = undefined
+    this.restart()
   }
 }

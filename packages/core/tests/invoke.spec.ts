@@ -12,14 +12,13 @@ describe('functional service', () => {
 
     class Foo extends Service {
       constructor(ctx: Context, public config: Config) {
-        super(ctx, 'foo', true)
+        super(ctx, 'foo')
       }
 
       protected [Service.invoke](init?: Config) {
-        const caller = this.ctx
-        expect(caller).to.be.instanceof(Context)
+        expect(this.ctx).to.be.instanceof(Context)
         let result = { ...this.config }
-        let intercept = caller[Context.intercept]
+        let intercept = this.ctx[Context.intercept]
         while (intercept) {
           Object.assign(result, intercept.foo)
           intercept = Object.getPrototypeOf(intercept)
@@ -40,7 +39,7 @@ describe('functional service', () => {
     }
 
     const root = new Context()
-    root.plugin(Foo, { a: 1 })
+    await root.plugin(Foo, { a: 1 })
 
     // access from context
     expect(root.foo()).to.deep.equal({ a: 1 })

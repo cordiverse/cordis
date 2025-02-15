@@ -1,20 +1,25 @@
 import { defineProperty, Dict } from 'cosmokit'
-import { Context } from './context.ts'
-import { ForkScope, MainScope, ScopeStatus } from './scope.ts'
-import { resolveConfig, symbols, withProps } from './utils.ts'
+import { Context } from './context'
+import { EffectScope } from './scope'
+import { DisposableList, symbols, withProps } from './utils'
 
 function isApplicable(object: Plugin) {
   return object && typeof object === 'object' && typeof object.apply === 'function'
 }
 
+function buildOuterStack() {
+  const outerError = new Error()
+  return () => outerError.stack!.split('\n').slice(3)
+}
+
 export type Inject = string[] | Dict<Inject.Meta>
 
 export function Inject(inject: Inject) {
-  return function (value: any, ctx: ClassDecoratorContext<any> | ClassMethodDecoratorContext<any>) {
-    if (ctx.kind === 'class') {
+  return function (value: any, decorator: ClassDecoratorContext<any> | ClassMethodDecoratorContext<any>) {
+    if (decorator.kind === 'class') {
       value.inject = inject
-    } else if (ctx.kind === 'method') {
-      ctx.addInitializer(function () {
+    } else if (decorator.kind === 'method') {
+      decorator.addInitializer(function () {
         const property = this[symbols.tracker]?.property
         if (!property) throw new Error('missing context tracker')
         ;(this[symbols.initHooks] ??= []).push(() => {
@@ -24,14 +29,15 @@ export function Inject(inject: Inject) {
         })
       })
     } else {
-      throw new Error('@Inject can only be used on class or class methods')
+      throw new Error('@Inject() can only be used on class or class methods')
     }
   }
 }
 
 export namespace Inject {
-  export interface Meta {
+  export interface Meta<T = any> {
     required: boolean
+    config?: T
   }
 
   export function resolve(inject: Inject | null | undefined) {
@@ -39,14 +45,7 @@ export namespace Inject {
     if (Array.isArray(inject)) {
       return Object.fromEntries(inject.map(name => [name, { required: true }]))
     }
-    const { required, optional, ...rest } = inject
-    if (Array.isArray(required)) {
-      Object.assign(rest, Object.fromEntries(required.map(name => [name, { required: true }])))
-    }
-    if (Array.isArray(optional)) {
-      Object.assign(rest, Object.fromEntries(optional.map(name => [name, { required: false }])))
-    }
-    return rest
+    return inject
   }
 }
 
@@ -58,8 +57,6 @@ export type Plugin<C extends Context = Context, T = any> =
 export namespace Plugin {
   export interface Base<T = any> {
     name?: string
-    reactive?: boolean
-    reusable?: boolean
     Config?: (config: any) => T
     inject?: Inject
     provide?: string | string[]
@@ -72,7 +69,7 @@ export namespace Plugin {
   }
 
   export interface Function<C extends Context = Context, T = any> extends Base<T> {
-    (ctx: C, config: T): void
+    (ctx: C, config: T): void | Promise<void>
   }
 
   export interface Constructor<C extends Context = Context, T = any> extends Base<T> {
@@ -80,43 +77,51 @@ export namespace Plugin {
   }
 
   export interface Object<C extends Context = Context, T = any> extends Base<T> {
-    apply: (ctx: C, config: T) => void
+    apply: (ctx: C, config: T) => void | Promise<void>
   }
+
+  export interface Runtime<C extends Context = Context> {
+    name?: string
+    scopes: DisposableList<EffectScope<C>>
+    callback: globalThis.Function
+    Config?: (config: any) => any
+  }
+}
+
+export function resolveConfig(runtime: Plugin.Runtime, config: any) {
+  if (runtime.Config) {
+    config = runtime.Config(config)
+  }
+  return config ?? {}
 }
 
 export type Spread<T> = undefined extends T ? [config?: T] : [config: T]
 
-declare module './context.ts' {
+declare module './context' {
   export interface Context {
-    /** @deprecated use `ctx.inject()` instead */
-    using(deps: Inject, callback: Plugin.Function<this, void>): ForkScope<this>
-    inject(deps: Inject, callback: Plugin.Function<this, void>): ForkScope<this>
-    plugin<T = undefined, S = T>(plugin: Plugin.Function<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): ForkScope<this>
-    plugin<T = undefined, S = T>(plugin: Plugin.Constructor<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): ForkScope<this>
-    plugin<T = undefined, S = T>(plugin: Plugin.Object<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): ForkScope<this>
-    plugin<T = undefined>(plugin: Plugin.Function<this, T>, ...args: Spread<T>): ForkScope<this>
-    plugin<T = undefined>(plugin: Plugin.Constructor<this, T>, ...args: Spread<T>): ForkScope<this>
-    plugin<T = undefined>(plugin: Plugin.Object<this, T>, ...args: Spread<T>): ForkScope<this>
+    inject(deps: Inject, callback: Plugin.Function<this, void>): EffectScope<this>
+    plugin<T = undefined, S = T>(plugin: Plugin.Function<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): EffectScope<this>
+    plugin<T = undefined, S = T>(plugin: Plugin.Constructor<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): EffectScope<this>
+    plugin<T = undefined, S = T>(plugin: Plugin.Object<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): EffectScope<this>
+    plugin<T = undefined>(plugin: Plugin.Function<this, T>, ...args: Spread<T>): EffectScope<this>
+    plugin<T = undefined>(plugin: Plugin.Constructor<this, T>, ...args: Spread<T>): EffectScope<this>
+    plugin<T = undefined>(plugin: Plugin.Object<this, T>, ...args: Spread<T>): EffectScope<this>
   }
 }
 
 class Registry<C extends Context = Context> {
   private _counter = 0
-  private _internal = new Map<Function, MainScope<C>>()
+  private _internal = new Map<Function, Plugin.Runtime<C>>()
   protected context: Context
 
-  constructor(public ctx: C, config: any) {
+  constructor(public ctx: C) {
     defineProperty(this, symbols.tracker, {
       associate: 'registry',
       property: 'ctx',
+      noShadow: true,
     })
 
     this.context = ctx
-    const runtime = new MainScope(ctx, null!, config)
-    ctx.scope = runtime
-    runtime.ctx = ctx
-    runtime.status = ScopeStatus.ACTIVE
-    this.set(null!, runtime)
   }
 
   get counter() {
@@ -127,12 +132,9 @@ class Registry<C extends Context = Context> {
     return this._internal.size
   }
 
-  resolve(plugin: Plugin, assert = false): Function | undefined {
-    // Allow `null` as a special case.
-    if (plugin === null) return plugin
+  resolve(plugin: Plugin): Function | undefined {
     if (typeof plugin === 'function') return plugin
     if (isApplicable(plugin)) return plugin.apply
-    if (assert) throw new Error('invalid plugin, expect function or object with an "apply" method, received ' + typeof plugin)
   }
 
   get(plugin: Plugin) {
@@ -145,17 +147,14 @@ class Registry<C extends Context = Context> {
     return !!key && this._internal.has(key)
   }
 
-  set(plugin: Plugin, state: MainScope<C>) {
-    const key = this.resolve(plugin)
-    this._internal.set(key!, state)
-  }
-
   delete(plugin: Plugin) {
     const key = this.resolve(plugin)
     const runtime = key && this._internal.get(key)
     if (!runtime) return
     this._internal.delete(key)
-    runtime.dispose()
+    for (const scope of runtime.scopes) {
+      scope.dispose()
+    }
     return runtime
   }
 
@@ -171,46 +170,29 @@ class Registry<C extends Context = Context> {
     return this._internal.entries()
   }
 
-  forEach(callback: (value: MainScope<C>, key: Function, map: Map<Plugin, MainScope<C>>) => void) {
+  forEach(callback: (value: Plugin.Runtime<C>, key: Function) => void) {
     return this._internal.forEach(callback)
-  }
-
-  using(inject: Inject, callback: Plugin.Function<C, void>) {
-    return this.inject(inject, callback)
   }
 
   inject(inject: Inject, callback: Plugin.Function<C, void>) {
     return this.plugin({ inject, apply: callback, name: callback.name })
   }
 
-  plugin(plugin: Plugin<C>, config?: any, error?: any) {
+  plugin(plugin: Plugin<C>, config?: any, getOuterStack: () => Iterable<string> = buildOuterStack()) {
     // check if it's a valid plugin
-    this.resolve(plugin, true)
+    const callback = this.resolve(plugin)
+    if (!callback) throw new Error('invalid plugin, expect function or object with an "apply" method, received ' + typeof plugin)
     this.ctx.scope.assertActive()
 
-    // resolve plugin config
-    if (!error) {
-      try {
-        config = resolveConfig(plugin, config)
-      } catch (reason) {
-        this.context.emit(this.ctx, 'internal/error', reason)
-        error = reason
-        config = null
-      }
+    let runtime = this._internal.get(callback)
+    if (!runtime) {
+      let name = plugin.name
+      if (name === 'apply') name = undefined
+      runtime = { name, callback, scopes: new DisposableList(), Config: plugin.Config }
+      this._internal.set(callback, runtime)
     }
 
-    // check duplication
-    let runtime = this.get(plugin)
-    if (runtime) {
-      if (!runtime.isForkable) {
-        this.context.emit(this.ctx, 'internal/warning', new Error(`duplicate plugin detected: ${plugin.name}`))
-      }
-      return runtime.fork(this.ctx, config, error)
-    }
-
-    runtime = new MainScope(this.ctx, plugin, config, error)
-    this.set(plugin, runtime)
-    return runtime.fork(this.ctx, config, error)
+    return new EffectScope(this.ctx, config, Inject.resolve(plugin.inject), runtime, getOuterStack)
   }
 }
 

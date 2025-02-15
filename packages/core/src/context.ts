@@ -1,21 +1,13 @@
-import { defineProperty, Dict } from 'cosmokit'
-import Lifecycle from './events.ts'
-import ReflectService from './reflect.ts'
-import Registry from './registry.ts'
-import { getTraceable, resolveConfig, symbols } from './utils.ts'
+import { Dict } from 'cosmokit'
+import EventsService from './events'
+import ReflectService from './reflect'
+import Registry from './registry'
+import { getTraceable, symbols } from './utils'
+import { EffectScope } from './scope'
 
-export { Lifecycle, ReflectService, Registry }
+export { EventsService, ReflectService, Registry }
 
 export namespace Context {
-  export type Parameterized<C, T = any> = C & { config: T }
-
-  /** @deprecated use `string[]` instead */
-  export interface MixinOptions {
-    methods?: string[]
-    accessors?: string[]
-    prototype?: {}
-  }
-
   export interface Item<C extends Context> {
     name: string
     value?: any
@@ -54,16 +46,14 @@ export interface Context {
   [Context.intercept]: Intercept<this>
   [Context.internal]: Dict<Context.Internal>
   root: this
-  lifecycle: Lifecycle
+  events: EventsService
   reflect: ReflectService
   registry: Registry<this>
-  config: any
 }
 
 export class Context {
   static readonly store: unique symbol = symbols.store as any
   static readonly events: unique symbol = symbols.events as any
-  static readonly static: unique symbol = symbols.static as any
   static readonly filter: unique symbol = symbols.filter as any
   static readonly isolate: unique symbol = symbols.isolate as any
   static readonly internal: unique symbol = symbols.internal as any
@@ -80,34 +70,17 @@ export class Context {
     Context.prototype[Context.is as any] = true
   }
 
-  /** @deprecated use `Service.traceable` instead */
-  static associate<T extends {}>(object: T, name: string) {
-    return object
-  }
-
-  constructor(config?: any) {
-    config = resolveConfig(this.constructor, config)
+  constructor() {
     this[symbols.store] = Object.create(null)
     this[symbols.isolate] = Object.create(null)
     this[symbols.internal] = Object.create(null)
     this[symbols.intercept] = Object.create(null)
     const self: Context = new Proxy(this, ReflectService.handler)
     self.root = self
+    self.scope = new EffectScope(self, {}, {}, null, () => [])
     self.reflect = new ReflectService(self)
-    self.registry = new Registry(self, config)
-    self.lifecycle = new Lifecycle(self)
-
-    const attach = (internal: Context[typeof symbols.internal]) => {
-      if (!internal) return
-      attach(Object.getPrototypeOf(internal))
-      for (const key of Object.getOwnPropertyNames(internal)) {
-        const constructor = internal[key]['prototype']?.constructor
-        if (!constructor) continue
-        self[internal[key]['key']] = new constructor(self, config)
-        defineProperty(self[internal[key]['key']], 'ctx', self)
-      }
-    }
-    attach(this[symbols.internal])
+    self.registry = new Registry(self)
+    self.events = new EventsService(self)
     return self
   }
 
@@ -116,27 +89,19 @@ export class Context {
   }
 
   get name() {
-    let runtime = this.runtime
-    while (runtime && !runtime.name) {
-      runtime = runtime.parent.runtime
-    }
-    return runtime?.name!
-  }
-
-  get events() {
-    return this.lifecycle
-  }
-
-  /** @deprecated */
-  get state() {
-    return this.scope
+    let scope = this.scope
+    do {
+      if (scope.runtime?.name) return scope.runtime.name
+      scope = scope.parent.scope
+    } while (scope !== scope.parent.scope)
+    return 'root'
   }
 
   extend(meta = {}): this {
-    const source = Reflect.getOwnPropertyDescriptor(this, symbols.shadow)?.value
+    const shadow = Reflect.getOwnPropertyDescriptor(this, symbols.shadow)?.value
     const self = Object.assign(Object.create(getTraceable(this, this)), meta)
-    if (!source) return self
-    return Object.assign(Object.create(self), { [symbols.shadow]: source })
+    if (!shadow) return self
+    return Object.assign(Object.create(self), { [symbols.shadow]: shadow })
   }
 
   isolate(name: string, label?: symbol) {

@@ -1,20 +1,25 @@
-import { mock } from 'node:test'
+import { Mock, mock } from 'node:test'
 import { expect } from 'chai'
 import { Context } from '@cordisjs/core'
-import { defineProperty } from 'cosmokit'
 import MockLoader from './utils'
 
 describe('group management: basic support', () => {
   const root = new Context()
-  root.plugin(MockLoader)
-  const loader = root.loader
-
   const dispose = mock.fn()
-  const foo = loader.mock('foo', defineProperty((ctx: Context) => {
-    ctx.on('dispose', dispose)
-  }, 'reusable', true))
 
-  before(() => loader.start())
+  let loader!: MockLoader
+  let foo!: Mock<Function>
+
+  before(async () => {
+    await root.plugin(MockLoader)
+    loader = root.loader as any
+
+    foo = loader.mock('foo', (ctx: Context) => {
+      ctx.on('dispose', dispose)
+    })
+
+    await loader.start()
+  })
 
   beforeEach(() => {
     foo.mock.resetCalls()
@@ -41,6 +46,8 @@ describe('group management: basic support', () => {
       }],
     }, outer)
 
+    await loader.expectScope(outer)
+    await loader.expectScope(inner)
     expect(foo.mock.calls).to.have.length(2)
     expect(dispose.mock.calls).to.have.length(0)
     expect([...loader.entries()]).to.have.length(4)
@@ -73,6 +80,7 @@ describe('group management: basic support', () => {
   it('enable outer', async () => {
     await loader.update(outer, { disabled: null })
 
+    await new Promise((resolve) => setTimeout(resolve, 0))
     expect(foo.mock.calls).to.have.length(2)
     expect(dispose.mock.calls).to.have.length(0)
     expect([...loader.entries()]).to.have.length(4)
@@ -81,15 +89,21 @@ describe('group management: basic support', () => {
 
 describe('group management: transfer', () => {
   const root = new Context()
-  root.plugin(MockLoader)
-  const loader = root.loader
-
   const dispose = mock.fn()
-  const foo = loader.mock('foo', defineProperty((ctx: Context) => {
-    ctx.on('dispose', dispose)
-  }, 'reusable', true))
 
-  before(() => loader.start())
+  let loader!: MockLoader
+  let foo!: Mock<Function>
+
+  before(async () => {
+    await root.plugin(MockLoader)
+    loader = root.loader as any
+
+    foo = loader.mock('foo', (ctx: Context) => {
+      ctx.on('dispose', dispose)
+    })
+
+    await loader.start()
+  })
 
   beforeEach(() => {
     foo.mock.resetCalls()
@@ -160,5 +174,68 @@ describe('group management: transfer', () => {
     expect(foo.mock.calls).to.have.length(1)
     expect(dispose.mock.calls).to.have.length(0)
     expect([...loader.entries()]).to.have.length(4)
+  })
+})
+
+describe('group management: intercept', () => {
+  const root = new Context()
+  const callback = mock.fn()
+
+  let loader!: MockLoader
+
+  before(async () => {
+    await root.plugin(MockLoader)
+    loader = root.loader as any
+    loader.mock('foo', (ctx: Context) => {
+      callback(ctx[Context.intercept])
+    })
+    await loader.start()
+  })
+
+  beforeEach(() => {
+    callback.mock.resetCalls()
+  })
+
+  let outer!: string
+  let inner!: string
+  let id!: string
+
+  it('initialize', async () => {
+    outer = await loader.create({
+      name: 'cordis/group',
+      group: true,
+      intercept: {
+        foo: {
+          a: 1,
+        },
+      },
+      config: [],
+    })
+
+    inner = await loader.create({
+      name: 'cordis/group',
+      group: true,
+      intercept: {
+        foo: {
+          b: 2,
+        },
+      },
+      config: [],
+    }, outer)
+    
+    id = await loader.create({
+      name: 'foo',
+      intercept: {
+        foo: {
+          c: 3,
+        },
+      },
+    }, inner)
+
+    expect(callback.mock.calls).to.have.length(1)
+    const intercept = callback.mock.calls[0].arguments[0]
+    expect(intercept.foo).to.deep.equal({ c: 3 })
+    expect(Object.getPrototypeOf(intercept).foo).to.deep.equal({ b: 2 })
+    expect(Object.getPrototypeOf(Object.getPrototypeOf(intercept)).foo).to.deep.equal({ a: 1 })
   })
 })

@@ -1,6 +1,5 @@
 import { Context, Service } from '../src'
 import { expect } from 'chai'
-import { checkError } from './utils'
 
 describe('Association', () => {
   it('service injection', async () => {
@@ -9,22 +8,23 @@ describe('Association', () => {
     class Foo extends Service {
       qux = 1
       constructor(ctx: Context) {
-        super(ctx, 'foo', true)
+        super(ctx, 'foo')
       }
     }
 
     class FooBar extends Service {
       constructor(ctx: Context) {
-        super(ctx, 'foo.bar', true)
+        super(ctx, 'foo.bar')
       }
     }
 
-    root.plugin(Foo)
-    const fork = root.plugin(FooBar)
+    await root.plugin(Foo)
+    const scope = root.plugin(FooBar)
+    await scope
     expect(root.foo).to.be.instanceof(Foo)
     expect(root.foo.bar).to.be.instanceof(FooBar)
     expect(root.foo.qux).to.equal(1)
-    fork.dispose()
+    await scope.dispose()
     expect(root.foo.bar).to.be.undefined
   })
 
@@ -33,13 +33,13 @@ describe('Association', () => {
 
     class Foo extends Service {
       constructor(ctx: Context) {
-        super(ctx, 'foo', true)
+        super(ctx, 'foo')
       }
     }
 
     root.provide('foo.bar')
     root.provide('foo.baz')
-    root.plugin(Foo)
+    await root.plugin(Foo)
     expect(root.foo).to.be.instanceof(Foo)
     root.foo.qux = 2
     root.foo.bar = 3
@@ -66,7 +66,7 @@ describe('Association', () => {
 
     class Foo extends Service {
       constructor(ctx: Context) {
-        super(ctx, 'foo', true)
+        super(ctx, 'foo')
       }
 
       createSession() {
@@ -82,7 +82,7 @@ describe('Association', () => {
       inject = ['foo']
 
       constructor(ctx: Context) {
-        super(ctx, 'bar', true)
+        super(ctx, 'bar')
         ctx.mixin('bar', {
           answer: 'session.answer',
         })
@@ -94,22 +94,20 @@ describe('Association', () => {
     }
 
     const root = new Context()
-    root.plugin(Foo)
+    await root.plugin(Foo)
 
-    root.inject(['foo'], (ctx) => {
+    await root.inject(['foo'], async (ctx) => {
       const session = ctx.foo.createSession()
       expect(session).to.be.instanceof(Session)
       expect(session.bar).to.be.undefined
 
-      ctx.plugin(Bar)
-      ctx.inject(['bar'], (ctx) => {
+      await ctx.plugin(Bar)
+      await ctx.inject(['bar'], (ctx) => {
         const session = ctx.foo.createSession()
         expect(session).to.be.instanceof(Session)
         expect(session.answer()).to.equal(42)
       })
     })
-
-    await checkError(root)
   })
 
   it('associated type - accessor injection', async () => {
@@ -124,7 +122,7 @@ describe('Association', () => {
 
     class Foo extends Service {
       constructor(ctx: Context) {
-        super(ctx, 'foo', true)
+        super(ctx, 'foo')
       }
 
       session() {
@@ -157,10 +155,10 @@ describe('Association', () => {
     }
 
     const root = new Context()
-    root.plugin(Foo)
-    root.plugin(Bar)
+    await root.plugin(Foo)
+    await root.plugin(Bar)
 
-    root.inject(['foo'], (ctx) => {
+    await root.inject(['foo'], (ctx) => {
       const session = ctx.foo.session()
       expect(session).to.be.instanceof(Session)
       expect(session.bar).to.be.undefined
@@ -168,15 +166,13 @@ describe('Association', () => {
       session.bar = 100
       expect(session.bar).to.equal(101)
     })
-
-    await checkError(root)
   })
 
   // https://github.com/cordiverse/cordis/issues/14
-  it('inspect', () => {
+  it('inspect', async () => {
     class Foo extends Service {
       constructor(ctx: Context) {
-        super(ctx, 'foo', true)
+        super(ctx, 'foo')
       }
 
       bar(arg: any) {
@@ -190,7 +186,7 @@ describe('Association', () => {
     }
 
     const root = new Context()
-    root.plugin(Foo)
+    await root.plugin(Foo)
     class X {}
     root.foo.bar(X)
   })

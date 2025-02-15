@@ -1,4 +1,4 @@
-import { Context, ForkScope } from '@cordisjs/core'
+import { composeError, Context, EffectScope } from '@cordisjs/core'
 import { isNullable } from 'cosmokit'
 import { Loader } from '../loader.ts'
 import { EntryGroup } from './group.ts'
@@ -36,15 +36,17 @@ export class Entry<C extends Context = Context> {
   static readonly key = Symbol.for('cordis.entry')
 
   public ctx: C
-  public fork?: ForkScope<C>
+  public scope?: EffectScope<C>
   public suspend = false
-  public parent!: EntryGroup
+  public parent!: EntryGroup<C>
   public options!: EntryOptions
-  public subgroup?: EntryGroup
+  public subgroup?: EntryGroup<C>
   public subtree?: EntryTree<C>
 
+  _initTask?: Promise<void>
+
   constructor(public loader: Loader<C>) {
-    this.ctx = loader.ctx.extend()
+    this.ctx = loader.ctx.extend({ [Entry.key]: this })
     this.context.emit('loader/entry-init', this)
   }
 
@@ -71,23 +73,13 @@ export class Entry<C extends Context = Context> {
     return false
   }
 
-  _check() {
-    if (this.disabled) return false
-    return !this.parent.ctx.bail('loader/entry-check', this)
-  }
-
   evaluate(expr: string) {
     return evaluate(this.ctx, expr)
   }
 
   _resolveConfig(plugin: any): [any, any?] {
-    if (plugin[EntryGroup.key]) return [this.options.config]
-    try {
-      return [interpolate(this.ctx, this.options.config)]
-    } catch (error) {
-      this.context.emit(this.ctx, 'internal/error', error)
-      return [null, error]
-    }
+    if (plugin[EntryGroup.key]) return this.options.config
+    return interpolate(this.ctx, this.options.config)
   }
 
   patch(options: Partial<EntryOptions> = {}) {
@@ -98,15 +90,10 @@ export class Entry<C extends Context = Context> {
     // step 1: set prototype for transferred context
     Object.setPrototypeOf(this.ctx, this.parent.ctx)
 
-    if (this.fork && 'config' in options) {
+    if (this.scope && 'config' in options) {
       // step 2: update fork (when options.config is updated)
       this.suspend = true
-      const [config, error] = this._resolveConfig(this.fork.runtime.plugin)
-      if (error) {
-        this.fork.cancel(error)
-      } else {
-        this.fork.update(config)
-      }
+      this.scope.update(this._resolveConfig(this.scope.runtime?.callback))
     } else if (this.subgroup && 'disabled' in options) {
       // step 3: check children (when options.disabled is updated)
       const tree = this.subtree ?? this.parent.tree
@@ -120,13 +107,14 @@ export class Entry<C extends Context = Context> {
     this.context.emit(meta, 'loader/after-patch', this)
   }
 
+  check() {
+    return !this.disabled && !this.context.bail('loader/entry-check', this)
+  }
+
   async refresh() {
-    const ready = this._check()
-    if (ready && !this.fork) {
-      await this.start()
-    } else if (!ready && this.fork) {
-      await this.stop()
-    }
+    if (this.scope) return
+    if (!this.check()) return
+    await (this._initTask ??= this._init())
   }
 
   async update(options: Partial<EntryOptions>, override = false) {
@@ -147,32 +135,45 @@ export class Entry<C extends Context = Context> {
     sortKeys(this.options)
 
     // step 2: execute
-    if (!this._check()) {
-      await this.stop()
-    } else if (this.fork) {
+    // this._check() is only a init-time optimization
+    if (this.disabled) {
+      this.scope?.dispose()
+      return
+    }
+
+    if (this.scope?.uid) {
       this.context.emit('loader/partial-dispose', this, legacy, true)
       this.patch(options)
     } else {
-      await this.start()
+      // FIXME: lock init task
+      await (this._initTask = this._init())
     }
   }
 
-  async start() {
-    const exports = await this.parent.tree.import(this.options.name).catch((error: any) => {
-      this.context.emit(this.ctx, 'internal/error', new Error(`Cannot find package "${this.options.name}"`))
-      this.context.emit(this.ctx, 'internal/error', error)
-    })
-    if (!exports) return
-    const plugin = this.loader.unwrapExports(exports)
-    this.patch()
-    this.ctx[Entry.key] = this
-    const [config, error] = this._resolveConfig(plugin)
-    this.fork = this.ctx.registry.plugin(plugin, config, error)
-    this.context.emit('loader/entry-fork', this, 'apply')
+  getOuterStack = () => {
+    let entry: Entry<C> | undefined = this
+    const result: string[] = []
+    do {
+      result.push(`    at ${entry.parent.tree.url}#${entry.options.id}`)
+      entry = entry.parent.ctx.scope.entry
+    } while (entry)
+    return result
   }
 
-  async stop() {
-    this.fork?.dispose()
-    this.fork = undefined
+  private async _init() {
+    let exports: any
+    try {
+      exports = await composeError(async () => {
+        return this.parent.tree.import(this.options.name)
+      }, 2, this.getOuterStack)
+    } catch (error) {
+      this.context.emit(this.ctx, 'internal/error', error)
+      return
+    }
+    const plugin = this.loader.unwrapExports(exports)
+    this.patch()
+    this.loader.showLog(this, 'apply')
+    this.scope = this.ctx.registry.plugin(plugin, this._resolveConfig(plugin), this.getOuterStack)
+    this._initTask = undefined
   }
 }

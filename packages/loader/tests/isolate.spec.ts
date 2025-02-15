@@ -1,29 +1,37 @@
-import { mock } from 'node:test'
+import { Mock, mock } from 'node:test'
 import { expect } from 'chai'
 import { Context, ScopeStatus, Service } from '@cordisjs/core'
 import { defineProperty } from 'cosmokit'
 import MockLoader from './utils'
 
-describe('service isolation: basic', async () => {
+describe('service isolation: basic', () => {
   const root = new Context()
-  root.plugin(MockLoader)
-  const loader = root.loader
-
   const dispose = mock.fn()
 
-  const foo = loader.mock('foo', defineProperty((ctx: Context) => {
-    ctx.on('dispose', dispose)
-  }, 'inject', ['bar']))
+  let loader!: MockLoader
+  let foo!: Mock<Function>
+  let bar!: Mock<Function>
 
-  loader.mock('bar', class Bar extends Service {
-    static [Service.provide] = 'bar'
-    static [Service.immediate] = true
+  before(async () => {
+    await root.plugin(MockLoader)
+    loader = root.loader as any
+
+    foo = loader.mock('foo', defineProperty((ctx: Context) => {
+      ctx.on('dispose', dispose)
+    }, 'inject', ['bar']))
+  
+    bar = loader.mock('bar', class Bar extends Service {
+      constructor(ctx: Context) {
+        super(ctx, 'bar')
+      }
+    })
+
+    await loader.start()
   })
-
-  before(() => loader.start())
 
   beforeEach(() => {
     foo.mock.resetCalls()
+    bar.mock.resetCalls()
     dispose.mock.resetCalls()
   })
 
@@ -134,30 +142,34 @@ describe('service isolation: basic', async () => {
   })
 })
 
-describe('service isolation: realm', async () => {
+describe('service isolation: realm', () => {
   const root = new Context()
-  root.plugin(MockLoader)
-  const loader = root.loader
-
   const dispose = mock.fn()
 
-  const foo = Object.assign(loader.mock('foo', (ctx: Context) => {
-    ctx.on('dispose', dispose)
-  }), {
-    inject: ['bar'],
-    reusable: true,
-  })
+  let loader!: MockLoader
+  let foo!: Mock<Function>
+  let bar!: Mock<Function>
 
-  const bar = Object.assign(loader.mock('bar', (ctx: Context, config: {}) => {
-    ctx.set('bar', config)
-  }), {
-    reusable: true,
-  })
+  before(async () => {
+    await root.plugin(MockLoader)
+    loader = root.loader as any
 
-  before(() => loader.start())
+    foo = Object.assign(loader.mock('foo', (ctx: Context) => {
+      ctx.on('dispose', dispose)
+    }), {
+      inject: ['bar'],
+    })
+  
+    bar = Object.assign(loader.mock('bar', (ctx: Context, config = {}) => {
+      ctx.set('bar', config)
+    }))
+
+    await loader.start()
+  })
 
   beforeEach(() => {
     foo.mock.resetCalls()
+    bar.mock.resetCalls()
     dispose.mock.resetCalls()
   })
 
@@ -188,7 +200,7 @@ describe('service isolation: realm', async () => {
     })
 
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(root.registry.get(bar)?.children).to.have.length(2)
+    expect(root.registry.get(bar)?.scopes).to.have.length(2)
     expect(foo.mock.calls).to.have.length(0)
     expect(dispose.mock.calls).to.have.length(0)
   })
@@ -201,7 +213,7 @@ describe('service isolation: realm', async () => {
     })
 
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(root.registry.get(bar)?.children).to.have.length(2)
+    expect(root.registry.get(bar)?.scopes).to.have.length(2)
     expect(foo.mock.calls).to.have.length(0)
     expect(dispose.mock.calls).to.have.length(0)
   })
@@ -232,21 +244,21 @@ describe('service isolation: realm', async () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(foo.mock.calls).to.have.length(2)
     expect(dispose.mock.calls).to.have.length(0)
-    const fork1 = loader.expectFork(nested1)
+    const fork1 = loader.expectScope(nested1)
     expect(fork1.ctx.get('bar')!.value).to.equal('alpha')
     expect(fork1.status).to.equal(ScopeStatus.ACTIVE)
-    const fork2 = loader.expectFork(nested2)
+    const fork2 = loader.expectScope(nested2)
     expect(fork2.ctx.get('bar')!.value).to.equal('beta')
     expect(fork2.status).to.equal(ScopeStatus.ACTIVE)
-    const fork3 = loader.expectFork(nested3)
+    const fork3 = loader.expectScope(nested3)
     expect(fork3.ctx.get('bar')).to.be.undefined
     expect(fork3.status).to.equal(ScopeStatus.PENDING)
   })
 
   it('special case: nested realms', async () => {
     const root = new Context()
-    root.plugin(MockLoader)
-    const loader = root.loader
+    await root.plugin(MockLoader)
+    const loader = root.loader as unknown as MockLoader
   
     const dispose = mock.fn()
   
@@ -254,14 +266,11 @@ describe('service isolation: realm', async () => {
       ctx.on('dispose', dispose)
     }), {
       inject: ['bar'],
-      reusable: true,
     })
   
-    Object.assign(loader.mock('bar', (ctx: Context, config: {}) => {
+    Object.assign(loader.mock('bar', (ctx: Context, config = {}) => {
       ctx.set('bar', config)
-    }), {
-      reusable: true,
-    })
+    }))
 
     await loader.start()
 
@@ -295,8 +304,8 @@ describe('service isolation: realm', async () => {
     }, inner)
 
     await new Promise((resolve) => setTimeout(resolve, 0))
-    const fork1 = loader.expectFork(alpha)
-    const fork2 = loader.expectFork(beta)
+    const fork1 = loader.expectScope(alpha)
+    const fork2 = loader.expectScope(beta)
     expect(fork1.ctx.get('bar')!.value).to.equal('custom')
     expect(fork2.ctx.get('bar')!.value).to.equal('custom')
 
@@ -327,8 +336,8 @@ describe('service isolation: realm', async () => {
 
   it('special case: change provider', async () => {
     const root = new Context()
-    root.plugin(MockLoader)
-    const loader = root.loader
+    await root.plugin(MockLoader)
+    const loader = root.loader as unknown as MockLoader
   
     const dispose = mock.fn()
   
@@ -336,14 +345,11 @@ describe('service isolation: realm', async () => {
       ctx.on('dispose', dispose)
     }), {
       inject: ['bar'],
-      reusable: true,
     })
   
-    Object.assign(loader.mock('bar', (ctx: Context, config: {}) => {
+    Object.assign(loader.mock('bar', (ctx: Context, config = {}) => {
       ctx.set('bar', config)
-    }), {
-      reusable: true,
-    })
+    }))
 
     await loader.start()
 
@@ -378,7 +384,7 @@ describe('service isolation: realm', async () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(foo.mock.calls).to.have.length(1)
     expect(dispose.mock.calls).to.have.length(0)
-    const fork = loader.expectFork(id)
+    const fork = loader.expectScope(id)
     expect(fork.ctx.get('bar')!.value).to.equal('alpha')
 
     foo.mock.resetCalls()
@@ -398,8 +404,8 @@ describe('service isolation: realm', async () => {
 
   it('special case: change injector', async () => {
     const root = new Context()
-    root.plugin(MockLoader)
-    const loader = root.loader
+    await root.plugin(MockLoader)
+    const loader = root.loader as unknown as MockLoader
   
     const dispose = mock.fn()
   
@@ -407,13 +413,10 @@ describe('service isolation: realm', async () => {
       ctx.on('dispose', dispose)
     }), {
       inject: ['bar'],
-      reusable: true,
     })
   
-    Object.assign(loader.mock('bar', (ctx: Context, config: {}) => {
+    const bar = loader.mock('bar', (ctx: Context, config = {}) => {
       ctx.set('bar', config)
-    }), {
-      reusable: true,
     })
 
     await loader.start()
@@ -440,16 +443,17 @@ describe('service isolation: realm', async () => {
       config: [],
     })
 
-    await loader.create({
+    const inner = await loader.create({
       name: 'bar',
     }, group)
 
+    await loader.expectScope(inner)
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(foo.mock.calls).to.have.length(1)
     expect(dispose.mock.calls).to.have.length(0)
-    const fork1 = loader.expectFork(alpha)
+    const fork1 = loader.expectScope(alpha)
     expect(fork1.ctx.get('bar')).to.be.ok
-    const fork2 = loader.expectFork(beta)
+    const fork2 = loader.expectScope(beta)
     expect(fork2.ctx.get('bar')).to.be.undefined
 
     foo.mock.resetCalls()
@@ -471,24 +475,32 @@ describe('service isolation: realm', async () => {
 
 describe('service isolation: transfer', () => {
   const root = new Context()
-  root.plugin(MockLoader)
-  const loader = root.loader
-
   const dispose = mock.fn()
 
-  const foo = loader.mock('foo', defineProperty((ctx: Context) => {
-    ctx.on('dispose', dispose)
-  }, 'inject', ['bar']))
+  let loader!: MockLoader
+  let foo!: Mock<Function>
+  let bar!: Mock<Function>
 
-  loader.mock('bar', class Bar extends Service {
-    static [Service.provide] = 'bar'
-    static [Service.immediate] = true
+  before(async () => {
+    await root.plugin(MockLoader)
+    loader = root.loader as any
+
+    foo = loader.mock('foo', defineProperty((ctx: Context) => {
+      ctx.on('dispose', dispose)
+    }, 'inject', ['bar']))
+
+    bar = loader.mock('bar', class Bar extends Service {
+      constructor(ctx: Context) {
+        super(ctx, 'bar')
+      }
+    })
+
+    await loader.start()
   })
-
-  before(() => loader.start())
 
   beforeEach(() => {
     foo.mock.resetCalls()
+    bar.mock.resetCalls()
     dispose.mock.resetCalls()
   })
 

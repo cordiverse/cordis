@@ -1,5 +1,5 @@
 import { Context, EffectScope, Inject } from '@cordisjs/core'
-import { filterKeys } from 'cosmokit'
+import { filterKeys, isNullable } from 'cosmokit'
 import { Entry } from './entry.ts'
 
 declare module './entry.ts' {
@@ -16,10 +16,7 @@ export function apply(ctx: Context) {
   }
 
   const checkInject = (scope: EffectScope, name: string) => {
-    if (!scope.runtime.plugin) return false
-    if (scope.runtime === scope) {
-      return scope.runtime.children.every(fork => checkInject(fork, name))
-    }
+    if (!scope.runtime) return false
     if (name in Inject.resolve(scope.entry?.options.inject)) return true
     return checkInject(scope.parent.scope, name)
   }
@@ -30,7 +27,7 @@ export function apply(ctx: Context) {
 
   ctx.on('loader/entry-check', (entry) => {
     for (const name in getRequired(entry)) {
-      if (!entry.ctx.get(name)) return true
+      if (isNullable(entry.ctx.get(name, true))) return true
     }
   })
 

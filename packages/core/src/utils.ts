@@ -1,9 +1,46 @@
 import { defineProperty } from 'cosmokit'
-import type { Context, Service } from './index.ts'
+import type { Context, Service } from '.'
+
+export class DisposableList<T> {
+  private sn = 0
+  private map = new Map<number, T>()
+
+  get length() {
+    return this.map.size
+  }
+
+  push(value: T) {
+    this.map.set(++this.sn, value)
+    return () => this.map.delete(this.sn)
+  }
+
+  leak(value: T) {
+    const v = this.map.get(this.sn)
+    if (v !== value) {
+      throw new Error('unexpected disposable leak')
+    }
+    this.map.delete(this.sn)
+  }
+
+  clear() {
+    const values = [...this.map.values()]
+    this.map.clear()
+    return values.reverse()
+  }
+
+  [Symbol.iterator]() {
+    return this.map.values()
+  }
+
+  [Symbol.for('nodejs.util.inspect.custom')]() {
+    return [...this]
+  }
+}
 
 export interface Tracker {
   associate?: string
   property?: string
+  noShadow?: boolean
 }
 
 export const symbols = {
@@ -16,18 +53,17 @@ export const symbols = {
   // context symbols
   store: Symbol.for('cordis.store') as typeof Context.store,
   events: Symbol.for('cordis.events') as typeof Context.events,
-  static: Symbol.for('cordis.static') as typeof Context.static,
   filter: Symbol.for('cordis.filter') as typeof Context.filter,
   isolate: Symbol.for('cordis.isolate') as typeof Context.isolate,
   internal: Symbol.for('cordis.internal') as typeof Context.internal,
   intercept: Symbol.for('cordis.intercept') as typeof Context.intercept,
 
   // service symbols
+  check: Symbol.for('cordis.check') as typeof Service.check,
   setup: Symbol.for('cordis.setup') as typeof Service.setup,
   invoke: Symbol.for('cordis.invoke') as typeof Service.invoke,
   extend: Symbol.for('cordis.extend') as typeof Service.extend,
   tracker: Symbol.for('cordis.tracker') as typeof Service.tracker,
-  immediate: Symbol.for('cordis.immediate') as typeof Service.immediate,
 }
 
 const GeneratorFunction = function* () {}.constructor
@@ -43,12 +79,6 @@ export function isConstructor(func: any): func is new (...args: any) => any {
   // polyfilled AsyncGeneratorFunction === Function
   if (AsyncGeneratorFunction !== Function && func instanceof AsyncGeneratorFunction) return false
   return true
-}
-
-export function resolveConfig(plugin: any, config: any) {
-  const schema = plugin['Config'] || plugin['schema']
-  if (schema && plugin['schema'] !== false) config = schema(config)
-  return config ?? {}
 }
 
 export function isUnproxyable(value: any) {
@@ -68,14 +98,23 @@ export function isObject(value: any): value is {} {
   return value && (typeof value === 'object' || typeof value === 'function')
 }
 
-export function getTraceable<T>(ctx: Context, value: T, noTrap?: boolean): T {
+export function getPropertyDescriptor(target: any, prop: string | symbol) {
+  let proto = target
+  while (proto) {
+    const desc = Reflect.getOwnPropertyDescriptor(proto, prop)
+    if (desc) return desc
+    proto = Object.getPrototypeOf(proto)
+  }
+}
+
+export function getTraceable<T>(ctx: Context, value: T): T {
   if (!isObject(value)) return value
   if (Object.hasOwn(value, symbols.shadow)) {
     return Object.getPrototypeOf(value)
   }
   const tracker = value[symbols.tracker]
   if (!tracker) return value
-  return createTraceable(ctx, value, tracker, noTrap)
+  return createTraceable(ctx, value, tracker)
 }
 
 export function withProps(target: any, props?: {}) {
@@ -109,40 +148,13 @@ function createShadow(ctx: Context, target: any, property: string | undefined, r
 function createShadowMethod(ctx: Context, value: any, outer: any, shadow: {}) {
   return new Proxy(value, {
     apply: (target, thisArg, args) => {
-      // contravariant
       if (thisArg === outer) thisArg = shadow
-      // contravariant
-      args = args.map((arg) => {
-        if (typeof arg !== 'function' || arg[symbols.original]) return arg
-        return new Proxy(arg, {
-          get: (target, prop, receiver) => {
-            if (prop === symbols.original) return target
-            const value = Reflect.get(target, prop, receiver)
-            // https://github.com/cordiverse/cordis/issues/14
-            if (prop === 'toString' && value === Function.prototype.toString) {
-              return function (...args: any[]) {
-                return Reflect.apply(value, this === receiver ? target : this, args)
-              }
-            }
-            return value
-          },
-          apply: (target: Function, thisArg, args) => {
-            // covariant
-            return Reflect.apply(target, getTraceable(ctx, thisArg), args.map(arg => getTraceable(ctx, arg)))
-          },
-          construct: (target: Function, args, newTarget) => {
-            // covariant
-            return Reflect.construct(target, args.map(arg => getTraceable(ctx, arg)), newTarget)
-          },
-        })
-      })
-      // covariant
       return getTraceable(ctx, Reflect.apply(target, thisArg, args))
     },
   })
 }
 
-function createTraceable(ctx: Context, value: any, tracker: Tracker, noTrap?: boolean) {
+function createTraceable(ctx: Context, value: any, tracker: Tracker) {
   if (ctx[symbols.shadow]) {
     ctx = Object.getPrototypeOf(ctx)
   }
@@ -156,12 +168,19 @@ function createTraceable(ctx: Context, value: any, tracker: Tracker, noTrap?: bo
       if (tracker.associate && ctx[symbols.internal][`${tracker.associate}.${prop}`]) {
         return Reflect.get(ctx, `${tracker.associate}.${prop}`, withProp(ctx, symbols.receiver, receiver))
       }
-      const shadow = createShadow(ctx, target, tracker.property, receiver)
-      const innerValue = Reflect.get(target, prop, shadow)
+      let shadow: any, innerValue: any
+      const desc = getPropertyDescriptor(target, prop)
+      if (desc && 'value' in desc) {
+        innerValue = desc.value
+      } else {
+        shadow = createShadow(ctx, target, tracker.property, receiver)
+        innerValue = Reflect.get(target, prop, shadow)
+      }
       const innerTracker = innerValue?.[symbols.tracker]
       if (innerTracker) {
         return createTraceable(ctx, innerValue, innerTracker)
-      } else if (!noTrap && typeof innerValue === 'function') {
+      } else if (!tracker.noShadow && typeof innerValue === 'function') {
+        shadow ??= createShadow(ctx, target, tracker.property, receiver)
         return createShadowMethod(ctx, innerValue, receiver, shadow)
       } else {
         return innerValue
@@ -198,4 +217,35 @@ export function createCallable(name: string, proto: {}, tracker: Tracker) {
   }
   defineProperty(self, 'name', name)
   return Object.setPrototypeOf(self, proto)
+}
+
+export async function composeError<T>(callback: () => Promise<T>, innerOffset: number, getOuterStack: () => Iterable<string>) {
+  // force async stack trace
+  await Promise.resolve()
+
+  try {
+    return await callback()
+  } catch (error: any) {
+    const innerError = new Error()
+    const innerLines = innerError.stack!.split('\n')
+
+    // malformed error
+    if (typeof error?.stack !== 'string') {
+      const outerError = new Error(error)
+      const lines = outerError.stack!.split('\n')
+      lines.splice(1, Infinity, ...getOuterStack())
+      outerError.stack = lines.join('\n')
+      throw outerError
+    }
+
+    // long stack trace
+    const lines: string[] = error.stack.split('\n')
+    const index = lines.indexOf(innerLines[2])
+    if (index === -1) throw error
+
+    lines.splice(index - innerOffset, Infinity)
+    lines.push(...getOuterStack())
+    error.stack = lines.join('\n')
+    throw error
+  }
 }

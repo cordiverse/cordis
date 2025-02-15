@@ -1,8 +1,8 @@
-import { Awaitable, defineProperty, Promisify, remove } from 'cosmokit'
-import { Context } from './context.ts'
-import { EffectScope, ForkScope, MainScope, ScopeStatus } from './scope.ts'
-import { getTraceable, symbols } from './index.ts'
-import ReflectService from './reflect.ts'
+import { Awaitable, deepEqual, defineProperty, Promisify } from 'cosmokit'
+import { Context } from './context'
+import { EffectScope, ScopeStatus } from './scope'
+import { symbols } from './utils'
+import ReflectService from './reflect'
 
 export function isBailed(value: any) {
   return value !== null && value !== false && value !== undefined
@@ -13,7 +13,7 @@ export type ReturnType<F> = F extends (...args: any) => infer R ? R : never
 export type ThisType<F> = F extends (this: infer T, ...args: any) => any ? T : never
 export type GetEvents<C extends Context> = C[typeof Context.events]
 
-declare module './context.ts' {
+declare module './context' {
   export interface Context {
     /* eslint-disable max-len */
     [Context.events]: Events<this>
@@ -27,9 +27,6 @@ declare module './context.ts' {
     bail<K extends keyof GetEvents<this>>(thisArg: ThisType<GetEvents<this>[K]>, name: K, ...args: Parameters<GetEvents<this>[K]>): ReturnType<GetEvents<this>[K]>
     on<K extends keyof GetEvents<this>>(name: K, listener: GetEvents<this>[K], options?: boolean | EventOptions): () => boolean
     once<K extends keyof GetEvents<this>>(name: K, listener: GetEvents<this>[K], options?: boolean | EventOptions): () => boolean
-    /** @deprecated */
-    start(): Promise<void>
-    stop(): Promise<void>
     /* eslint-enable max-len */
   }
 }
@@ -44,27 +41,26 @@ export interface Hook extends EventOptions {
   callback: (...args: any[]) => any
 }
 
-class Lifecycle {
+class EventsService {
   _hooks: Record<keyof any, Hook[]> = {}
 
   constructor(private ctx: Context) {
     defineProperty(this, symbols.tracker, {
-      associate: 'lifecycle',
+      associate: 'events',
       property: 'ctx',
+      noShadow: true,
     })
 
+    // TODO: deprecate these events
     ctx.scope.leak(this.on('internal/listener', function (this: Context, name, listener, options: EventOptions) {
-      const method = options.prepend ? 'unshift' : 'push'
       if (name === 'ready') {
         Promise.resolve().then(listener)
         return () => false
       } else if (name === 'dispose') {
-        this.scope.disposables[method](listener as any)
         defineProperty(listener, 'name', 'event <dispose>')
-        return () => remove(this.scope.disposables, listener)
-      } else if (name === 'fork') {
-        this.scope.runtime.forkables[method](listener as any)
-        return this.scope.collect('event <fork>', () => remove(this.scope.runtime.forkables, listener))
+        return this.scope.disposables.push(listener)
+      } else if (name === 'internal/update' && !options.global) {
+        return this.scope.acceptors.push(listener)
       }
     }))
 
@@ -76,26 +72,22 @@ class Lifecycle {
       }))
     }
 
-    // non-reusable plugin forks are not responsive to isolated service changes
     ctx.scope.leak(this.on('internal/before-service', function (this: Context, name) {
       for (const runtime of this.registry.values()) {
-        if (!runtime.inject[name]?.required) continue
-        const scopes = runtime.isReusable ? runtime.children : [runtime]
-        for (const scope of scopes) {
+        for (const scope of runtime.scopes) {
+          if (!scope.inject[name]?.required) continue
           if (!this[symbols.filter](scope.ctx)) continue
-          scope.updateStatus()
-          scope.reset()
+          scope.active = false
         }
       }
     }, { global: true }))
 
     ctx.scope.leak(this.on('internal/service', function (this: Context, name) {
       for (const runtime of this.registry.values()) {
-        if (!runtime.inject[name]?.required) continue
-        const scopes = runtime.isReusable ? runtime.children : [runtime]
-        for (const scope of scopes) {
+        for (const scope of runtime.scopes) {
+          if (!scope.inject[name]?.required) continue
           if (!this[symbols.filter](scope.ctx)) continue
-          scope.start()
+          scope.active = true
         }
       }
     }, { global: true }))
@@ -111,34 +103,42 @@ class Lifecycle {
       }
     }, { global: true }))
 
-    // inject in ancestor contexts
-    const checkInject = (scope: EffectScope, name: string) => {
-      if (!scope.runtime.plugin) return false
-      for (const key in scope.runtime.inject) {
-        if (name === ReflectService.resolveInject(scope.ctx, key)[0]) return true
+    ctx.scope.leak(this.on('internal/inject', function (this: Context, name, provider) {
+      const visited = new Set<string>()
+      let scope = this.scope
+      while (1) {
+        if (scope === provider) return true
+        for (const key in scope.inject ?? {}) {
+          if (visited.has(key)) continue
+          visited.add(key)
+          if (name === ReflectService.resolveInject(scope.ctx, key)[0]) return true
+        }
+        const next = scope.parent.scope
+        if (scope === next) break
+        scope = next
       }
-      return checkInject(scope.parent.scope, name)
-    }
+      return false
+    }, { global: true }))
 
-    ctx.scope.leak(this.on('internal/inject', function (this: Context, name) {
-      return checkInject(this.scope, name)
+    ctx.scope.leak(this.on('internal/update', (scope, config) => {
+      for (const acceptor of scope.acceptors) {
+        if (acceptor(scope, config)) return true
+      }
+      return deepEqual(scope.config, config)
     }, { global: true }))
   }
 
-  async flush() {}
-
   filterHooks(hooks: Hook[], thisArg?: object) {
-    thisArg = getTraceable(this.ctx, thisArg)
+    const filter = thisArg?.[Context.filter]
     return hooks.slice().filter((hook) => {
-      const filter = thisArg?.[Context.filter]
       return hook.global || !filter || filter.call(thisArg, hook.ctx)
     })
   }
 
   * dispatch(type: string, args: any[]) {
     const thisArg = typeof args[0] === 'object' || typeof args[0] === 'function' ? args.shift() : null
-    const name = args.shift()
-    if (name !== 'internal/event') {
+    const name: string = args.shift()
+    if (!name.startsWith('internal/')) {
       this.emit('internal/event', type, name, args, thisArg)
     }
     for (const hook of this.filterHooks(this._hooks[name] || [], thisArg)) {
@@ -168,8 +168,10 @@ class Lifecycle {
 
   register(label: string, hooks: Hook[], callback: any, options: EventOptions) {
     const method = options.prepend ? 'unshift' : 'push'
-    hooks[method]({ ctx: this.ctx, callback, ...options })
-    return this.ctx.state.collect(label, () => this.unregister(hooks, callback))
+    return this.ctx.scope.effect(() => {
+      hooks[method]({ ctx: this.ctx, callback, ...options })
+      return () => this.unregister(hooks, callback)
+    })
   }
 
   unregister(hooks: Hook[], callback: any) {
@@ -203,34 +205,22 @@ class Lifecycle {
     }, options)
     return dispose
   }
-
-  async start() {
-    await this.flush()
-  }
-
-  async stop() {
-    // `dispose` event is handled by state.disposables
-    this.ctx.scope.reset()
-  }
 }
 
-export default Lifecycle
+export default EventsService
 
 export interface Events<in C extends Context = Context> {
-  'fork'(ctx: C, config: C['config']): void
   'ready'(): Awaitable<void>
   'dispose'(): Awaitable<void>
-  'internal/fork'(fork: ForkScope<C>): void
-  'internal/runtime'(runtime: MainScope<C>): void
+  'internal/plugin'(scope: EffectScope<C>): void
   'internal/status'(scope: EffectScope<C>, oldValue: ScopeStatus): void
   'internal/info'(this: C, format: any, ...param: any[]): void
   'internal/error'(this: C, format: any, ...param: any[]): void
   'internal/warning'(this: C, format: any, ...param: any[]): void
   'internal/before-service'(this: C, name: string, value: any): void
   'internal/service'(this: C, name: string, value: any): void
-  'internal/before-update'(fork: ForkScope<C>, config: any): void
-  'internal/update'(fork: ForkScope<C>, oldConfig: any): void
-  'internal/inject'(this: C, name: string): boolean | undefined
+  'internal/update'(scope: EffectScope<C>, config: any): boolean | void
+  'internal/inject'(this: C, name: string, provider?: EffectScope): boolean | void
   'internal/listener'(this: C, name: string, listener: any, prepend: boolean): void
   'internal/event'(type: 'emit' | 'parallel' | 'serial' | 'bail', name: string, args: any[], thisArg: any): void
 }

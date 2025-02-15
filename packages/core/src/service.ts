@@ -1,18 +1,17 @@
 import { Awaitable, defineProperty } from 'cosmokit'
-import { Context } from './context.ts'
-import { createCallable, joinPrototype, symbols, Tracker } from './utils.ts'
+import { Context } from './context'
+import { createCallable, joinPrototype, symbols, Tracker } from './utils'
 
 export abstract class Service<C extends Context = Context> {
+  static readonly check: unique symbol = symbols.check as any
   static readonly setup: unique symbol = symbols.setup as any
   static readonly invoke: unique symbol = symbols.invoke as any
   static readonly extend: unique symbol = symbols.extend as any
   static readonly tracker: unique symbol = symbols.tracker as any
-  static readonly immediate: unique symbol = symbols.immediate as any
   static readonly provide = 'provide' as any
 
   protected start(): Awaitable<void> {}
   protected stop(): Awaitable<void> {}
-  protected fork?(ctx: C, config: any): void
 
   public name!: string
 
@@ -31,10 +30,7 @@ export abstract class Service<C extends Context = Context> {
     self.name = name
     defineProperty(self, symbols.tracker, tracker)
 
-    self.ctx.provide(name)
-    self.ctx.runtime.name = name
     self.ctx.set(name, self)
-
     self.ctx.on('dispose', () => self.stop())
     return self
   }
