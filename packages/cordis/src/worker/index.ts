@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module'
 import Loader from '@cordisjs/loader'
+import Logger from '@cordisjs/logger'
 import * as daemon from './daemon.js'
-import * as logger from './logger.js'
 import { Context } from '../index.ts'
 
 declare module '@cordisjs/loader' {
@@ -12,7 +12,7 @@ declare module '@cordisjs/loader' {
 
 export interface Options extends Loader.Config {
   execArgv?: string[]
-  logger?: logger.Config
+  logger?: Logger.Config
   daemon?: daemon.Config
 }
 
@@ -33,7 +33,7 @@ function getInternal() {
 
 export async function start(options: Options) {
   const ctx = new Context()
-  if (options.logger) await ctx.plugin(logger, options.logger)
+  if (options.logger) await ctx.plugin(Logger, options.logger)
   if (options.daemon) await ctx.plugin(daemon, options.daemon)
   await ctx.plugin(Loader, {
     ...options,
