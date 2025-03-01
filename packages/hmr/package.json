@@ -42,7 +42,6 @@
     }
   },
   "peerDependencies": {
-    "@cordisjs/plugin-schema": "^1.0.0-alpha.0",
     "@cordisjs/plugin-timer": "^1.0.0-alpha.0",
     "cordis": "^4.0.0-alpha.0"
   },

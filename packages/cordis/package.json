@@ -27,6 +27,10 @@
       "types": "./lib/plugins/loader.d.ts",
       "default": "./lib/plugins/loader.js"
     },
+    "./logger": {
+      "types": "./lib/plugins/logger.d.ts",
+      "default": "./lib/plugins/logger.js"
+    },
     "./worker": {
       "types": "./lib/worker/index.d.ts",
       "default": "./lib/worker/index.js"
@@ -75,6 +79,7 @@
     "cac": "^6.7.14",
     "cosmokit": "^1.6.3",
     "kleur": "^4.1.5",
-    "reggol": "^1.7.1"
+    "reggol": "^1.7.1",
+    "schemastery": "^3.15.0"
   }
 }

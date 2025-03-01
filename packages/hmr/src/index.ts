@@ -1,10 +1,9 @@
-import { Context, Plugin, Schema, Service } from 'cordis'
+import { Context, Plugin, Service, z } from 'cordis'
 import { Dict, makeArray } from 'cosmokit'
 import { ModuleJob, ModuleLoader } from 'cordis/loader'
 import { FSWatcher, watch, WatchOptions } from 'chokidar'
 import { relative, resolve } from 'node:path'
 import { handleError } from './error.ts'
-import {} from '@cordisjs/plugin-logger'
 import {} from '@cordisjs/plugin-timer'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import enUS from './locales/en-US.yml'
@@ -12,7 +11,7 @@ import zhCN from './locales/zh-CN.yml'
 
 declare module 'cordis' {
   interface Context {
-    hmr: HMR
+    hmr: Hmr
   }
 
   interface Events {
@@ -37,7 +36,7 @@ interface Reload {
   runtime?: Plugin.Runtime
 }
 
-class HMR extends Service {
+class Hmr extends Service {
   static inject = ['loader', 'timer', 'logger']
 
   private base: string
@@ -70,7 +69,7 @@ class HMR extends Service {
   /** stashed changes */
   private stashed = new Set<string>()
 
-  constructor(ctx: Context, public config: HMR.Config) {
+  constructor(ctx: Context, public config: Hmr.Config) {
     super(ctx, 'hmr')
     if (!this.ctx.loader.internal) {
       throw new Error('--expose-internals is required for HMR service')
@@ -323,7 +322,7 @@ class HMR extends Service {
   }
 }
 
-namespace HMR {
+namespace Hmr {
   export interface Config extends WatchOptions {
     base?: string
     root: string[]
@@ -331,25 +330,25 @@ namespace HMR {
     ignored: string[]
   }
 
-  export const Config: Schema<Config> = Schema.object({
-    base: Schema.string(),
-    root: Schema.union([
-      Schema.array(String).role('table'),
-      Schema.transform(String, (value) => [value]),
+  export const Config: z<Config> = z.object({
+    base: z.string(),
+    root: z.union([
+      z.array(String).role('table'),
+      z.transform(String, (value) => [value]),
     ]).default(['.']),
-    ignored: Schema.union([
-      Schema.array(String).role('table'),
-      Schema.transform(String, (value) => [value]),
+    ignored: z.union([
+      z.array(String).role('table'),
+      z.transform(String, (value) => [value]),
     ]).default([
       '**/node_modules/**',
       '**/.git/**',
       '**/logs/**',
     ]),
-    debounce: Schema.natural().role('ms').default(100),
+    debounce: z.natural().role('ms').default(100),
   }).i18n({
     'en-US': enUS,
     'zh-CN': zhCN,
   })
 }
 
-export default HMR
+export default Hmr

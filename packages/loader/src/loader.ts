@@ -72,8 +72,8 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
     ctx.on('internal/update', (scope, config) => {
       if (!scope.entry) return
       if (scope.entry.suspend) return scope.entry.suspend = false
-      const schema = scope.runtime?.schema
-      scope.entry.options.config = schema ? schema.simplify(config) : config
+      const unparse = scope.runtime?.Config?.['simplify']
+      scope.entry.options.config = unparse ? unparse(config) : config
       scope.entry.parent.tree.write()
     }, { global: true, prepend: true })
 

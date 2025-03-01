@@ -15,7 +15,7 @@ export class SchemaService extends Service {
   }
 
   [Service.check](ctx: Context) {
-    ctx.scope.inject.schema.config?.(ctx.config)
+    ctx.scope.inject.schema.config?.(ctx.scope.config)
     return true
   }
 }
