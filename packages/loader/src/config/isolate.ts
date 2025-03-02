@@ -69,9 +69,7 @@ export class GlobalRealm extends Realm {
   }
 }
 
-export const name = 'isolate'
-
-export function apply(ctx: Context) {
+export default function isolate(ctx: Context) {
   const realms: Dict<GlobalRealm> = Object.create(null)
 
   function access(entry: Entry, key: string, create: true): symbol

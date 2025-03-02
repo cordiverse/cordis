@@ -4,13 +4,15 @@ import { ModuleLoader } from './internal.ts'
 import { Entry, EntryOptions, EntryUpdateMeta } from './config/entry.ts'
 import { LoaderFile } from './config/file.ts'
 import { ImportTree } from './config/import.ts'
-import * as inject from './config/inject.ts'
-import * as isolate from './config/isolate.ts'
+import inject from './config/inject.ts'
+import isolate from './config/isolate.ts'
 
 export * from './config/entry.ts'
 export * from './config/file.ts'
 export * from './config/group.ts'
 export * from './config/import.ts'
+export * from './config/inject.ts'
+export * from './config/isolate.ts'
 export * from './config/tree.ts'
 
 declare module '@cordisjs/core' {

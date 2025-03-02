@@ -8,9 +8,7 @@ declare module './entry.ts' {
   }
 }
 
-export const name = 'inject'
-
-export function apply(ctx: Context) {
+export default function inject(ctx: Context) {
   function getRequired(entry: Entry) {
     return filterKeys(Inject.resolve(entry.options.inject), (_, meta) => meta.required)
   }
