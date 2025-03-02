@@ -1,8 +1,8 @@
 import { createRequire } from 'node:module'
+import { Context } from '@cordisjs/core'
 import Loader from '@cordisjs/loader'
 import Logger from '@cordisjs/logger'
-import * as daemon from './daemon.js'
-import { Context } from '../index.ts'
+import * as daemon from './daemon.ts'
 
 export interface Options extends Loader.Config {
   execArgv?: string[]

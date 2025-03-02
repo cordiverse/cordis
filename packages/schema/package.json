@@ -40,7 +40,7 @@
     "cordis": "^4.0.0-alpha.1"
   },
   "dependencies": {
-    "cosmokit": "^1.6.3",
+    "cosmokit": "^1.7.2",
     "schemastery": "^3.15.0"
   }
 }

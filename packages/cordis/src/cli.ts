@@ -1,7 +1,7 @@
 import { ChildProcess, fork } from 'child_process'
 import { extname, resolve } from 'path'
 import kleur from 'kleur'
-import type * as worker from './worker/index.js'
+import type * as worker from './worker/index.ts'
 import { fileURLToPath } from 'url'
 
 type Event = Event.Start | Event.Env | Event.Heartbeat

@@ -1,5 +1,5 @@
 import assert from 'assert'
-import { start } from './index.js'
+import { start } from './index.ts'
 
 assert.ok(process.env.CORDIS_LOADER_OPTIONS)
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { cac } from 'cac'
-import { start } from '../cli.js'
+import { start } from '../cli.ts'
 import { Dict, hyphenate } from 'cosmokit'
 import { createRequire } from 'node:module'
 

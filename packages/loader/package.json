@@ -45,7 +45,7 @@
     "@cordisjs/core": "^4.0.0-alpha.1"
   },
   "dependencies": {
-    "cosmokit": "^1.6.3",
+    "cosmokit": "^1.7.2",
     "dotenv": "^16.4.5",
     "js-yaml": "^4.1.0"
   }
