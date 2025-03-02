@@ -25,8 +25,8 @@ export namespace Context {
 
     export interface Accessor {
       type: 'accessor'
-      get: (this: Context, receiver: any) => any
-      set?: (this: Context, value: any, receiver: any) => boolean
+      get: (this: Context, receiver: any, error: Error) => any
+      set?: (this: Context, value: any, receiver: any, error: Error) => boolean
     }
 
     export interface Alias {

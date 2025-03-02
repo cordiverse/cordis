@@ -56,12 +56,12 @@ class ReflectService {
 
       const [name, internal] = ReflectService.resolveInject(target, prop)
       // trace caller
-      const error = new Error(`property ${name} is not registered, declare it as \`inject\` to suppress this warning`)
+      const error = new Error(`get service ${name} without \`inject\``)
       if (!internal) {
         ReflectService.checkInject(ctx, name, error)
         return Reflect.get(target, name, ctx)
       } else if (internal.type === 'accessor') {
-        return internal.get.call(ctx, ctx[symbols.receiver])
+        return internal.get.call(ctx, ctx[symbols.receiver], error)
       } else {
         if (!internal.builtin) {
           const key = target[symbols.isolate][name]
@@ -76,13 +76,15 @@ class ReflectService {
       if (typeof prop !== 'string') return Reflect.set(target, prop, value, ctx)
 
       const [name, internal] = ReflectService.resolveInject(target, prop)
+      // trace caller
+      const error = new Error(`set service ${name} without \`provide\``)
       if (!internal) {
         // TODO warning
         return Reflect.set(target, name, value, ctx)
       }
       if (internal.type === 'accessor') {
         if (!internal.set) return false
-        return internal.set.call(ctx, value, ctx[symbols.receiver])
+        return internal.set.call(ctx, value, ctx[symbols.receiver], error)
       } else {
         // ctx.emit(ctx, 'internal/warning', new Error(`assigning to service ${name} is not recommended, please use \`ctx.set()\` method instead`))
         ctx.reflect.set(name, value)
@@ -105,10 +107,10 @@ class ReflectService {
       noShadow: true,
     })
 
-    this._mixin('reflect', ['get', 'set', 'provide', 'accessor', 'mixin', 'alias'])
-    this._mixin('scope', ['runtime', 'effect'])
-    this._mixin('registry', ['inject', 'plugin'])
-    this._mixin('events', ['on', 'once', 'parallel', 'emit', 'serial', 'bail'])
+    this._mixin('reflect', ['get', 'set', 'provide', 'accessor', 'mixin', 'alias'], true)
+    this._mixin('scope', ['runtime', 'effect'], true)
+    this._mixin('registry', ['inject', 'plugin'], true)
+    this._mixin('events', ['on', 'once', 'parallel', 'emit', 'serial', 'bail'], true)
   }
 
   get(name: string, strict = false) {
@@ -195,21 +197,25 @@ class ReflectService {
     }
   }
 
-  _mixin(source: any, mixins: string[] | Dict<string>) {
+  _mixin(source: string, mixins: string[] | Dict<string>, strict = false) {
     const entries = Array.isArray(mixins) ? mixins.map(key => [key, key]) : Object.entries(mixins)
-    const getTarget = typeof source === 'string' ? (ctx: Context) => ctx[source] : () => source
+    const getTarget = (ctx: Context, error: Error) => {
+      if (strict) return ctx[source]
+      ReflectService.checkInject(ctx, source, error)
+      return ctx.reflect.get(source)
+    }
     const disposables = entries.map(([key, value]) => {
       return this._accessor(value, {
-        get(receiver) {
-          const service = getTarget(this)
+        get(receiver, error) {
+          const service = getTarget(this, error)
           if (isNullable(service)) return service
           const mixin = receiver ? withProps(receiver, service) : service
           const value = Reflect.get(service, key, mixin)
           if (typeof value !== 'function') return value
           return value.bind(mixin ?? service)
         },
-        set(value, receiver) {
-          const service = getTarget(this)
+        set(value, receiver, error) {
+          const service = getTarget(this, error)
           const mixin = receiver ? withProps(receiver, service) : service
           return Reflect.set(service, key, value, mixin)
         },
