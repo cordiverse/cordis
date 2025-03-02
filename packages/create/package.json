@@ -1,7 +1,7 @@
 {
   "name": "create-cordis",
   "description": "Setup a Cordis application",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -36,7 +36,7 @@
   },
   "dependencies": {
     "env-paths": "^3.0.0",
-    "get-registry": "^1.1.0",
+    "get-registry": "^1.2.0",
     "js-yaml": "^4.1.0",
     "kleur": "^4.1.5",
     "prompts": "^2.4.2",

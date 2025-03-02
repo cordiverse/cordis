@@ -127,7 +127,13 @@ class Scaffold {
   }
 
   async scaffold() {
-    this.registry = (await getRegistry()).replace(/\/$/, '')
+    const registry = await getRegistry()
+    if (!registry) {
+      console.log(kleur.red('error') + ' unable to detect npm registry')
+      process.exit(1)
+    }
+
+    this.registry = registry.replace(/\/$/, '')
     console.log(kleur.dim('  Registry server: ') + this.registry)
 
     console.log(kleur.dim('  Scaffolding project in ') + project + kleur.dim(' ...'))

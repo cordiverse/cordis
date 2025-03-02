@@ -4,12 +4,6 @@ import Logger from '@cordisjs/logger'
 import * as daemon from './daemon.js'
 import { Context } from '../index.ts'
 
-declare module '@cordisjs/loader' {
-  interface Loader {
-    internal?: ModuleLoader
-  }
-}
-
 export interface Options extends Loader.Config {
   execArgv?: string[]
   logger?: Logger.Config
