@@ -1,4 +1,4 @@
-import assert from 'assert'
+import assert from 'node:assert'
 import { start } from './index.ts'
 
 assert.ok(process.env.CORDIS_LOADER_OPTIONS)

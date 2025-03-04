@@ -3,7 +3,7 @@ import { Context } from './context'
 import { EffectScope } from './scope'
 import { DisposableList, symbols, withProps } from './utils'
 
-function isApplicable(object: Plugin) {
+function isApplicable<C extends Context>(object: Plugin<C>) {
   return object && typeof object === 'object' && typeof object.apply === 'function'
 }
 
@@ -68,19 +68,19 @@ export namespace Plugin {
     Config: (config: S) => T
   }
 
-  export interface Function<C extends Context = Context, T = any> extends Base<T> {
+  export interface Function<in C extends Context = Context, T = any> extends Base<T> {
     (ctx: C, config: T): void | Promise<void>
   }
 
-  export interface Constructor<C extends Context = Context, T = any> extends Base<T> {
+  export interface Constructor<in C extends Context = Context, T = any> extends Base<T> {
     new (ctx: C, config: T): any
   }
 
-  export interface Object<C extends Context = Context, T = any> extends Base<T> {
+  export interface Object<in C extends Context = Context, T = any> extends Base<T> {
     apply: (ctx: C, config: T) => void | Promise<void>
   }
 
-  export interface Runtime<C extends Context = Context> {
+  export interface Runtime<out C extends Context = Context> {
     name?: string
     scopes: DisposableList<EffectScope<C>>
     callback: globalThis.Function
@@ -106,7 +106,7 @@ declare module './context' {
   }
 }
 
-class Registry<C extends Context = Context> {
+class Registry<out C extends Context = Context> {
   private _counter = 0
   private _internal = new Map<Function, Plugin.Runtime<C>>()
   protected context: Context
@@ -129,22 +129,22 @@ class Registry<C extends Context = Context> {
     return this._internal.size
   }
 
-  resolve(plugin: Plugin): Function | undefined {
+  resolve(plugin: Plugin<C>): Function | undefined {
     if (typeof plugin === 'function') return plugin
     if (isApplicable(plugin)) return plugin.apply
   }
 
-  get(plugin: Plugin) {
+  get(plugin: Plugin<C>) {
     const key = this.resolve(plugin)
     return key && this._internal.get(key)
   }
 
-  has(plugin: Plugin) {
+  has(plugin: Plugin<C>) {
     const key = this.resolve(plugin)
     return !!key && this._internal.has(key)
   }
 
-  delete(plugin: Plugin) {
+  delete(plugin: Plugin<C>) {
     const key = this.resolve(plugin)
     const runtime = key && this._internal.get(key)
     if (!runtime) return

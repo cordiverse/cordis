@@ -36,7 +36,7 @@ export namespace CordisError {
   } as const
 }
 
-export class EffectScope<C extends Context = Context> {
+export class EffectScope<out C extends Context = Context> {
   public uid: number | null
   public ctx: C
   public config: any
