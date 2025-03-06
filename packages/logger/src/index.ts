@@ -1,31 +1,28 @@
 import { Context, Service } from '@cordisjs/core'
-import { defineProperty, hyphenate, remove } from 'cosmokit'
-import Reggol from 'reggol'
+import { hyphenate } from 'cosmokit'
+import { Exporter, Factory, Logger, Message, Type } from 'reggol'
 
-export { Reggol as Logger }
+export * from 'reggol'
 
 declare module '@cordisjs/core' {
   interface Context {
-    logger: Logger
+    logger: LoggerService
   }
 
   interface Intercept {
-    logger: Logger.Intercept
+    logger: LoggerService.Intercept
   }
 }
 
 declare module 'reggol' {
-  namespace Logger {
-    interface Meta {
-      ctx?: Context
-    }
+  interface Message {
+    ctx?: WeakRef<Context>
   }
 }
 
-namespace Logger {
+namespace LoggerService {
   export interface Config {
-    showDiff?: boolean
-    showTime?: string | boolean
+    bufferSize?: number
   }
 
   export interface Intercept {
@@ -33,66 +30,67 @@ namespace Logger {
   }
 }
 
-interface Logger extends Pick<Reggol, Reggol.Type> {
-  (name: string): Reggol
+interface LoggerService extends Pick<Logger, Type> {
+  (name: string): Logger
 }
 
-class Logger extends Service {
-  buffer: Reggol.Record[] = []
+class LoggerService extends Service {
+  factory = new Factory()
+  buffer: Message[] = []
 
-  constructor(ctx: Context, config: Logger.Config = {}) {
+  constructor(ctx: Context, public config: LoggerService.Config = {}) {
     super(ctx, 'logger')
 
-    const appLogger = new Reggol('app')
+    const { bufferSize = 1000 } = config
+
+    this.factory.addExporter(new Exporter.Console({
+      timestamp: Date.now(),
+    }))
+
+    this.factory.addExporter({
+      colors: 3,
+      export: (message) => {
+        this.buffer.push(message)
+        this.buffer = this.buffer.slice(-bufferSize)
+      },
+    })
+
+    const defaultLogger = this.factory.createLogger('app')
 
     ctx.on('internal/info', (format, ...args) => {
-      appLogger.info(format, ...args)
+      defaultLogger.info(format, ...args)
     })
 
     ctx.on('internal/error', (format, ...args) => {
-      appLogger.error(format, ...args)
+      defaultLogger.error(format, ...args)
     })
 
     ctx.on('internal/warning', (format, ...args) => {
-      appLogger.warn(format, ...args)
+      defaultLogger.warn(format, ...args)
     })
 
     process.on('uncaughtException', (error) => {
-      appLogger.error(error)
+      defaultLogger.error(error)
       process.exitCode = 1
     })
 
     process.on('unhandledRejection', (error) => {
-      appLogger.warn(error)
-    })
-
-    let showTime = config.showTime
-    if (showTime === true) showTime = 'yyyy-MM-dd hh:mm:ss'
-    if (showTime) Reggol.targets[0].showTime = showTime
-    Reggol.targets[0].showDiff = config.showDiff
-    Reggol.targets[0].timestamp = Date.now()
-
-    const target: Reggol.Target = {
-      colors: 3,
-      record: (record) => {
-        this.buffer.push(record)
-        this.buffer = this.buffer.slice(-1000)
-      },
-    }
-    Reggol.targets.push(target)
-    ctx.on('dispose', () => {
-      remove(Reggol.targets, target)
+      defaultLogger.warn(error)
     })
   }
 
+  exporter(exporter: Exporter) {
+    return this.ctx.effect(() => this.factory.addExporter(exporter))
+  }
+
   [Service.invoke](name: string) {
-    return new Reggol(name, defineProperty({}, 'ctx', this.ctx))
+    return this.factory.createLogger(name, { ctx: new WeakRef(this.ctx) })
   }
 
   static {
     for (const type of ['success', 'error', 'info', 'warn', 'debug']) {
-      Logger.prototype[type] = function (this: Logger, ...args: any[]) {
-        let config: Logger.Intercept = {}
+      LoggerService.prototype[type] = function (this: LoggerService, ...args: any[]) {
+        let config: LoggerService.Intercept = {}
         let intercept = this.ctx[Context.intercept]
         while (intercept) {
           config = Object.assign({}, intercept.logger, config)
@@ -105,4 +103,4 @@ class Logger extends Service {
   }
 }
 
-export default Logger
+export default LoggerService
