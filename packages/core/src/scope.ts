@@ -62,6 +62,16 @@ export class EffectScope<out C extends Context = Context> {
     if (parent.scope) {
       this.uid = parent.registry.counter
       this.ctx = this.context = parent.extend({ scope: this })
+
+      const injectEntries = Object.entries(this.inject)
+      if (injectEntries.length) {
+        this.ctx[Context.intercept] = Object.create(parent[Context.intercept])
+        for (const [name, inject] of injectEntries) {
+          if (isNullable(inject.config)) continue
+          this.ctx[Context.intercept][name] = inject.config
+        }
+      }
+
       this.dispose = parent.scope.effect(() => {
         const remove = runtime!.scopes.push(this)
         this.context.emit('internal/plugin', this)
