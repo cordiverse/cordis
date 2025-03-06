@@ -32,12 +32,12 @@
     "eslint": "^8.57.0",
     "mocha": "^9.2.2",
     "shx": "^0.3.4",
-    "tsx": "patch:tsx@npm%3A4.7.0#./.yarn/patches/tsx-npm-4.7.0-86d7b66640.patch",
+    "tsx": "npm:@cordiverse/tsx@4.19.3-fix.1",
     "typescript": "^5.6.3",
-    "yakumo": "^2.0.0-alpha.0",
+    "yakumo": "^2.0.0-alpha.1",
     "yakumo-esbuild": "^2.0.0-alpha.0",
-    "yakumo-mocha": "^2.0.0-alpha.0",
-    "yakumo-tsc": "^2.0.0-alpha.0",
+    "yakumo-mocha": "^2.0.0-alpha.1",
+    "yakumo-tsc": "^2.0.0-alpha.1",
     "yml-register": "^1.2.5"
   }
 }

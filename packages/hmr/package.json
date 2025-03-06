@@ -43,12 +43,12 @@
   },
   "peerDependencies": {
     "@cordisjs/plugin-timer": "^1.0.0-alpha.0",
-    "cordis": "^4.0.0-alpha.1"
+    "cordis": "^4.0.0-alpha.2"
   },
   "devDependencies": {
     "@cordisjs/plugin-timer": "^1.0.0-alpha.0",
     "@types/babel__code-frame": "^7.0.6",
-    "cordis": "^4.0.0-alpha.1",
+    "cordis": "^4.0.0-alpha.2",
     "esbuild": "^0.24.0"
   },
   "dependencies": {
