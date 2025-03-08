@@ -209,7 +209,7 @@ export class EffectScope<out C extends Context = Context> {
     })
   }
 
-  private _checkInject() {
+  checkInject() {
     try {
       return Object.entries(this.inject).every(([name, inject]) => {
         if (!inject.required) return true
@@ -231,7 +231,7 @@ export class EffectScope<out C extends Context = Context> {
   }
 
   set active(value) {
-    if (value && (!this.uid || !this._checkInject())) return
+    if (value && (!this.uid || !this.checkInject())) return
     this._updateStatus(() => {
       if (!this._pending && value !== this._active) {
         this._pending = value ? this._reload() : this._unload()

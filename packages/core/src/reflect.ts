@@ -152,9 +152,7 @@ class ReflectService {
       return ctx[symbols.isolate][name] === ctx2[symbols.isolate][name]
     }
 
-    if (ctx.scope.status === ScopeStatus.ACTIVE) {
-      ctx.emit(self, 'internal/before-service', name, value)
-    }
+    ctx.emit(self, 'internal/before-service', name, value)
     ctx[symbols.store][key] = { name, value, source: self }
     if (ctx.scope.status === ScopeStatus.ACTIVE) {
       ctx.emit(self, 'internal/service', name, oldValue)

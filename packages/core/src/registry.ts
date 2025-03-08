@@ -24,7 +24,7 @@ export function Inject(inject: Inject) {
         if (!property) throw new Error('missing context tracker')
         ;(this[symbols.initHooks] ??= []).push(() => {
           (this[property] as Context).inject(inject, (ctx) => {
-            value.call(withProps(this, { [property]: ctx }))
+            return value.call(withProps(this, { [property]: ctx }))
           })
         })
       })
