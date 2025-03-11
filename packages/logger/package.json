@@ -41,13 +41,13 @@
     }
   },
   "devDependencies": {
-    "@cordisjs/core": "^4.0.0-alpha.2"
+    "@cordisjs/core": "^4.0.0-alpha.4"
   },
   "peerDependencies": {
-    "@cordisjs/core": "^4.0.0-alpha.2"
+    "@cordisjs/core": "^4.0.0-alpha.4"
   },
   "dependencies": {
-    "cosmokit": "^1.7.2",
-    "reggol": "^2.0.2"
+    "cosmokit": "^1.7.3",
+    "reggol": "^2.0.3"
   }
 }

@@ -36,16 +36,16 @@
     "service"
   ],
   "devDependencies": {
-    "@cordisjs/core": "^4.0.0-alpha.2",
+    "@cordisjs/core": "^4.0.0-alpha.4",
     "@types/chai": "^5.0.1",
     "@types/js-yaml": "^4.0.9",
     "chai": "^5.1.2"
   },
   "peerDependencies": {
-    "@cordisjs/core": "^4.0.0-alpha.2"
+    "@cordisjs/core": "^4.0.0-alpha.4"
   },
   "dependencies": {
-    "cosmokit": "^1.7.2",
+    "cosmokit": "^1.7.3",
     "dotenv": "^16.4.5",
     "js-yaml": "^4.1.0"
   }

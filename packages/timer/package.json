@@ -34,12 +34,12 @@
     "plugin"
   ],
   "devDependencies": {
-    "cordis": "^4.0.0-alpha.2"
+    "cordis": "^4.0.0-alpha.4"
   },
   "peerDependencies": {
-    "cordis": "^4.0.0-alpha.2"
+    "cordis": "^4.0.0-alpha.4"
   },
   "dependencies": {
-    "cosmokit": "^1.7.2"
+    "cosmokit": "^1.7.3"
   }
 }
