@@ -25,6 +25,8 @@ declare module './context' {
     serial<K extends keyof GetEvents<this>>(thisArg: ThisType<GetEvents<this>[K]>, name: K, ...args: Parameters<GetEvents<this>[K]>): Promisify<ReturnType<GetEvents<this>[K]>>
     bail<K extends keyof GetEvents<this>>(name: K, ...args: Parameters<GetEvents<this>[K]>): ReturnType<GetEvents<this>[K]>
     bail<K extends keyof GetEvents<this>>(thisArg: ThisType<GetEvents<this>[K]>, name: K, ...args: Parameters<GetEvents<this>[K]>): ReturnType<GetEvents<this>[K]>
+    waterfall<K extends keyof GetEvents<this>>(name: K, ...args: Parameters<GetEvents<this>[K]>): ReturnType<GetEvents<this>[K]>
+    waterfall<K extends keyof GetEvents<this>>(thisArg: ThisType<GetEvents<this>[K]>, name: K, ...args: Parameters<GetEvents<this>[K]>): ReturnType<GetEvents<this>[K]>
     on<K extends keyof GetEvents<this>>(name: K, listener: GetEvents<this>[K], options?: boolean | EventOptions): () => boolean
     once<K extends keyof GetEvents<this>>(name: K, listener: GetEvents<this>[K], options?: boolean | EventOptions): () => boolean
     /* eslint-enable max-len */
@@ -128,42 +130,49 @@ class EventsService {
     }, { global: true }))
   }
 
-  filterHooks(hooks: Hook[], thisArg?: object) {
-    const filter = thisArg?.[Context.filter]
-    return hooks.slice().filter((hook) => {
-      return hook.global || !filter || filter.call(thisArg, hook.ctx)
-    })
-  }
-
-  * dispatch(type: string, args: any[]) {
+  dispatch(type: string, args: any[]) {
     const thisArg = typeof args[0] === 'object' || typeof args[0] === 'function' ? args.shift() : null
     const name: string = args.shift()
     if (!name.startsWith('internal/')) {
       this.emit('internal/event', type, name, args, thisArg)
     }
-    for (const hook of this.filterHooks(this._hooks[name] || [], thisArg)) {
-      yield hook.callback.apply(thisArg, args)
-    }
+    const filter = thisArg?.[Context.filter]
+    return (this._hooks[name] || [])
+      .filter(hook => hook.global || !filter || filter.call(thisArg, hook.ctx))
+      .map(hook => hook.callback.bind(thisArg))
   }
 
   async parallel(...args: any[]) {
-    await Promise.all(this.dispatch('emit', args))
+    await Promise.all(this.dispatch('emit', args).map(cb => cb(...args)))
   }
 
   emit(...args: any[]) {
-    Array.from(this.dispatch('emit', args))
+    this.dispatch('emit', args).map(cb => cb(...args))
   }
 
   async serial(...args: any[]) {
-    for await (const result of this.dispatch('serial', args)) {
+    for (const cb of this.dispatch('serial', args)) {
+      const result = await cb(...args)
       if (isBailed(result)) return result
     }
   }
 
   bail(...args: any[]) {
-    for (const result of this.dispatch('bail', args)) {
+    for (const cb of this.dispatch('bail', args)) {
+      const result = cb(...args)
       if (isBailed(result)) return result
     }
+  }
+
+  waterfall(...args: any[]) {
+    const cbs = this.dispatch('waterfall', args)
+    const inner = args.pop()
+    const next = () => {
+      const cb = cbs.shift() ?? inner
+      return cb(...args)
+    }
+    args.push(next)
+    return next()
   }
 
   register(label: string, hooks: Hook[], callback: any, options: EventOptions) {

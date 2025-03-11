@@ -1,4 +1,4 @@
-import { Context } from '../src'
+import { Context, Events } from '../src'
 import { expect } from 'chai'
 import { mock } from 'node:test'
 import { event, Filter, Session } from './utils'
@@ -117,5 +117,33 @@ describe('Events Emitter', () => {
       throw new Error('message')
     })
     expect(() => root.bail(event)).to.throw('message')
+  })
+
+  it('context.prototype.waterfall', async () => {
+    const { root } = setup()
+    const cb1 = mock.fn<Events['test/waterfall']>((value, next) => value + next())
+    root.on('test/waterfall', cb1)
+    const cb2 = mock.fn<Events['test/waterfall']>((value, next) => value + next())
+    root.on('test/waterfall', cb2)
+
+    expect(root.waterfall('test/waterfall', 1, () => 2)).to.equal(4)
+    expect(cb1.mock.calls).to.have.length(1)
+    expect(cb2.mock.calls).to.have.length(1)
+    cb1.mock.resetCalls()
+    cb2.mock.resetCalls()
+
+    const cb3 = mock.fn<Events['test/waterfall']>((value, next) => value)
+    root.on('test/waterfall', cb3)
+    const cb4 = mock.fn<Events['test/waterfall']>((value, next) => value + next())
+    root.on('test/waterfall', cb4)
+    expect(root.waterfall('test/waterfall', 1, () => 2)).to.equal(3)
+    expect(cb1.mock.calls).to.have.length(1)
+    expect(cb2.mock.calls).to.have.length(1)
+    expect(cb3.mock.calls).to.have.length(1)
+    expect(cb4.mock.calls).to.have.length(0)
+    cb1.mock.resetCalls()
+    cb2.mock.resetCalls()
+    cb3.mock.resetCalls()
+    cb4.mock.resetCalls()
   })
 })

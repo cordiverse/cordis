@@ -32,6 +32,7 @@ export class Filter {
 declare module '../src/events' {
   interface Events {
     [event](): void
+    'test/waterfall'(value: number, next: () => number): number
   }
 }
 
