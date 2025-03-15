@@ -35,7 +35,7 @@
     "tsx": "npm:@cordiverse/tsx@4.19.3-fix.1",
     "typescript": "^5.8.2",
     "yakumo": "^2.0.0-alpha.2",
-    "yakumo-esbuild": "^2.0.0-alpha.1",
+    "yakumo-esbuild": "^2.0.0-alpha.2",
     "yakumo-mocha": "^2.0.0-alpha.2",
     "yakumo-tsc": "^2.0.0-alpha.2",
     "yml-register": "^1.2.5"
