@@ -27,11 +27,12 @@ namespace LoggerService {
 
   export interface Intercept {
     name?: string
+    level?: number
   }
 }
 
 interface LoggerService extends Pick<Logger, Type> {
-  (name: string): Logger
+  (name?: string): Logger
 }
 
 class LoggerService extends Service {
@@ -83,21 +84,24 @@ class LoggerService extends Service {
     return this.ctx.effect(() => this.factory.addExporter(exporter))
   }
 
-  [Service.invoke](name: string) {
-    return this.factory.createLogger(name, { ctx: new WeakRef(this.ctx) })
+  [Service.invoke](name?: string) {
+    let config: LoggerService.Intercept = {}
+    let intercept = this.ctx[Context.intercept]
+    while (intercept) {
+      config = Object.assign({}, intercept.logger, config)
+      intercept = Object.getPrototypeOf(intercept)
+    }
+    name ??= hyphenate(this.ctx.name)
+    return this.factory.createLogger(name, {
+      level: config.level,
+      meta: { ctx: new WeakRef(this.ctx) },
+    })
   }
 
   static {
     for (const type of ['success', 'error', 'info', 'warn', 'debug']) {
       LoggerService.prototype[type] = function (this: LoggerService, ...args: any[]) {
-        let config: LoggerService.Intercept = {}
-        let intercept = this.ctx[Context.intercept]
-        while (intercept) {
-          config = Object.assign({}, intercept.logger, config)
-          intercept = Object.getPrototypeOf(intercept)
-        }
-        const name = config.name || hyphenate(this.ctx.name)
-        return this(name)[type](...args)
+        return this()[type](...args)
       }
     }
   }

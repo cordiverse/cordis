@@ -48,6 +48,6 @@
   },
   "dependencies": {
     "cosmokit": "^1.7.3",
-    "reggol": "^2.0.3"
+    "reggol": "^2.1.0"
   }
 }
