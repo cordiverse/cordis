@@ -33,10 +33,10 @@
     }
   },
   "devDependencies": {
-    "@cordisjs/core": "^4.0.0-alpha.5"
+    "@cordisjs/core": "^4.0.0-alpha.6"
   },
   "peerDependencies": {
-    "@cordisjs/core": "^4.0.0-alpha.5"
+    "@cordisjs/core": "^4.0.0-alpha.6"
   },
   "dependencies": {
     "cosmokit": "^1.7.3",
