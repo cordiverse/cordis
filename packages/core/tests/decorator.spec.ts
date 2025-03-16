@@ -22,7 +22,7 @@ describe('Decorator', () => {
       @Inject(['foo'])
       method() {
         callback()
-        this.ctx.on('dispose', dispose)
+        this.ctx.effect(() => dispose)
       }
     }
 

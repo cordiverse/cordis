@@ -14,12 +14,10 @@ export class DisposableList<T> {
     return () => this.map.delete(this.sn)
   }
 
-  leak(value: T) {
+  _leak(value: T) {
     const v = this.map.get(this.sn)
-    if (v !== value) {
-      throw new Error('unexpected disposable leak')
-    }
-    this.map.delete(this.sn)
+    if (v !== value) return false
+    return this.map.delete(this.sn)
   }
 
   clear() {
@@ -52,6 +50,7 @@ export const symbols = {
 
   // context symbols
   store: Symbol.for('cordis.store') as typeof Context.store,
+  effect: Symbol.for('cordis.effect') as typeof Context.effect,
   events: Symbol.for('cordis.events') as typeof Context.events,
   filter: Symbol.for('cordis.filter') as typeof Context.filter,
   isolate: Symbol.for('cordis.isolate') as typeof Context.isolate,

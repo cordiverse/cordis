@@ -1,4 +1,4 @@
-import { Dict, isNullable } from 'cosmokit'
+import { defineProperty, Dict, isNullable } from 'cosmokit'
 import { Context } from './context'
 import { Inject, Plugin, resolveConfig } from './registry'
 import { composeError, DisposableList, isConstructor, symbols } from './utils'
@@ -6,13 +6,22 @@ import { composeError, DisposableList, isConstructor, symbols } from './utils'
 declare module './context' {
   export interface Context {
     scope: EffectScope<this>
-    effect(callback: Effect): () => Promise<void>
+    effect(callback: Effect, label?: string): () => Promise<void>
   }
 }
 
 export type Disposable<T = any> = () => T
 
 export type Effect<T = void> = () => Disposable<T> | Iterable<Disposable, void, void>
+
+export interface EffectMeta {
+  label: string
+  children: EffectMeta[]
+}
+
+export function EffectMeta(dispose: Disposable): EffectMeta {
+  return dispose[symbols.effect] ?? { label: 'anonymous', children: [] }
+}
 
 export const enum ScopeStatus {
   PENDING,
@@ -94,7 +103,7 @@ export class EffectScope<out C extends Context = Context> {
           this.active = false
           await this._pending
         }
-      })
+      }, 'ctx.plugin()')
     } else {
       this.uid = 0
       this.ctx = this.context = parent
@@ -115,43 +124,54 @@ export class EffectScope<out C extends Context = Context> {
     throw new CordisError('INACTIVE_EFFECT')
   }
 
-  effect<T = void>(callback: Effect<T>): () => T {
+  effect<T = void>(callback: Effect<T>, label = 'anonymous'): () => T {
     this.assertActive()
     const result = callback()
     let isDisposed = false
     let dispose: Disposable
+    const meta: EffectMeta = { label, children: [] }
+    const update = (disposable: Disposable) => {
+      this._leak(disposable)
+      if (disposable[symbols.effect]) {
+        meta.children.push(disposable[symbols.effect])
+      }
+    }
     if (typeof result === 'function') {
+      update(result)
       dispose = result
     } else if (result[Symbol.iterator]) {
       const iter = result[Symbol.iterator]()
       const disposables: Disposable[] = []
+      dispose = () => disposables.forEach(dispose => dispose())
       try {
         while (true) {
           const value = iter.next()
-          if (value.value) disposables.unshift(value.value)
+          if (value.value) {
+            update(value.value)
+            disposables.unshift(value.value)
+          }
           if (value.done) break
         }
       } catch (error) {
-        disposables.forEach(dispose => dispose())
+        dispose()
         throw error
       }
-      dispose = () => disposables.forEach(dispose => dispose())
     } else {
       throw new TypeError('effect must return a function or an iterable')
     }
-    const wrapped = (...args: []) => {
+    const wrapped = defineProperty((...args: []) => {
       // make sure the original callback is not called twice
       if (isDisposed) return
       isDisposed = true
       remove()
       return dispose(...args)
-    }
+    }, symbols.effect, meta)
     const remove = this.disposables.push(wrapped)
     return wrapped
   }
 
-  leak(disposable: Disposable) {
-    this.disposables.leak(disposable)
+  _leak(disposable: Disposable) {
+    return this.disposables._leak(disposable)
   }
 
   private _getStatus() {

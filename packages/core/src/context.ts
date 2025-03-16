@@ -53,6 +53,7 @@ export interface Context {
 
 export class Context {
   static readonly store: unique symbol = symbols.store as any
+  static readonly effect: unique symbol = symbols.effect as any
   static readonly events: unique symbol = symbols.events as any
   static readonly filter: unique symbol = symbols.filter as any
   static readonly isolate: unique symbol = symbols.isolate as any

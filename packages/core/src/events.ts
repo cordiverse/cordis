@@ -54,7 +54,7 @@ class EventsService {
     })
 
     // TODO: deprecate these events
-    ctx.scope.leak(this.on('internal/listener', function (this: Context, name, listener, options: EventOptions) {
+    ctx.scope._leak(this.on('internal/listener', function (this: Context, name, listener, options: EventOptions) {
       if (name === 'ready') {
         Promise.resolve().then(listener)
         return () => false
@@ -67,14 +67,14 @@ class EventsService {
     }))
 
     for (const level of ['info', 'error', 'warning']) {
-      ctx.scope.leak(this.on(`internal/${level}`, (format, ...param) => {
+      ctx.scope._leak(this.on(`internal/${level}`, (format, ...param) => {
         if (this._hooks[`internal/${level}`].length > 1) return
         // eslint-disable-next-line no-console
         console.info(format, ...param)
       }))
     }
 
-    ctx.scope.leak(this.on('internal/before-service', function (this: Context, name) {
+    ctx.scope._leak(this.on('internal/before-service', function (this: Context, name) {
       for (const runtime of this.registry.values()) {
         for (const scope of runtime.scopes) {
           if (!scope.inject[name]?.required) continue
@@ -84,7 +84,7 @@ class EventsService {
       }
     }, { global: true }))
 
-    ctx.scope.leak(this.on('internal/service', function (this: Context, name) {
+    ctx.scope._leak(this.on('internal/service', function (this: Context, name) {
       for (const runtime of this.registry.values()) {
         for (const scope of runtime.scopes) {
           if (!scope.inject[name]?.required) continue
@@ -94,7 +94,7 @@ class EventsService {
       }
     }, { global: true }))
 
-    ctx.scope.leak(this.on('internal/status', function (scope: EffectScope) {
+    ctx.scope._leak(this.on('internal/status', function (scope: EffectScope) {
       if (scope.status !== ScopeStatus.ACTIVE) return
       for (const key of Reflect.ownKeys(ctx[symbols.store])) {
         const item = ctx[symbols.store][key as symbol]
@@ -105,7 +105,7 @@ class EventsService {
       }
     }, { global: true }))
 
-    ctx.scope.leak(this.on('internal/inject', function (this: Context, name, provider) {
+    ctx.scope._leak(this.on('internal/inject', function (this: Context, name, provider) {
       const visited = new Set<string>()
       let scope = this.scope
       while (1) {
@@ -122,7 +122,7 @@ class EventsService {
       return false
     }, { global: true }))
 
-    ctx.scope.leak(this.on('internal/update', (scope, config) => {
+    ctx.scope._leak(this.on('internal/update', (scope, config) => {
       for (const acceptor of scope.acceptors) {
         if (acceptor(scope, config)) return true
       }
@@ -180,7 +180,7 @@ class EventsService {
     return this.ctx.scope.effect(() => {
       hooks[method]({ ctx: this.ctx, callback, ...options })
       return () => this.unregister(hooks, callback)
-    })
+    }, label)
   }
 
   unregister(hooks: Hook[], callback: any) {
@@ -191,7 +191,7 @@ class EventsService {
     }
   }
 
-  on(name: string, listener: (...args: any) => any, options?: boolean | EventOptions) {
+  on(name: string | symbol, listener: (...args: any) => any, options?: boolean | EventOptions) {
     if (typeof options !== 'object') {
       options = { prepend: options }
     }
@@ -203,7 +203,7 @@ class EventsService {
     if (result) return result
 
     const hooks = this._hooks[name] ||= []
-    const label = typeof name === 'string' ? `event <${name}>` : 'event (Symbol)'
+    const label = `ctx.on(${typeof name === 'string' ? JSON.stringify(name) : name.toString()})`
     return this.register(label, hooks, listener, options)
   }
 

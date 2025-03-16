@@ -140,7 +140,7 @@ class ReflectService {
     if (!isNullable(value)) {
       dispose = ctx.effect(() => () => {
         ctx.set(name, undefined)
-      })
+      }, `ctx.set(${JSON.stringify(name)})`)
     }
     if (isUnproxyable(value)) {
       ctx.emit(ctx, 'internal/warning', new Error(`service ${name} is an unproxyable object, which may lead to unexpected behavior`))
@@ -184,7 +184,7 @@ class ReflectService {
   accessor(name: string, options: Omit<Context.Internal.Accessor, 'type'>) {
     this.ctx.scope.effect(() => {
       return this._accessor(name, options)
-    })
+    }, `ctx.accessor(${JSON.stringify(name)})`)
   }
 
   alias(name: string, aliases: string[]) {
@@ -225,7 +225,7 @@ class ReflectService {
   mixin(source: any, mixins: string[] | Dict<string>) {
     this.ctx.scope.effect(() => {
       return this._mixin(source, mixins)
-    })
+    }, `ctx.mixin(${JSON.stringify(source)})`)
   }
 
   trace<T>(value: T) {

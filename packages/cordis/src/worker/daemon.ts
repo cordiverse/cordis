@@ -23,7 +23,7 @@ export function apply(ctx: Context, config: Config = {}) {
     yield () => process.off('SIGINT', handleSignal)
     process.on('SIGTERM', handleSignal)
     yield () => process.off('SIGTERM', handleSignal)
-  })
+  }, 'process.on(signal)')
 
   process.send!({ type: 'start', body: config })
   config.heartbeatInterval && setInterval(() => {

@@ -1,4 +1,5 @@
 import { Context, Service } from '@cordisjs/core'
+import { defineProperty } from 'cosmokit'
 
 declare module '@cordisjs/core' {
   interface Context {
@@ -26,7 +27,7 @@ export class TimerService extends Service {
         callback()
       }, delay)
       return () => clearTimeout(timer)
-    })
+    }, 'ctx.setTimeout()')
     return dispose
   }
 
@@ -34,7 +35,7 @@ export class TimerService extends Service {
     return this.ctx.effect(() => {
       const timer = setInterval(callback, delay)
       return () => clearInterval(timer)
-    })
+    }, 'ctx.setInterval()')
   }
 
   sleep(delay: number) {
@@ -53,15 +54,15 @@ export class TimerService extends Service {
     })
   }
 
-  private createWrapper(callback: (args: any[], check: () => boolean) => any, isDisposed = false) {
+  private createWrapper(label: string, callback: (args: any[], check: () => boolean) => any, isDisposed = false) {
     this.ctx.scope.assertActive()
 
     let timer: number | NodeJS.Timeout | undefined
-    const dispose = () => {
+    const dispose = defineProperty(() => {
       isDisposed = true
       remove()
       clearTimeout(timer)
-    }
+    }, Context.effect, { label, children: [] })
 
     const wrapper: any = (...args: any[]) => {
       clearTimeout(timer)
@@ -78,7 +79,7 @@ export class TimerService extends Service {
       lastCall = Date.now()
       callback(...args)
     }
-    return this.createWrapper((args, isActive) => {
+    return this.createWrapper('ctx.throttle()', (args, isActive) => {
       const now = Date.now()
       const remaining = delay - (now - lastCall)
       if (remaining <= 0) {
@@ -90,7 +91,7 @@ export class TimerService extends Service {
   }
 
   debounce<F extends (...args: any[]) => void>(callback: F, delay: number): WithDispose<F> {
-    return this.createWrapper((args, isActive) => {
+    return this.createWrapper('ctx.debounce()', (args, isActive) => {
       if (!isActive()) return
       return setTimeout(callback, delay, ...args)
     })
