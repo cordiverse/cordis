@@ -1,7 +1,7 @@
 {
-  "name": "@cordisjs/logger",
-  "description": "Logger service for cordis",
-  "version": "1.0.0-alpha.3",
+  "name": "@cordisjs/utils",
+  "description": "Utilities for cordis",
+  "version": "1.0.0",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -13,7 +13,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/cordiverse/cordis.git",
-    "directory": "packages/logger"
+    "directory": "packages/utils"
   },
   "bugs": {
     "url": "https://github.com/cordiverse/cordis/issues"
@@ -21,25 +21,15 @@
   "homepage": "https://github.com/cordiverse/cordis",
   "keywords": [
     "cordis",
-    "logger",
-    "service",
-    "plugin"
+    "utilties"
   ],
-  "cordis": {
-    "service": {
-      "implements": [
-        "logger"
-      ]
-    }
-  },
   "devDependencies": {
-    "@cordisjs/core": "^4.0.0-alpha.5"
+    "cordis": "^4.0.0-alpha.5"
   },
   "peerDependencies": {
-    "@cordisjs/core": "^4.0.0-alpha.5"
+    "cordis": "^4.0.0-alpha.5"
   },
   "dependencies": {
-    "cosmokit": "^1.7.3",
-    "reggol": "^2.1.0"
+    "cosmokit": "^1.7.3"
   }
 }

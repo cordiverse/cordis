@@ -1,7 +1,7 @@
-import { Context, Inject, Service } from '../src'
+import { Context, Service } from 'cordis'
+import { Inject } from '../src'
 import { expect } from 'chai'
 import { mock } from 'node:test'
-import { sleep } from './utils'
 
 describe('Decorator', () => {
   it('@Inject on class method', async () => {
@@ -31,7 +31,7 @@ describe('Decorator', () => {
     expect(callback.mock.calls).to.have.length(0)
     expect(dispose.mock.calls).to.have.length(0)
     const scope = root.plugin(Foo)
-    await sleep()
+    await scope
     expect(callback.mock.calls).to.have.length(1)
     expect(dispose.mock.calls).to.have.length(0)
     await scope.dispose()
