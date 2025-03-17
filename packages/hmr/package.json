@@ -54,6 +54,6 @@
   "dependencies": {
     "@babel/code-frame": "^7.24.2",
     "chokidar": "^3.6.0",
-    "cosmokit": "^1.7.3"
+    "cosmokit": "^1.7.4"
   }
 }

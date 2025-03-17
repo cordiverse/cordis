@@ -1,4 +1,4 @@
-import { Context, Plugin, Service, z } from 'cordis'
+import { Context, Init, Plugin, Service, z } from 'cordis'
 import { Dict, makeArray } from 'cosmokit'
 import { ModuleJob, ModuleLoader } from 'cordis/loader'
 import { FSWatcher, watch, WatchOptions } from 'chokidar'
@@ -83,7 +83,10 @@ class Hmr extends Service {
     return relative(this.base, filename)
   }
 
-  async start() {
+  @Init()
+  async* init() {
+    yield () => this.watcher?.close()
+
     const { loader } = this.ctx
     const { root, ignored } = this.config
     this.watcher = watch(root, {
@@ -121,10 +124,6 @@ class Hmr extends Service {
         tree.start()
       }
     })
-  }
-
-  async stop() {
-    await this.watcher?.close()
   }
 
   async getLinked(filename: string) {

@@ -21,10 +21,9 @@ export function Inject(inject: Inject) {
     } else if (decorator.kind === 'method') {
       decorator.addInitializer(function () {
         const property = this[symbols.tracker]?.property
-        if (!property) throw new Error('missing context tracker')
         ;(this[symbols.initHooks] ??= []).push(() => {
-          (this[property] as Context).inject(inject, (ctx) => {
-            return value.call(withProps(this, { [property]: ctx }))
+          (this.ctx as Context).inject(inject, (ctx) => {
+            return value.call(property ? withProps(this, { [property]: ctx }) : this)
           })
         })
       })
