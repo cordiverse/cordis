@@ -49,6 +49,7 @@ export const symbols = {
   initHooks: Symbol.for('cordis.initHooks'),
 
   // context symbols
+  init: Symbol.for('cordis.init') as typeof Context.init,
   store: Symbol.for('cordis.store') as typeof Context.store,
   effect: Symbol.for('cordis.effect') as typeof Context.effect,
   events: Symbol.for('cordis.events') as typeof Context.events,
@@ -59,7 +60,6 @@ export const symbols = {
 
   // service symbols
   check: Symbol.for('cordis.check') as typeof Service.check,
-  setup: Symbol.for('cordis.setup') as typeof Service.setup,
   invoke: Symbol.for('cordis.invoke') as typeof Service.invoke,
   extend: Symbol.for('cordis.extend') as typeof Service.extend,
   tracker: Symbol.for('cordis.tracker') as typeof Service.tracker,

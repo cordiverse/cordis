@@ -200,7 +200,14 @@ export class EffectScope<out C extends Context = Context> {
           for (const hook of instance?.[symbols.initHooks] ?? []) {
             hook()
           }
-          await instance?.[symbols.setup]?.()
+          const result = await instance?.[symbols.init]?.()
+          if (typeof result === 'function') {
+            this.disposables.push(result)
+          } else if (result?.[Symbol.iterator] || result?.[Symbol.asyncIterator]) {
+            for await (const dispose of result) {
+              this.disposables.push(dispose)
+            }
+          }
         } else {
           await this.runtime!.callback(this.ctx, this.config)
         }

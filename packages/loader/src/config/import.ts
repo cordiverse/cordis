@@ -1,4 +1,4 @@
-import { Context, Service } from '@cordisjs/core'
+import { Context } from '@cordisjs/core'
 import { dirname, extname, resolve } from 'node:path'
 import { readdir, stat } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -89,7 +89,7 @@ export class Import extends ImportTree {
     super(ctx)
   }
 
-  async [Service.setup]() {
+  async [Context.init]() {
     const { url } = this.config
     const filename = fileURLToPath(new URL(url, this.ctx.scope.entry!.parent.tree.url))
     const ext = extname(filename)

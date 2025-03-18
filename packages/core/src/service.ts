@@ -1,32 +1,12 @@
-import { Awaitable, defineProperty, formatProperty } from 'cosmokit'
+import { defineProperty } from 'cosmokit'
 import { Context } from './context'
 import { createCallable, joinPrototype, symbols, Tracker } from './utils'
 
-export function Init() {
-  return function (value: any, decorator: ClassMethodDecoratorContext<any>) {
-    if (decorator.kind === 'method') {
-      decorator.addInitializer(function () {
-        const label = `new ${this.constructor.name}()${formatProperty(decorator.name)}()`
-        ;(this[symbols.initHooks] ??= []).push(() => {
-          (this.ctx as Context).effect(() => value.call(this), label)
-        })
-      })
-    } else {
-      throw new Error('@Init() can only be used on class methods')
-    }
-  }
-}
-
 export abstract class Service<out C extends Context = Context> {
   static readonly check: unique symbol = symbols.check as any
-  static readonly setup: unique symbol = symbols.setup as any
   static readonly invoke: unique symbol = symbols.invoke as any
   static readonly extend: unique symbol = symbols.extend as any
   static readonly tracker: unique symbol = symbols.tracker as any
-  static readonly provide = 'provide' as any
-
-  protected start(): Awaitable<void> {}
-  protected stop(): Awaitable<void> {}
 
   public name!: string
 
@@ -47,10 +27,6 @@ export abstract class Service<out C extends Context = Context> {
 
     self.ctx.set(name, self)
     return self
-  }
-
-  protected [symbols.setup]() {
-    return this.start()
   }
 
   protected [symbols.filter](ctx: Context) {
