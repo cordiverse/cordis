@@ -1,9 +1,10 @@
 import { defineProperty } from 'cosmokit'
 import type { Context, Service } from '.'
 
-export class DisposableList<T> {
+export class DisposableList<T extends WeakKey> {
   private sn = 0
   private map = new Map<number, T>()
+  private weak = new WeakMap<T, number>()
 
   get length() {
     return this.map.size
@@ -11,13 +12,14 @@ export class DisposableList<T> {
 
   push(value: T) {
     this.map.set(++this.sn, value)
+    this.weak.set(value, this.sn)
     return () => this.map.delete(this.sn)
   }
 
-  _leak(value: T) {
-    const v = this.map.get(this.sn)
-    if (v !== value) return false
-    return this.map.delete(this.sn)
+  delete(value: T) {
+    const sn = this.weak.get(value)
+    if (!sn) return false
+    return this.map.delete(sn)
   }
 
   clear() {

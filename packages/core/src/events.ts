@@ -54,7 +54,7 @@ class EventsService {
     })
 
     // TODO: deprecate these events
-    ctx.scope._leak(this.on('internal/listener', function (this: Context, name, listener, options: EventOptions) {
+    this.on('internal/listener', function (this: Context, name, listener, options: EventOptions) {
       if (name === 'ready') {
         Promise.resolve().then(listener)
         return () => false
@@ -64,17 +64,17 @@ class EventsService {
       } else if (name === 'internal/update' && !options.global) {
         return this.scope.acceptors.push(listener)
       }
-    }))
+    })
 
     for (const level of ['info', 'error', 'warning']) {
-      ctx.scope._leak(this.on(`internal/${level}`, (format, ...param) => {
+      this.on(`internal/${level}`, (format, ...param) => {
         if (this._hooks[`internal/${level}`].length > 1) return
         // eslint-disable-next-line no-console
         console.info(format, ...param)
-      }))
+      })
     }
 
-    ctx.scope._leak(this.on('internal/before-service', function (this: Context, name) {
+    this.on('internal/before-service', function (this: Context, name) {
       for (const runtime of this.registry.values()) {
         for (const scope of runtime.scopes) {
           if (!scope.inject[name]?.required) continue
@@ -82,9 +82,9 @@ class EventsService {
           scope.active = false
         }
       }
-    }, { global: true }))
+    }, { global: true })
 
-    ctx.scope._leak(this.on('internal/service', function (this: Context, name) {
+    this.on('internal/service', function (this: Context, name) {
       for (const runtime of this.registry.values()) {
         for (const scope of runtime.scopes) {
           if (!scope.inject[name]?.required) continue
@@ -92,9 +92,9 @@ class EventsService {
           scope.active = true
         }
       }
-    }, { global: true }))
+    }, { global: true })
 
-    ctx.scope._leak(this.on('internal/status', function (scope: EffectScope) {
+    this.on('internal/status', function (scope: EffectScope) {
       if (scope.status !== ScopeStatus.ACTIVE) return
       for (const key of Reflect.ownKeys(ctx[symbols.store])) {
         const item = ctx[symbols.store][key as symbol]
@@ -103,9 +103,9 @@ class EventsService {
           item.source.emit(item.source, 'internal/service', item.name, item.value)
         }
       }
-    }, { global: true }))
+    }, { global: true })
 
-    ctx.scope._leak(this.on('internal/inject', function (this: Context, name, provider) {
+    this.on('internal/inject', function (this: Context, name, provider) {
       const visited = new Set<string>()
       let scope = this.scope
       while (1) {
@@ -120,14 +120,14 @@ class EventsService {
         scope = next
       }
       return false
-    }, { global: true }))
+    }, { global: true })
 
-    ctx.scope._leak(this.on('internal/update', (scope, config) => {
+    this.on('internal/update', (scope, config) => {
       for (const acceptor of scope.acceptors) {
         if (acceptor(scope, config)) return true
       }
       return deepEqual(scope.config, config)
-    }, { global: true }))
+    }, { global: true })
   }
 
   dispatch(type: string, args: any[]) {

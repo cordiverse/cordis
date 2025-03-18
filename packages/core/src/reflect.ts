@@ -1,6 +1,6 @@
 import { defineProperty, Dict, isNullable } from 'cosmokit'
 import { Context } from './context'
-import { getTraceable, isObject, isUnproxyable, symbols, withProps } from './utils'
+import { getTraceable, isUnproxyable, symbols, withProps } from './utils'
 import { EffectScope, ScopeStatus } from './scope'
 
 declare module './context' {
@@ -160,18 +160,12 @@ class ReflectService {
     return dispose
   }
 
-  provide(name: string, value?: any, builtin?: boolean) {
+  provide(name: string, builtin?: boolean) {
     const internal = this.ctx.root[symbols.internal]
     if (name in internal) return
     const key = Symbol(name)
     internal[name] = { type: 'service', builtin }
     this.ctx.root[symbols.isolate][name] = key
-    if (!isObject(value)) return
-    this.ctx[symbols.store][key] = { name, value, source: null! }
-    defineProperty(value, symbols.tracker, {
-      associate: name,
-      property: 'ctx',
-    })
   }
 
   _accessor(name: string, options: Omit<Context.Internal.Accessor, 'type'>) {

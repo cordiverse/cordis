@@ -131,7 +131,7 @@ export class EffectScope<out C extends Context = Context> {
     let dispose: Disposable
     const meta: EffectMeta = { label, children: [] }
     const update = (disposable: Disposable) => {
-      this._leak(disposable)
+      this.disposables.delete(disposable)
       if (disposable[symbols.effect]) {
         meta.children.push(disposable[symbols.effect])
       }
@@ -168,10 +168,6 @@ export class EffectScope<out C extends Context = Context> {
     }, symbols.effect, meta)
     const remove = this.disposables.push(wrapped)
     return wrapped
-  }
-
-  _leak(disposable: Disposable) {
-    return this.disposables._leak(disposable)
   }
 
   private _getStatus() {
@@ -267,7 +263,7 @@ export class EffectScope<out C extends Context = Context> {
     })
   }
 
-  async _await() {
+  private async _await() {
     while (this.pending) {
       await this.pending
     }

@@ -81,6 +81,8 @@ export class Context {
     self.reflect = new ReflectService(self)
     self.registry = new Registry(self)
     self.events = new EventsService(self)
+    // ignore internal effects
+    self.scope.disposables.clear()
     return self
   }
 
