@@ -114,9 +114,6 @@ describe('Isolation', () => {
     class Foo extends Service {
       constructor(ctx: Context) {
         super(ctx, 'foo')
-      }
-
-      start() {
         this.ctx.emit(this, event)
       }
     }
