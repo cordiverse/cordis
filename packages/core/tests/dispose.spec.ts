@@ -9,9 +9,12 @@ describe('Disposables', () => {
     const root = new Context()
     const dispose = mock.fn()
     const scope = root.plugin((ctx) => {
-      ctx.effect(() => dispose)
+      ctx.effect(() => dispose, 'test')
     })
     await scope
+    expect(scope.getEffects()).to.deep.equal([
+      { label: 'test', children: [] },
+    ])
     expect(dispose.mock.calls).to.have.length(0)
     await scope.dispose()
     expect(dispose.mock.calls).to.have.length(1)
@@ -23,6 +26,9 @@ describe('Disposables', () => {
     const root = new Context()
     const dispose1 = mock.fn()
     const dispose2 = root.effect(() => dispose1)
+    expect(root.scope.getEffects()).to.deep.equal([
+      { label: 'anonymous', children: [] },
+    ])
     expect(dispose1.mock.calls).to.have.length(0)
     dispose2()
     expect(dispose1.mock.calls).to.have.length(1)
@@ -38,9 +44,30 @@ describe('Disposables', () => {
     const dispose3 = mock.fn(() => seq.push(3))
     const dispose = root.effect(function* () {
       yield dispose1
+      yield root.on('internal/service', () => {})
       yield dispose2
-      yield dispose3
+      yield root.effect(function* () {
+        yield root.on('internal/before-service', () => {})
+        yield dispose3
+      })
     })
+    root.on('custom-event', () => {})
+    expect(root.scope.getEffects()).to.deep.equal([
+      {
+        label: 'anonymous',
+        children: [
+          // only root level anonymous effects are included
+          { label: 'ctx.on("internal/service")', children: [] },
+          {
+            label: 'anonymous',
+            children: [
+              { label: 'ctx.on("internal/before-service")', children: [] },
+            ],
+          },
+        ],
+      },
+      { label: 'ctx.on("custom-event")', children: [] },
+    ])
     expect(seq).to.deep.equal([])
     dispose()
     expect(seq).to.deep.equal([3, 2, 1])

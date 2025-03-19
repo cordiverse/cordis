@@ -19,10 +19,6 @@ export interface EffectMeta {
   children: EffectMeta[]
 }
 
-export function EffectMeta(dispose: Disposable): EffectMeta {
-  return dispose[symbols.effect] ?? { label: 'anonymous', children: [] }
-}
-
 export const enum ScopeStatus {
   PENDING,
   LOADING,
@@ -170,6 +166,12 @@ export class EffectScope<out C extends Context = Context> {
     return wrapped
   }
 
+  getEffects() {
+    return [...this.disposables]
+      .map<EffectMeta>(dispose => dispose[symbols.effect])
+      .filter(Boolean)
+  }
+
   private _getStatus() {
     if (this._pending) return ScopeStatus.LOADING
     if (this.uid === null) return ScopeStatus.DISPOSED
@@ -190,22 +192,26 @@ export class EffectScope<out C extends Context = Context> {
   private async _reload() {
     try {
       await composeError(async () => {
+        let result: any, label: string
         if (isConstructor(this.runtime!.callback)) {
           // eslint-disable-next-line new-cap
           const instance = new this.runtime!.callback(this.ctx, this.config)
           for (const hook of instance?.[symbols.initHooks] ?? []) {
             hook()
           }
-          const result = await instance?.[symbols.init]?.()
-          if (typeof result === 'function') {
-            this.disposables.push(result)
-          } else if (result?.[Symbol.iterator] || result?.[Symbol.asyncIterator]) {
-            for await (const dispose of result) {
-              this.disposables.push(dispose)
-            }
-          }
+          result = await instance?.[symbols.init]?.()
+          label = `${this.runtime!.callback.name}[Symbol(cordis.init)]()`
         } else {
-          await this.runtime!.callback(this.ctx, this.config)
+          result = await this.runtime!.callback(this.ctx, this.config)
+          label = `${this.runtime!.callback.name}()`
+        }
+        if (typeof result === 'function') {
+          defineProperty(result, symbols.effect, { label, children: [] })
+          this.disposables.push(result)
+        } else if (result?.[Symbol.iterator] || result?.[Symbol.asyncIterator]) {
+          for await (const dispose of result) {
+            this.disposables.push(dispose)
+          }
         }
       }, 2, this.getOuterStack)
     } catch (reason) {

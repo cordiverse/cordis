@@ -81,7 +81,7 @@ class LoggerService extends Service {
   }
 
   exporter(exporter: Exporter) {
-    return this.ctx.effect(() => this.factory.addExporter(exporter))
+    return this.ctx.effect(() => this.factory.addExporter(exporter), 'ctx.logger.exporter()')
   }
 
   [Service.invoke](name?: string) {
