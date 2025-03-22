@@ -11,9 +11,10 @@ export class DisposableList<T extends WeakKey> {
   }
 
   push(value: T) {
-    this.map.set(++this.sn, value)
-    this.weak.set(value, this.sn)
-    return () => this.map.delete(this.sn)
+    const sn = ++this.sn
+    this.map.set(sn, value)
+    this.weak.set(value, sn)
+    return () => this.map.delete(sn)
   }
 
   delete(value: T) {
