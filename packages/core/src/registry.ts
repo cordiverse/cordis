@@ -19,9 +19,13 @@ export function Inject<
 >(name: K, required = true, config?: Context[K] extends { [symbols.config]: infer T } ? T : never) {
   return function (value: any, decorator: ClassDecoratorContext<any> | ClassMethodDecoratorContext<any>) {
     if (decorator.kind === 'class') {
-      (value.inject ??= {})[name] = { required, config }
+      if (!Object.hasOwn(value, 'inject')) {
+        defineProperty(value, 'inject', Object.create(Object.getPrototypeOf(value).inject ?? null))
+        defineProperty(value.inject, symbols.checkProto, true)
+      }
+      value.inject[name] = { required, config }
     } else if (decorator.kind === 'method') {
-      const inject = (value[symbols.metadata] ??= {}).inject ??= {}
+      const inject = (value[symbols.metadata] ??= {}).inject ??= Object.create(null)
       inject[name] = { required, config }
       decorator.addInitializer(function () {
         const property = this[symbols.tracker]?.property
@@ -47,6 +51,9 @@ export namespace Inject {
     if (!inject) return {}
     if (Array.isArray(inject)) {
       return Object.fromEntries(inject.map(name => [name, { required: true }]))
+    }
+    if (Reflect.has(inject, symbols.checkProto)) {
+      return { ...resolve(Object.getPrototypeOf(inject)), ...inject } as any
     }
     return mapValues(inject, (value) => typeof value === 'boolean' ? { required: value } : value)
   }

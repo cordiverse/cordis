@@ -51,6 +51,7 @@ export const symbols = {
   original: Symbol.for('cordis.original'),
   metadata: Symbol.for('cordis.metadata'),
   initHooks: Symbol.for('cordis.initHooks'),
+  checkProto: Symbol.for('cordis.checkProto'),
 
   // context symbols
   init: Symbol.for('cordis.init') as typeof Context.init,
