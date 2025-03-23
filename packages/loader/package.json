@@ -1,7 +1,7 @@
 {
   "name": "@cordisjs/loader",
   "description": "Loader for cordis",
-  "version": "1.0.0-alpha.3",
+  "version": "1.0.0-alpha.4",
   "type": "module",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
@@ -36,16 +36,16 @@
     "service"
   ],
   "devDependencies": {
-    "@cordisjs/core": "^4.0.0-alpha.7",
+    "@cordisjs/core": "^4.0.0-alpha.8",
     "@types/chai": "^5.2.0",
     "@types/js-yaml": "^4.0.9",
     "chai": "^5.2.0"
   },
   "peerDependencies": {
-    "@cordisjs/core": "^4.0.0-alpha.7"
+    "@cordisjs/core": "^4.0.0-alpha.8"
   },
   "dependencies": {
-    "cosmokit": "^1.7.4",
+    "cosmokit": "^1.8.0",
     "dotenv": "^16.4.7",
     "js-yaml": "^4.1.0"
   }

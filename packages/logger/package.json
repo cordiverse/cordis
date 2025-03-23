@@ -1,7 +1,7 @@
 {
   "name": "@cordisjs/logger",
   "description": "Logger service for cordis",
-  "version": "1.0.0-alpha.4",
+  "version": "1.0.0-alpha.5",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -33,13 +33,14 @@
     }
   },
   "devDependencies": {
-    "@cordisjs/core": "^4.0.0-alpha.7"
+    "@cordisjs/core": "^4.0.0-alpha.8"
   },
   "peerDependencies": {
-    "@cordisjs/core": "^4.0.0-alpha.7"
+    "@cordisjs/core": "^4.0.0-alpha.8"
   },
   "dependencies": {
-    "cosmokit": "^1.7.4",
-    "reggol": "^2.1.0"
+    "cosmokit": "^1.8.0",
+    "reggol": "^2.1.0",
+    "schemastery": "^3.15.0"
   }
 }

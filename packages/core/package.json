@@ -1,7 +1,7 @@
 {
   "name": "@cordisjs/core",
   "description": "Meta-Framework for Modern JavaScript Applications",
-  "version": "4.0.0-alpha.7",
+  "version": "4.0.0-alpha.8",
   "sideEffects": false,
   "type": "module",
   "main": "lib/index.js",
@@ -35,6 +35,6 @@
     "chai-as-promised": "^8.0.1"
   },
   "dependencies": {
-    "cosmokit": "^1.7.4"
+    "cosmokit": "^1.8.0"
   }
 }
