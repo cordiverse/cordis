@@ -48,12 +48,14 @@
   "devDependencies": {
     "@cordisjs/plugin-timer": "^1.0.0",
     "@types/babel__code-frame": "^7.0.6",
+    "@types/picomatch": "^3.0.2",
     "cordis": "^4.0.0-alpha.7",
     "esbuild": "^0.25.1"
   },
   "dependencies": {
     "@babel/code-frame": "^7.26.2",
     "chokidar": "^4.0.3",
-    "cosmokit": "^1.7.4"
+    "cosmokit": "^1.8.0",
+    "picomatch": "^4.0.2"
   }
 }

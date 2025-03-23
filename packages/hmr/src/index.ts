@@ -1,17 +1,18 @@
-import { Context, Plugin, Service, z } from 'cordis'
-import { Dict, makeArray } from 'cosmokit'
+import { Context, Inject, Plugin, Service, z } from 'cordis'
+import { Dict } from 'cosmokit'
 import { ModuleJob, ModuleLoader } from 'cordis/loader'
 import { ChokidarOptions, FSWatcher, watch } from 'chokidar'
 import { relative, resolve } from 'node:path'
 import { handleError } from './error.ts'
 import {} from '@cordisjs/plugin-timer'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import picomatch from 'picomatch'
 import enUS from './locales/en-US.yml'
 import zhCN from './locales/zh-CN.yml'
 
 declare module 'cordis' {
   interface Context {
-    hmr: Hmr
+    hmr: HMR
   }
 
   interface Events {
@@ -36,9 +37,10 @@ interface Reload {
   runtime?: Plugin.Runtime
 }
 
-class Hmr extends Service {
-  static inject = ['loader', 'timer', 'logger']
-
+@Inject('loader')
+@Inject('timer')
+@Inject('logger')
+class HMR extends Service {
   private base: string
   private internal: ModuleLoader
   private watcher!: FSWatcher
@@ -69,7 +71,7 @@ class Hmr extends Service {
   /** stashed changes */
   private stashed = new Set<string>()
 
-  constructor(ctx: Context, public config: Hmr.Config) {
+  constructor(ctx: Context, public config: HMR.Config) {
     super(ctx, 'hmr')
     if (!this.ctx.loader.internal) {
       throw new Error('--expose-internals is required for HMR service')
@@ -88,10 +90,17 @@ class Hmr extends Service {
 
     const { loader } = this.ctx
     const { root, ignored } = this.config
+    if (this.base === this.ctx.baseDir) {
+      this.ctx.logger.debug('watching %o', root)
+    } else {
+      this.ctx.logger.debug('watching %o in %s', root, this.base)
+    }
+
+    const match = picomatch(ignored)
     this.watcher = watch(root, {
       ...this.config,
       cwd: this.base,
-      ignored: makeArray(ignored),
+      ignored: path => match(relative(this.base, path)),
     })
 
     // files independent from any plugins will trigger a full reload
@@ -320,7 +329,7 @@ class Hmr extends Service {
   }
 }
 
-namespace Hmr {
+namespace HMR {
   export interface Config extends ChokidarOptions {
     base?: string
     root: string[]
@@ -334,13 +343,11 @@ namespace Hmr {
       z.array(String).role('table'),
       z.transform(String, (value) => [value]),
     ]).default(['.']),
-    ignored: z.union([
-      z.array(String).role('table'),
-      z.transform(String, (value) => [value]),
-    ]).default([
+    ignored: z.array(String).role('table').default([
       '**/node_modules/**',
-      '**/.git/**',
-      '**/logs/**',
+      '**/.*/**',
+      'cache/**',
+      'data/**',
     ]),
     debounce: z.natural().role('ms').default(100),
   }).i18n({
@@ -349,4 +356,4 @@ namespace Hmr {
   })
 }
 
-export default Hmr
+export default HMR
