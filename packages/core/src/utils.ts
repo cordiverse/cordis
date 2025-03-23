@@ -49,6 +49,7 @@ export const symbols = {
   shadow: Symbol.for('cordis.shadow'),
   receiver: Symbol.for('cordis.receiver'),
   original: Symbol.for('cordis.original'),
+  metadata: Symbol.for('cordis.metadata'),
   initHooks: Symbol.for('cordis.initHooks'),
 
   // context symbols
@@ -63,9 +64,11 @@ export const symbols = {
 
   // service symbols
   check: Symbol.for('cordis.check') as typeof Service.check,
+  config: Symbol.for('cordis.config') as typeof Service.config,
   invoke: Symbol.for('cordis.invoke') as typeof Service.invoke,
   extend: Symbol.for('cordis.extend') as typeof Service.extend,
   tracker: Symbol.for('cordis.tracker') as typeof Service.tracker,
+  resolveConfig: Symbol.for('cordis.resolveConfig') as typeof Service.resolveConfig,
 }
 
 const GeneratorFunction = function* () {}.constructor

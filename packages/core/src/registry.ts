@@ -12,13 +12,17 @@ function buildOuterStack() {
   return () => outerError.stack!.split('\n').slice(3)
 }
 
-export type Inject = string[] | Dict<boolean | Inject.Meta>
+export type Inject<M = Dict> = (keyof M)[] | { [K in keyof M]: boolean | Inject.Meta<M[K]> }
 
-export function Inject(inject: Inject) {
+export function Inject<
+  K extends keyof { [K in keyof Context & string as Context[K] extends { [symbols.config]: any } ? K : never]: any }
+>(name: K, required = true, config?: Context[K] extends { [symbols.config]: infer T } ? T : never) {
   return function (value: any, decorator: ClassDecoratorContext<any> | ClassMethodDecoratorContext<any>) {
     if (decorator.kind === 'class') {
-      value.inject = inject
+      (value.inject ??= {})[name] = { required, config }
     } else if (decorator.kind === 'method') {
+      const inject = (value[symbols.metadata] ??= {}).inject ??= {}
+      inject[name] = { required, config }
       decorator.addInitializer(function () {
         const property = this[symbols.tracker]?.property
         ;(this[symbols.initHooks] ??= []).push(() => {
@@ -39,7 +43,7 @@ export namespace Inject {
     config?: T
   }
 
-  export function resolve(inject: Inject | null | undefined) {
+  export function resolve(inject: Inject | null | undefined): Dict<Meta> {
     if (!inject) return {}
     if (Array.isArray(inject)) {
       return Object.fromEntries(inject.map(name => [name, { required: true }]))

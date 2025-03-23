@@ -2,11 +2,15 @@ import { defineProperty } from 'cosmokit'
 import { Context } from './context'
 import { createCallable, joinPrototype, symbols, Tracker } from './utils'
 
-export abstract class Service<out C extends Context = Context> {
+export abstract class Service<out T = never, out C extends Context = Context> {
   static readonly check: unique symbol = symbols.check as any
+  static readonly config: unique symbol = symbols.config as any
   static readonly invoke: unique symbol = symbols.invoke as any
   static readonly extend: unique symbol = symbols.extend as any
   static readonly tracker: unique symbol = symbols.tracker as any
+  static readonly resolveConfig: unique symbol = symbols.resolveConfig as any
+
+  declare [symbols.config]: T
 
   public name!: string
 
@@ -41,6 +45,24 @@ export abstract class Service<out C extends Context = Context> {
       self = Object.create(this)
     }
     return Object.assign(self, props)
+  }
+
+  [symbols.resolveConfig](base?: T, head?: T): T {
+    let intercept = this.ctx[Context.intercept]
+    const configs: any[] = []
+    while (this.name in intercept) {
+      if (Object.hasOwn(intercept, this.name)) {
+        configs.unshift(intercept[this.name])
+      }
+      intercept = Object.getPrototypeOf(intercept)
+    }
+    if (base) configs.unshift(base)
+    if (head) configs.push(head)
+    if (this['Config']?.merge) {
+      return this['Config'].merge(...configs)
+    } else {
+      return Object.assign({}, ...configs)
+    }
   }
 
   static [Symbol.hasInstance](instance: any) {

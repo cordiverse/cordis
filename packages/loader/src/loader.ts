@@ -1,4 +1,4 @@
-import { Context } from '@cordisjs/core'
+import { Context, Service } from '@cordisjs/core'
 import { Dict, isNullable } from 'cosmokit'
 import { ModuleLoader } from './internal.ts'
 import { Entry, EntryOptions, EntryUpdateMeta } from './config/entry.ts'
@@ -49,6 +49,8 @@ export namespace Loader {
 }
 
 export abstract class Loader<C extends Context = Context> extends ImportTree<C> {
+  declare [Service.config]: never
+
   public envData = process.env.CORDIS_SHARED
     ? JSON.parse(process.env.CORDIS_SHARED)
     : { startTime: Date.now() }

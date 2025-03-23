@@ -1,6 +1,7 @@
 import { Context, Service } from '@cordisjs/core'
 import { hyphenate } from 'cosmokit'
 import { Exporter, Factory, Logger, Message, Type } from 'reggol'
+import z from 'schemastery'
 
 export * from 'reggol'
 
@@ -35,7 +36,12 @@ interface LoggerService extends Pick<Logger, Type> {
   (name?: string): Logger
 }
 
-class LoggerService extends Service {
+class LoggerService extends Service<LoggerService.Intercept> {
+  Config = z.object({
+    name: z.string(),
+    level: z.number(),
+  })
+
   factory = new Factory()
   buffer: Message[] = []
 
@@ -85,12 +91,8 @@ class LoggerService extends Service {
   }
 
   [Service.invoke](name?: string) {
-    let config: LoggerService.Intercept = {}
-    let intercept = this.ctx[Context.intercept]
-    while (intercept) {
-      config = Object.assign({}, intercept.logger, config)
-      intercept = Object.getPrototypeOf(intercept)
-    }
+    const config = this[Service.resolveConfig]()
+    name ??= config.name
     name ??= hyphenate(this.ctx.name)
     return this.factory.createLogger(name, {
       level: config.level,
