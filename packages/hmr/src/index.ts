@@ -1,7 +1,7 @@
 import { Context, Plugin, Service, z } from 'cordis'
 import { Dict, makeArray } from 'cosmokit'
 import { ModuleJob, ModuleLoader } from 'cordis/loader'
-import { FSWatcher, watch, WatchOptions } from 'chokidar'
+import { ChokidarOptions, FSWatcher, watch } from 'chokidar'
 import { relative, resolve } from 'node:path'
 import { handleError } from './error.ts'
 import {} from '@cordisjs/plugin-timer'
@@ -321,7 +321,7 @@ class Hmr extends Service {
 }
 
 namespace Hmr {
-  export interface Config extends WatchOptions {
+  export interface Config extends ChokidarOptions {
     base?: string
     root: string[]
     debounce: number
