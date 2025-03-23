@@ -1,4 +1,4 @@
-import { defineProperty, Dict } from 'cosmokit'
+import { defineProperty, Dict, mapValues } from 'cosmokit'
 import { Context } from './context'
 import { EffectScope } from './scope'
 import { DisposableList, symbols, withProps } from './utils'
@@ -12,7 +12,7 @@ function buildOuterStack() {
   return () => outerError.stack!.split('\n').slice(3)
 }
 
-export type Inject = string[] | Dict<Inject.Meta>
+export type Inject = string[] | Dict<boolean | Inject.Meta>
 
 export function Inject(inject: Inject) {
   return function (value: any, decorator: ClassDecoratorContext<any> | ClassMethodDecoratorContext<any>) {
@@ -44,7 +44,7 @@ export namespace Inject {
     if (Array.isArray(inject)) {
       return Object.fromEntries(inject.map(name => [name, { required: true }]))
     }
-    return inject
+    return mapValues(inject, (value) => typeof value === 'boolean' ? { required: value } : value)
   }
 }
 

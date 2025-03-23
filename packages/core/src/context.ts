@@ -41,10 +41,10 @@ export namespace Context {
 export interface Intercept<C extends Context = Context> {}
 
 export interface Context {
-  [Context.store]: Dict<Context.Item<this>, symbol>
-  [Context.isolate]: Dict<symbol>
-  [Context.intercept]: Intercept<this>
-  [Context.internal]: Dict<Context.Internal>
+  [symbols.store]: Dict<Context.Item<this>, symbol>
+  [symbols.isolate]: Dict<symbol>
+  [symbols.intercept]: Intercept<this>
+  [symbols.internal]: Dict<Context.Internal>
   root: this
   events: EventsService
   reflect: ReflectService
