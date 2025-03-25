@@ -15,7 +15,7 @@ function setup() {
 }
 
 describe('Event Listener', () => {
-  it('context.prototype.on', () => {
+  it('context.prototype.on', async () => {
     const { root } = setup()
     const callback = mock.fn()
     const dispose = root.on(event, callback)
@@ -23,12 +23,12 @@ describe('Event Listener', () => {
     expect(callback.mock.calls).to.have.length(1)
     root.emit(event)
     expect(callback.mock.calls).to.have.length(2)
-    expect(dispose()).to.be.ok
+    dispose()
     root.emit(event)
     expect(callback.mock.calls).to.have.length(2)
   })
 
-  it('context.prototype.once', () => {
+  it('context.prototype.once', async () => {
     const { root } = setup()
     const callback = mock.fn()
     const dispose = root.once(event, callback)
@@ -36,7 +36,7 @@ describe('Event Listener', () => {
     expect(callback.mock.calls).to.have.length(1)
     root.emit(event)
     expect(callback.mock.calls).to.have.length(1)
-    expect(dispose()).to.be.not.ok
+    dispose()
     root.emit(event)
     expect(callback.mock.calls).to.have.length(1)
   })

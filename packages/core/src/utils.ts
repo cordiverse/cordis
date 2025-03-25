@@ -229,7 +229,7 @@ interface StackInfo {
   offset: number
 }
 
-export async function composeError<T>(callback: (info: StackInfo) => Promise<T>, getOuterStack = buildOuterStack()) {
+export async function composeError<T>(callback: (info: StackInfo) => T, getOuterStack = buildOuterStack()): Promise<Awaited<T>> {
   // force async stack trace
   await Promise.resolve()
   const info: StackInfo = { offset: 1 }
@@ -254,7 +254,7 @@ export async function composeError<T>(callback: (info: StackInfo) => Promise<T>,
     const index = lines.indexOf(innerLines[2])
     if (index === -1) throw error
 
-    lines.splice(index - info.offset, Infinity)
+    lines.splice(index - info.offset)
     lines.push(...getOuterStack())
     error.stack = lines.join('\n')
     throw error

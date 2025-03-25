@@ -1,18 +1,26 @@
 import { defineProperty, Dict, isNullable } from 'cosmokit'
 import { Context } from './context'
 import { Inject, Plugin, resolveConfig } from './registry'
-import { composeError, DisposableList, isConstructor, symbols } from './utils'
+import { composeError, DisposableList, isConstructor, isObject, symbols } from './utils'
 
 declare module './context' {
   export interface Context {
     scope: EffectScope<this>
-    effect(callback: Effect, label?: string): () => Promise<void>
+    effect(factory: () => Effect, label?: string): AsyncDispose
   }
 }
 
-export type Disposable<T = any> = () => T
+export interface AsyncDispose extends PromiseLike<() => Promise<void>> {
+  (): Promise<void>
+}
 
-export type Effect<T = void> = () => Disposable<T> | Iterable<Disposable, void, void>
+type Disposable = () => any
+
+export type Effect =
+  | Disposable
+  | Promise<Disposable>
+  | Iterable<Disposable, void, void>
+  | AsyncIterable<Disposable, void, void>
 
 export interface EffectMeta {
   label: string
@@ -121,48 +129,73 @@ export class EffectScope<out C extends Context = Context> {
     throw new CordisError('INACTIVE_EFFECT')
   }
 
-  effect<T = void>(callback: Effect<T>, label = 'anonymous'): () => T {
-    this.assertActive()
-    const result = callback()
-    let isDisposed = false
-    let dispose: Disposable
-    const meta: EffectMeta = { label, children: [] }
-    const update = (disposable: Disposable) => {
-      this.disposables.delete(disposable)
-      if (disposable[symbols.effect]) {
-        meta.children.push(disposable[symbols.effect])
+  private _collect(factory: () => Effect, collect: (dispose: Disposable) => void) {
+    const safeCollect = (dispose: void | Disposable) => {
+      if (typeof dispose === 'function') {
+        collect(dispose)
+      } else if (!isNullable(dispose)) {
+        throw new TypeError('Invalid effect')
       }
     }
-    if (typeof result === 'function') {
-      update(result)
-      dispose = result
-    } else if (result[Symbol.iterator]) {
-      const iter = result[Symbol.iterator]()
-      const disposables: Disposable[] = []
-      dispose = () => disposables.forEach(dispose => dispose())
-      try {
+    const effect = factory()
+    if (typeof effect === 'function') {
+      return collect(effect)
+    } else if (isNullable(effect)) {
+      // return
+    } else if (!isObject(effect)) {
+      throw new TypeError('Invalid effect')
+    } else if ('then' in effect) {
+      return effect.then(safeCollect)
+    } else if (Symbol.iterator in effect) {
+      const iter = effect[Symbol.iterator]()
+      while (true) {
+        const result = iter.next()
+        safeCollect(result.value)
+        if (result.done) return
+      }
+    } else if (Symbol.asyncIterator in effect) {
+      const iter = effect[Symbol.asyncIterator]()
+      return (async () => {
         while (true) {
-          const value = iter.next()
-          if (value.value) {
-            update(value.value)
-            disposables.unshift(value.value)
-          }
-          if (value.done) break
+          const result = await iter.next()
+          safeCollect(result.value)
+          if (result.done) return
         }
-      } catch (error) {
-        dispose()
-        throw error
-      }
+      })()
     } else {
-      throw new TypeError('effect must return a function or an iterable')
+      throw new TypeError('Invalid effect')
     }
-    const wrapped = defineProperty((...args: []) => {
+  }
+
+  effect(factory: () => Effect, label = 'anonymous'): AsyncDispose {
+    this.assertActive()
+    let isDisposed = false
+    const meta: EffectMeta = { label, children: [] }
+    const disposables: Disposable[] = []
+    let task = this._collect(factory, (dispose) => {
+      disposables.push(dispose)
+      this.disposables.delete(dispose)
+      if (dispose[symbols.effect]) {
+        meta.children.push(dispose[symbols.effect])
+      }
+    })
+    const wrapped = defineProperty(() => {
       // make sure the original callback is not called twice
       if (isDisposed) return
       isDisposed = true
       remove()
-      return dispose(...args)
-    }, symbols.effect, meta)
+      for (const dispose of disposables.splice(0).reverse()) {
+        if (task) {
+          task = task.then(dispose)
+        } else {
+          const result = dispose()
+          if (isObject(result) && 'then' in result) {
+            task = result as any
+          }
+        }
+      }
+      return task
+    }, symbols.effect, meta) as AsyncDispose
     const remove = this.disposables.push(wrapped)
     return wrapped
   }
@@ -194,30 +227,20 @@ export class EffectScope<out C extends Context = Context> {
     try {
       await composeError(async (info) => {
         info.offset += 1
-        let result: any
-        if (isConstructor(this.runtime!.callback)) {
-          // eslint-disable-next-line new-cap
-          const instance = new this.runtime!.callback(this.ctx, this.config)
-          for (const hook of instance?.[symbols.initHooks] ?? []) {
-            hook()
+        await this._collect(() => {
+          if (isConstructor(this.runtime!.callback)) {
+            // eslint-disable-next-line new-cap
+            const instance = new this.runtime!.callback(this.ctx, this.config)
+            for (const hook of instance?.[symbols.initHooks] ?? []) {
+              hook()
+            }
+            return instance?.[symbols.init]?.()
+          } else {
+            return this.runtime!.callback(this.ctx, this.config)
           }
-          result = await instance?.[symbols.init]?.()
-        } else {
-          result = await this.runtime!.callback(this.ctx, this.config)
-        }
-        if (typeof result === 'function') {
-          this.disposables.push(result)
-        } else if (result?.[Symbol.asyncIterator]) {
-          info.offset += 1
-          for await (const dispose of result) {
-            this.disposables.push(dispose)
-          }
-        } else if (result?.[Symbol.iterator]) {
-          info.offset += 1
-          for (const dispose of result) {
-            this.disposables.push(dispose)
-          }
-        }
+        }, (dispose) => {
+          this.disposables.push(dispose)
+        })
       }, this.getOuterStack)
     } catch (reason) {
       // the registry impl guarantees that the error is non-null
@@ -281,7 +304,7 @@ export class EffectScope<out C extends Context = Context> {
     if (this._error) throw this._error
   }
 
-  then(onFulfilled: () => any, onRejected?: (reason: any) => any) {
+  then(onFulfilled?: () => any, onRejected?: (reason: any) => any) {
     return this._await().then(onFulfilled, onRejected)
   }
 
