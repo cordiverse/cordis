@@ -281,7 +281,9 @@ class HMR extends Service {
     const reload = (plugin: any, runtime?: Plugin.Runtime) => {
       if (!runtime) return
       for (const oldFiber of runtime.scopes) {
-        const scope = oldFiber.parent.plugin(plugin, oldFiber.config)
+        const scope = oldFiber.parent.registry.plugin(plugin, oldFiber.config, () => [
+          '    at HMR.partialReload (<anonymous>)',
+        ])
         scope.entry = oldFiber.entry
         if (scope.entry) scope.entry.scope = scope
       }

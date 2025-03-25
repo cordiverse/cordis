@@ -192,8 +192,8 @@ export class EffectScope<out C extends Context = Context> {
 
   private async _reload() {
     try {
-      await composeError(async () => {
-        let result: any, label: string
+      await composeError(async (info) => {
+        let result: any
         if (isConstructor(this.runtime!.callback)) {
           // eslint-disable-next-line new-cap
           const instance = new this.runtime!.callback(this.ctx, this.config)
@@ -201,16 +201,19 @@ export class EffectScope<out C extends Context = Context> {
             hook()
           }
           result = await instance?.[symbols.init]?.()
-          label = `${this.runtime!.callback.name}[Symbol(cordis.init)]()`
         } else {
           result = await this.runtime!.callback(this.ctx, this.config)
-          label = `${this.runtime!.callback.name}()`
         }
         if (typeof result === 'function') {
-          defineProperty(result, symbols.effect, { label, children: [] })
           this.disposables.push(result)
-        } else if (result?.[Symbol.iterator] || result?.[Symbol.asyncIterator]) {
+        } else if (result?.[Symbol.asyncIterator]) {
+          info.offset += 1
           for await (const dispose of result) {
+            this.disposables.push(dispose)
+          }
+        } else if (result?.[Symbol.iterator]) {
+          info.offset += 1
+          for (const dispose of result) {
             this.disposables.push(dispose)
           }
         }

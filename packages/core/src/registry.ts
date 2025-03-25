@@ -1,15 +1,10 @@
 import { Awaitable, defineProperty, Dict, mapValues } from 'cosmokit'
 import { Context } from './context'
 import { EffectScope } from './scope'
-import { DisposableList, symbols, withProps } from './utils'
+import { buildOuterStack, DisposableList, symbols, withProps } from './utils'
 
 function isApplicable<C extends Context>(object: Plugin<C>) {
   return object && typeof object === 'object' && typeof object.apply === 'function'
-}
-
-function buildOuterStack() {
-  const outerError = new Error()
-  return () => outerError.stack!.split('\n').slice(3)
 }
 
 export type Inject<M = Dict> = (keyof M)[] | { [K in keyof M]: boolean | Inject.Meta<M[K]> }

@@ -225,12 +225,17 @@ export function createCallable(name: string, proto: {}, tracker: Tracker) {
   return Object.setPrototypeOf(self, proto)
 }
 
-export async function composeError<T>(callback: () => Promise<T>, innerOffset: number, getOuterStack: () => Iterable<string>) {
+interface StackInfo {
+  offset: number
+}
+
+export async function composeError<T>(callback: (info: StackInfo) => Promise<T>, offset: number, getOuterStack: () => Iterable<string>) {
   // force async stack trace
   await Promise.resolve()
+  const info: StackInfo = { offset }
 
   try {
-    return await callback()
+    return await callback(info)
   } catch (error: any) {
     const innerError = new Error()
     const innerLines = innerError.stack!.split('\n')
@@ -249,9 +254,14 @@ export async function composeError<T>(callback: () => Promise<T>, innerOffset: n
     const index = lines.indexOf(innerLines[2])
     if (index === -1) throw error
 
-    lines.splice(index - innerOffset, Infinity)
+    lines.splice(index - info.offset, Infinity)
     lines.push(...getOuterStack())
     error.stack = lines.join('\n')
     throw error
   }
+}
+
+export function buildOuterStack(offset = 0) {
+  const outerError = new Error()
+  return () => outerError.stack!.split('\n').slice(3 + offset)
 }
