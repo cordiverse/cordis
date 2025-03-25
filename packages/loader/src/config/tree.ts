@@ -1,4 +1,4 @@
-import { Context } from '@cordisjs/core'
+import { composeError, Context } from '@cordisjs/core'
 import { Dict } from 'cosmokit'
 import { Entry, EntryOptions } from './entry.ts'
 import { EntryGroup } from './group.ts'
@@ -95,12 +95,18 @@ export abstract class EntryTree<C extends Context = Context> {
     return entry.update(options)
   }
 
-  async import(name: string) {
-    if (this.ctx.loader.internal) {
-      return await this.ctx.loader.internal.import(name, this.url, {})
-    } else {
-      return await import(name)
-    }
+  import(name: string, getOuterStack?: () => string[], useInternal = false) {
+    return composeError(async (info) => {
+      // ModuleJob.run
+      // onImport.tracePromise.__proto__
+      // internal.import
+      info.offset += 3
+      if (useInternal && this.ctx.loader.internal) {
+        return await this.ctx.loader.internal.import(name, this.url, {})
+      } else {
+        return await import(name)
+      }
+    }, getOuterStack)
   }
 
   abstract write(): void

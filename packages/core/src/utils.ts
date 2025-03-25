@@ -229,10 +229,10 @@ interface StackInfo {
   offset: number
 }
 
-export async function composeError<T>(callback: (info: StackInfo) => Promise<T>, offset: number, getOuterStack: () => Iterable<string>) {
+export async function composeError<T>(callback: (info: StackInfo) => Promise<T>, getOuterStack = buildOuterStack()) {
   // force async stack trace
   await Promise.resolve()
-  const info: StackInfo = { offset }
+  const info: StackInfo = { offset: 1 }
 
   try {
     return await callback(info)

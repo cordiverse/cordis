@@ -1,4 +1,4 @@
-import { composeError, Context, EffectScope } from '@cordisjs/core'
+import { Context, EffectScope } from '@cordisjs/core'
 import { isNullable } from 'cosmokit'
 import { Loader } from '../loader.ts'
 import { EntryGroup } from './group.ts'
@@ -157,9 +157,7 @@ export class Entry<C extends Context = Context> {
   private async _init() {
     let exports: any
     try {
-      exports = await composeError(async () => {
-        return this.parent.tree.import(this.options.name)
-      }, 2, this.getOuterStack)
+      exports = await this.parent.tree.import(this.options.name, this.getOuterStack, true)
     } catch (error) {
       this.context.emit(this.ctx, 'internal/error', error)
       return

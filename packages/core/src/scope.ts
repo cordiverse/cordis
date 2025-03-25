@@ -62,7 +62,7 @@ export class EffectScope<out C extends Context = Context> {
     config: any,
     public inject: Dict<Inject.Meta>,
     public runtime: Plugin.Runtime | null,
-    private getOuterStack: () => Iterable<string>,
+    private getOuterStack: () => string[],
   ) {
     if (parent.scope) {
       this.uid = parent.registry.counter
@@ -193,6 +193,7 @@ export class EffectScope<out C extends Context = Context> {
   private async _reload() {
     try {
       await composeError(async (info) => {
+        info.offset += 1
         let result: any
         if (isConstructor(this.runtime!.callback)) {
           // eslint-disable-next-line new-cap
@@ -217,7 +218,7 @@ export class EffectScope<out C extends Context = Context> {
             this.disposables.push(dispose)
           }
         }
-      }, 2, this.getOuterStack)
+      }, this.getOuterStack)
     } catch (reason) {
       // the registry impl guarantees that the error is non-null
       this.context.emit(this.ctx, 'internal/error', reason)
@@ -232,7 +233,7 @@ export class EffectScope<out C extends Context = Context> {
   private async _unload() {
     await Promise.all(this.disposables.clear().map(async (dispose) => {
       try {
-        await composeError(dispose, 1, this.getOuterStack)
+        await composeError(dispose, this.getOuterStack)
       } catch (reason) {
         this.context.emit(this.ctx, 'internal/error', reason)
       }

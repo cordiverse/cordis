@@ -189,7 +189,7 @@ class Registry<out C extends Context = Context> {
     return this.plugin({ inject, apply: callback, name: callback.name })
   }
 
-  plugin(plugin: Plugin<C>, config?: any, getOuterStack: () => Iterable<string> = buildOuterStack()) {
+  plugin(plugin: Plugin<C>, config?: any, getOuterStack = buildOuterStack()) {
     // check if it's a valid plugin
     const callback = this.resolve(plugin)
     if (!callback) throw new Error('invalid plugin, expect function or object with an "apply" method, received ' + typeof plugin)

@@ -134,6 +134,11 @@ class HMR extends Service {
     })
   }
 
+  // hide stack trace from HMR
+  getOuterStack = (): string[] => [
+    // '    at HMR.partialReload (<anonymous>)',
+  ]
+
   async getLinked(filename: string) {
     // The second parameter `type` should always be `javascript`.
     const job = this.internal.loadCache.get(pathToFileURL(filename).toString())
@@ -271,19 +276,17 @@ class HMR extends Service {
     const attempts: Dict = {}
     try {
       for (const [, { filename }] of reloads) {
-        attempts[filename] = this.ctx.loader.unwrapExports(await import(filename))
+        attempts[filename] = this.ctx.loader.unwrapExports(await this.ctx.loader.import(filename, this.getOuterStack))
       }
     } catch (e) {
       handleError(this.ctx, e)
       return rollback()
     }
 
-    const reload = (plugin: any, runtime?: Plugin.Runtime) => {
+    const reload = (plugin: any, runtime: Plugin.Runtime) => {
       if (!runtime) return
       for (const oldFiber of runtime.scopes) {
-        const scope = oldFiber.parent.registry.plugin(plugin, oldFiber.config, () => [
-          '    at HMR.partialReload (<anonymous>)',
-        ])
+        const scope = oldFiber.parent.registry.plugin(plugin, oldFiber.config, this.getOuterStack)
         scope.entry = oldFiber.entry
         if (scope.entry) scope.entry.scope = scope
       }
@@ -291,6 +294,7 @@ class HMR extends Service {
 
     try {
       for (const [plugin, { filename, runtime }] of reloads) {
+        if (!runtime) continue
         const path = this.relative(fileURLToPath(filename))
 
         try {
@@ -313,6 +317,7 @@ class HMR extends Service {
       // rollback cache and plugin states
       rollback()
       for (const [plugin, { filename, runtime }] of reloads) {
+        if (!runtime) continue
         try {
           this.ctx.registry.delete(attempts[filename])
           reload(plugin, runtime)
