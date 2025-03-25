@@ -13,8 +13,6 @@ export interface EntryOptions {
   disabled?: boolean | null
 }
 
-export interface EntryUpdateMeta {}
-
 function takeEntries(object: {}, keys: string[]) {
   const result: [string, any][] = []
   for (const key of keys) {
@@ -82,29 +80,25 @@ export class Entry<C extends Context = Context> {
     return interpolate(this.ctx, this.options.config)
   }
 
-  patch(options: Partial<EntryOptions> = {}) {
-    // step 1: prepare isolate map
-    const meta = {} as EntryUpdateMeta
-    this.context.emit(meta, 'loader/before-patch', this)
+  private _patchContext(options: Partial<EntryOptions> = {}) {
+    this.context.waterfall('loader/patch-context', this, () => {
+      // step 1: set prototype for transferred context
+      Object.setPrototypeOf(this.ctx, this.parent.ctx)
 
-    // step 1: set prototype for transferred context
-    Object.setPrototypeOf(this.ctx, this.parent.ctx)
-
-    if (this.scope && 'config' in options) {
-      // step 2: update fork (when options.config is updated)
-      this.suspend = true
-      this.scope.update(this._resolveConfig(this.scope.runtime?.callback))
-    } else if (this.subgroup && 'disabled' in options) {
-      // step 3: check children (when options.disabled is updated)
-      const tree = this.subtree ?? this.parent.tree
-      for (const options of this.subgroup.data) {
-        tree.store[options.id].update({
-          disabled: options.disabled,
-        })
+      if (this.scope && 'config' in options) {
+        // step 2: update fork (when options.config is updated)
+        this.suspend = true
+        this.scope.update(this._resolveConfig(this.scope.runtime?.callback))
+      } else if (this.subgroup && 'disabled' in options) {
+        // step 3: check children (when options.disabled is updated)
+        const tree = this.subtree ?? this.parent.tree
+        for (const options of this.subgroup.data) {
+          tree.store[options.id].update({
+            disabled: options.disabled,
+          })
+        }
       }
-    }
-
-    this.context.emit(meta, 'loader/after-patch', this)
+    })
   }
 
   check() {
@@ -143,7 +137,7 @@ export class Entry<C extends Context = Context> {
 
     if (this.scope?.uid) {
       this.context.emit('loader/partial-dispose', this, legacy, true)
-      this.patch(options)
+      this._patchContext(options)
     } else {
       // FIXME: lock init task
       await (this._initTask = this._init())
@@ -171,7 +165,7 @@ export class Entry<C extends Context = Context> {
       return
     }
     const plugin = this.loader.unwrapExports(exports)
-    this.patch()
+    this._patchContext()
     this.loader.showLog(this, 'apply')
     this.scope = this.ctx.registry.plugin(plugin, this._resolveConfig(plugin), this.getOuterStack)
     this._initTask = undefined

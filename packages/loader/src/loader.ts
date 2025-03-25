@@ -1,7 +1,7 @@
 import { Context, Service } from '@cordisjs/core'
 import { Dict, isNullable } from 'cosmokit'
 import { ModuleLoader } from './internal.ts'
-import { Entry, EntryOptions, EntryUpdateMeta } from './config/entry.ts'
+import { Entry, EntryOptions } from './config/entry.ts'
 import { LoaderFile } from './config/file.ts'
 import { ImportTree } from './config/import.ts'
 import inject from './config/inject.ts'
@@ -22,8 +22,7 @@ declare module '@cordisjs/core' {
     'loader/entry-init'(entry: Entry): void
     'loader/entry-check'(entry: Entry): boolean | undefined
     'loader/partial-dispose'(entry: Entry, legacy: Partial<EntryOptions>, active: boolean): void
-    'loader/before-patch'(this: EntryUpdateMeta, entry: Entry): void
-    'loader/after-patch'(this: EntryUpdateMeta, entry: Entry): void
+    'loader/patch-context'(entry: Entry, next: () => void): void
   }
 
   interface Context {

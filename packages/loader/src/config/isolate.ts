@@ -3,11 +3,6 @@ import { Dict } from 'cosmokit'
 import { Entry } from './entry.ts'
 
 declare module './entry.ts' {
-  interface EntryUpdateMeta {
-    newMap: Dict<symbol>
-    diff: [string, symbol, symbol, symbol, symbol][]
-  }
-
   interface EntryOptions {
     intercept?: Dict | null
     isolate?: Dict<true | string> | null
@@ -93,34 +88,34 @@ export default function isolate(ctx: Context) {
     entry.ctx[Context.isolate] = Object.create(entry.ctx[Context.isolate])
   })
 
-  ctx.on('loader/before-patch', function (entry) {
+  ctx.on('loader/patch-context', (entry, next) => {
     // step 1: generate new isolate map
-    this.newMap = Object.create(entry.parent.ctx[Context.isolate])
+    const newMap: Dict<symbol> = Object.create(entry.parent.ctx[Context.isolate])
     for (const key of Object.keys(entry.options.isolate ?? {})) {
-      this.newMap[key] = access(entry, key, true)
+      newMap[key] = access(entry, key, true)
     }
 
     // step 2: generate service diff
-    this.diff = []
+    const diff: [string, symbol, symbol, symbol, symbol][] = []
     const oldMap = entry.ctx[Context.isolate]
-    for (const key in { ...this.newMap, ...entry.loader.delims }) {
-      if (this.newMap[key] === oldMap[key]) continue
+    for (const key in { ...newMap, ...entry.loader.delims }) {
+      if (newMap[key] === oldMap[key]) continue
       const delim = entry.loader.delims[key] ??= Symbol(`delim:${key}`)
       entry.ctx[delim] = Symbol(`${key}#${entry.id}`)
-      for (const symbol of [oldMap[key], this.newMap[key]]) {
+      for (const symbol of [oldMap[key], newMap[key]]) {
         const item = symbol && entry.ctx[Context.store][symbol]
         if (!item) continue
         if (!item.source) {
           entry.ctx.emit(entry.ctx, 'internal/warning', new Error(`expected service ${key} to be implemented`))
           continue
         }
-        this.diff.push([key, oldMap[key], this.newMap[key], entry.ctx[delim], item.source[delim]])
+        diff.push([key, oldMap[key], newMap[key], entry.ctx[delim], item.source[delim]])
         if (entry.ctx[delim] !== item.source[delim]) break
       }
     }
 
     // step 3: emit internal/before-service
-    for (const [key, symbol1, symbol2, flag1, flag2] of this.diff) {
+    for (const [key, symbol1, symbol2, flag1, flag2] of diff) {
       const self = Object.create(entry.ctx)
       self[Context.filter] = (target: Context) => {
         if (![symbol1, symbol2].includes(target[Context.isolate][key])) return false
@@ -132,13 +127,13 @@ export default function isolate(ctx: Context) {
     // step 4: set prototype for transferred context
     Object.setPrototypeOf(entry.ctx[Context.isolate], entry.parent.ctx[Context.isolate])
     Object.setPrototypeOf(entry.ctx[Context.intercept], entry.parent.ctx[Context.intercept])
-    swap(entry.ctx[Context.isolate], this.newMap)
+    swap(entry.ctx[Context.isolate], newMap)
     swap(entry.ctx[Context.intercept], entry.options.intercept)
-  })
 
-  ctx.on('loader/after-patch', function (entry) {
+    next()
+
     // step 5: replace service impl
-    for (const [, symbol1, symbol2, flag1, flag2] of this.diff) {
+    for (const [, symbol1, symbol2, flag1, flag2] of diff) {
       if (flag1 === flag2 && entry.ctx[Context.store][symbol1] && !entry.ctx[Context.store][symbol2]) {
         entry.ctx[Context.store][symbol2] = entry.ctx[Context.store][symbol1]
         delete entry.ctx[Context.store][symbol1]
@@ -146,7 +141,7 @@ export default function isolate(ctx: Context) {
     }
 
     // step 6: emit internal/service
-    for (const [key, symbol1, symbol2, flag1, flag2] of this.diff) {
+    for (const [key, symbol1, symbol2, flag1, flag2] of diff) {
       const self = Object.create(entry.ctx)
       self[Context.filter] = (target: Context) => {
         if (![symbol1, symbol2].includes(target[Context.isolate][key])) return false
@@ -157,7 +152,7 @@ export default function isolate(ctx: Context) {
 
     // step 7: clean up delimiters
     for (const key in entry.loader.delims) {
-      if (!Reflect.ownKeys(this.newMap).includes(key)) {
+      if (!Reflect.ownKeys(newMap).includes(key)) {
         delete entry.ctx[entry.loader.delims[key]]
       }
     }
