@@ -109,7 +109,7 @@ class HMR extends Service {
     const partialReload = this.ctx.debounce(() => this.partialReload(), this.config.debounce)
 
     this.watcher.on('change', async (path) => {
-      this.ctx.logger.debug('change detected:', path)
+      this.ctx.logger.debug('change detected at %c', path)
       const url = pathToFileURL(resolve(this.base, path)).href
 
       // full reload

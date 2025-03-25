@@ -1,5 +1,6 @@
 import { createRequire } from 'node:module'
-import { Context } from '@cordisjs/core'
+// DO NOT change this import to `@cordisjs/core` as it is related to HMR semantics
+import { Context } from 'cordis'
 import Loader from '@cordisjs/loader'
 import Logger from '@cordisjs/logger'
 import * as daemon from './daemon.ts'
