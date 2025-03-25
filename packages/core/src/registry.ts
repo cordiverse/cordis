@@ -1,4 +1,4 @@
-import { defineProperty, Dict, mapValues } from 'cosmokit'
+import { Awaitable, defineProperty, Dict, mapValues } from 'cosmokit'
 import { Context } from './context'
 import { EffectScope } from './scope'
 import { DisposableList, symbols, withProps } from './utils'
@@ -79,7 +79,10 @@ export namespace Plugin {
   }
 
   export interface Function<in C extends Context = Context, T = any> extends Base<T> {
-    (ctx: C, config: T): void | Promise<void>
+    (ctx: C, config: T):
+      | Awaitable<void | (() => Awaitable<void>)>
+      | Iterable<() => Awaitable<void>, void | (() => Awaitable<void>)>
+      | AsyncIterable<() => Awaitable<void>, void | (() => Awaitable<void>)>
   }
 
   export interface Constructor<in C extends Context = Context, T = any> extends Base<T> {
@@ -87,7 +90,10 @@ export namespace Plugin {
   }
 
   export interface Object<in C extends Context = Context, T = any> extends Base<T> {
-    apply: (ctx: C, config: T) => void | Promise<void>
+    apply(ctx: C, config: T):
+      | Awaitable<void | (() => Awaitable<void>)>
+      | Iterable<() => Awaitable<void>, void | (() => Awaitable<void>)>
+      | AsyncIterable<() => Awaitable<void>, void | (() => Awaitable<void>)>
   }
 
   export interface Runtime<out C extends Context = Context> {
@@ -140,8 +146,11 @@ class Registry<out C extends Context = Context> {
   }
 
   resolve(plugin: Plugin<C>): Function | undefined {
-    if (typeof plugin === 'function') return plugin
-    if (isApplicable(plugin)) return plugin.apply
+    // plugin.apply may throw
+    try {
+      if (typeof plugin === 'function') return plugin
+      if (isApplicable(plugin)) return plugin.apply
+    } catch {}
   }
 
   get(plugin: Plugin<C>) {

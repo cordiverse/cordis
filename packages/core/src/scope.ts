@@ -105,8 +105,9 @@ export class EffectScope<out C extends Context = Context> {
       this.ctx = this.context = parent
       this._active = true
       this.status = ScopeStatus.ACTIVE
-      this.dispose = () => {
-        throw new Error('cannot dispose root scope')
+      this.dispose = async () => {
+        this.active = false
+        await this._pending
       }
     }
   }

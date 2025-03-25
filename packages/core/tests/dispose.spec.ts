@@ -181,4 +181,18 @@ describe('Disposables', () => {
     expect(dispose.mock.calls).to.have.length(1)
     expect(error.mock.calls).to.have.length(1)
   })
+
+  it('root dispose', async () => {
+    const root = new Context()
+    const dispose = mock.fn()
+    root.plugin((ctx) => {
+      return dispose
+    })
+    expect(root.scope.disposables.length).to.equal(1)
+    expect(dispose.mock.calls).to.have.length(0)
+    await root.scope.dispose()
+    expect(dispose.mock.calls).to.have.length(1)
+    await root.scope.dispose()
+    expect(dispose.mock.calls).to.have.length(1)
+  })
 })
