@@ -353,4 +353,6 @@ export class EffectScope<out C extends Context = Context> {
     this._error = undefined
     this.restart()
   }
+  
+  get [Symbol.asyncDispose]() { return this.dispose }
 }
