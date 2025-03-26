@@ -199,10 +199,15 @@ export class EffectScope<out C extends Context = Context> {
           meta.children.push(dispose[symbols.effect])
         }
       })
-    } catch (error) {
+    } catch (reason) {
       dispose()
-      throw error
+      throw reason
     }
+
+    task &&= task.catch((reason) => {
+      dispose()
+      throw reason
+    })
 
     const wrapper = defineProperty(() => {
       if (isDisposed) return

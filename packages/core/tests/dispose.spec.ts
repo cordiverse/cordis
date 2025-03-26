@@ -183,18 +183,53 @@ describe('Disposables', () => {
     expect(seq).to.deep.equal([1, 3, 5, 6, 4, 2])
   }))
 
-  it('effect with error', async () => {
+  it('return with error', async () => {
     const root = new Context()
     const seq: number[] = []
-    const dispose1 = mock.fn(() => seq.push(1))
-    const dispose2 = mock.fn(() => seq.push(2))
     expect(() => {
-      root.effect(function* () {
-        yield dispose1
+      root.effect(() => {
         throw new Error('test')
-        yield dispose2
+        return () => seq.push(1)
       })
     }).to.throw('test')
+    expect(seq).to.deep.equal([])
+  })
+
+  it('yield with error', async () => {
+    const root = new Context()
+    const seq: number[] = []
+    expect(() => {
+      root.effect(function* () {
+        yield () => seq.push(1)
+        throw new Error('test')
+        yield () => seq.push(2)
+      })
+    }).to.throw('test')
+    expect(seq).to.deep.equal([1])
+  })
+
+  it('async return with error', async () => {
+    const root = new Context()
+    const seq: number[] = []
+    const dispose = root.effect(async () => {
+      throw new Error('test')
+      return () => seq.push(1)
+    })
+    expect(seq).to.deep.equal([])
+    await expect(dispose).to.be.rejected
+    expect(seq).to.deep.equal([])
+  })
+
+  it('async yield with error', async () => {
+    const root = new Context()
+    const seq: number[] = []
+    const dispose = root.effect(async function* () {
+      yield () => seq.push(1)
+      throw new Error('test')
+      yield () => seq.push(2)
+    })
+    expect(seq).to.deep.equal([])
+    await expect(dispose).to.be.rejected
     expect(seq).to.deep.equal([1])
   })
 
