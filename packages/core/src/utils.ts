@@ -227,37 +227,48 @@ export function createCallable(name: string, proto: {}, tracker: Tracker) {
 
 interface StackInfo {
   offset: number
+  error: Error
 }
 
-export async function composeError<T>(callback: (info: StackInfo) => T, getOuterStack = buildOuterStack()): Promise<Awaited<T>> {
-  // force async stack trace
-  await Promise.resolve()
-  const info: StackInfo = { offset: 1 }
+function handleError(info: StackInfo, reason: any, getOuterStack: () => string[]): never {
+  const innerLines = info.error.stack!.split('\n')
+
+  // malformed error
+  if (typeof reason?.stack !== 'string') {
+    const outerError = new Error(reason)
+    const lines = outerError.stack!.split('\n')
+    lines.splice(1, Infinity, ...getOuterStack())
+    outerError.stack = lines.join('\n')
+    throw outerError
+  }
+
+  // long stack trace
+  const lines: string[] = reason.stack.split('\n')
+  let index = lines.indexOf(innerLines[2])
+  if (index === -1) throw reason
+
+  index -= info.offset
+  while (index > 0) {
+    if (!lines[index - 1].endsWith(' (<anonymous>)')) break
+    index -= 1
+  }
+  lines.splice(index, Infinity, ...getOuterStack())
+  reason.stack = lines.join('\n')
+  throw reason
+}
+
+export function composeError<T>(callback: (info: StackInfo) => T, getOuterStack = buildOuterStack()): T {
+  const info: StackInfo = { offset: 1, error: new Error() }
 
   try {
-    return await callback(info)
-  } catch (error: any) {
-    const innerError = new Error()
-    const innerLines = innerError.stack!.split('\n')
-
-    // malformed error
-    if (typeof error?.stack !== 'string') {
-      const outerError = new Error(error)
-      const lines = outerError.stack!.split('\n')
-      lines.splice(1, Infinity, ...getOuterStack())
-      outerError.stack = lines.join('\n')
-      throw outerError
+    const result: any = callback(info)
+    if (isObject(result) && 'then' in result) {
+      return (result as any).then(undefined, (reason) => handleError(info, reason, getOuterStack)) as T
+    } else {
+      return result
     }
-
-    // long stack trace
-    const lines: string[] = error.stack.split('\n')
-    const index = lines.indexOf(innerLines[2])
-    if (index === -1) throw error
-
-    lines.splice(index - info.offset)
-    lines.push(...getOuterStack())
-    error.stack = lines.join('\n')
-    throw error
+  } catch (reason: any) {
+    handleError(info, reason, getOuterStack)
   }
 }
 

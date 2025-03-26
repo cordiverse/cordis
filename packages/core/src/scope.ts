@@ -1,12 +1,12 @@
 import { Awaitable, defineProperty, Dict, isNullable } from 'cosmokit'
 import { Context } from './context'
 import { Inject, Plugin, resolveConfig } from './registry'
-import { composeError, DisposableList, isConstructor, isObject, symbols } from './utils'
+import { buildOuterStack, composeError, DisposableList, isConstructor, isObject, symbols } from './utils'
 
 declare module './context' {
   export interface Context {
     scope: EffectScope<this>
-    effect(factory: () => Effect, label?: string): EffectHandle
+    effect(execute: () => Effect, label?: string): EffectHandle
   }
 }
 
@@ -25,6 +25,13 @@ export type Effect =
 export interface EffectMeta {
   label: string
   children: EffectMeta[]
+}
+
+interface EffectRunner {
+  isActive: boolean
+  execute: () => Effect
+  collect: (dispose: Disposable) => void
+  getOuterStack: () => string[]
 }
 
 export const enum ScopeStatus {
@@ -61,17 +68,37 @@ export class EffectScope<out C extends Context = Context> {
   // Same as `this.ctx`, but with a more specific type.
   protected context: Context
 
-  private _active = false
   private _error: any
   private _pending: Promise<void> | undefined
+  private _runner: EffectRunner
 
   constructor(
     public parent: C,
     config: any,
     public inject: Dict<Inject.Meta>,
     public runtime: Plugin.Runtime | null,
-    private getOuterStack: () => string[],
+    getOuterStack: () => string[],
   ) {
+    this._runner = {
+      isActive: false,
+      getOuterStack,
+      execute: () => {
+        if (isConstructor(this.runtime!.callback)) {
+          // eslint-disable-next-line new-cap
+          const instance = new this.runtime!.callback(this.ctx, this.config)
+          for (const hook of instance?.[symbols.initHooks] ?? []) {
+            hook()
+          }
+          return instance?.[symbols.init]?.()
+        } else {
+          return this.runtime!.callback(this.ctx, this.config)
+        }
+      },
+      collect: (dispose) => {
+        this.disposables.push(dispose)
+      },
+    }
+
     if (parent.scope) {
       this.uid = parent.registry.counter
       this.ctx = this.context = parent.extend({ scope: this })
@@ -111,7 +138,7 @@ export class EffectScope<out C extends Context = Context> {
     } else {
       this.uid = 0
       this.ctx = this.context = parent
-      this._active = true
+      this._runner.isActive = true
       this.status = ScopeStatus.ACTIVE
       this.dispose = async () => {
         this.active = false
@@ -129,51 +156,56 @@ export class EffectScope<out C extends Context = Context> {
     throw new CordisError('INACTIVE_EFFECT')
   }
 
-  private _collect(factory: () => Effect, isActive: () => boolean, collect: (dispose: Disposable) => void) {
-    const safeCollect = (dispose: void | Disposable) => {
-      if (typeof dispose === 'function') {
-        collect(dispose)
-      } else if (!isNullable(dispose)) {
+  private _execute(runner: EffectRunner) {
+    return composeError((info) => {
+      const safeCollect = (dispose: void | Disposable) => {
+        if (typeof dispose === 'function') {
+          runner.collect(dispose)
+        } else if (!isNullable(dispose)) {
+          throw new TypeError('Invalid effect')
+        }
+      }
+      const effect = runner.execute()
+      if (typeof effect === 'function') {
+        return runner.collect(effect)
+      } else if (isNullable(effect)) {
+        // return
+      } else if (!isObject(effect)) {
         throw new TypeError('Invalid effect')
-      }
-    }
-    const effect = factory()
-    if (typeof effect === 'function') {
-      return collect(effect)
-    } else if (isNullable(effect)) {
-      // return
-    } else if (!isObject(effect)) {
-      throw new TypeError('Invalid effect')
-    } else if ('then' in effect) {
-      return effect.then(safeCollect)
-    } else if (Symbol.iterator in effect) {
-      const iter = effect[Symbol.iterator]()
-      while (true) {
-        const result = iter.next()
-        safeCollect(result.value)
-        if (result.done) return
-      }
-    } else if (Symbol.asyncIterator in effect) {
-      const iter = effect[Symbol.asyncIterator]()
-      return (async () => {
+      } else if ('then' in effect) {
+        return effect.then(safeCollect)
+      } else if (Symbol.iterator in effect) {
+        info.error = new Error()
+        const iter = effect[Symbol.iterator]()
         while (true) {
-          if (!isActive()) return
-          const result = await iter.next()
+          const result = iter.next()
           safeCollect(result.value)
           if (result.done) return
         }
-      })()
-    } else {
-      throw new TypeError('Invalid effect')
-    }
+      } else if (Symbol.asyncIterator in effect) {
+        const iter = effect[Symbol.asyncIterator]()
+        return (async () => {
+          // force async stack trace
+          await Promise.resolve()
+          info.error = new Error()
+          while (true) {
+            if (!runner.isActive) return
+            const result = await iter.next()
+            safeCollect(result.value)
+            if (result.done) return
+          }
+        })()
+      } else {
+        throw new TypeError('Invalid effect')
+      }
+    }, runner.getOuterStack)
   }
 
-  effect<T extends Awaitable<void>>(factory: () => Effect, label = 'anonymous'): EffectHandle<T> {
+  effect<T extends Awaitable<void>>(execute: () => Effect, label = 'anonymous'): EffectHandle<T> {
     this.assertActive()
 
     const disposables: Disposable[] = []
     const dispose = () => {
-      // make sure the original callback is not called twice
       let task!: void | Promise<void>
       for (const dispose of disposables.splice(0).reverse()) {
         if (task) {
@@ -188,17 +220,23 @@ export class EffectScope<out C extends Context = Context> {
       return task
     }
 
-    let task: void | Promise<void>
-    let isDisposed = false
     const meta: EffectMeta = { label, children: [] }
-    try {
-      task = this._collect(factory, () => !isDisposed, (dispose) => {
+    const runner: EffectRunner = {
+      execute,
+      isActive: true,
+      collect: (dispose) => {
         disposables.push(dispose)
         this.disposables.delete(dispose)
         if (dispose[symbols.effect]) {
           meta.children.push(dispose[symbols.effect])
         }
-      })
+      },
+      getOuterStack: buildOuterStack(),
+    }
+
+    let task: void | Promise<void>
+    try {
+      task = this._execute(runner)
     } catch (reason) {
       dispose()
       throw reason
@@ -210,14 +248,14 @@ export class EffectScope<out C extends Context = Context> {
     })
 
     const wrapper = defineProperty(() => {
-      if (isDisposed) return
-      isDisposed = true
+      if (!runner.isActive) return
+      runner.isActive = false
       return task ? task.then(dispose) : dispose()
     }, symbols.effect, meta) as EffectHandle<T>
 
     const disposeAsync = () => {
-      if (isDisposed) return
-      isDisposed = true
+      if (!runner.isActive) return
+      runner.isActive = false
       return dispose()
     }
     wrapper.then = async (onFulfilled, onRejected) => {
@@ -239,7 +277,7 @@ export class EffectScope<out C extends Context = Context> {
     if (this._pending) return ScopeStatus.LOADING
     if (this.uid === null) return ScopeStatus.DISPOSED
     if (this._error) return ScopeStatus.FAILED
-    if (this._active) return ScopeStatus.ACTIVE
+    if (this._runner.isActive) return ScopeStatus.ACTIVE
     return ScopeStatus.PENDING
   }
 
@@ -254,42 +292,33 @@ export class EffectScope<out C extends Context = Context> {
 
   private async _reload() {
     try {
-      await composeError(async (info) => {
-        info.offset += 1
-        await this._collect(() => {
-          if (isConstructor(this.runtime!.callback)) {
-            // eslint-disable-next-line new-cap
-            const instance = new this.runtime!.callback(this.ctx, this.config)
-            for (const hook of instance?.[symbols.initHooks] ?? []) {
-              hook()
-            }
-            return instance?.[symbols.init]?.()
-          } else {
-            return this.runtime!.callback(this.ctx, this.config)
-          }
-        }, () => this._active, dispose => this.disposables.push(dispose))
-      }, this.getOuterStack)
+      await Promise.resolve()
+      await this._execute(this._runner)
     } catch (reason) {
       // the registry impl guarantees that the error is non-null
       this.context.emit(this.ctx, 'internal/error', reason)
       this._error = reason
-      this._active = false
+      this._runner.isActive = false
     }
     this._updateStatus(() => {
-      this._pending = this._active ? undefined : this._unload()
+      this._pending = this._runner.isActive ? undefined : this._unload()
     })
   }
 
   private async _unload() {
     await Promise.all(this.disposables.clear().map(async (dispose) => {
       try {
-        await composeError(dispose, this.getOuterStack)
+        await composeError(async (info) => {
+          await Promise.resolve()
+          info.error = new Error()
+          await dispose()
+        }, this._runner.getOuterStack)
       } catch (reason) {
         this.context.emit(this.ctx, 'internal/error', reason)
       }
     }))
     this._updateStatus(() => {
-      this._pending = this._active ? this._reload() : undefined
+      this._pending = this._runner.isActive ? this._reload() : undefined
     })
   }
 
@@ -305,22 +334,22 @@ export class EffectScope<out C extends Context = Context> {
     } catch (error) {
       this.context.emit(this.ctx, 'internal/error', error)
       this._error = error
-      this._active = false
+      this._runner.isActive = false
       return false
     }
   }
 
   get active() {
-    return this._active
+    return this._runner.isActive
   }
 
   set active(value) {
     if (value && (!this.uid || !this.checkInject())) return
     this._updateStatus(() => {
-      if (!this._pending && value !== this._active) {
+      if (!this._pending && value !== this._runner.isActive) {
         this._pending = value ? this._reload() : this._unload()
       }
-      this._active = value
+      this._runner.isActive = value
     })
   }
 
