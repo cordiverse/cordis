@@ -1,4 +1,4 @@
-import { Awaitable, defineProperty, Dict, mapValues } from 'cosmokit'
+import { defineProperty, Dict, mapValues } from 'cosmokit'
 import { Context } from './context'
 import { EffectScope } from './scope'
 import { buildOuterStack, DisposableList, symbols, withProps } from './utils'
@@ -74,10 +74,7 @@ export namespace Plugin {
   }
 
   export interface Function<in C extends Context = Context, T = any> extends Base<T> {
-    (ctx: C, config: T):
-      | Awaitable<void | (() => Awaitable<void>)>
-      | Iterable<() => Awaitable<void>, void | (() => Awaitable<void>)>
-      | AsyncIterable<() => Awaitable<void>, void | (() => Awaitable<void>)>
+    (ctx: C, config: T): any
   }
 
   export interface Constructor<in C extends Context = Context, T = any> extends Base<T> {
@@ -85,10 +82,7 @@ export namespace Plugin {
   }
 
   export interface Object<in C extends Context = Context, T = any> extends Base<T> {
-    apply(ctx: C, config: T):
-      | Awaitable<void | (() => Awaitable<void>)>
-      | Iterable<() => Awaitable<void>, void | (() => Awaitable<void>)>
-      | AsyncIterable<() => Awaitable<void>, void | (() => Awaitable<void>)>
+    apply(ctx: C, config: T): any
   }
 
   export interface Runtime<out C extends Context = Context> {

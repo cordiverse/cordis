@@ -1,4 +1,4 @@
-import { defineProperty, Dict, isNullable } from 'cosmokit'
+import { Awaitable, defineProperty, Dict, isNullable } from 'cosmokit'
 import { Context } from './context'
 import { Inject, Plugin, resolveConfig } from './registry'
 import { composeError, DisposableList, isConstructor, isObject, symbols } from './utils'
@@ -6,12 +6,12 @@ import { composeError, DisposableList, isConstructor, isObject, symbols } from '
 declare module './context' {
   export interface Context {
     scope: EffectScope<this>
-    effect(factory: () => Effect, label?: string): AsyncDispose
+    effect(factory: () => Effect, label?: string): EffectHandle
   }
 }
 
-export interface AsyncDispose extends PromiseLike<() => Promise<void>> {
-  (): Promise<void>
+export interface EffectHandle<T extends Awaitable<void> = Awaitable<void>> extends PromiseLike<() => T> {
+  (): T
 }
 
 type Disposable = () => any
@@ -129,7 +129,7 @@ export class EffectScope<out C extends Context = Context> {
     throw new CordisError('INACTIVE_EFFECT')
   }
 
-  private _collect(factory: () => Effect, collect: (dispose: Disposable) => void) {
+  private _collect(factory: () => Effect, isActive: () => boolean, collect: (dispose: Disposable) => void) {
     const safeCollect = (dispose: void | Disposable) => {
       if (typeof dispose === 'function') {
         collect(dispose)
@@ -157,6 +157,7 @@ export class EffectScope<out C extends Context = Context> {
       const iter = effect[Symbol.asyncIterator]()
       return (async () => {
         while (true) {
+          if (!isActive()) return
           const result = await iter.next()
           safeCollect(result.value)
           if (result.done) return
@@ -167,23 +168,13 @@ export class EffectScope<out C extends Context = Context> {
     }
   }
 
-  effect(factory: () => Effect, label = 'anonymous'): AsyncDispose {
+  effect<T extends Awaitable<void>>(factory: () => Effect, label = 'anonymous'): EffectHandle<T> {
     this.assertActive()
-    let isDisposed = false
-    const meta: EffectMeta = { label, children: [] }
+
     const disposables: Disposable[] = []
-    let task = this._collect(factory, (dispose) => {
-      disposables.push(dispose)
-      this.disposables.delete(dispose)
-      if (dispose[symbols.effect]) {
-        meta.children.push(dispose[symbols.effect])
-      }
-    })
-    const wrapped = defineProperty(() => {
+    const dispose = () => {
       // make sure the original callback is not called twice
-      if (isDisposed) return
-      isDisposed = true
-      remove()
+      let task!: void | Promise<void>
       for (const dispose of disposables.splice(0).reverse()) {
         if (task) {
           task = task.then(dispose)
@@ -195,9 +186,42 @@ export class EffectScope<out C extends Context = Context> {
         }
       }
       return task
-    }, symbols.effect, meta) as AsyncDispose
-    const remove = this.disposables.push(wrapped)
-    return wrapped
+    }
+
+    let task: void | Promise<void>
+    let isDisposed = false
+    const meta: EffectMeta = { label, children: [] }
+    try {
+      task = this._collect(factory, () => !isDisposed, (dispose) => {
+        disposables.push(dispose)
+        this.disposables.delete(dispose)
+        if (dispose[symbols.effect]) {
+          meta.children.push(dispose[symbols.effect])
+        }
+      })
+    } catch (error) {
+      dispose()
+      throw error
+    }
+
+    const wrapper = defineProperty(() => {
+      if (isDisposed) return
+      isDisposed = true
+      return task ? task.then(dispose) : dispose()
+    }, symbols.effect, meta) as EffectHandle<T>
+
+    const disposeAsync = () => {
+      if (isDisposed) return
+      isDisposed = true
+      return dispose()
+    }
+    wrapper.then = async (onFulfilled, onRejected) => {
+      return Promise.resolve(task)
+        .then(() => disposeAsync)
+        .then(onFulfilled, onRejected)
+    }
+    disposables.push(this.disposables.push(wrapper))
+    return wrapper
   }
 
   getEffects() {
@@ -238,9 +262,7 @@ export class EffectScope<out C extends Context = Context> {
           } else {
             return this.runtime!.callback(this.ctx, this.config)
           }
-        }, (dispose) => {
-          this.disposables.push(dispose)
-        })
+        }, () => this._active, dispose => this.disposables.push(dispose))
       }, this.getOuterStack)
     } catch (reason) {
       // the registry impl guarantees that the error is non-null

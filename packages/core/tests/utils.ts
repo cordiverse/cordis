@@ -1,9 +1,22 @@
 import { use } from 'chai'
+import { FakeTimerInstallOpts, install, InstalledClock } from '@sinonjs/fake-timers'
 import { Context, Service } from '../src'
 import promised from 'chai-as-promised'
-import { Dict } from 'cosmokit'
+import { Awaitable, Dict } from 'cosmokit'
 
 use(promised)
+
+export function withTimers(fn: (ctx: Context, clock: InstalledClock) => Awaitable<void>, config?: FakeTimerInstallOpts) {
+  return async () => {
+    const ctx = new Context()
+    const clock = install(config)
+    try {
+      await fn(ctx, clock)
+    } finally {
+      clock.uninstall()
+    }
+  }
+}
 
 export function sleep(ms = 0) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms))
