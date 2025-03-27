@@ -45,10 +45,12 @@ export namespace Loader {
     initial?: Omit<EntryOptions, 'id'>[]
     filename?: string
   }
+
+  export interface Intercept {}
 }
 
 export abstract class Loader<C extends Context = Context> extends ImportTree<C> {
-  declare [Service.config]: never
+  declare [Service.config]: Loader.Intercept
 
   public envData = process.env.CORDIS_SHARED
     ? JSON.parse(process.env.CORDIS_SHARED)
@@ -114,9 +116,9 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
     ctx.plugin(isolate)
   }
 
-  async* [Context.init]() {
+  async* [Service.init]() {
     await this.init(process.cwd(), this.config)
-    yield* super[Context.init]()
+    yield* super[Service.init]()
   }
 
   showLog(entry: Entry, type: string) {

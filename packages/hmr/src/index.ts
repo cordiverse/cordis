@@ -85,7 +85,7 @@ class HMR extends Service {
     return relative(this.base, filename)
   }
 
-  async* [Context.init]() {
+  async* [Service.init]() {
     yield () => this.watcher?.close()
 
     const { loader } = this.ctx

@@ -2,7 +2,7 @@ import { Module } from 'node:module'
 import { pathToFileURL } from 'node:url'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { Context } from '@cordisjs/core'
+import { Service } from '@cordisjs/core'
 import { Loader } from './loader.ts'
 import * as dotenv from 'dotenv'
 import { ModuleLoader } from './internal.ts'
@@ -21,7 +21,7 @@ class NodeLoader extends Loader {
 
   public internal = ModuleLoader.fromInternal()
 
-  async* [Context.init]() {
+  async* [Service.init]() {
     const originalLoad: ModuleLoad = Module['_load']
     Module['_load'] = ((request, parent, isMain) => {
       try {
@@ -54,7 +54,7 @@ class NodeLoader extends Loader {
       process.env[key] = override[key]
     }
 
-    yield* super[Context.init]()
+    yield* super[Service.init]()
   }
 
   exit(code = NodeLoader.exitCode) {

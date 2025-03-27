@@ -1,4 +1,4 @@
-import { Context } from '@cordisjs/core'
+import { Context, Service } from '@cordisjs/core'
 import { Entry, EntryOptions } from './entry.ts'
 import { EntryTree } from './tree.ts'
 
@@ -79,7 +79,7 @@ export class Group extends EntryGroup {
     })
   }
 
-  async* [Context.init]() {
+  async* [Service.init]() {
     yield () => this.stop()
     await this.update(this.config)
   }

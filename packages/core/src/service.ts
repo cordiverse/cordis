@@ -3,6 +3,7 @@ import { Context } from './context'
 import { createCallable, joinPrototype, symbols, Tracker } from './utils'
 
 export abstract class Service<out T = never, out C extends Context = Context> {
+  static readonly init: unique symbol = symbols.init as any
   static readonly check: unique symbol = symbols.check as any
   static readonly config: unique symbol = symbols.config as any
   static readonly invoke: unique symbol = symbols.invoke as any

@@ -86,7 +86,7 @@ describe('Service', () => {
         super(ctx, 'foo')
       }
 
-      async [Context.init]() {
+      async [Service.init]() {
         await new Promise<void>((resolve, reject) => {
           this.ctx.on('custom-event', resolve)
         })
@@ -237,7 +237,7 @@ describe('Service', () => {
         super(ctx, 'foo')
       }
 
-      [Context.init]() {
+      [Service.init]() {
         start()
         return stop
       }
@@ -289,7 +289,7 @@ describe('Service', () => {
       constructor(ctx: Context) {
         super(ctx, 'foo')
       }
-      [Context.init] = foo
+      [Service.init] = foo
     }
 
     class Bar extends Service {
@@ -297,14 +297,14 @@ describe('Service', () => {
       constructor(ctx: Context) {
         super(ctx, 'bar')
       }
-      [Context.init] = bar
+      [Service.init] = bar
     }
 
     class Qux extends Service {
       constructor(ctx: Context) {
         super(ctx, 'qux')
       }
-      [Context.init] = qux
+      [Service.init] = qux
     }
 
     const root = new Context()

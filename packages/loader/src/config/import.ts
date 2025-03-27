@@ -1,4 +1,4 @@
-import { Context } from '@cordisjs/core'
+import { Context, Service } from '@cordisjs/core'
 import { dirname, extname, resolve } from 'node:path'
 import { readdir, stat } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -9,14 +9,20 @@ import Loader from '../loader.ts'
 export class ImportTree<C extends Context = Context> extends EntryTree<C> {
   public file!: LoaderFile
 
-  async* [Context.init]() {
-    yield () => {
-      this.file?.unref(this)
-      this.root.stop()
-    }
+  async* [Service.init]() {
+    yield () => this.stop()
+    await this.start()
+  }
+
+  async start() {
     const data = await this.file.read()
     await this.file.checkAccess()
     await this.root.update(data)
+  }
+
+  stop() {
+    this.file?.unref(this)
+    this.root.stop()
   }
 
   write() {
@@ -83,7 +89,7 @@ export class Import extends ImportTree {
     super(ctx)
   }
 
-  async* [Context.init]() {
+  async* [Service.init]() {
     const { url } = this.config
     const filename = fileURLToPath(new URL(url, this.ctx.scope.entry!.parent.tree.url))
     const ext = extname(filename)
@@ -92,6 +98,6 @@ export class Import extends ImportTree {
     }
     this.file = new LoaderFile(filename, LoaderFile.writable[ext])
     this.file.ref(this)
-    yield* super[Context.init]()
+    yield* super[Service.init]()
   }
 }
