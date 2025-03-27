@@ -18,8 +18,6 @@ describe('loader: basic support', () => {
     foo = loader.mock('foo', (ctx: Context) => ctx.on('internal/update', () => true))
     bar = loader.mock('bar', (ctx: Context) => ctx.on('internal/update', () => true))
     qux = loader.mock('qux', (ctx: Context) => ctx.on('internal/update', () => true))
-
-    await loader.start()
   })
 
   it('loader initiate', async () => {

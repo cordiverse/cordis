@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "target": "es2023",
+    "target": "es2024",
     "module": "esnext",
     "moduleResolution": "bundler",
     "declaration": true,

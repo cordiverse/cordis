@@ -13,12 +13,7 @@ describe('group management: basic support', () => {
   before(async () => {
     await root.plugin(MockLoader)
     loader = root.loader as any
-
-    foo = loader.mock('foo', (ctx: Context) => {
-      ctx.on('dispose', dispose)
-    })
-
-    await loader.start()
+    foo = loader.mock('foo', () => dispose)
   })
 
   beforeEach(() => {
@@ -97,12 +92,7 @@ describe('group management: transfer', () => {
   before(async () => {
     await root.plugin(MockLoader)
     loader = root.loader as any
-
-    foo = loader.mock('foo', (ctx: Context) => {
-      ctx.on('dispose', dispose)
-    })
-
-    await loader.start()
+    foo = loader.mock('foo', () => dispose)
   })
 
   beforeEach(() => {
@@ -189,7 +179,6 @@ describe('group management: intercept', () => {
     loader.mock('foo', (ctx: Context) => {
       callback(ctx[Context.intercept])
     })
-    await loader.start()
   })
 
   beforeEach(() => {

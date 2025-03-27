@@ -1,4 +1,4 @@
-import { Awaitable, deepEqual, defineProperty, Promisify } from 'cosmokit'
+import { deepEqual, defineProperty, Promisify } from 'cosmokit'
 import { Context } from './context'
 import { EffectScope, ScopeStatus } from './scope'
 import { symbols } from './utils'
@@ -219,8 +219,6 @@ class EventsService {
 export default EventsService
 
 export interface Events<in C extends Context = Context> {
-  'ready'(): Awaitable<void>
-  'dispose'(): Awaitable<void>
   'internal/plugin'(scope: EffectScope<C>): void
   'internal/status'(scope: EffectScope<C>, oldValue: ScopeStatus): void
   'internal/info'(this: C, format: any, ...param: any[]): void

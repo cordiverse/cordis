@@ -9,20 +9,14 @@ import Loader from '../loader.ts'
 export class ImportTree<C extends Context = Context> extends EntryTree<C> {
   public file!: LoaderFile
 
-  constructor(public ctx: C) {
-    super(ctx)
-    ctx.on('dispose', () => this.stop())
-  }
-
-  async start() {
+  async* [Context.init]() {
+    yield () => {
+      this.file?.unref(this)
+      this.root.stop()
+    }
     const data = await this.file.read()
     await this.file.checkAccess()
     await this.root.update(data)
-  }
-
-  stop() {
-    this.file?.unref(this)
-    return this.root.stop()
   }
 
   write() {
@@ -89,7 +83,7 @@ export class Import extends ImportTree {
     super(ctx)
   }
 
-  async [Context.init]() {
+  async* [Context.init]() {
     const { url } = this.config
     const filename = fileURLToPath(new URL(url, this.ctx.scope.entry!.parent.tree.url))
     const ext = extname(filename)
@@ -98,6 +92,6 @@ export class Import extends ImportTree {
     }
     this.file = new LoaderFile(filename, LoaderFile.writable[ext])
     this.file.ref(this)
-    await this.start()
+    yield* super[Context.init]()
   }
 }

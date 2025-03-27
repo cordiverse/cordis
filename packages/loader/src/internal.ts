@@ -1,4 +1,4 @@
-import { LoadHookContext } from 'module'
+import { createRequire, LoadHookContext } from 'node:module'
 import { Dict } from 'cosmokit'
 
 type ModuleFormat = 'builtin' | 'commonjs' | 'json' | 'module' | 'wasm'
@@ -48,4 +48,22 @@ export interface ModuleLoader {
   resolve(originalSpecifier: string, parentURL: string, importAttributes: ImportAttributes): Promise<ResolveResult>
   resolveSync(originalSpecifier: string, parentURL: string, importAttributes: ImportAttributes): ResolveResult
   load(specifier: string, context: Pick<LoadHookContext, 'format' | 'importAttributes'>): Promise<LoadResult>
+}
+
+export namespace ModuleLoader {
+  const internalLoaders: ((require: NodeJS.Require) => any)[] = [
+    // Node 20.13 and above
+    (require) => require('internal/modules/esm/loader').getOrInitializeCascadedLoader(),
+    (require) => require('internal/process/esm_loader').esmLoader,
+  ]
+
+  export function fromInternal() {
+    if (!process.execArgv.includes('--expose-internals')) return
+    const require = createRequire(import.meta.url)
+    for (const loader of internalLoaders) {
+      try {
+        return loader(require)
+      } catch {}
+    }
+  }
 }

@@ -39,19 +39,13 @@ export class TimerService extends Service {
   }
 
   sleep(delay: number) {
-    const caller = this.ctx
-    return new Promise<void>((resolve, reject) => {
-      const dispose1 = this.setTimeout(() => {
-        dispose1()
-        dispose2()
-        resolve()
-      }, delay)
-      const dispose2 = caller.on('dispose', () => {
-        dispose1()
-        dispose2()
-        reject(new Error('Context has been disposed'))
-      })
-    })
+    const { promise, resolve, reject } = Promise.withResolvers<void>()
+    const self = this
+    const dispose = self.ctx.effect(function* () {
+      yield self.setTimeout(resolve, delay)
+      yield () => reject(new Error('Context has been disposed'))
+    }, 'ctx.sleep()')
+    return promise.finally(dispose)
   }
 
   private createWrapper(label: string, callback: (args: any[], check: () => boolean) => any, isDisposed = false) {

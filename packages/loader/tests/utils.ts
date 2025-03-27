@@ -35,10 +35,9 @@ export default class MockLoader<C extends Context = Context> extends Loader<C> {
     this.mock('cordis/group', Group)
   }
 
-  async start() {
+  async init(baseDir: string, options: Loader.Config) {
     this.file = new MockLoaderFile('config-1.yml')
     this.file.ref(this)
-    await super.start()
   }
 
   async read(data: any) {

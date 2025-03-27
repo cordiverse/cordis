@@ -73,14 +73,14 @@ export class Group extends EntryGroup {
 
   constructor(public ctx: Context, public config: EntryOptions[]) {
     super(ctx, ctx.scope.entry!.parent.tree)
-    ctx.on('dispose', () => this.stop())
     ctx.on('internal/update', (_, config) => {
       this.update(config)
       return true
     })
   }
 
-  async [Context.init]() {
+  async* [Context.init]() {
+    yield () => this.stop()
     await this.update(this.config)
   }
 }

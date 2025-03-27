@@ -135,6 +135,7 @@ describe('Disposables', () => {
       seq.push(5)
       yield () => seq.push(6)
     })
+    await clock.tickAsync(50)
     dispose()
     expect(seq).to.deep.equal([])
     await clock.tickAsync(300)
@@ -274,7 +275,7 @@ describe('Disposables', () => {
   it('memory leak test', async () => {
     function plugin(ctx: Context) {
       ctx.on(event, noop)
-      ctx.on('dispose', noop)
+      return noop
     }
 
     const root = new Context()
@@ -288,23 +289,6 @@ describe('Disposables', () => {
     expect(after).to.deep.equal(getHookSnapshot(root))
   })
 
-  it('dispose event (deprecated)', async () => {
-    const root = new Context()
-    const dispose = mock.fn(noop)
-    const plugin = (ctx: Context) => {
-      ctx.on('dispose', dispose)
-    }
-
-    await root.plugin(plugin)
-    expect(dispose.mock.calls).to.have.length(0)
-    expect(root.registry.delete(plugin)).to.be.ok
-    await sleep()
-    expect(dispose.mock.calls).to.have.length(1)
-    // callback should only be called once
-    expect(root.registry.delete(plugin)).to.be.not.ok
-    expect(dispose.mock.calls).to.have.length(1)
-  })
-
   it('dispose error', async () => {
     const root = new Context()
     const error = mock.fn()
@@ -313,7 +297,7 @@ describe('Disposables', () => {
       throw new Error('test')
     })
     const plugin = (ctx: Context) => {
-      ctx.on('dispose', dispose)
+      return dispose
     }
 
     await root.plugin(plugin)

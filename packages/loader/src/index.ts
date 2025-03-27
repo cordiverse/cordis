@@ -1,16 +1,16 @@
-import Module from 'node:module'
+import { Module } from 'node:module'
 import { pathToFileURL } from 'node:url'
 import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { Context } from '@cordisjs/core'
 import { Loader } from './loader.ts'
 import * as dotenv from 'dotenv'
-import * as path from 'node:path'
+import { ModuleLoader } from './internal.ts'
 
 export * from './internal.ts'
 export * from './loader.ts'
 
 type ModuleLoad = (request: string, parent: Module, isMain: boolean) => any
-
-const oldEnv = { ...process.env }
 
 namespace NodeLoader {
   export interface Config extends Loader.Config {}
@@ -19,35 +19,9 @@ namespace NodeLoader {
 class NodeLoader extends Loader {
   static readonly exitCode = 51
 
-  async init(baseDir: string, options: Loader.Config) {
-    await super.init(baseDir, options)
+  public internal = ModuleLoader.fromInternal()
 
-    // restore process.env
-    for (const key in process.env) {
-      if (key in oldEnv) {
-        process.env[key] = oldEnv[key]
-      } else {
-        delete process.env[key]
-      }
-    }
-
-    // load .env files
-    const override = {}
-    const envFiles = ['.env', '.env.local']
-    for (const filename of envFiles) {
-      try {
-        const raw = await readFile(path.resolve(this.ctx.baseDir, filename), 'utf8')
-        Object.assign(override, dotenv.parse(raw))
-      } catch {}
-    }
-
-    // override process.env
-    for (const key in override) {
-      process.env[key] = override[key]
-    }
-  }
-
-  async start() {
+  async* [Context.init]() {
     const originalLoad: ModuleLoad = Module['_load']
     Module['_load'] = ((request, parent, isMain) => {
       try {
@@ -67,9 +41,20 @@ class NodeLoader extends Loader {
       }
     }) as ModuleLoad
 
-    await this.init(process.cwd(), this.config)
-    this.ctx.set('env', process.env)
-    await super.start()
+    // load .env files
+    const override = {}
+    const envFiles = ['.env', '.env.local']
+    for (const filename of envFiles) {
+      try {
+        const raw = await readFile(join(process.cwd(), filename), 'utf8')
+        Object.assign(override, dotenv.parse(raw))
+      } catch {}
+    }
+    for (const key in override) {
+      process.env[key] = override[key]
+    }
+
+    yield* super[Context.init]()
   }
 
   exit(code = NodeLoader.exitCode) {

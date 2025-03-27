@@ -187,7 +187,7 @@ describe('Service', () => {
     const dispose = mock.fn((foo: any) => {})
     const plugin = mock.fn((ctx: Context) => {
       callback(ctx.foo)
-      ctx.on('dispose', () => dispose(ctx.foo))
+      return () => dispose(ctx.foo)
     })
 
     const root = new Context()

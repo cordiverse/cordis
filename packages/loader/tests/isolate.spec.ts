@@ -1,7 +1,6 @@
 import { Mock, mock } from 'node:test'
 import { expect } from 'chai'
 import { Context, ScopeStatus, Service } from '@cordisjs/core'
-import { defineProperty } from 'cosmokit'
 import MockLoader from './utils'
 
 describe('service isolation: basic', () => {
@@ -16,17 +15,15 @@ describe('service isolation: basic', () => {
     await root.plugin(MockLoader)
     loader = root.loader as any
 
-    foo = loader.mock('foo', defineProperty((ctx: Context) => {
-      ctx.on('dispose', dispose)
-    }, 'inject', ['bar']))
+    foo = Object.assign(loader.mock('foo', () => dispose), {
+      'inject': ['bar']
+    })
   
     bar = loader.mock('bar', class Bar extends Service {
       constructor(ctx: Context) {
         super(ctx, 'bar')
       }
     })
-
-    await loader.start()
   })
 
   beforeEach(() => {
@@ -154,17 +151,13 @@ describe('service isolation: realm', () => {
     await root.plugin(MockLoader)
     loader = root.loader as any
 
-    foo = Object.assign(loader.mock('foo', (ctx: Context) => {
-      ctx.on('dispose', dispose)
-    }), {
+    foo = Object.assign(loader.mock('foo', () => dispose), {
       inject: ['bar'],
     })
   
     bar = Object.assign(loader.mock('bar', (ctx: Context, config = {}) => {
       ctx.set('bar', config)
     }))
-
-    await loader.start()
   })
 
   beforeEach(() => {
@@ -258,21 +251,17 @@ describe('service isolation: realm', () => {
   it('special case: nested realms', async () => {
     const root = new Context()
     await root.plugin(MockLoader)
-    const loader = root.loader as unknown as MockLoader
+    const loader = root.loader as MockLoader
   
     const dispose = mock.fn()
   
-    const foo = Object.assign(loader.mock('foo', (ctx: Context) => {
-      ctx.on('dispose', dispose)
-    }), {
+    const foo = Object.assign(loader.mock('foo', () => dispose), {
       inject: ['bar'],
     })
   
     Object.assign(loader.mock('bar', (ctx: Context, config = {}) => {
       ctx.set('bar', config)
     }))
-
-    await loader.start()
 
     const outer = await loader.create({
       name: 'cordis/group',
@@ -337,21 +326,17 @@ describe('service isolation: realm', () => {
   it('special case: change provider', async () => {
     const root = new Context()
     await root.plugin(MockLoader)
-    const loader = root.loader as unknown as MockLoader
+    const loader = root.loader as MockLoader
   
     const dispose = mock.fn()
   
-    const foo = Object.assign(loader.mock('foo', (ctx: Context) => {
-      ctx.on('dispose', dispose)
-    }), {
+    const foo = Object.assign(loader.mock('foo', () => dispose), {
       inject: ['bar'],
     })
   
     Object.assign(loader.mock('bar', (ctx: Context, config = {}) => {
       ctx.set('bar', config)
     }))
-
-    await loader.start()
 
     await loader.create({
       name: 'bar',
@@ -405,21 +390,17 @@ describe('service isolation: realm', () => {
   it('special case: change injector', async () => {
     const root = new Context()
     await root.plugin(MockLoader)
-    const loader = root.loader as unknown as MockLoader
+    const loader = root.loader as MockLoader
   
     const dispose = mock.fn()
   
-    const foo = Object.assign(loader.mock('foo', (ctx: Context) => {
-      ctx.on('dispose', dispose)
-    }), {
+    const foo = Object.assign(loader.mock('foo', () => dispose), {
       inject: ['bar'],
     })
   
     const bar = loader.mock('bar', (ctx: Context, config = {}) => {
       ctx.set('bar', config)
     })
-
-    await loader.start()
 
     const alpha = await loader.create({
       name: 'foo',
@@ -485,17 +466,15 @@ describe('service isolation: transfer', () => {
     await root.plugin(MockLoader)
     loader = root.loader as any
 
-    foo = loader.mock('foo', defineProperty((ctx: Context) => {
-      ctx.on('dispose', dispose)
-    }, 'inject', ['bar']))
+    foo = Object.assign(loader.mock('foo', () => dispose), {
+      'inject': ['bar']
+    })
 
     bar = loader.mock('bar', class Bar extends Service {
       constructor(ctx: Context) {
         super(ctx, 'bar')
       }
     })
-
-    await loader.start()
   })
 
   beforeEach(() => {

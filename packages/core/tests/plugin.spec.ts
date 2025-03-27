@@ -36,10 +36,10 @@ describe('Plugin', () => {
     const root = new Context()
     const callback = mock.fn()
     const scope = root.plugin((ctx) => {
-      ctx.on('dispose', () => {
+      return () => {
         expect(() => ctx.plugin(callback)).to.throw('inactive context')
-        expect(() => ctx.on('ready', () => {})).to.throw('inactive context')
-      })
+        expect(() => ctx.on('custom-event', () => {})).to.throw('inactive context')
+      }
     })
     await scope
     await scope.dispose()

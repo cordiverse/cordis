@@ -114,6 +114,11 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
     ctx.plugin(isolate)
   }
 
+  async* [Context.init]() {
+    await this.init(process.cwd(), this.config)
+    yield* super[Context.init]()
+  }
+
   showLog(entry: Entry, type: string) {
     if (entry.options.group) return
     this.ctx.get('logger')?.('loader').info('%s plugin %c', type, entry.options.name)

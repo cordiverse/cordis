@@ -48,7 +48,7 @@ describe('Isolation', () => {
       inject: ['foo'],
       apply: (ctx: Context) => {
         callback()
-        ctx.on('dispose', dispose)
+        return dispose
       },
     }
 
@@ -79,7 +79,7 @@ describe('Isolation', () => {
       inject: ['foo'],
       apply: (ctx: Context) => {
         callback()
-        ctx.on('dispose', dispose)
+        return dispose
       },
     }
 
