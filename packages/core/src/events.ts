@@ -109,8 +109,9 @@ class EventsService {
       const visited = new Set<string>()
       let scope = this.scope
       while (true) {
+        // FIXME provide / inject may be cross isolation
         if (scope === provider) return true
-        for (const key in scope.inject ?? {}) {
+        for (const key in scope.inject) {
           if (visited.has(key)) continue
           visited.add(key)
           if (name === ReflectService.resolveInject(scope.ctx, key)[0]) return true

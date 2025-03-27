@@ -1,4 +1,4 @@
-import { defineProperty, Dict, mapValues } from 'cosmokit'
+import { defineProperty, Dict } from 'cosmokit'
 import { Context } from './context'
 import { EffectScope } from './scope'
 import { buildOuterStack, DisposableList, symbols, withProps } from './utils'
@@ -42,15 +42,21 @@ export namespace Inject {
     config?: T
   }
 
-  export function resolve(inject: Inject | null | undefined): Dict<Meta> {
-    if (!inject) return {}
+  export function resolve(inject: Inject | null | undefined): Dict<Meta | undefined> {
+    if (!inject) return Object.create(null)
+    const result = Object.create(null)
     if (Array.isArray(inject)) {
-      return Object.fromEntries(inject.map(name => [name, { required: true }]))
+      for (const name of inject) {
+        result[name] = { required: true }
+      }
+    } else if (Reflect.has(inject, symbols.checkProto)) {
+      Object.assign(result, resolve(Object.getPrototypeOf(inject)), inject)
+    } else {
+      for (const [name, value] of Object.entries(inject)) {
+        result[name] = typeof value === 'boolean' ? { required: value } : value
+      }
     }
-    if (Reflect.has(inject, symbols.checkProto)) {
-      return { ...resolve(Object.getPrototypeOf(inject)), ...inject } as any
-    }
-    return mapValues(inject, (value) => typeof value === 'boolean' ? { required: value } : value)
+    return result
   }
 }
 

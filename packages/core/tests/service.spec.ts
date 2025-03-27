@@ -217,15 +217,13 @@ describe('Service', () => {
     expect(callback.mock.calls).to.have.length(2)
     expect(callback.mock.calls[1].arguments[0]).to.have.property('bar', 300)
     expect(dispose.mock.calls).to.have.length(1)
-    // FIXME
-    // expect(dispose.mock.calls[0].arguments[0]).to.have.property('bar', 200)
+    expect(dispose.mock.calls[0].arguments[0]).to.have.property('bar', 200)
 
     root.set('foo', null)
     await sleep()
     expect(callback.mock.calls).to.have.length(2)
     expect(dispose.mock.calls).to.have.length(2)
-    // FIXME
-    // expect(dispose.mock.calls[1].arguments[0]).to.have.property('bar', 300)
+    expect(dispose.mock.calls[1].arguments[0]).to.have.property('bar', 300)
   })
 
   it('lifecycle methods', async () => {

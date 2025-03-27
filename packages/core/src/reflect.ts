@@ -63,6 +63,8 @@ class ReflectService {
       } else if (internal.type === 'accessor') {
         return internal.get.call(ctx, ctx[symbols.receiver], error)
       } else {
+        const cached = ctx.scope.store?.[name]
+        if (cached) return getTraceable(ctx, cached)
         const key = target[symbols.isolate][name]
         const item = key && target[symbols.store][key]
         ReflectService.checkInject(ctx, name, error, item?.source.scope)

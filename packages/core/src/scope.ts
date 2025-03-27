@@ -37,7 +37,7 @@ export interface EffectMeta {
 
 interface EffectRunner {
   isActive: boolean
-  execute: () => Effect
+  execute: () => any
   collect: (dispose: Disposable) => void
   getOuterStack: () => string[]
 }
@@ -72,6 +72,7 @@ export class EffectScope<out C extends Context = Context> {
   public disposables = new DisposableList<Disposable>()
   public status = ScopeStatus.PENDING
   public dispose: () => Promise<void>
+  public store: Dict | undefined
 
   // Same as `this.ctx`, but with a more specific type.
   protected context: Context
@@ -79,35 +80,20 @@ export class EffectScope<out C extends Context = Context> {
   private _error: any
   private _pending: Promise<void> | undefined
   private _runner: EffectRunner
+  private _store: Dict | undefined
 
   constructor(
     public parent: C,
     config: any,
-    public inject: Dict<Inject.Meta>,
+    public inject: Dict<Inject.Meta | undefined>,
     public runtime: Plugin.Runtime | null,
     getOuterStack: () => string[],
   ) {
-    this._runner = {
-      isActive: false,
-      getOuterStack,
-      execute: () => {
-        if (isConstructor(this.runtime!.callback)) {
-          // eslint-disable-next-line new-cap
-          const instance = new this.runtime!.callback(this.ctx, this.config)
-          for (const hook of instance?.[symbols.initHooks] ?? []) {
-            hook()
-          }
-          return instance?.[symbols.init]?.()
-        } else {
-          return this.runtime!.callback(this.ctx, this.config)
-        }
-      },
-      collect: (dispose) => {
-        this.disposables.push(dispose)
-      },
+    const collect = (dispose: Disposable) => {
+      this.disposables.push(dispose)
     }
 
-    if (parent.scope) {
+    if (runtime) {
       this.uid = parent.registry.counter
       this.ctx = this.context = parent.extend({ scope: this })
 
@@ -115,28 +101,46 @@ export class EffectScope<out C extends Context = Context> {
       if (injectEntries.length) {
         this.ctx[Context.intercept] = Object.create(parent[Context.intercept])
         for (const [name, inject] of injectEntries) {
-          if (isNullable(inject.config)) continue
-          this.ctx[Context.intercept][name] = inject.config
+          if (isNullable(inject!.config)) continue
+          this.ctx[Context.intercept][name] = inject!.config
         }
       }
 
+      this._runner = {
+        isActive: false,
+        getOuterStack,
+        execute: () => {
+          if (isConstructor(runtime.callback)) {
+            // eslint-disable-next-line new-cap
+            const instance = new runtime.callback(this.ctx, this.config)
+            for (const hook of instance?.[symbols.initHooks] ?? []) {
+              hook()
+            }
+            return instance?.[symbols.init]?.()
+          } else {
+            return runtime.callback(this.ctx, this.config)
+          }
+        },
+        collect,
+      }
+
       this.dispose = parent.scope.effect(() => {
-        const remove = runtime!.scopes.push(this)
-        this.context.emit('internal/plugin', this)
+        const remove = runtime.scopes.push(this)
         try {
-          this.config = resolveConfig(runtime!, config)
+          this.config = resolveConfig(runtime, config)
           this.active = true
         } catch (error) {
           this.context.emit('internal/error', error)
           this._error = error
         }
+        this.context.emit('internal/plugin', this)
         return async () => {
           this.uid = null
           this.context.emit('internal/plugin', this)
-          if (this.ctx.registry.has(runtime!.callback)) {
+          if (this.ctx.registry.has(runtime.callback)) {
             remove()
-            if (!runtime!.scopes.length) {
-              this.ctx.registry.delete(runtime!.callback)
+            if (!runtime.scopes.length) {
+              this.ctx.registry.delete(runtime.callback)
             }
           }
           this.active = false
@@ -146,8 +150,13 @@ export class EffectScope<out C extends Context = Context> {
     } else {
       this.uid = 0
       this.ctx = this.context = parent
-      this._runner.isActive = true
       this.status = ScopeStatus.ACTIVE
+      this._runner = {
+        isActive: true,
+        getOuterStack,
+        execute: () => {},
+        collect,
+      }
       this.dispose = async () => {
         this.active = false
         await this._pending
@@ -173,7 +182,7 @@ export class EffectScope<out C extends Context = Context> {
           throw new TypeError('Invalid effect')
         }
       }
-      const effect = runner.execute()
+      const effect: Effect = runner.execute()
       if (typeof effect === 'function') {
         return runner.collect(effect)
       } else if (isNullable(effect)) {
@@ -299,6 +308,7 @@ export class EffectScope<out C extends Context = Context> {
   }
 
   private async _reload() {
+    this.store = this._store
     try {
       await Promise.resolve()
       await this._execute(this._runner)
@@ -325,25 +335,27 @@ export class EffectScope<out C extends Context = Context> {
         this.context.emit(this.ctx, 'internal/error', reason)
       }
     }))
+    this.store = undefined
     this._updateStatus(() => {
       this._pending = this._runner.isActive ? this._reload() : undefined
     })
   }
 
-  checkInject() {
+  private _getStore(): Dict | undefined {
     try {
-      return Object.entries(this.inject).every(([name, inject]) => {
-        if (!inject.required) return true
+      const store = Object.create(null)
+      for (const [name, inject] of Object.entries(this.inject)) {
+        if (!inject!.required) continue
         const service = this.ctx.reflect.get(name, true)
-        if (isNullable(service)) return false
-        if (!service[symbols.check]) return true
-        return service[symbols.check](this.ctx)
-      })
+        if (isNullable(service)) return
+        if (service[symbols.check] && !service[symbols.check](this.ctx)) return
+        store[name] = service
+      }
+      return this._store = store
     } catch (error) {
       this.context.emit(this.ctx, 'internal/error', error)
       this._error = error
       this._runner.isActive = false
-      return false
     }
   }
 
@@ -352,7 +364,8 @@ export class EffectScope<out C extends Context = Context> {
   }
 
   set active(value) {
-    if (value && (!this.uid || !this.checkInject())) return
+    if (value === this._runner.isActive) return
+    if (value && (!this.uid || !this._getStore())) return
     this._updateStatus(() => {
       if (!this._pending && value !== this._runner.isActive) {
         this._pending = value ? this._reload() : this._unload()
