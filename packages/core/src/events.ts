@@ -175,7 +175,7 @@ class EventsService {
     return next()
   }
 
-  register(label: string, hooks: Hook[], callback: any, options: EventOptions) {
+  register(label: string, hooks: Hook[], callback: any, options: EventOptions): () => void {
     const method = options.prepend ? 'unshift' : 'push'
     return this.ctx.scope.effect(() => {
       hooks[method]({ ctx: this.ctx, callback, ...options })

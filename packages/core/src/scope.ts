@@ -6,21 +6,29 @@ import { buildOuterStack, composeError, DisposableList, isConstructor, isObject,
 declare module './context' {
   export interface Context {
     scope: EffectScope<this>
-    effect(execute: () => Effect, label?: string): EffectHandle
+    effect(execute: () => SyncEffect, label?: string): Disposable<void | Promise<void>>
+    effect(execute: () => AsyncEffect, label?: string): AsyncDisposable<Promise<void>>
+    effect(execute: () => Effect, label?: string): AsyncDisposable<void | Promise<void>>
   }
 }
 
-export interface EffectHandle<T extends Awaitable<void> = Awaitable<void>> extends PromiseLike<() => T> {
+interface AsyncDisposable<T extends Awaitable<void> = Awaitable<void>> extends PromiseLike<() => T> {
   (): T
 }
 
-type Disposable = () => any
+export type Disposable<T = any> = () => T
 
-export type Effect =
-  | Disposable
-  | Promise<Disposable>
-  | Iterable<Disposable, void, void>
-  | AsyncIterable<Disposable, void, void>
+export type Effect<T = any> =
+  | SyncEffect<T>
+  | AsyncEffect<T>
+
+type SyncEffect<T = any> =
+  | Disposable<T>
+  | Iterable<Disposable<T>, void, void>
+
+type AsyncEffect<T = any> =
+  | Promise<Disposable<T>>
+  | AsyncIterable<Disposable<T>, void, void>
 
 export interface EffectMeta {
   label: string
@@ -201,7 +209,7 @@ export class EffectScope<out C extends Context = Context> {
     }, runner.getOuterStack)
   }
 
-  effect<T extends Awaitable<void>>(execute: () => Effect, label = 'anonymous'): EffectHandle<T> {
+  effect(execute: () => Effect, label = 'anonymous'): any {
     this.assertActive()
 
     const disposables: Disposable[] = []
@@ -251,7 +259,7 @@ export class EffectScope<out C extends Context = Context> {
       if (!runner.isActive) return
       runner.isActive = false
       return task ? task.then(dispose) : dispose()
-    }, symbols.effect, meta) as EffectHandle<T>
+    }, symbols.effect, meta) as AsyncDisposable
 
     const disposeAsync = () => {
       if (!runner.isActive) return
