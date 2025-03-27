@@ -2,7 +2,6 @@ import { deepEqual, defineProperty, Promisify } from 'cosmokit'
 import { Context } from './context'
 import { EffectScope, ScopeStatus } from './scope'
 import { symbols } from './utils'
-import ReflectService from './reflect'
 
 export function isBailed(value: any) {
   return value !== null && value !== false && value !== undefined
@@ -105,17 +104,17 @@ class EventsService {
       }
     }, { global: true })
 
-    this.on('internal/inject', function (this: Context, name: string, provider: EffectScope) {
-      const visited = new Set<string>()
+    this.on('internal/inject', function (this: Context, name: string, key: symbol) {
+      const provider = this[symbols.store][key]?.source.scope
       let scope = this.scope
       while (true) {
-        // FIXME provide / inject may be cross isolation
         if (scope === provider) return true
-        for (const key in scope.inject) {
-          if (visited.has(key)) continue
-          visited.add(key)
-          if (name === ReflectService.resolveInject(scope.ctx, key)[0]) return true
+        const inject = scope.inject[name]
+        if (inject) {
+          if (inject.required && !scope.store) return `cannot get required service "${name}" in inactive context`
+          return true
         }
+        if (scope.parent[symbols.isolate][name] !== key) break
         const next = scope.parent.scope
         if (scope === next) break
         scope = next
@@ -228,7 +227,7 @@ export interface Events<in C extends Context = Context> {
   'internal/before-service'(this: C, name: string, value: any): void
   'internal/service'(this: C, name: string, value: any): void
   'internal/update'(scope: EffectScope<C>, config: any): boolean | void
-  'internal/inject'(this: C, name: string, provider?: EffectScope): boolean | void
+  'internal/inject'(this: C, name: string, key: symbol): boolean | string
   'internal/listener'(this: C, name: string, listener: any, prepend: boolean): void
   'internal/event'(type: 'emit' | 'parallel' | 'serial' | 'bail', name: string, args: any[], thisArg: any): void
 }

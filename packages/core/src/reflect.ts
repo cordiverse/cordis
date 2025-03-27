@@ -1,7 +1,7 @@
 import { defineProperty, Dict, isNullable } from 'cosmokit'
 import { Context } from './context'
 import { getTraceable, isUnproxyable, symbols, withProps } from './utils'
-import { EffectScope, ScopeStatus } from './scope'
+import { ScopeStatus } from './scope'
 
 declare module './context' {
   interface Context {
@@ -12,7 +12,6 @@ declare module './context' {
     /** @deprecated use `ctx.set()` instead */
     provide(name: string): void
     accessor(name: string, options: Omit<Context.Internal.Accessor, 'type'>): void
-    alias(name: string, aliases: string[]): void
     mixin<K extends string & keyof this>(name: K, mixins: (keyof this & keyof this[K])[] | Dict<string>): void
     mixin<T extends {}>(source: T, mixins: (keyof this & keyof T)[] | Dict<string>): void
   }
@@ -20,15 +19,11 @@ declare module './context' {
 
 class ReflectService {
   static resolveInject(ctx: Context, name: string) {
-    let internal = ctx[symbols.internal][name]
-    while (internal?.type === 'alias') {
-      name = internal.name
-      internal = ctx[symbols.internal][name]
-    }
+    const internal = ctx[symbols.internal][name]
     return [name, internal] as const
   }
 
-  static checkInject(ctx: Context, name: string, error: Error, provider?: EffectScope) {
+  static checkInject(ctx: Context, name: string, error: Error, key?: symbol) {
     ctx = ctx[symbols.shadow] ?? ctx
     // Case 1: built-in services and special properties
     // - prototype: prototype detection
@@ -39,7 +34,18 @@ class ReflectService {
     // Case 3: access directly from root
     if (!ctx.scope.runtime) return
     // Case 4: custom inject checks
-    if (ctx.bail(ctx, 'internal/inject', name, provider)) return
+    if (key) {
+      const result = ctx.bail(ctx, 'internal/inject', name, key)
+      if (result === true) return
+      if (typeof result === 'string') {
+        const lines = error.stack!.split('\n')
+        error.message = result
+        lines[0] = `Error: ${result}`
+        lines.splice(1, 1)
+        error.stack = lines.join('\n')
+        throw error
+      }
+    }
     const lines = error.stack!.split('\n')
     lines.splice(1, 1)
     error.stack = lines.join('\n')
@@ -54,40 +60,39 @@ class ReflectService {
         return getTraceable(ctx, Reflect.get(target, prop, ctx))
       }
 
-      const [name, internal] = ReflectService.resolveInject(target, prop)
+      const internal = target[symbols.internal][prop]
       // trace caller
-      const error = new Error(`get service ${name} without \`inject\``)
+      const error = new Error(`get service ${prop} without \`inject\``)
       if (!internal) {
-        ReflectService.checkInject(ctx, name, error)
-        return Reflect.get(target, name, ctx)
+        ReflectService.checkInject(ctx, prop, error)
+        return Reflect.get(target, prop, ctx)
       } else if (internal.type === 'accessor') {
         return internal.get.call(ctx, ctx[symbols.receiver], error)
       } else {
-        const cached = ctx.scope.store?.[name]
+        const cached = ctx.scope.store?.[prop]
         if (cached) return getTraceable(ctx, cached)
-        const key = target[symbols.isolate][name]
-        const item = key && target[symbols.store][key]
-        ReflectService.checkInject(ctx, name, error, item?.source.scope)
-        return ctx.reflect.get(name)
+        const key = target[symbols.isolate][prop]
+        ReflectService.checkInject(ctx, prop, error, key)
+        return ctx.reflect.get(prop)
       }
     },
 
     set: (target, prop, value, ctx: Context) => {
       if (typeof prop !== 'string') return Reflect.set(target, prop, value, ctx)
 
-      const [name, internal] = ReflectService.resolveInject(target, prop)
+      const internal = target[symbols.internal][prop]
       // trace caller
-      const error = new Error(`set service ${name} without \`provide\``)
+      const error = new Error(`set service ${prop} without \`provide\``)
       if (!internal) {
         // TODO warning
-        return Reflect.set(target, name, value, ctx)
+        return Reflect.set(target, prop, value, ctx)
       }
       if (internal.type === 'accessor') {
         if (!internal.set) return false
         return internal.set.call(ctx, value, ctx[symbols.receiver], error)
       } else {
         // ctx.emit(ctx, 'internal/warning', new Error(`assigning to service ${name} is not recommended, please use \`ctx.set()\` method instead`))
-        ctx.reflect.set(name, value)
+        ctx.reflect.set(prop, value)
         return true
       }
     },
@@ -95,8 +100,7 @@ class ReflectService {
     has: (target, prop) => {
       if (typeof prop !== 'string') return Reflect.has(target, prop)
       if (Reflect.has(target, prop)) return true
-      const [, internal] = ReflectService.resolveInject(target, prop)
-      return !!internal
+      return !!target[symbols.internal][prop]
     },
   }
 
@@ -181,20 +185,11 @@ class ReflectService {
     }, `ctx.accessor(${JSON.stringify(name)})`)
   }
 
-  alias(name: string, aliases: string[]) {
-    const internal = this.ctx.root[symbols.internal]
-    if (name in internal) return
-    for (const key of aliases) {
-      internal[key] ||= { type: 'alias', name }
-    }
-  }
-
   _mixin(source: string, mixins: string[] | Dict<string>, strict = false) {
     const entries = Array.isArray(mixins) ? mixins.map(key => [key, key]) : Object.entries(mixins)
     const getTarget = (ctx: Context, error: Error) => {
-      if (strict) return ctx[source]
-      ReflectService.checkInject(ctx, source, error)
-      return ctx.reflect.get(source)
+      // TODO enhance error message
+      return ctx[source]
     }
     const disposables = entries.map(([key, value]) => {
       return this._accessor(value, {

@@ -55,7 +55,6 @@ describe('Service', () => {
     const root = new Context()
     const warn = mock.fn()
     root.on('internal/warning', warn)
-    root.alias('bar', ['baz'])
     root.mixin('foo', ['bar'])
     root.provide('foo')
     root.set('foo', { bar: 1 })
@@ -78,6 +77,21 @@ describe('Service', () => {
         expect(warn.mock.calls).to.have.length(0)
       })
     })
+  })
+
+  it('service inject leak', async () => {
+    const root = new Context()
+    root.provide('foo')
+    root.set('foo', { bar: 1 })
+    let inner!: Context
+    const scope = root.inject(['foo'], (ctx) => {
+      inner = ctx
+    })
+    await scope
+    expect(inner.foo).to.be.ok
+    await scope.dispose()
+    expect(root.foo).to.be.ok
+    expect(() => inner.foo).to.throw('cannot get required service "foo" in inactive context')
   })
 
   it('normal service', async () => {
