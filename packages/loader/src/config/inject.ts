@@ -19,7 +19,7 @@ export default function inject(ctx: Context) {
     return checkInject(scope.parent.scope, name)
   }
 
-  ctx.on('internal/inject', function (this, name) {
+  ctx.on('internal/inject', function (name) {
     return checkInject(this.scope, name)
   })
 

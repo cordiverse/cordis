@@ -10,7 +10,7 @@ declare module './context' {
     set<K extends string & keyof this>(name: K, value: undefined | this[K]): () => void
     set(name: string, value: any): () => void
     /** @deprecated use `ctx.set()` instead */
-    provide(name: string, value?: any, builtin?: boolean): void
+    provide(name: string): void
     accessor(name: string, options: Omit<Context.Internal.Accessor, 'type'>): void
     alias(name: string, aliases: string[]): void
     mixin<K extends string & keyof this>(name: K, mixins: (keyof this & keyof this[K])[] | Dict<string>): void
@@ -63,11 +63,9 @@ class ReflectService {
       } else if (internal.type === 'accessor') {
         return internal.get.call(ctx, ctx[symbols.receiver], error)
       } else {
-        if (!internal.builtin) {
-          const key = target[symbols.isolate][name]
-          const item = target[symbols.store][key]
-          ReflectService.checkInject(ctx, name, error, item?.source.scope)
-        }
+        const key = target[symbols.isolate][name]
+        const item = key && target[symbols.store][key]
+        ReflectService.checkInject(ctx, name, error, item?.source.scope)
         return ctx.reflect.get(name)
       }
     },
@@ -138,8 +136,8 @@ class ReflectService {
     }
     const ctx: Context = this.ctx
     if (!isNullable(value)) {
-      dispose = ctx.effect(() => () => {
-        ctx.set(name, undefined)
+      dispose = ctx.scope.effect(() => () => {
+        this.set(name, undefined)
       }, `ctx.set(${JSON.stringify(name)})`)
     }
     if (isUnproxyable(value)) {
@@ -160,11 +158,11 @@ class ReflectService {
     return dispose
   }
 
-  provide(name: string, builtin?: boolean) {
+  provide(name: string) {
     const internal = this.ctx.root[symbols.internal]
     if (name in internal) return
     const key = Symbol(name)
-    internal[name] = { type: 'service', builtin }
+    internal[name] = { type: 'service' }
     this.ctx.root[symbols.isolate][name] = key
   }
 

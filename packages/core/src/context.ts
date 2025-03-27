@@ -19,8 +19,6 @@ export namespace Context {
   export namespace Internal {
     export interface Service {
       type: 'service'
-      builtin?: boolean
-      prototype?: {}
     }
 
     export interface Accessor {

@@ -105,10 +105,10 @@ class EventsService {
       }
     }, { global: true })
 
-    this.on('internal/inject', function (this: Context, name, provider) {
+    this.on('internal/inject', function (this: Context, name: string, provider: EffectScope) {
       const visited = new Set<string>()
       let scope = this.scope
-      while (1) {
+      while (true) {
         if (scope === provider) return true
         for (const key in scope.inject ?? {}) {
           if (visited.has(key)) continue
