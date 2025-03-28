@@ -1,4 +1,4 @@
-import { Context, Service } from '@cordisjs/core'
+import { Context, Inject, Service } from '@cordisjs/core'
 import { Dict, isNullable } from 'cosmokit'
 import { ModuleLoader } from './internal.ts'
 import { Entry, EntryOptions } from './config/entry.ts'
@@ -84,8 +84,10 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
 
     ctx.on('internal/plugin', (scope) => {
       // 1. set `scope.entry`
-      if (scope.parent[Entry.key]) {
+      if (scope.parent[Entry.key] && !scope.entry) {
         scope.entry = scope.parent[Entry.key]
+        // FIXME merge config
+        Inject.resolve(scope.entry!.options.inject, scope.inject)
       }
 
       // 2. handle self-dispose

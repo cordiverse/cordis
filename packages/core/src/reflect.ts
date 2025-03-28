@@ -34,20 +34,17 @@ class ReflectService {
     // Case 3: access directly from root
     if (!ctx.scope.runtime) return
     // Case 4: custom inject checks
+    let message = `cannot get service "${name}" without inject`
     if (key) {
       const result = ctx.bail(ctx, 'internal/inject', name, key)
       if (result === true) return
       if (typeof result === 'string') {
-        const lines = error.stack!.split('\n')
-        error.message = result
-        lines[0] = `Error: ${result}`
-        lines.splice(1, 1)
-        error.stack = lines.join('\n')
-        throw error
+        message = result
       }
     }
     const lines = error.stack!.split('\n')
-    lines.splice(1, 1)
+    error.message = message
+    lines.splice(0, 2, `Error: ${message}`)
     error.stack = lines.join('\n')
     throw error
   }
@@ -60,9 +57,9 @@ class ReflectService {
         return getTraceable(ctx, Reflect.get(target, prop, ctx))
       }
 
-      const internal = target[symbols.internal][prop]
       // trace caller
-      const error = new Error(`get service ${prop} without \`inject\``)
+      const error = new Error()
+      const internal = target[symbols.internal][prop]
       if (!internal) {
         ReflectService.checkInject(ctx, prop, error)
         return Reflect.get(target, prop, ctx)

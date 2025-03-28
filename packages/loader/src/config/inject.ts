@@ -1,4 +1,4 @@
-import { Context, EffectScope, Inject } from '@cordisjs/core'
+import { Context, Inject } from '@cordisjs/core'
 import { filterKeys, isNullable } from 'cosmokit'
 import { Entry } from './entry.ts'
 
@@ -10,18 +10,8 @@ declare module './entry.ts' {
 
 export default function inject(ctx: Context) {
   function getRequired(entry: Entry) {
-    return filterKeys(Inject.resolve(entry.options.inject), (_, meta) => meta.required)
+    return filterKeys(Inject.resolve(entry.options.inject), (_, meta) => meta!.required)
   }
-
-  const checkInject = (scope: EffectScope, name: string) => {
-    if (!scope.runtime) return false
-    if (name in Inject.resolve(scope.entry?.options.inject)) return true
-    return checkInject(scope.parent.scope, name)
-  }
-
-  ctx.on('internal/inject', function (name) {
-    return checkInject(this.scope, name)
-  })
 
   ctx.on('loader/entry-check', (entry) => {
     for (const name in getRequired(entry)) {

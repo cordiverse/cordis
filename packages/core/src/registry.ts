@@ -42,9 +42,8 @@ export namespace Inject {
     config?: T
   }
 
-  export function resolve(inject: Inject | null | undefined): Dict<Meta | undefined> {
-    if (!inject) return Object.create(null)
-    const result = Object.create(null)
+  export function resolve(inject: Inject | null | undefined, result: Dict<Meta | undefined> = Object.create(null)) {
+    if (!inject) return result
     if (Array.isArray(inject)) {
       for (const name of inject) {
         result[name] = { required: true }

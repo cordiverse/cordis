@@ -111,13 +111,12 @@ class EventsService {
         if (scope === provider) return true
         const inject = scope.inject[name]
         if (inject) {
-          if (inject.required && !scope.store) return `cannot get required service "${name}" in inactive context`
-          return true
+          if (!inject.required || scope.store) return true
+          return `cannot get required service "${name}" in inactive context`
         }
+        if (!scope.runtime) break
         if (scope.parent[symbols.isolate][name] !== key) break
-        const next = scope.parent.scope
-        if (scope === next) break
-        scope = next
+        scope = scope.parent.scope
       }
       return false
     }, { global: true })
