@@ -68,7 +68,7 @@ export class EffectScope<out C extends Context = Context> {
   public uid: number | null
   public ctx: C
   public config: any
-  public acceptors = new DisposableList<() => boolean>()
+  public acceptors = new DisposableList<(scope: this, config: any) => boolean>()
   public disposables = new DisposableList<Disposable>()
   public status = ScopeStatus.PENDING
   public dispose: () => Promise<void>

@@ -8,7 +8,7 @@ describe('Service', () => {
   it('non-service access', async () => {
     const root = new Context()
     const warn = mock.fn()
-    root.on('internal/warning', warn)
+    root.on('internal/warn', warn)
 
     await root.plugin((ctx) => {
       // `$bar` is `$`-prefixed
@@ -31,7 +31,7 @@ describe('Service', () => {
   it('service access', async () => {
     const root = new Context()
     const warn = mock.fn()
-    root.on('internal/warning', warn)
+    root.on('internal/warn', warn)
     root.provide('foo')
 
     await root.plugin((ctx) => {
@@ -54,7 +54,7 @@ describe('Service', () => {
   it('service injection', async () => {
     const root = new Context()
     const warn = mock.fn()
-    root.on('internal/warning', warn)
+    root.on('internal/warn', warn)
     root.mixin('foo', ['bar'])
     root.provide('foo')
     root.set('foo', { bar: 1 })
@@ -142,7 +142,7 @@ describe('Service', () => {
 
     const root = new Context()
     const warning = mock.fn()
-    root.on('internal/warning', warning)
+    root.on('internal/warn', warning)
     root.set('counter', new Counter(root))
 
     await root.plugin(Foo)

@@ -106,7 +106,7 @@ export default function isolate(ctx: Context) {
         const item = symbol && entry.ctx[Context.store][symbol]
         if (!item) continue
         if (!item.source) {
-          entry.ctx.emit(entry.ctx, 'internal/warning', new Error(`expected service ${key} to be implemented`))
+          entry.ctx.emit(entry.ctx, 'internal/warn', new Error(`expected service ${key} to be implemented`))
           continue
         }
         diff.push([key, oldMap[key], newMap[key], entry.ctx[delim], item.source[delim]])

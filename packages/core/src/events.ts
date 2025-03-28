@@ -12,6 +12,8 @@ export type ReturnType<F> = F extends (...args: any) => infer R ? R : never
 export type ThisType<F> = F extends (this: infer T, ...args: any) => any ? T : never
 export type GetEvents<C extends Context> = C[typeof Context.events]
 
+export type DispatchMode = 'emit' | 'parallel' | 'serial' | 'bail' | 'waterfall'
+
 declare module './context' {
   export interface Context {
     /* eslint-disable max-len */
@@ -65,11 +67,11 @@ class EventsService {
       }
     })
 
-    for (const level of ['info', 'error', 'warning']) {
+    for (const level of ['info', 'error', 'warn'] as const) {
       this.on(`internal/${level}`, (format, ...param) => {
         if (this._hooks[`internal/${level}`].length > 1) return
         // eslint-disable-next-line no-console
-        console.info(format, ...param)
+        console[level](format, ...param)
       })
     }
 
@@ -121,7 +123,7 @@ class EventsService {
       return false
     }, { global: true })
 
-    this.on('internal/update', (scope, config) => {
+    this.on('internal/update', (scope: EffectScope, config) => {
       for (const acceptor of scope.acceptors) {
         if (acceptor(scope, config)) return true
       }
@@ -133,7 +135,7 @@ class EventsService {
     const thisArg = typeof args[0] === 'object' || typeof args[0] === 'function' ? args.shift() : null
     const name: string = args.shift()
     if (!name.startsWith('internal/')) {
-      this.emit('internal/event', type, name, args, thisArg)
+      this.emit('internal/dispatch', type, name, args, thisArg)
     }
     const filter = thisArg?.[Context.filter]
     return (this._hooks[name] || [])
@@ -222,11 +224,11 @@ export interface Events<in C extends Context = Context> {
   'internal/status'(scope: EffectScope<C>, oldValue: ScopeStatus): void
   'internal/info'(this: C, format: any, ...param: any[]): void
   'internal/error'(this: C, format: any, ...param: any[]): void
-  'internal/warning'(this: C, format: any, ...param: any[]): void
+  'internal/warn'(this: C, format: any, ...param: any[]): void
   'internal/before-service'(this: C, name: string, value: any): void
   'internal/service'(this: C, name: string, value: any): void
   'internal/update'(scope: EffectScope<C>, config: any): boolean | void
   'internal/inject'(this: C, name: string, key: symbol): boolean | string
   'internal/listener'(this: C, name: string, listener: any, prepend: boolean): void
-  'internal/event'(type: 'emit' | 'parallel' | 'serial' | 'bail', name: string, args: any[], thisArg: any): void
+  'internal/dispatch'(mode: DispatchMode, name: string, args: any[], thisArg: any): void
 }

@@ -28,7 +28,7 @@ class ReflectService {
     // Case 1: built-in services and special properties
     // - prototype: prototype detection
     // - then: async function return
-    if (['prototype', 'then', 'registry', 'events', 'reflect', 'scope'].includes(name)) return
+    if (['prototype', 'then'].includes(name)) return
     // Case 2: `$` or `_` prefix
     if (name[0] === '$' || name[0] === '_') return
     // Case 3: access directly from root
@@ -88,7 +88,7 @@ class ReflectService {
         if (!internal.set) return false
         return internal.set.call(ctx, value, ctx[symbols.receiver], error)
       } else {
-        // ctx.emit(ctx, 'internal/warning', new Error(`assigning to service ${name} is not recommended, please use \`ctx.set()\` method instead`))
+        // ctx.emit(ctx, 'internal/warn', new Error(`assigning to service ${name} is not recommended, please use \`ctx.set()\` method instead`))
         ctx.reflect.set(prop, value)
         return true
       }
@@ -144,7 +144,7 @@ class ReflectService {
       }, `ctx.set(${JSON.stringify(name)})`)
     }
     if (isUnproxyable(value)) {
-      ctx.emit(ctx, 'internal/warning', new Error(`service ${name} is an unproxyable object, which may lead to unexpected behavior`))
+      ctx.emit(ctx, 'internal/warn', new Error(`service ${name} is an unproxyable object, which may lead to unexpected behavior`))
     }
 
     // setup filter for events

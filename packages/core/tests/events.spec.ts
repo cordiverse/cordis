@@ -10,7 +10,7 @@ export function createArray<T>(length: number, create: (index: number) => T) {
 function setup() {
   const root = new Context()
   const warn = mock.fn()
-  root.on('internal/warning', warn)
+  root.on('internal/warn', warn)
   return { root, warn }
 }
 

@@ -64,17 +64,11 @@ class LoggerService extends Service<LoggerService.Intercept> {
 
     const defaultLogger = this.factory.createLogger('app')
 
-    ctx.on('internal/info', (format, ...args) => {
-      defaultLogger.info(format, ...args)
-    })
-
-    ctx.on('internal/error', (format, ...args) => {
-      defaultLogger.error(format, ...args)
-    })
-
-    ctx.on('internal/warning', (format, ...args) => {
-      defaultLogger.warn(format, ...args)
-    })
+    for (const level of ['error', 'info', 'warn'] as const) {
+      ctx.on(`internal/${level}`, (format, ...args) => {
+        defaultLogger[level](format, ...args)
+      })
+    }
 
     process.on('uncaughtException', (error) => {
       defaultLogger.error(error)
