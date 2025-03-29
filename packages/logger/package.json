@@ -1,5 +1,5 @@
 {
-  "name": "@cordisjs/logger",
+  "name": "@cordisjs/plugin-logger",
   "description": "Logger service for cordis",
   "version": "1.0.0-alpha.5",
   "type": "module",
@@ -33,10 +33,10 @@
     }
   },
   "devDependencies": {
-    "@cordisjs/core": "^4.0.0-alpha.8"
+    "cordis": "npm:@cordisjs/core@^4.0.0-alpha.8"
   },
   "peerDependencies": {
-    "@cordisjs/core": "^4.0.0-alpha.8"
+    "cordis": "^4.0.0-alpha.8"
   },
   "dependencies": {
     "cosmokit": "^1.8.0",

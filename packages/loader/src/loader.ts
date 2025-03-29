@@ -34,7 +34,7 @@ declare module '@cordisjs/core' {
     startTime?: number
   }
 
-  interface EffectScope<C extends Context> {
+  interface EffectScope<C> {
     entry?: Entry<C>
   }
 }

@@ -1,11 +1,11 @@
-import { Context, Service } from '@cordisjs/core'
+import { Context, Service } from 'cordis'
 import { hyphenate } from 'cosmokit'
 import { Exporter, Factory, Logger, Message, Type } from 'reggol'
 import z from 'schemastery'
 
 export * from 'reggol'
 
-declare module '@cordisjs/core' {
+declare module 'cordis' {
   interface Context {
     logger: LoggerService
   }

@@ -1,5 +1,5 @@
 {
-  "name": "@cordisjs/loader",
+  "name": "@cordisjs/plugin-loader",
   "description": "Loader for cordis",
   "version": "1.0.0-alpha.4",
   "type": "module",
@@ -39,10 +39,11 @@
     "@cordisjs/core": "^4.0.0-alpha.8",
     "@types/chai": "^5.2.0",
     "@types/js-yaml": "^4.0.9",
-    "chai": "^5.2.0"
+    "chai": "^5.2.0",
+    "cordis": "npm:@cordisjs/core@^4.0.0-alpha.8"
   },
   "peerDependencies": {
-    "@cordisjs/core": "^4.0.0-alpha.8"
+    "cordis": "^4.0.0-alpha.8"
   },
   "dependencies": {
     "cosmokit": "^1.8.0",

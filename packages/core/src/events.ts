@@ -125,7 +125,7 @@ class EventsService {
 
     this.on('internal/update', (scope: EffectScope, config) => {
       for (const acceptor of scope.acceptors) {
-        if (acceptor(scope, config)) return true
+        if (acceptor.call(scope, config)) return true
       }
       return deepEqual(scope.config, config)
     }, { global: true })

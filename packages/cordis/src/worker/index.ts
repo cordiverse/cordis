@@ -1,7 +1,7 @@
 // DO NOT change this import to `@cordisjs/core` as it is related to HMR semantics
 import { Context } from 'cordis'
-import Loader from '@cordisjs/loader'
-import Logger from '@cordisjs/logger'
+import Loader from '@cordisjs/plugin-loader'
+import Logger from '@cordisjs/plugin-logger'
 import * as daemon from './daemon.ts'
 
 export interface Options extends Loader.Config {
