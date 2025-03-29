@@ -10,7 +10,7 @@
   ],
   "license": "MIT",
   "scripts": {
-    "yakumo": "node --import tsx scripts/yakumo.js",
+    "yakumo": "yakumo --import tsx",
     "build": "yarn yakumo build",
     "lint": "eslint --cache",
     "test": "yarn yakumo mocha --import tsx",
@@ -30,10 +30,10 @@
     "shx": "^0.4.0",
     "tsx": "npm:@cordiverse/tsx@4.19.3-fix.3",
     "typescript": "^5.8.2",
-    "yakumo": "^2.0.0-alpha.3",
+    "yakumo": "^2.0.0-alpha.4",
     "yakumo-esbuild": "^2.0.0-alpha.2",
     "yakumo-mocha": "^2.0.0-alpha.2",
-    "yakumo-tsc": "^2.0.0-alpha.2",
+    "yakumo-tsc": "^2.0.0-alpha.3",
     "yml-register": "^1.2.5"
   }
 }
