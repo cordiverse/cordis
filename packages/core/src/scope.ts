@@ -48,6 +48,7 @@ export const enum ScopeStatus {
   ACTIVE,
   FAILED,
   DISPOSED,
+  UNLOADING,
 }
 
 export class CordisError extends Error {
@@ -78,7 +79,7 @@ export class EffectScope<out C extends Context = Context> {
   protected context: Context
 
   private _error: any
-  private _pending: Promise<void> | undefined
+  private _pending: [Promise<void>, boolean] | undefined
   private _runner: EffectRunner
   private _store: Dict | undefined
 
@@ -128,7 +129,7 @@ export class EffectScope<out C extends Context = Context> {
         const remove = runtime.scopes.push(this)
         try {
           this.config = resolveConfig(runtime, config)
-          this.active = true
+          this._setActive(true)
         } catch (error) {
           this.context.emit('internal/error', error)
           this._error = error
@@ -143,8 +144,8 @@ export class EffectScope<out C extends Context = Context> {
               this.ctx.registry.delete(runtime.callback)
             }
           }
-          this.active = false
-          await this._pending
+          this._setActive(false)
+          await this
         }
       }, 'ctx.plugin()')
     } else {
@@ -158,14 +159,10 @@ export class EffectScope<out C extends Context = Context> {
         collect,
       }
       this.dispose = async () => {
-        this.active = false
-        await this._pending
+        this._setActive(false)
+        await this._pending?.[0]
       }
     }
-  }
-
-  get pending() {
-    return this._pending
   }
 
   assertActive() {
@@ -291,7 +288,7 @@ export class EffectScope<out C extends Context = Context> {
   }
 
   private _getStatus() {
-    if (this._pending) return ScopeStatus.LOADING
+    if (this._pending) return this._pending[1] ? ScopeStatus.LOADING : ScopeStatus.UNLOADING
     if (this.uid === null) return ScopeStatus.DISPOSED
     if (this._error) return ScopeStatus.FAILED
     if (this._runner.isActive) return ScopeStatus.ACTIVE
@@ -319,7 +316,7 @@ export class EffectScope<out C extends Context = Context> {
       this._runner.isActive = false
     }
     this._updateStatus(() => {
-      this._pending = this._runner.isActive ? undefined : this._unload()
+      this._pending = this._runner.isActive ? undefined : [this._unload(), false]
     })
   }
 
@@ -337,7 +334,7 @@ export class EffectScope<out C extends Context = Context> {
     }))
     this.store = undefined
     this._updateStatus(() => {
-      this._pending = this._runner.isActive ? this._reload() : undefined
+      this._pending = this._runner.isActive ? [this._reload(), true] : undefined
     })
   }
 
@@ -359,24 +356,20 @@ export class EffectScope<out C extends Context = Context> {
     }
   }
 
-  get active() {
-    return this._runner.isActive
-  }
-
-  set active(value) {
+  _setActive(value: boolean) {
     if (value === this._runner.isActive) return
     if (value && (!this.uid || !this._getStore())) return
     this._updateStatus(() => {
       if (!this._pending && value !== this._runner.isActive) {
-        this._pending = value ? this._reload() : this._unload()
+        this._pending = [value ? this._reload() : this._unload(), value]
       }
       this._runner.isActive = value
     })
   }
 
   private async _await() {
-    while (this.pending) {
-      await this.pending
+    while (this._pending) {
+      await this._pending?.[0]
     }
     if (this._error) throw this._error
   }
@@ -386,8 +379,8 @@ export class EffectScope<out C extends Context = Context> {
   }
 
   async restart() {
-    this.active = false
-    this.active = true
+    this._setActive(false)
+    this._setActive(true)
   }
 
   update(config: any) {
@@ -397,7 +390,7 @@ export class EffectScope<out C extends Context = Context> {
     } catch (error) {
       this.context.emit('internal/error', error)
       this._error = error
-      this.active = false
+      this._setActive(false)
       return
     }
     this._error = undefined

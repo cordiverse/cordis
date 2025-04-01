@@ -80,7 +80,7 @@ class EventsService {
         for (const scope of runtime.scopes) {
           if (!scope.inject[name]?.required) continue
           if (!this[symbols.filter](scope.ctx)) continue
-          scope.active = false
+          scope._setActive(false)
         }
       }
     }, { global: true })
@@ -90,7 +90,7 @@ class EventsService {
         for (const scope of runtime.scopes) {
           if (!scope.inject[name]?.required) continue
           if (!this[symbols.filter](scope.ctx)) continue
-          scope.active = true
+          scope._setActive(true)
         }
       }
     }, { global: true })

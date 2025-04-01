@@ -19,7 +19,7 @@ describe('Decorator', () => {
         super(ctx, 'bar')
       }
 
-      @Inject(['foo'])
+      @Inject('foo')
       method() {
         callback()
         this.ctx.effect(() => dispose)
