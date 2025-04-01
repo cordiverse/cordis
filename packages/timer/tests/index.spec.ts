@@ -4,7 +4,7 @@ import { Context } from 'cordis'
 import assert from 'node:assert'
 import Timer from '../src/index.js'
 
-function withContext(callback: (ctx: Context, clock: InstalledClock) => Promise<void>, config?: FakeTimerInstallOpts) {
+function withContext(callback: (ctx: Context, clock: InstalledClock) => any, config?: FakeTimerInstallOpts) {
   return async () => {
     const ctx = new Context()
     const clock = install(config)
@@ -20,7 +20,7 @@ function withContext(callback: (ctx: Context, clock: InstalledClock) => Promise<
 describe('ctx.setTimeout()', () => {
   it('basic support', withContext(async (ctx, clock) => {
     const callback = mock.fn()
-    ctx.setTimeout(callback, 1000)
+    ctx.timeout(callback, 1000)
     assert.strictEqual(callback.mock.calls.length, 0)
     await clock.tickAsync(1000)
     assert.strictEqual(callback.mock.calls.length, 1)
@@ -30,34 +30,17 @@ describe('ctx.setTimeout()', () => {
 
   it('dispose', withContext(async (ctx, clock) => {
     const callback = mock.fn()
-    const dispose = ctx.setTimeout(callback, 1000)
+    const dispose = ctx.timeout(callback, 1000)
     assert.strictEqual(callback.mock.calls.length, 0)
     dispose()
     await clock.tickAsync(2000)
     assert.strictEqual(callback.mock.calls.length, 0)
   }))
-})
 
-describe('ctx.setInterval()', () => {
-  it('basic support', withContext(async (ctx, clock) => {
-    const callback = mock.fn()
-    const dispose = ctx.setInterval(callback, 1000)
-    assert.strictEqual(callback.mock.calls.length, 0)
-    await clock.tickAsync(1000)
-    assert.strictEqual(callback.mock.calls.length, 1)
-    await clock.tickAsync(1000)
-    assert.strictEqual(callback.mock.calls.length, 2)
-    dispose()
-    await clock.tickAsync(2000)
-    assert.strictEqual(callback.mock.calls.length, 2)
-  }))
-})
-
-describe('ctx.sleep()', () => {
-  it('basic support', withContext(async (ctx, clock) => {
+  it('without callback', withContext(async (ctx, clock) => {
     const resolve = mock.fn()
     const reject = mock.fn()
-    ctx.sleep(1000).then(resolve, reject)
+    ctx.timeout(1000).then(resolve, reject)
     await clock.tickAsync(500)
     assert.strictEqual(resolve.mock.calls.length, 0)
     assert.strictEqual(reject.mock.calls.length, 0)
@@ -68,6 +51,69 @@ describe('ctx.sleep()', () => {
     await clock.tickAsync(2000)
     assert.strictEqual(resolve.mock.calls.length, 1)
     assert.strictEqual(reject.mock.calls.length, 0)
+  }))
+})
+
+describe('ctx.setInterval()', () => {
+  it('basic support', withContext(async (ctx, clock) => {
+    const callback = mock.fn()
+    const dispose = ctx.interval(callback, 1000)
+    assert.strictEqual(callback.mock.calls.length, 0)
+    await clock.tickAsync(1000)
+    assert.strictEqual(callback.mock.calls.length, 1)
+    await clock.tickAsync(1000)
+    assert.strictEqual(callback.mock.calls.length, 2)
+    dispose()
+    await clock.tickAsync(2000)
+    assert.strictEqual(callback.mock.calls.length, 2)
+  }))
+
+  it('without callback (manual dispose)', withContext(async (ctx, clock) => {
+    const callback = mock.fn()
+    const iterator = ctx.interval(1000)
+    async function iterate() {
+      for await (const _ of iterator) {
+        callback()
+      }
+    }
+    const resolve = mock.fn()
+    const reject = mock.fn()
+    iterate().then(resolve, reject)
+    assert.strictEqual(callback.mock.calls.length, 0)
+    await clock.tickAsync(1000)
+    assert.strictEqual(callback.mock.calls.length, 1)
+    await clock.tickAsync(1000)
+    assert.strictEqual(callback.mock.calls.length, 2)
+    iterator.return!()
+    await clock.tickAsync(1000)
+    assert.strictEqual(callback.mock.calls.length, 2)
+    assert.strictEqual(resolve.mock.calls.length, 1)
+    assert.strictEqual(reject.mock.calls.length, 0)
+  }))
+
+  it('without callback (context dispose)', withContext(async function* (ctx, clock) {
+    const callback = mock.fn()
+    const iterator = ctx.interval(1000)
+    async function iterate() {
+      for await (const _ of iterator) {
+        callback()
+      }
+    }
+    const resolve = mock.fn()
+    const reject = mock.fn()
+    iterate().then(resolve, reject)
+    assert.strictEqual(callback.mock.calls.length, 0)
+    await clock.tickAsync(1000)
+    assert.strictEqual(callback.mock.calls.length, 1)
+    await clock.tickAsync(1000)
+    assert.strictEqual(callback.mock.calls.length, 2)
+    ctx.fiber.dispose()
+    yield async () => {
+      await clock.tickAsync(1000)
+      assert.strictEqual(callback.mock.calls.length, 2)
+      assert.strictEqual(resolve.mock.calls.length, 0)
+      assert.strictEqual(reject.mock.calls.length, 1)
+    }
   }))
 })
 
