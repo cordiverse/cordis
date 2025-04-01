@@ -64,7 +64,7 @@ describe('ctx.sleep()', () => {
     await clock.tickAsync(500)
     assert.strictEqual(resolve.mock.calls.length, 1)
     assert.strictEqual(reject.mock.calls.length, 0)
-    ctx.scope.dispose()
+    ctx.fiber.dispose()
     await clock.tickAsync(2000)
     assert.strictEqual(resolve.mock.calls.length, 1)
     assert.strictEqual(reject.mock.calls.length, 0)

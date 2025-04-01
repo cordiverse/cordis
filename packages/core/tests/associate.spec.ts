@@ -19,12 +19,12 @@ describe('Association', () => {
     }
 
     await root.plugin(Foo)
-    const scope = root.plugin(FooBar)
-    await scope
+    const fiber = root.plugin(FooBar)
+    await fiber
     expect(root.foo).to.be.instanceof(Foo)
     expect(root.foo.bar).to.be.instanceof(FooBar)
     expect(root.foo.qux).to.equal(1)
-    await scope.dispose()
+    await fiber.dispose()
     expect(root.foo.bar).to.be.undefined
   })
 

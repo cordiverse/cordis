@@ -34,7 +34,7 @@ declare module '@cordisjs/core' {
     startTime?: number
   }
 
-  interface EffectScope<C> {
+  interface Fiber<C> {
     entry?: Entry<C>
   }
 }
@@ -69,49 +69,49 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
 
     ctx.set('loader', this)
 
-    ctx.on('internal/update', (scope, config) => {
-      if (!scope.entry) return
-      this.showLog(scope.entry, 'reload')
+    ctx.on('internal/update', (fiber, config) => {
+      if (!fiber.entry) return
+      this.showLog(fiber.entry, 'reload')
     }, { global: true })
 
-    ctx.on('internal/update', (scope, config) => {
-      if (!scope.entry) return
-      if (scope.entry.suspend) return scope.entry.suspend = false
-      const unparse = scope.runtime?.Config?.['simplify']
-      scope.entry.options.config = unparse ? unparse(config) : config
-      scope.entry.parent.tree.write()
+    ctx.on('internal/update', (fiber, config) => {
+      if (!fiber.entry) return
+      if (fiber.entry.suspend) return fiber.entry.suspend = false
+      const unparse = fiber.runtime?.Config?.['simplify']
+      fiber.entry.options.config = unparse ? unparse(config) : config
+      fiber.entry.parent.tree.write()
     }, { global: true, prepend: true })
 
-    ctx.on('internal/plugin', (scope) => {
-      // 1. set `scope.entry`
-      if (scope.parent[Entry.key] && !scope.entry) {
-        scope.entry = scope.parent[Entry.key]
+    ctx.on('internal/plugin', (fiber) => {
+      // 1. set `fiber.entry`
+      if (fiber.parent[Entry.key] && !fiber.entry) {
+        fiber.entry = fiber.parent[Entry.key]
         // FIXME merge config
-        Inject.resolve(scope.entry!.options.inject, scope.inject)
+        Inject.resolve(fiber.entry!.options.inject, fiber.inject)
       }
 
       // 2. handle self-dispose
-      // We only care about `ctx.scope.dispose()`, so we need to filter out other cases.
+      // We only care about `ctx.fiber.dispose()`, so we need to filter out other cases.
 
-      // case 1: scope is created
-      if (scope.uid) return
+      // case 1: fiber is created
+      if (fiber.uid) return
 
-      // case 2: scope is not tracked by loader
-      if (!scope.entry) return
+      // case 2: fiber is not tracked by loader
+      if (!fiber.entry) return
 
-      // case 3: scope is disposed on behalf of plugin deletion (such as plugin hmr)
-      // self-dispose: ctx.scope.dispose() -> scope / runtime dispose -> delete(plugin)
-      // plugin hmr: delete(plugin) -> runtime dispose -> scope dispose
-      if (!ctx.registry.has(scope.runtime!.callback)) return
+      // case 3: fiber is disposed on behalf of plugin deletion (such as plugin hmr)
+      // self-dispose: ctx.fiber.dispose() -> fiber / runtime dispose -> delete(plugin)
+      // plugin hmr: delete(plugin) -> runtime dispose -> fiber dispose
+      if (!ctx.registry.has(fiber.runtime!.callback)) return
 
-      this.showLog(scope.entry, 'unload')
+      this.showLog(fiber.entry, 'unload')
 
-      // case 4: scope is disposed by loader behavior
+      // case 4: fiber is disposed by loader behavior
       // such as inject checker, config file update, ancestor group disable
-      if (!scope.entry.check()) return
+      if (!fiber.entry.check()) return
 
-      scope.entry.options.disabled = true
-      scope.entry.parent.tree.write()
+      fiber.entry.options.disabled = true
+      fiber.entry.parent.tree.write()
     })
 
     ctx.plugin(inject)
@@ -129,12 +129,12 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
   }
 
   locate(ctx = this.ctx) {
-    let scope = ctx.scope
+    let fiber = ctx.fiber
     while (1) {
-      if (scope.entry) return scope.entry.id
-      const next = scope.parent.scope
-      if (scope === next) return
-      scope = next
+      if (fiber.entry) return fiber.entry.id
+      const next = fiber.parent.fiber
+      if (fiber === next) return
+      fiber = next
     }
   }
 

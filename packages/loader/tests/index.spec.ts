@@ -68,7 +68,7 @@ describe('loader: basic support', () => {
   })
 
   it('plugin self-update', async () => {
-    loader.expectScope('1').update({ a: 3 })
+    loader.expectFiber('1').update({ a: 3 })
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(loader.file.data).to.deep.equal([{
       id: '1',
@@ -81,7 +81,7 @@ describe('loader: basic support', () => {
   })
 
   it('plugin self-dispose', async () => {
-    loader.expectScope('1').dispose()
+    loader.expectFiber('1').dispose()
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(loader.file.data).to.deep.equal([{
       id: '1',

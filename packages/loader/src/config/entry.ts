@@ -1,4 +1,4 @@
-import { Context, EffectScope } from '@cordisjs/core'
+import { Context, Fiber } from '@cordisjs/core'
 import { isNullable } from 'cosmokit'
 import { Loader } from '../loader.ts'
 import { EntryGroup } from './group.ts'
@@ -34,7 +34,7 @@ export class Entry<C extends Context = Context> {
   static readonly key = Symbol.for('cordis.entry')
 
   public ctx: C
-  public scope?: EffectScope<C>
+  public fiber?: Fiber<C>
   public suspend = false
   public parent!: EntryGroup<C>
   public options!: EntryOptions
@@ -54,8 +54,8 @@ export class Entry<C extends Context = Context> {
 
   get id() {
     let id = this.options.id
-    if (this.parent.tree.ctx.scope.entry) {
-      id = this.parent.tree.ctx.scope.entry.id + EntryTree.sep + id
+    if (this.parent.tree.ctx.fiber.entry) {
+      id = this.parent.tree.ctx.fiber.entry.id + EntryTree.sep + id
     }
     return id
   }
@@ -66,7 +66,7 @@ export class Entry<C extends Context = Context> {
     let entry: Entry | undefined = this
     do {
       if (entry.options.disabled) return true
-      entry = entry.parent.ctx.scope.entry
+      entry = entry.parent.ctx.fiber.entry
     } while (entry)
     return false
   }
@@ -85,10 +85,10 @@ export class Entry<C extends Context = Context> {
       // step 1: set prototype for transferred context
       Object.setPrototypeOf(this.ctx, this.parent.ctx)
 
-      if (this.scope && 'config' in options) {
+      if (this.fiber && 'config' in options) {
         // step 2: update fork (when options.config is updated)
         this.suspend = true
-        this.scope.update(this._resolveConfig(this.scope.runtime?.callback))
+        this.fiber.update(this._resolveConfig(this.fiber.runtime?.callback))
       } else if (this.subgroup && 'disabled' in options) {
         // step 3: check children (when options.disabled is updated)
         const tree = this.subtree ?? this.parent.tree
@@ -106,7 +106,7 @@ export class Entry<C extends Context = Context> {
   }
 
   async refresh() {
-    if (this.scope) return
+    if (this.fiber) return
     if (!this.check()) return
     await (this._initTask ??= this._init())
   }
@@ -131,11 +131,11 @@ export class Entry<C extends Context = Context> {
     // step 2: execute
     // this._check() is only a init-time optimization
     if (this.disabled) {
-      this.scope?.dispose()
+      this.fiber?.dispose()
       return
     }
 
-    if (this.scope?.uid) {
+    if (this.fiber?.uid) {
       this.context.emit('loader/partial-dispose', this, legacy, true)
       this._patchContext(options)
     } else {
@@ -149,7 +149,7 @@ export class Entry<C extends Context = Context> {
     const result: string[] = []
     do {
       result.push(`    at ${entry.parent.tree.url}#${entry.options.id}`)
-      entry = entry.parent.ctx.scope.entry
+      entry = entry.parent.ctx.fiber.entry
     } while (entry)
     return result
   }
@@ -165,7 +165,7 @@ export class Entry<C extends Context = Context> {
     const plugin = this.loader.unwrapExports(exports)
     this._patchContext()
     this.loader.showLog(this, 'apply')
-    this.scope = this.ctx.registry.plugin(plugin, this._resolveConfig(plugin), this.getOuterStack)
+    this.fiber = this.ctx.registry.plugin(plugin, this._resolveConfig(plugin), this.getOuterStack)
     this._initTask = undefined
   }
 }

@@ -285,10 +285,10 @@ class HMR extends Service {
 
     const reload = (plugin: any, runtime: Plugin.Runtime) => {
       if (!runtime) return
-      for (const oldFiber of runtime.scopes) {
-        const scope = oldFiber.parent.registry.plugin(plugin, oldFiber.config, this.getOuterStack)
-        scope.entry = oldFiber.entry
-        if (scope.entry) scope.entry.scope = scope
+      for (const oldFiber of runtime.fibers) {
+        const fiber = oldFiber.parent.registry.plugin(plugin, oldFiber.config, this.getOuterStack)
+        fiber.entry = oldFiber.entry
+        if (fiber.entry) fiber.entry.fiber = fiber
       }
     }
 

@@ -8,7 +8,7 @@ export class EntryGroup<C extends Context = Context> {
   public data: EntryOptions[] = []
 
   constructor(public ctx: C, public tree: EntryTree<C>) {
-    const entry = ctx.scope.entry
+    const entry = ctx.fiber.entry
     if (entry) entry.subgroup = this
   }
 
@@ -35,7 +35,7 @@ export class EntryGroup<C extends Context = Context> {
   remove(id: string) {
     const entry = this.tree.store[id]
     if (!entry) return
-    entry.scope?.dispose()
+    entry.fiber?.dispose()
     this.unlink(entry.options)
     delete this.tree.store[id]
     this.context.emit('loader/partial-dispose', entry, entry.options, false)
@@ -72,7 +72,7 @@ export class Group extends EntryGroup {
   static readonly [EntryGroup.key] = true
 
   constructor(public ctx: Context, public config: EntryOptions[]) {
-    super(ctx, ctx.scope.entry!.parent.tree)
+    super(ctx, ctx.fiber.entry!.parent.tree)
     ctx.on('internal/update', (_, config) => {
       this.update(config)
       return true

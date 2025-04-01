@@ -1,5 +1,5 @@
 import { Dict } from 'cosmokit'
-import { Context, EffectScope, Plugin } from '@cordisjs/core'
+import { Context, Fiber, Plugin } from '@cordisjs/core'
 import { EntryOptions, Group, Loader, LoaderFile } from '../src'
 import { Mock, mock } from 'node:test'
 import { expect } from 'chai'
@@ -9,7 +9,7 @@ declare module '../src' {
     mock<F extends Function>(name: string, plugin: F): Mock<F>
     expectEnable(plugin: any, config?: any): void
     expectDisable(plugin: any): void
-    expectScope(id: string): EffectScope
+    expectFiber(id: string): Fiber
   }
 }
 
@@ -67,8 +67,8 @@ export default class MockLoader<C extends Context = Context> extends Loader<C> {
     expect(runtime).to.be.not.ok
   }
 
-  expectScope(id: string) {
-    expect(this.store[id]?.scope).to.be.ok
-    return this.store[id]!.scope!
+  expectFiber(id: string) {
+    expect(this.store[id]?.fiber).to.be.ok
+    return this.store[id]!.fiber!
   }
 }

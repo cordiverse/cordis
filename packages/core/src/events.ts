@@ -1,6 +1,6 @@
 import { deepEqual, defineProperty, Promisify } from 'cosmokit'
 import { Context } from './context'
-import { EffectScope, ScopeStatus } from './scope'
+import { Fiber, FiberState } from './fiber'
 import { symbols } from './utils'
 
 export function isBailed(value: any) {
@@ -61,9 +61,9 @@ class EventsService {
         return () => false
       } else if (name === 'dispose') {
         defineProperty(listener, 'name', 'event <dispose>')
-        return this.scope.disposables.push(listener)
+        return this.fiber.disposables.push(listener)
       } else if (name === 'internal/update' && !options.global) {
-        return this.scope.acceptors.push(listener)
+        return this.fiber.acceptors.push(listener)
       }
     })
 
@@ -77,29 +77,29 @@ class EventsService {
 
     this.on('internal/before-service', function (this: Context, name) {
       for (const runtime of this.registry.values()) {
-        for (const scope of runtime.scopes) {
-          if (!scope.inject[name]?.required) continue
-          if (!this[symbols.filter](scope.ctx)) continue
-          scope._setActive(false)
+        for (const fiber of runtime.fibers) {
+          if (!fiber.inject[name]?.required) continue
+          if (!this[symbols.filter](fiber.ctx)) continue
+          fiber._setState(false)
         }
       }
     }, { global: true })
 
     this.on('internal/service', function (this: Context, name) {
       for (const runtime of this.registry.values()) {
-        for (const scope of runtime.scopes) {
-          if (!scope.inject[name]?.required) continue
-          if (!this[symbols.filter](scope.ctx)) continue
-          scope._setActive(true)
+        for (const fiber of runtime.fibers) {
+          if (!fiber.inject[name]?.required) continue
+          if (!this[symbols.filter](fiber.ctx)) continue
+          fiber._setState(true)
         }
       }
     }, { global: true })
 
-    this.on('internal/status', function (scope: EffectScope) {
-      if (scope.status !== ScopeStatus.ACTIVE) return
+    this.on('internal/status', function (fiber: Fiber) {
+      if (fiber.state !== FiberState.ACTIVE) return
       for (const key of Reflect.ownKeys(ctx[symbols.store])) {
         const item = ctx[symbols.store][key as symbol]
-        if (item.source.scope !== scope) continue
+        if (item.source.fiber !== fiber) continue
         if (item.value) {
           item.source.emit(item.source, 'internal/service', item.name, item.value)
         }
@@ -107,27 +107,27 @@ class EventsService {
     }, { global: true })
 
     this.on('internal/inject', function (this: Context, name: string, key: symbol) {
-      const provider = this[symbols.store][key]?.source.scope
-      let scope = this.scope
+      const provider = this[symbols.store][key]?.source.fiber
+      let fiber = this.fiber
       while (true) {
-        if (scope === provider) return true
-        const inject = scope.inject[name]
+        if (fiber === provider) return true
+        const inject = fiber.inject[name]
         if (inject) {
-          if (!inject.required || scope.store) return true
+          if (!inject.required || fiber.store) return true
           return `cannot get required service "${name}" in inactive context`
         }
-        if (!scope.runtime) break
-        if (scope.parent[symbols.isolate][name] !== key) break
-        scope = scope.parent.scope
+        if (!fiber.runtime) break
+        if (fiber.parent[symbols.isolate][name] !== key) break
+        fiber = fiber.parent.fiber
       }
       return false
     }, { global: true })
 
-    this.on('internal/update', (scope: EffectScope, config) => {
-      for (const acceptor of scope.acceptors) {
-        if (acceptor.call(scope, config)) return true
+    this.on('internal/update', (fiber: Fiber, config) => {
+      for (const acceptor of fiber.acceptors) {
+        if (acceptor.call(fiber, config)) return true
       }
-      return deepEqual(scope.config, config)
+      return deepEqual(fiber.config, config)
     }, { global: true })
   }
 
@@ -178,7 +178,7 @@ class EventsService {
 
   register(label: string, hooks: Hook[], callback: any, options: EventOptions): () => void {
     const method = options.prepend ? 'unshift' : 'push'
-    return this.ctx.scope.effect(() => {
+    return this.ctx.fiber.effect(() => {
       hooks[method]({ ctx: this.ctx, callback, ...options })
       return () => this.unregister(hooks, callback)
     }, label)
@@ -198,7 +198,7 @@ class EventsService {
     }
 
     // handle special events
-    this.ctx.scope.assertActive()
+    this.ctx.fiber.assertActive()
     listener = this.ctx.reflect.bind(listener)
     const result = this.bail(this.ctx, 'internal/listener', name, listener, options)
     if (result) return result
@@ -220,14 +220,14 @@ class EventsService {
 export default EventsService
 
 export interface Events<in C extends Context = Context> {
-  'internal/plugin'(scope: EffectScope<C>): void
-  'internal/status'(scope: EffectScope<C>, oldValue: ScopeStatus): void
+  'internal/plugin'(fiber: Fiber<C>): void
+  'internal/status'(fiber: Fiber<C>, oldValue: FiberState): void
   'internal/info'(this: C, format: any, ...param: any[]): void
   'internal/error'(this: C, format: any, ...param: any[]): void
   'internal/warn'(this: C, format: any, ...param: any[]): void
   'internal/before-service'(this: C, name: string, value: any): void
   'internal/service'(this: C, name: string, value: any): void
-  'internal/update'(scope: EffectScope<C>, config: any): boolean | void
+  'internal/update'(fiber: Fiber<C>, config: any): boolean | void
   'internal/inject'(this: C, name: string, key: symbol): boolean | string
   'internal/listener'(this: C, name: string, listener: any, prepend: boolean): void
   'internal/dispatch'(mode: DispatchMode, name: string, args: any[], thisArg: any): void

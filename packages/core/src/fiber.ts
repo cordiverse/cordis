@@ -1,11 +1,11 @@
 import { Awaitable, defineProperty, Dict, isNullable } from 'cosmokit'
-import { Context } from './context'
-import { Inject, Plugin, resolveConfig } from './registry'
-import { buildOuterStack, composeError, DisposableList, isConstructor, isObject, symbols } from './utils'
+import { Context } from './context.js'
+import { Inject, Plugin, resolveConfig } from './registry.js'
+import { buildOuterStack, composeError, DisposableList, isConstructor, isObject, symbols } from './utils.js'
 
 declare module './context' {
   export interface Context {
-    scope: EffectScope<this>
+    fiber: Fiber<this>
     effect(execute: () => SyncEffect, label?: string): Disposable<void | Promise<void>>
     effect(execute: () => AsyncEffect, label?: string): AsyncDisposable<Promise<void>>
     effect(execute: () => Effect, label?: string): AsyncDisposable<void | Promise<void>>
@@ -42,7 +42,7 @@ interface EffectRunner {
   getOuterStack: () => string[]
 }
 
-export const enum ScopeStatus {
+export const enum FiberState {
   PENDING,
   LOADING,
   ACTIVE,
@@ -65,13 +65,13 @@ export namespace CordisError {
   } as const
 }
 
-export class EffectScope<out C extends Context = Context> {
+export class Fiber<out C extends Context = Context> {
   public uid: number | null
   public ctx: C
   public config: any
   public acceptors = new DisposableList<(config: any) => boolean>()
   public disposables = new DisposableList<Disposable>()
-  public status = ScopeStatus.PENDING
+  public state = FiberState.PENDING
   public dispose: () => Promise<void>
   public store: Dict | undefined
 
@@ -96,7 +96,7 @@ export class EffectScope<out C extends Context = Context> {
 
     if (runtime) {
       this.uid = parent.registry.counter
-      this.ctx = this.context = parent.extend({ scope: this })
+      this.ctx = this.context = parent.extend({ fiber: this })
 
       const injectEntries = Object.entries(this.inject)
       if (injectEntries.length) {
@@ -125,11 +125,11 @@ export class EffectScope<out C extends Context = Context> {
         collect,
       }
 
-      this.dispose = parent.scope.effect(() => {
-        const remove = runtime.scopes.push(this)
+      this.dispose = parent.fiber.effect(() => {
+        const remove = runtime.fibers.push(this)
         try {
           this.config = resolveConfig(runtime, config)
-          this._setActive(true)
+          this._setState(true)
         } catch (error) {
           this.context.emit('internal/error', error)
           this._error = error
@@ -140,18 +140,18 @@ export class EffectScope<out C extends Context = Context> {
           this.context.emit('internal/plugin', this)
           if (this.ctx.registry.has(runtime.callback)) {
             remove()
-            if (!runtime.scopes.length) {
+            if (!runtime.fibers.length) {
               this.ctx.registry.delete(runtime.callback)
             }
           }
-          this._setActive(false)
+          this._setState(false)
           await this
         }
       }, 'ctx.plugin()')
     } else {
       this.uid = 0
       this.ctx = this.context = parent
-      this.status = ScopeStatus.ACTIVE
+      this.state = FiberState.ACTIVE
       this._runner = {
         isActive: true,
         getOuterStack,
@@ -159,10 +159,15 @@ export class EffectScope<out C extends Context = Context> {
         collect,
       }
       this.dispose = async () => {
-        this._setActive(false)
+        this._setState(false)
         await this._pending?.[0]
       }
     }
+  }
+
+  /** @deprecated use `state` */
+  get status() {
+    return this.state
   }
 
   assertActive() {
@@ -288,18 +293,18 @@ export class EffectScope<out C extends Context = Context> {
   }
 
   private _getStatus() {
-    if (this._pending) return this._pending[1] ? ScopeStatus.LOADING : ScopeStatus.UNLOADING
-    if (this.uid === null) return ScopeStatus.DISPOSED
-    if (this._error) return ScopeStatus.FAILED
-    if (this._runner.isActive) return ScopeStatus.ACTIVE
-    return ScopeStatus.PENDING
+    if (this._pending) return this._pending[1] ? FiberState.LOADING : FiberState.UNLOADING
+    if (this.uid === null) return FiberState.DISPOSED
+    if (this._error) return FiberState.FAILED
+    if (this._runner.isActive) return FiberState.ACTIVE
+    return FiberState.PENDING
   }
 
-  private _updateStatus(callback: () => void) {
-    const oldValue = this.status
+  private _updateState(callback: () => void) {
+    const oldValue = this.state
     callback()
-    this.status = this._getStatus()
-    if (oldValue !== this.status) {
+    this.state = this._getStatus()
+    if (oldValue !== this.state) {
       this.context.emit('internal/status', this, oldValue)
     }
   }
@@ -315,7 +320,7 @@ export class EffectScope<out C extends Context = Context> {
       this._error = reason
       this._runner.isActive = false
     }
-    this._updateStatus(() => {
+    this._updateState(() => {
       this._pending = this._runner.isActive ? undefined : [this._unload(), false]
     })
   }
@@ -333,7 +338,7 @@ export class EffectScope<out C extends Context = Context> {
       }
     }))
     this.store = undefined
-    this._updateStatus(() => {
+    this._updateState(() => {
       this._pending = this._runner.isActive ? [this._reload(), true] : undefined
     })
   }
@@ -356,10 +361,10 @@ export class EffectScope<out C extends Context = Context> {
     }
   }
 
-  _setActive(value: boolean) {
+  _setState(value: boolean) {
     if (value === this._runner.isActive) return
     if (value && (!this.uid || !this._getStore())) return
-    this._updateStatus(() => {
+    this._updateState(() => {
       if (!this._pending && value !== this._runner.isActive) {
         this._pending = [value ? this._reload() : this._unload(), value]
       }
@@ -379,8 +384,8 @@ export class EffectScope<out C extends Context = Context> {
   }
 
   async restart() {
-    this._setActive(false)
-    this._setActive(true)
+    this._setState(false)
+    this._setState(true)
   }
 
   update(config: any) {
@@ -390,7 +395,7 @@ export class EffectScope<out C extends Context = Context> {
     } catch (error) {
       this.context.emit('internal/error', error)
       this._error = error
-      this._setActive(false)
+      this._setState(false)
       return
     }
     this._error = undefined

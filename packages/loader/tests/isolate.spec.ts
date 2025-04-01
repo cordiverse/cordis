@@ -1,6 +1,6 @@
 import { Mock, mock } from 'node:test'
 import { expect } from 'chai'
-import { Context, ScopeStatus, Service } from '@cordisjs/core'
+import { Context, FiberState, Service } from '@cordisjs/core'
 import MockLoader from './utils'
 
 describe('service isolation: basic', () => {
@@ -193,7 +193,7 @@ describe('service isolation: realm', () => {
     })
 
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(root.registry.get(bar)?.scopes).to.have.length(2)
+    expect(root.registry.get(bar)?.fibers).to.have.length(2)
     expect(foo.mock.calls).to.have.length(0)
     expect(dispose.mock.calls).to.have.length(0)
   })
@@ -206,7 +206,7 @@ describe('service isolation: realm', () => {
     })
 
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(root.registry.get(bar)?.scopes).to.have.length(2)
+    expect(root.registry.get(bar)?.fibers).to.have.length(2)
     expect(foo.mock.calls).to.have.length(0)
     expect(dispose.mock.calls).to.have.length(0)
   })
@@ -237,15 +237,15 @@ describe('service isolation: realm', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(foo.mock.calls).to.have.length(2)
     expect(dispose.mock.calls).to.have.length(0)
-    const fork1 = loader.expectScope(nested1)
-    expect(fork1.ctx.get('bar')!.value).to.equal('alpha')
-    expect(fork1.status).to.equal(ScopeStatus.ACTIVE)
-    const fork2 = loader.expectScope(nested2)
-    expect(fork2.ctx.get('bar')!.value).to.equal('beta')
-    expect(fork2.status).to.equal(ScopeStatus.ACTIVE)
-    const fork3 = loader.expectScope(nested3)
-    expect(fork3.ctx.get('bar')).to.be.undefined
-    expect(fork3.status).to.equal(ScopeStatus.PENDING)
+    const fiber1 = loader.expectFiber(nested1)
+    expect(fiber1.ctx.get('bar')!.value).to.equal('alpha')
+    expect(fiber1.state).to.equal(FiberState.ACTIVE)
+    const fiber2 = loader.expectFiber(nested2)
+    expect(fiber2.ctx.get('bar')!.value).to.equal('beta')
+    expect(fiber2.state).to.equal(FiberState.ACTIVE)
+    const fiber3 = loader.expectFiber(nested3)
+    expect(fiber3.ctx.get('bar')).to.be.undefined
+    expect(fiber3.state).to.equal(FiberState.PENDING)
   })
 
   it('special case: nested realms', async () => {
@@ -293,10 +293,10 @@ describe('service isolation: realm', () => {
     }, inner)
 
     await new Promise((resolve) => setTimeout(resolve, 0))
-    const fork1 = loader.expectScope(alpha)
-    const fork2 = loader.expectScope(beta)
-    expect(fork1.ctx.get('bar')!.value).to.equal('custom')
-    expect(fork2.ctx.get('bar')!.value).to.equal('custom')
+    const fiber1 = loader.expectFiber(alpha)
+    const fiber2 = loader.expectFiber(beta)
+    expect(fiber1.ctx.get('bar')!.value).to.equal('custom')
+    expect(fiber2.ctx.get('bar')!.value).to.equal('custom')
 
     foo.mock.resetCalls()
     dispose.mock.resetCalls()
@@ -369,8 +369,8 @@ describe('service isolation: realm', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(foo.mock.calls).to.have.length(1)
     expect(dispose.mock.calls).to.have.length(0)
-    const fork = loader.expectScope(id)
-    expect(fork.ctx.get('bar')!.value).to.equal('alpha')
+    const fiber = loader.expectFiber(id)
+    expect(fiber.ctx.get('bar')!.value).to.equal('alpha')
 
     foo.mock.resetCalls()
     dispose.mock.resetCalls()
@@ -384,7 +384,7 @@ describe('service isolation: realm', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(foo.mock.calls).to.have.length(1)
     expect(dispose.mock.calls).to.have.length(1)
-    expect(fork.ctx.get('bar')!.value).to.equal('beta')
+    expect(fiber.ctx.get('bar')!.value).to.equal('beta')
   })
 
   it('special case: change injector', async () => {
@@ -428,14 +428,14 @@ describe('service isolation: realm', () => {
       name: 'bar',
     }, group)
 
-    await loader.expectScope(inner)
+    await loader.expectFiber(inner)
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(foo.mock.calls).to.have.length(1)
     expect(dispose.mock.calls).to.have.length(0)
-    const fork1 = loader.expectScope(alpha)
-    expect(fork1.ctx.get('bar')).to.be.ok
-    const fork2 = loader.expectScope(beta)
-    expect(fork2.ctx.get('bar')).to.be.undefined
+    const fiber1 = loader.expectFiber(alpha)
+    expect(fiber1.ctx.get('bar')).to.be.ok
+    const fiber2 = loader.expectFiber(beta)
+    expect(fiber2.ctx.get('bar')).to.be.undefined
 
     foo.mock.resetCalls()
     dispose.mock.resetCalls()
@@ -449,8 +449,8 @@ describe('service isolation: realm', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(foo.mock.calls).to.have.length(1)
     expect(dispose.mock.calls).to.have.length(1)
-    expect(fork1.ctx.get('bar')).to.be.undefined
-    expect(fork2.ctx.get('bar')).to.be.ok
+    expect(fiber1.ctx.get('bar')).to.be.undefined
+    expect(fiber2.ctx.get('bar')).to.be.ok
   })
 })
 

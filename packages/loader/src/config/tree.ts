@@ -12,7 +12,7 @@ export abstract class EntryTree<C extends Context = Context> {
 
   constructor(public ctx: C) {
     this.root = new EntryGroup(ctx, this)
-    const entry = ctx.scope.entry
+    const entry = ctx.fiber.entry
     if (entry) entry.subtree = this
   }
 
@@ -32,7 +32,7 @@ export abstract class EntryTree<C extends Context = Context> {
     while (1) {
       await new Promise(resolve => setTimeout(resolve, 100))
       const pendings = [...this.entries()]
-        .map(entry => entry._initTask || entry.scope?.pending!)
+        .map(entry => entry._initTask || entry.fiber?.['_pending']!)
         .filter(Boolean)
       if (!pendings.length) return
       await Promise.all(pendings)

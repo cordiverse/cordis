@@ -35,14 +35,14 @@ describe('Plugin', () => {
   it('apply plugin when dispose', async () => {
     const root = new Context()
     const callback = mock.fn()
-    const scope = root.plugin((ctx) => {
+    const fiber = root.plugin((ctx) => {
       return () => {
         expect(() => ctx.plugin(callback)).to.throw('inactive context')
         expect(() => ctx.on('custom-event', () => {})).to.throw('inactive context')
       }
     })
-    await scope
-    await scope.dispose()
+    await fiber
+    await fiber.dispose()
     expect(callback.mock.calls).to.have.length(0)
   })
 

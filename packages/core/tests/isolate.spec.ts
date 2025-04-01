@@ -39,7 +39,7 @@ describe('Isolation', () => {
     expect(inner.mock.calls).to.have.length(2)
   })
 
-  it('isolated scope', async () => {
+  it('isolated fiber', async () => {
     const root = new Context()
     root.provide('foo')
     const callback = mock.fn(() => {})

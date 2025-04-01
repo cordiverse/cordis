@@ -8,17 +8,17 @@ describe('Disposables', () => {
   it('dispose by plugin', async () => {
     const root = new Context()
     const dispose = mock.fn()
-    const scope = root.plugin((ctx) => {
+    const fiber = root.plugin((ctx) => {
       ctx.effect(() => dispose, 'test')
     })
-    await scope
-    expect(scope.getEffects()).to.deep.equal([
+    await fiber
+    expect(fiber.getEffects()).to.deep.equal([
       { label: 'test', children: [] },
     ])
     expect(dispose.mock.calls).to.have.length(0)
-    await scope.dispose()
+    await fiber.dispose()
     expect(dispose.mock.calls).to.have.length(1)
-    await scope.dispose()
+    await fiber.dispose()
     expect(dispose.mock.calls).to.have.length(1)
   })
 
@@ -26,7 +26,7 @@ describe('Disposables', () => {
     const root = new Context()
     const dispose1 = mock.fn()
     const dispose2 = root.effect(() => dispose1)
-    expect(root.scope.getEffects()).to.deep.equal([
+    expect(root.fiber.getEffects()).to.deep.equal([
       { label: 'anonymous', children: [] },
     ])
     expect(dispose1.mock.calls).to.have.length(0)
@@ -52,7 +52,7 @@ describe('Disposables', () => {
       })
     })
     root.on('custom-event', () => {})
-    expect(root.scope.getEffects()).to.deep.equal([
+    expect(root.fiber.getEffects()).to.deep.equal([
       {
         label: 'anonymous',
         children: [
@@ -234,7 +234,7 @@ describe('Disposables', () => {
     expect(seq).to.deep.equal([1])
   })
 
-  it('nested scopes', async () => {
+  it('nested fibers', async () => {
     const plugin = async (ctx: Context) => {
       ctx.on(event, callback)
       await ctx.plugin(async (ctx) => {
@@ -248,10 +248,10 @@ describe('Disposables', () => {
     const root = new Context()
     const callback = mock.fn()
     root.on(event, callback)
-    const scope = root.plugin(plugin)
+    const fiber = root.plugin(plugin)
 
     // 4 handlers by now
-    await scope
+    await fiber
     expect(callback.mock.calls).to.have.length(0)
     expect(root.registry.size).to.equal(3)
     root.emit(event)
@@ -259,14 +259,14 @@ describe('Disposables', () => {
 
     // only 1 handler left
     callback.mock.resetCalls()
-    await scope.dispose()
+    await fiber.dispose()
     expect(root.registry.size).to.equal(0)
     root.emit(event)
     expect(callback.mock.calls).to.have.length(1)
 
     // subsequent calls should be noop
     callback.mock.resetCalls()
-    await scope.dispose()
+    await fiber.dispose()
     expect(root.registry.size).to.equal(0)
     root.emit(event)
     expect(callback.mock.calls).to.have.length(1)
@@ -315,11 +315,11 @@ describe('Disposables', () => {
     root.plugin((ctx) => {
       return dispose
     })
-    expect(root.scope.disposables.length).to.equal(1)
+    expect(root.fiber.disposables.length).to.equal(1)
     expect(dispose.mock.calls).to.have.length(0)
-    await root.scope.dispose()
+    await root.fiber.dispose()
     expect(dispose.mock.calls).to.have.length(1)
-    await root.scope.dispose()
+    await root.fiber.dispose()
     expect(dispose.mock.calls).to.have.length(1)
   })
 })

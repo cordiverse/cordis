@@ -1,6 +1,6 @@
 export * from './context'
 export * from './events'
+export * from './fiber'
 export * from './registry'
-export * from './scope'
 export * from './service'
 export * from './utils'

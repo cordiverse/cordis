@@ -1,7 +1,7 @@
 import { defineProperty, Dict, isNullable } from 'cosmokit'
 import { Context } from './context'
 import { getTraceable, isUnproxyable, symbols, withProps } from './utils'
-import { ScopeStatus } from './scope'
+import { FiberState } from './fiber'
 
 declare module './context' {
   interface Context {
@@ -32,7 +32,7 @@ class ReflectService {
     // Case 2: `$` or `_` prefix
     if (name[0] === '$' || name[0] === '_') return
     // Case 3: access directly from root
-    if (!ctx.scope.runtime) return
+    if (!ctx.fiber.runtime) return
     // Case 4: custom inject checks
     let message = `cannot get service "${name}" without inject`
     if (key) {
@@ -66,7 +66,7 @@ class ReflectService {
       } else if (internal.type === 'accessor') {
         return internal.get.call(ctx, ctx[symbols.receiver], error)
       } else {
-        const cached = ctx.scope.store?.[prop]
+        const cached = ctx.fiber.store?.[prop]
         if (cached) return getTraceable(ctx, cached)
         const key = target[symbols.isolate][prop]
         ReflectService.checkInject(ctx, prop, error, key)
@@ -109,7 +109,7 @@ class ReflectService {
     })
 
     this._mixin('reflect', ['get', 'set', 'provide', 'accessor', 'mixin', 'alias'], true)
-    this._mixin('scope', ['runtime', 'effect'], true)
+    this._mixin('fiber', ['runtime', 'effect'], true)
     this._mixin('registry', ['inject', 'plugin'], true)
     this._mixin('events', ['on', 'once', 'parallel', 'emit', 'serial', 'bail', 'waterfall'], true)
   }
@@ -121,7 +121,7 @@ class ReflectService {
     const item = this.ctx[symbols.store][key]
     if (!item) return
     if (!strict) return getTraceable(this.ctx, item.value)
-    if (item.source.scope.status !== ScopeStatus.ACTIVE) return
+    if (item.source.fiber.state !== FiberState.ACTIVE) return
     return item.value
   }
 
@@ -139,7 +139,7 @@ class ReflectService {
     }
     const ctx: Context = this.ctx
     if (!isNullable(value)) {
-      dispose = ctx.scope.effect(() => () => {
+      dispose = ctx.fiber.effect(() => () => {
         this.set(name, undefined)
       }, `ctx.set(${JSON.stringify(name)})`)
     }
@@ -155,7 +155,7 @@ class ReflectService {
 
     ctx.emit(self, 'internal/before-service', name, value)
     ctx[symbols.store][key] = { name, value, source: self }
-    if (ctx.scope.status === ScopeStatus.ACTIVE) {
+    if (ctx.fiber.state === FiberState.ACTIVE) {
       ctx.emit(self, 'internal/service', name, oldValue)
     }
     return dispose
@@ -177,7 +177,7 @@ class ReflectService {
   }
 
   accessor(name: string, options: Omit<Context.Internal.Accessor, 'type'>) {
-    this.ctx.scope.effect(() => {
+    this.ctx.fiber.effect(() => {
       return this._accessor(name, options)
     }, `ctx.accessor(${JSON.stringify(name)})`)
   }
@@ -209,7 +209,7 @@ class ReflectService {
   }
 
   mixin(source: any, mixins: string[] | Dict<string>) {
-    this.ctx.scope.effect(() => {
+    this.ctx.fiber.effect(() => {
       return this._mixin(source, mixins)
     }, `ctx.mixin(${JSON.stringify(source)})`)
   }

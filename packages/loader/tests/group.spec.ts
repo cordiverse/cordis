@@ -41,8 +41,8 @@ describe('group management: basic support', () => {
       }],
     }, outer)
 
-    await loader.expectScope(outer)
-    await loader.expectScope(inner)
+    await loader.expectFiber(outer)
+    await loader.expectFiber(inner)
     expect(foo.mock.calls).to.have.length(2)
     expect(dispose.mock.calls).to.have.length(0)
     expect([...loader.entries()]).to.have.length(4)

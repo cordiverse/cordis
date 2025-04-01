@@ -3,7 +3,7 @@ import EventsService from './events'
 import ReflectService from './reflect'
 import Registry from './registry'
 import { getTraceable, symbols } from './utils'
-import { EffectScope } from './scope'
+import { Fiber } from './fiber'
 
 export { EventsService, ReflectService, Registry }
 
@@ -74,12 +74,12 @@ export class Context {
     this[symbols.intercept] = Object.create(null)
     const self: Context = new Proxy(this, ReflectService.handler)
     self.root = self
-    self.scope = new EffectScope(self, {}, Object.create(null), null, () => [])
+    self.fiber = new Fiber(self, {}, Object.create(null), null, () => [])
     self.reflect = new ReflectService(self)
     self.registry = new Registry(self)
     self.events = new EventsService(self)
     // ignore internal effects
-    self.scope.disposables.clear()
+    self.fiber.disposables.clear()
     return self
   }
 
@@ -88,11 +88,11 @@ export class Context {
   }
 
   get name() {
-    let scope = this.scope
+    let fiber = this.fiber
     do {
-      if (scope.runtime?.name) return scope.runtime.name
-      scope = scope.parent.scope
-    } while (scope !== scope.parent.scope)
+      if (fiber.runtime?.name) return fiber.runtime.name
+      fiber = fiber.parent.fiber
+    } while (fiber !== fiber.parent.fiber)
     return 'root'
   }
 

@@ -30,11 +30,11 @@ describe('Decorator', () => {
     root.plugin(Bar)
     expect(callback.mock.calls).to.have.length(0)
     expect(dispose.mock.calls).to.have.length(0)
-    const scope = root.plugin(Foo)
-    await scope
+    const fiber = root.plugin(Foo)
+    await fiber
     expect(callback.mock.calls).to.have.length(1)
     expect(dispose.mock.calls).to.have.length(0)
-    await scope.dispose()
+    await fiber.dispose()
     expect(callback.mock.calls).to.have.length(1)
     expect(dispose.mock.calls).to.have.length(1)
   })

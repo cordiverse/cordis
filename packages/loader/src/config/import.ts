@@ -91,7 +91,7 @@ export class Import extends ImportTree {
 
   async* [Service.init]() {
     const { url } = this.config
-    const filename = fileURLToPath(new URL(url, this.ctx.scope.entry!.parent.tree.url))
+    const filename = fileURLToPath(new URL(url, this.ctx.fiber.entry!.parent.tree.url))
     const ext = extname(filename)
     if (!LoaderFile.supported.has(ext)) {
       throw new Error(`extension "${ext}" not supported`)

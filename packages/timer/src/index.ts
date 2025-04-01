@@ -49,7 +49,7 @@ export class TimerService extends Service {
   }
 
   private createWrapper(label: string, callback: (args: any[], check: () => boolean) => any, isDisposed = false) {
-    this.ctx.scope.assertActive()
+    this.ctx.fiber.assertActive()
 
     let timer: number | NodeJS.Timeout | undefined
     const dispose = defineProperty(() => {
@@ -60,10 +60,10 @@ export class TimerService extends Service {
 
     const wrapper: any = (...args: any[]) => {
       clearTimeout(timer)
-      timer = callback(args, () => !isDisposed && this.ctx.scope.active)
+      timer = callback(args, () => !isDisposed && this.ctx.fiber.active)
     }
     wrapper.dispose = dispose
-    const remove = this.ctx.scope.disposables.push(dispose)
+    const remove = this.ctx.fiber.disposables.push(dispose)
     return wrapper
   }
 

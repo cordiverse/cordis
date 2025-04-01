@@ -1,6 +1,6 @@
 import { defineProperty, Dict } from 'cosmokit'
 import { Context } from './context'
-import { EffectScope } from './scope'
+import { Fiber } from './fiber'
 import { buildOuterStack, DisposableList, symbols, withProps } from './utils'
 
 function isApplicable<C extends Context>(object: Plugin<C>) {
@@ -92,7 +92,7 @@ export namespace Plugin {
 
   export interface Runtime<out C extends Context = Context> {
     name?: string
-    scopes: DisposableList<EffectScope<C>>
+    fibers: DisposableList<Fiber<C>>
     callback: globalThis.Function
     Config?: (config: any) => any
   }
@@ -106,13 +106,13 @@ export type Spread<T> = undefined extends T ? [config?: T] : [config: T]
 
 declare module './context' {
   export interface Context {
-    inject(deps: Inject, callback: Plugin.Function<this, void>): EffectScope<this>
-    plugin<T = undefined, S = T>(plugin: Plugin.Function<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): EffectScope<this>
-    plugin<T = undefined, S = T>(plugin: Plugin.Constructor<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): EffectScope<this>
-    plugin<T = undefined, S = T>(plugin: Plugin.Object<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): EffectScope<this>
-    plugin<T = undefined>(plugin: Plugin.Function<this, T>, ...args: Spread<T>): EffectScope<this>
-    plugin<T = undefined>(plugin: Plugin.Constructor<this, T>, ...args: Spread<T>): EffectScope<this>
-    plugin<T = undefined>(plugin: Plugin.Object<this, T>, ...args: Spread<T>): EffectScope<this>
+    inject(deps: Inject, callback: Plugin.Function<this, void>): Fiber<this>
+    plugin<T = undefined, S = T>(plugin: Plugin.Function<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): Fiber<this>
+    plugin<T = undefined, S = T>(plugin: Plugin.Constructor<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): Fiber<this>
+    plugin<T = undefined, S = T>(plugin: Plugin.Object<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): Fiber<this>
+    plugin<T = undefined>(plugin: Plugin.Function<this, T>, ...args: Spread<T>): Fiber<this>
+    plugin<T = undefined>(plugin: Plugin.Constructor<this, T>, ...args: Spread<T>): Fiber<this>
+    plugin<T = undefined>(plugin: Plugin.Object<this, T>, ...args: Spread<T>): Fiber<this>
   }
 }
 
@@ -162,8 +162,8 @@ class Registry<out C extends Context = Context> {
     const runtime = key && this._internal.get(key)
     if (!runtime) return
     this._internal.delete(key)
-    for (const scope of runtime.scopes) {
-      scope.dispose()
+    for (const fiber of runtime.fibers) {
+      fiber.dispose()
     }
     return runtime
   }
@@ -192,17 +192,17 @@ class Registry<out C extends Context = Context> {
     // check if it's a valid plugin
     const callback = this.resolve(plugin)
     if (!callback) throw new Error('invalid plugin, expect function or object with an "apply" method, received ' + typeof plugin)
-    this.ctx.scope.assertActive()
+    this.ctx.fiber.assertActive()
 
     let runtime = this._internal.get(callback)
     if (!runtime) {
       let name = plugin.name
       if (name === 'apply') name = undefined
-      runtime = { name, callback, scopes: new DisposableList(), Config: plugin.Config }
+      runtime = { name, callback, fibers: new DisposableList(), Config: plugin.Config }
       this._internal.set(callback, runtime)
     }
 
-    return new EffectScope(this.ctx, config, Inject.resolve(plugin.inject), runtime, getOuterStack)
+    return new Fiber(this.ctx, config, Inject.resolve(plugin.inject), runtime, getOuterStack)
   }
 }
 

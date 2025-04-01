@@ -1,4 +1,4 @@
-import { Context, ScopeStatus } from '../src'
+import { Context, FiberState } from '../src'
 import { expect } from 'chai'
 import { mock } from 'node:test'
 import { event, sleep } from './utils'
@@ -14,11 +14,11 @@ describe('Status', () => {
       if (!config?.foo) throw new Error('plugin error')
     })
 
-    const scope1 = root.plugin(apply)
-    const scope2 = root.plugin(apply, { foo: true })
+    const fiber1 = root.plugin(apply)
+    const fiber2 = root.plugin(apply, { foo: true })
     await sleep()
-    expect(scope1.status).to.equal(ScopeStatus.FAILED)
-    expect(scope2.status).to.equal(ScopeStatus.ACTIVE)
+    expect(fiber1.state).to.equal(FiberState.FAILED)
+    expect(fiber2.state).to.equal(FiberState.ACTIVE)
     // expect(apply.mock.calls).to.have.length(2)
     expect(error.mock.calls).to.have.length(1)
 

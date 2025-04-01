@@ -84,12 +84,12 @@ describe('Service', () => {
     root.provide('foo')
     root.set('foo', { bar: 1 })
     let inner!: Context
-    const scope = root.inject(['foo'], (ctx) => {
+    const fiber = root.inject(['foo'], (ctx) => {
       inner = ctx
     })
-    await scope
+    await fiber
     expect(inner.foo).to.be.ok
-    await scope.dispose()
+    await fiber.dispose()
     expect(root.foo).to.be.ok
     expect(() => inner.foo).to.throw('cannot get required service "foo" in inactive context')
   })
@@ -113,7 +113,7 @@ describe('Service', () => {
     root.inject(['foo'], callback)
     expect(callback.mock.calls).to.have.length(0)
 
-    // the scope should be blocked by `start` method
+    // the fiber should be blocked by `start` method
     root.plugin(Foo)
     await sleep()
     expect(callback.mock.calls).to.have.length(0)
@@ -150,14 +150,14 @@ describe('Service', () => {
     expect(root.foo.value).to.equal(1)
     expect(warning.mock.calls).to.have.length(0)
 
-    const scope = root.inject(['foo'], (ctx) => {
+    const fiber = root.inject(['foo'], (ctx) => {
       root.foo.increase()
       expect(ctx.foo.value).to.equal(2)
       expect(warning.mock.calls).to.have.length(0)
     })
 
-    await scope
-    await scope.dispose()
+    await fiber
+    await fiber.dispose()
     root.foo.increase()
     expect(root.foo.value).to.equal(3)
     expect(warning.mock.calls).to.have.length(0)
@@ -185,13 +185,13 @@ describe('Service', () => {
     root.foo.increase()
     expect(root.foo.value).to.equal(1)
 
-    const scope = root.inject(['foo'], (ctx) => {
+    const fiber = root.inject(['foo'], (ctx) => {
       root.foo.increase()
       expect(root.foo.value).to.equal(2)
     })
 
-    await scope
-    await scope.dispose()
+    await fiber
+    await fiber.dispose()
     root.foo.increase()
     expect(root.foo.value).to.equal(3)
   })
