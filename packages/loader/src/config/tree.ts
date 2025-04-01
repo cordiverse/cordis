@@ -28,14 +28,14 @@ export abstract class EntryTree<C extends Context = Context> {
     }
   }
 
-  async wait() {
-    while (1) {
-      await new Promise(resolve => setTimeout(resolve, 100))
-      const pendings = [...this.entries()]
-        .map(entry => entry._initTask || entry.fiber?.['_pending']!)
+  async await() {
+    while (true) {
+      await new Promise(resolve => setTimeout(resolve, 0))
+      const tasks = [...this.entries()]
+        .map(entry => entry._initTask || entry.fiber?.inertia)
         .filter(Boolean)
-      if (!pendings.length) return
-      await Promise.all(pendings)
+      if (!tasks.length) return
+      await Promise.allSettled(tasks)
     }
   }
 

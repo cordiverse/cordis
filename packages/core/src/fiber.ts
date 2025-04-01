@@ -74,12 +74,13 @@ export class Fiber<out C extends Context = Context> {
   public state = FiberState.PENDING
   public dispose: () => Promise<void>
   public store: Dict | undefined
+  public version = 0
+  public inertia: Promise<void> | undefined
 
   // Same as `this.ctx`, but with a more specific type.
   protected context: Context
 
   private _error: any
-  private _pending: [Promise<void>, boolean] | undefined
   private _runner: EffectRunner
   private _store: Dict | undefined
 
@@ -129,7 +130,7 @@ export class Fiber<out C extends Context = Context> {
         const remove = runtime.fibers.push(this)
         try {
           this.config = resolveConfig(runtime, config)
-          this._setState(true)
+          this._setActive(true)
         } catch (error) {
           this.context.emit('internal/error', error)
           this._error = error
@@ -144,7 +145,7 @@ export class Fiber<out C extends Context = Context> {
               this.ctx.registry.delete(runtime.callback)
             }
           }
-          this._setState(false)
+          this._setActive(false)
           await this
         }
       }, 'ctx.plugin()')
@@ -159,15 +160,10 @@ export class Fiber<out C extends Context = Context> {
         collect,
       }
       this.dispose = async () => {
-        this._setState(false)
-        await this._pending?.[0]
+        this._setActive(false)
+        await this.inertia
       }
     }
-  }
-
-  /** @deprecated use `state` */
-  get status() {
-    return this.state
   }
 
   assertActive() {
@@ -292,55 +288,19 @@ export class Fiber<out C extends Context = Context> {
       .filter(Boolean)
   }
 
-  private _getStatus() {
-    if (this._pending) return this._pending[1] ? FiberState.LOADING : FiberState.UNLOADING
+  private _getState() {
     if (this.uid === null) return FiberState.DISPOSED
     if (this._error) return FiberState.FAILED
     if (this._runner.isActive) return FiberState.ACTIVE
     return FiberState.PENDING
   }
 
-  private _updateState(callback: () => void) {
+  private _updateState(callback: () => void | FiberState) {
     const oldValue = this.state
-    callback()
-    this.state = this._getStatus()
+    this.state = callback() ?? this._getState()
     if (oldValue !== this.state) {
       this.context.emit('internal/status', this, oldValue)
     }
-  }
-
-  private async _reload() {
-    this.store = this._store
-    try {
-      await Promise.resolve()
-      await this._execute(this._runner)
-    } catch (reason) {
-      // the registry impl guarantees that the error is non-null
-      this.context.emit(this.ctx, 'internal/error', reason)
-      this._error = reason
-      this._runner.isActive = false
-    }
-    this._updateState(() => {
-      this._pending = this._runner.isActive ? undefined : [this._unload(), false]
-    })
-  }
-
-  private async _unload() {
-    await Promise.all(this.disposables.clear().map(async (dispose) => {
-      try {
-        await composeError(async (info) => {
-          await Promise.resolve()
-          info.error = new Error()
-          await dispose()
-        }, this._runner.getOuterStack)
-      } catch (reason) {
-        this.context.emit(this.ctx, 'internal/error', reason)
-      }
-    }))
-    this.store = undefined
-    this._updateState(() => {
-      this._pending = this._runner.isActive ? [this._reload(), true] : undefined
-    })
   }
 
   private _getStore(): Dict | undefined {
@@ -361,20 +321,71 @@ export class Fiber<out C extends Context = Context> {
     }
   }
 
-  _setState(value: boolean) {
+  _setActive(value: boolean) {
     if (value === this._runner.isActive) return
     if (value && (!this.uid || !this._getStore())) return
     this._updateState(() => {
-      if (!this._pending && value !== this._runner.isActive) {
-        this._pending = [value ? this._reload() : this._unload(), value]
-      }
+      const createInert = !this.inertia && value !== this._runner.isActive
       this._runner.isActive = value
+      if (!createInert) return
+      if (value) {
+        this.inertia = this._reload()
+        return FiberState.LOADING
+      } else {
+        this.inertia = this._unload()
+        return FiberState.UNLOADING
+      }
+    })
+  }
+
+  private async _reload() {
+    this.store = this._store
+    this.version += 1
+    try {
+      await Promise.resolve()
+      await this._execute(this._runner)
+    } catch (reason) {
+      // the registry impl guarantees that the error is non-null
+      this.context.emit(this.ctx, 'internal/error', reason)
+      this._error = reason
+      this._runner.isActive = false
+    }
+    this._updateState(() => {
+      if (this._runner.isActive) {
+        this.inertia = undefined
+      } else {
+        this.inertia = this._unload()
+        return FiberState.UNLOADING
+      }
+    })
+  }
+
+  private async _unload() {
+    await Promise.all(this.disposables.clear().map(async (dispose) => {
+      try {
+        await composeError(async (info) => {
+          await Promise.resolve()
+          info.error = new Error()
+          await dispose()
+        }, this._runner.getOuterStack)
+      } catch (reason) {
+        this.context.emit(this.ctx, 'internal/error', reason)
+      }
+    }))
+    this.store = undefined
+    this._updateState(() => {
+      if (this._runner.isActive) {
+        this.inertia = this._reload()
+        return FiberState.LOADING
+      } else {
+        this.inertia = undefined
+      }
     })
   }
 
   private async _await() {
-    while (this._pending) {
-      await this._pending?.[0]
+    while (this.inertia) {
+      await this.inertia
     }
     if (this._error) throw this._error
   }
@@ -384,8 +395,8 @@ export class Fiber<out C extends Context = Context> {
   }
 
   async restart() {
-    this._setState(false)
-    this._setState(true)
+    this._setActive(false)
+    this._setActive(true)
   }
 
   update(config: any) {
@@ -395,7 +406,7 @@ export class Fiber<out C extends Context = Context> {
     } catch (error) {
       this.context.emit('internal/error', error)
       this._error = error
-      this._setState(false)
+      this._setActive(false)
       return
     }
     this._error = undefined

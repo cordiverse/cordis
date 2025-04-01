@@ -80,7 +80,7 @@ class EventsService {
         for (const fiber of runtime.fibers) {
           if (!fiber.inject[name]?.required) continue
           if (!this[symbols.filter](fiber.ctx)) continue
-          fiber._setState(false)
+          fiber._setActive(false)
         }
       }
     }, { global: true })
@@ -90,7 +90,7 @@ class EventsService {
         for (const fiber of runtime.fibers) {
           if (!fiber.inject[name]?.required) continue
           if (!this[symbols.filter](fiber.ctx)) continue
-          fiber._setState(true)
+          fiber._setActive(true)
         }
       }
     }, { global: true })

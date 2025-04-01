@@ -77,9 +77,9 @@ export class TimerService extends Service {
           dispose()
           return doneTask
         },
-        throw: (error) => {
-          doneTask = Promise.reject(error)
-          nextTask?.reject(error)
+        throw: (reason) => {
+          doneTask = Promise.reject(reason)
+          nextTask?.reject(reason)
           dispose()
           return doneTask
         },

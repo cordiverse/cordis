@@ -161,11 +161,12 @@ export class Entry<C extends Context = Context> {
     } catch (error) {
       this.context.emit(this.ctx, 'internal/error', error)
       return
+    } finally {
+      this._initTask = undefined
     }
     const plugin = this.loader.unwrapExports(exports)
     this._patchContext()
     this.loader.showLog(this, 'apply')
     this.fiber = this.ctx.registry.plugin(plugin, this._resolveConfig(plugin), this.getOuterStack)
-    this._initTask = undefined
   }
 }
