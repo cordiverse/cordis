@@ -33,6 +33,12 @@ export default class MockLoader<C extends Context = Context> extends Loader<C> {
   constructor(ctx: C) {
     super(ctx, { name: 'cordis' })
     this.mock('cordis/group', Group)
+    ctx.on('internal/get', (ctx, prop, error, next) => {
+      if (!ctx.fiber.runtime && prop === 'loader') {
+        return ctx.get(prop)
+      }
+      return next()
+    })
   }
 
   async init(baseDir: string, options: Loader.Config) {

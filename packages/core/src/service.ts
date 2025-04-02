@@ -30,7 +30,7 @@ export abstract class Service<out T = never, out C extends Context = Context> {
     self.name = name
     defineProperty(self, symbols.tracker, tracker)
 
-    self.ctx.set(name, self)
+    self.ctx.reflect.set(name, self)
     return self
   }
 

@@ -49,7 +49,6 @@ export class EventsService {
 
   constructor(private ctx: Context) {
     defineProperty(this, symbols.tracker, {
-      associate: 'events',
       property: 'ctx',
       noShadow: true,
     })
@@ -97,8 +96,8 @@ export class EventsService {
 
     this.on('internal/status', function (fiber: Fiber) {
       if (fiber.state !== FiberState.ACTIVE) return
-      for (const key of Reflect.ownKeys(ctx[symbols.store])) {
-        const item = ctx[symbols.store][key as symbol]
+      for (const key of Reflect.ownKeys(ctx.reflect.store)) {
+        const item = ctx.reflect.store[key as symbol]
         if (item.source.fiber !== fiber) continue
         if (item.value) {
           item.source.emit(item.source, 'internal/service', item.name, item.value)

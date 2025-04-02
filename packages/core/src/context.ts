@@ -5,50 +5,25 @@ import { RegistryService } from './registry'
 import { getTraceable, symbols } from './utils'
 import { Fiber } from './fiber'
 
-export namespace Context {
-  export interface Item<C extends Context> {
-    name: string
-    value?: any
-    source: C
-  }
-
-  export type Internal = Internal.Service | Internal.Accessor
-
-  export namespace Internal {
-    export interface Service {
-      type: 'service'
-    }
-
-    export interface Accessor {
-      type: 'accessor'
-      get: (this: Context, receiver: any, error: Error) => any
-      set?: (this: Context, value: any, receiver: any, error: Error) => boolean
-    }
-  }
-}
-
 // https://github.com/typescript-eslint/typescript-eslint/issues/6720
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export interface Intercept<C extends Context = Context> {}
 
 export interface Context {
-  [symbols.store]: Dict<Context.Item<this>, symbol>
   [symbols.isolate]: Dict<symbol>
   [symbols.intercept]: Intercept<this>
-  [symbols.internal]: Dict<Context.Internal>
+  /** @experimental */
   root: this
   events: EventsService
-  reflect: ReflectService
+  reflect: ReflectService<this>
   registry: RegistryService<this>
 }
 
 export class Context {
-  static readonly store: unique symbol = symbols.store
   static readonly effect: unique symbol = symbols.effect
   static readonly events: unique symbol = symbols.events
   static readonly filter: unique symbol = symbols.filter
   static readonly isolate: unique symbol = symbols.isolate
-  static readonly internal: unique symbol = symbols.internal
   static readonly intercept: unique symbol = symbols.intercept
 
   /** @deprecated */
@@ -64,18 +39,15 @@ export class Context {
   }
 
   constructor() {
-    this[symbols.store] = Object.create(null)
     this[symbols.isolate] = Object.create(null)
-    this[symbols.internal] = Object.create(null)
     this[symbols.intercept] = Object.create(null)
-    const self: Context = new Proxy(this, ReflectService.handler)
-    self.root = self
-    self.fiber = new Fiber(self, {}, Object.create(null), null, () => [])
-    self.reflect = new ReflectService(self)
-    self.registry = new RegistryService(self)
-    self.events = new EventsService(self)
-    // ignore internal effects
-    self.fiber._disposables.clear()
+    const self = new Proxy<this>(this, ReflectService.handler)
+    this.root = self
+    this.fiber = new Fiber(self, {}, Object.create(null), null, () => [])
+    this.reflect = new ReflectService(self)
+    this.registry = new RegistryService(self)
+    this.events = new EventsService(self)
+    this.fiber._disposables.clear()
     return self
   }
 
@@ -94,7 +66,10 @@ export class Context {
 
   extend(meta = {}): this {
     const shadow = Reflect.getOwnPropertyDescriptor(this, symbols.shadow)?.value
-    const self = Object.assign(Object.create(getTraceable(this, this)), meta)
+    const self = Object.create(getTraceable(this, this))
+    for (const prop of Reflect.ownKeys(meta)) {
+      Object.defineProperty(self, prop, Reflect.getOwnPropertyDescriptor(meta, prop)!)
+    }
     if (!shadow) return self
     return Object.assign(Object.create(self), { [symbols.shadow]: shadow })
   }
@@ -111,5 +86,3 @@ export class Context {
     return this.extend({ [symbols.intercept]: intercept })
   }
 }
-
-Context.prototype[Context.internal] = Object.create(null)

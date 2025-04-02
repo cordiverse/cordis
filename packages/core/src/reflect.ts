@@ -11,7 +11,7 @@ declare module './context' {
     set(name: string, value: any): () => void
     /** @deprecated use `ctx.set()` instead */
     provide(name: string): void
-    accessor(name: string, options: Omit<Context.Internal.Accessor, 'type'>): void
+    accessor(name: string, options: Omit<Property.Accessor, 'type'>): void
     mixin<K extends string & keyof this>(name: K, mixins: (keyof this & keyof this[K])[] | Dict<string>): void
     mixin<T extends {}>(source: T, mixins: (keyof this & keyof T)[] | Dict<string>): void
   }
@@ -26,14 +26,34 @@ function enhanceError(error: Error) {
 
 const RESERVED_WORDS = ['prototype', 'then']
 
-// 1. is a symbol
-// 2. is a reserved word (prototype, then)
-// 3. is a number string (0, 1, 2, ...)
+// - is a symbol
+// - is a reserved word (prototype, then)
+// - is a number string (0, 1, 2, ...)
 function isSpecialProperty(prop: string | symbol): prop is symbol {
   return typeof prop === 'symbol' || RESERVED_WORDS.includes(prop) || parseInt(prop).toString() === prop
 }
 
-export class ReflectService {
+export type Property = Property.Service | Property.Accessor
+
+export namespace Property {
+  export interface Service {
+    type: 'service'
+  }
+
+  export interface Accessor {
+    type: 'accessor'
+    get: (this: Context, receiver: any, error: Error) => any
+    set?: (this: Context, value: any, receiver: any, error: Error) => boolean
+  }
+}
+
+export interface Impl<C extends Context> {
+  name: string
+  value?: any
+  source: C
+}
+
+export class ReflectService<C extends Context = Context> {
   static handler: ProxyHandler<Context> = {
     get: (target, prop, ctx: Context) => {
       if (isSpecialProperty(prop)) {
@@ -44,19 +64,18 @@ export class ReflectService {
       }
 
       const error = new Error(`cannot get property "${prop}" without inject`)
-      const internal = target[symbols.internal][prop]
+      const internal = target.reflect.props[prop]
       if (!internal) throw enhanceError(error)
 
-      if (internal.type === 'accessor') {
-        return internal.get.call(ctx, ctx[symbols.receiver], error)
-      }
-
       try {
+        if (internal.type === 'accessor') {
+          return internal.get.call(ctx, ctx[symbols.receiver], error)
+        }
+
         return ctx.events.waterfall('internal/get', ctx, prop, error, () => {
           const key = target[symbols.isolate][prop]
-          const shadow: Context = ctx[symbols.shadow] ?? ctx
-          const provider = shadow[symbols.store][key]?.source.fiber
-          let fiber = shadow.fiber
+          const provider = ctx.reflect.store[key]?.source.fiber
+          let fiber = (ctx[symbols.shadow] as Context ?? ctx).fiber
           while (true) {
             if (fiber === provider) return ctx.reflect.get(prop, false)
             const inject = fiber.inject[prop]
@@ -81,20 +100,20 @@ export class ReflectService {
         return Reflect.set(target, prop, value, ctx)
       }
 
-      const internal = target[symbols.internal][prop]
-      // trace caller
-      const error = new Error(`set service ${prop} without \`provide\``)
-      if (!internal) {
-        // TODO warning
-        return Reflect.set(target, prop, value, ctx)
-      }
-      if (internal.type === 'accessor') {
-        if (!internal.set) return false
-        return internal.set.call(ctx, value, ctx[symbols.receiver], error)
-      } else {
-        // ctx.events.emit(ctx, 'internal/warn', new Error(`assigning to service ${name} is not recommended, please use \`ctx.set()\` method instead`))
+      const error = new Error(`cannot set property "${prop}" without provide`)
+      const internal = target.reflect.props[prop]
+      if (!internal) throw enhanceError(error)
+
+      try {
+        if (internal.type === 'accessor') {
+          if (!internal.set) return false
+          return internal.set.call(ctx, value, ctx[symbols.receiver], error)
+        }
+
         ctx.reflect.set(prop, value)
         return true
+      } catch (e: any) {
+        throw e === error ? enhanceError(e) : e
       }
     },
 
@@ -103,13 +122,15 @@ export class ReflectService {
         return Reflect.has(target, prop)
       }
       if (Reflect.has(target, prop)) return true
-      return !!target[symbols.internal][prop]
+      return !!target.reflect.props[prop]
     },
   }
 
-  constructor(public ctx: Context) {
+  store: Dict<Impl<C>, symbol> = Object.create(null)
+  props: Dict<Property> = Object.create(null)
+
+  constructor(public ctx: C) {
     defineProperty(this, symbols.tracker, {
-      associate: 'reflect',
       property: 'ctx',
       noShadow: true,
     })
@@ -121,10 +142,10 @@ export class ReflectService {
   }
 
   get(name: string, strict = true) {
-    const internal = this.ctx[symbols.internal][name]
+    const internal = this.props[name]
     if (internal?.type !== 'service') return
     const key = this.ctx[symbols.isolate][name]
-    const item = this.ctx[symbols.store][key]
+    const item = this.store[key]
     if (!item) return
     if (strict && item.source.fiber.state !== FiberState.ACTIVE) return
     return getTraceable(this.ctx, item.value)
@@ -133,7 +154,7 @@ export class ReflectService {
   set(name: string, value: any) {
     this.provide(name)
     const key = this.ctx[symbols.isolate][name]
-    const oldValue = this.ctx[symbols.store][key]?.value
+    const oldValue = this.store[key]?.value
     value ??= undefined
     let dispose = () => {}
     if (oldValue === value) return dispose
@@ -159,7 +180,7 @@ export class ReflectService {
     }
 
     ctx.events.emit(self, 'internal/before-service', name, value)
-    ctx[symbols.store][key] = { name, value, source: self }
+    ctx.reflect.store[key] = { name, value, source: self }
     if (ctx.fiber.state === FiberState.ACTIVE) {
       ctx.events.emit(self, 'internal/service', name, oldValue)
     }
@@ -167,19 +188,22 @@ export class ReflectService {
   }
 
   provide(name: string) {
-    const internal = this.ctx.root[symbols.internal]
-    internal[name] ??= { type: 'service' }
-    this.ctx.root[symbols.isolate][name] ??= Symbol(name)
+    if (!this.props[name]) {
+      this.props[name] ??= { type: 'service' }
+    } else if (this.props[name].type !== 'service') {
+      throw new Error(`propery "${name}" is already declared as ${this.props[name].type}`)
+    }
+    const key = this.ctx.root[symbols.isolate][name] ??= Symbol(name)
+    this.store[key] ??= { name, value: undefined, source: this.ctx }
   }
 
-  _accessor(name: string, options: Omit<Context.Internal.Accessor, 'type'>) {
-    const internal = this.ctx.root[symbols.internal]
-    if (name in internal) return () => {}
-    internal[name] = { type: 'accessor', ...options }
-    return () => delete internal[name]
+  _accessor(name: string, options: Omit<Property.Accessor, 'type'>) {
+    if (name in this.props) return () => {}
+    this.props[name] = { type: 'accessor', ...options }
+    return () => delete this.props[name]
   }
 
-  accessor(name: string, options: Omit<Context.Internal.Accessor, 'type'>) {
+  accessor(name: string, options: Omit<Property.Accessor, 'type'>) {
     this.ctx.fiber.effect(() => {
       return this._accessor(name, options)
     }, `ctx.accessor(${JSON.stringify(name)})`)

@@ -54,12 +54,10 @@ export const symbols = {
   checkProto: Symbol.for('cordis.checkProto'),
 
   // context symbols
-  store: Symbol.for('cordis.store') as typeof Context.store,
   effect: Symbol.for('cordis.effect') as typeof Context.effect,
   events: Symbol.for('cordis.events') as typeof Context.events,
   filter: Symbol.for('cordis.filter') as typeof Context.filter,
   isolate: Symbol.for('cordis.isolate') as typeof Context.isolate,
-  internal: Symbol.for('cordis.internal') as typeof Context.internal,
   intercept: Symbol.for('cordis.intercept') as typeof Context.intercept,
 
   // service symbols
@@ -171,7 +169,7 @@ function createTraceable(ctx: Context, value: any, tracker: Tracker) {
       if (typeof prop === 'symbol') {
         return Reflect.get(target, prop, receiver)
       }
-      if (tracker.associate && ctx[symbols.internal][`${tracker.associate}.${prop}`]) {
+      if (tracker.associate && ctx.reflect.props[`${tracker.associate}.${prop}`]) {
         return Reflect.get(ctx, `${tracker.associate}.${prop}`, withProp(ctx, symbols.receiver, receiver))
       }
       let shadow: any, innerValue: any
@@ -198,7 +196,7 @@ function createTraceable(ctx: Context, value: any, tracker: Tracker) {
       if (typeof prop === 'symbol') {
         return Reflect.set(target, prop, value, receiver)
       }
-      if (tracker.associate && ctx[symbols.internal][`${tracker.associate}.${prop}`]) {
+      if (tracker.associate && ctx.reflect.props[`${tracker.associate}.${prop}`]) {
         return Reflect.set(ctx, `${tracker.associate}.${prop}`, value, withProp(ctx, symbols.receiver, receiver))
       }
       const shadow = createShadow(ctx, target, tracker.property, receiver)

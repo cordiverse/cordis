@@ -123,7 +123,6 @@ export class RegistryService<out C extends Context = Context> {
 
   constructor(public ctx: C) {
     defineProperty(this, symbols.tracker, {
-      associate: 'registry',
       property: 'ctx',
       noShadow: true,
     })

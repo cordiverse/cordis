@@ -103,14 +103,14 @@ export default function isolate(ctx: Context) {
       const delim = entry.loader.delims[key] ??= Symbol(`delim:${key}`)
       entry.ctx[delim] = Symbol(`${key}#${entry.id}`)
       for (const symbol of [oldMap[key], newMap[key]]) {
-        const item = symbol && entry.ctx[Context.store][symbol]
-        if (!item) continue
-        if (!item.source) {
+        const impl = symbol && entry.ctx.reflect.store[symbol]
+        if (!impl) continue
+        if (!impl.source) {
           entry.ctx.emit(entry.ctx, 'internal/warn', new Error(`expected service ${key} to be implemented`))
           continue
         }
-        diff.push([key, oldMap[key], newMap[key], entry.ctx[delim], item.source[delim]])
-        if (entry.ctx[delim] !== item.source[delim]) break
+        diff.push([key, oldMap[key], newMap[key], entry.ctx[delim], impl.source[delim]])
+        if (entry.ctx[delim] !== impl.source[delim]) break
       }
     }
 
@@ -134,9 +134,9 @@ export default function isolate(ctx: Context) {
 
     // step 5: replace service impl
     for (const [, symbol1, symbol2, flag1, flag2] of diff) {
-      if (flag1 === flag2 && entry.ctx[Context.store][symbol1] && !entry.ctx[Context.store][symbol2]) {
-        entry.ctx[Context.store][symbol2] = entry.ctx[Context.store][symbol1]
-        delete entry.ctx[Context.store][symbol1]
+      if (flag1 === flag2 && entry.ctx.reflect.store[symbol1] && !entry.ctx.reflect.store[symbol2]) {
+        entry.ctx.reflect.store[symbol2] = entry.ctx.reflect.store[symbol1]
+        delete entry.ctx.reflect.store[symbol1]
       }
     }
 

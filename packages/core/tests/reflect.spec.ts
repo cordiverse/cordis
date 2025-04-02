@@ -15,20 +15,10 @@ describe('Reflect', () => {
     root.on('internal/warn', warn)
 
     await root.plugin((ctx) => {
-      // `bar` is neither defined on context nor declared as injection
-      expect(() => ctx.bar).to.throw('cannot get property "bar" without inject')
-
-      // reserved word
       expect(() => ctx['prototype']).to.not.throw()
-
-      // non-service can be unproxyable
-      expect(() => ctx.bar = new Set()).to.not.throw()
-
-      // non-service can be accessed if defined on context
-      expect(() => ctx.bar.add(1)).to.not.throw()
-
-      // non-service can be overwritten
-      expect(() => ctx.bar = new Set()).to.not.throw()
+      expect(() => ctx.constructor).to.not.throw()
+      expect(() => ctx.bar).to.throw('cannot get property "bar" without inject')
+      expect(() => ctx.bar = 0).to.throw('cannot set property "bar" without provide')
     })
   })
 
@@ -72,10 +62,9 @@ describe('Reflect', () => {
 
     root.inject({ foo: { required: false } }, (ctx) => {
       warn.mock.resetCalls()
-      ctx.baz = 2
       expect(warn.mock.calls).to.have.length(0)
 
-      ctx.plugin((ctx) => {
+      ctx.extend({ baz: 2 }).plugin((ctx) => {
         warn.mock.resetCalls()
         expect(ctx.baz).to.equal(2)
         expect(warn.mock.calls).to.have.length(0)
