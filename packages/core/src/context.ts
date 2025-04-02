@@ -50,13 +50,16 @@ export interface Context {
 }
 
 export class Context {
-  static readonly store: unique symbol = symbols.store as any
-  static readonly effect: unique symbol = symbols.effect as any
-  static readonly events: unique symbol = symbols.events as any
-  static readonly filter: unique symbol = symbols.filter as any
-  static readonly isolate: unique symbol = symbols.isolate as any
-  static readonly internal: unique symbol = symbols.internal as any
-  static readonly intercept: unique symbol = symbols.intercept as any
+  static readonly store: unique symbol = symbols.store
+  static readonly effect: unique symbol = symbols.effect
+  static readonly events: unique symbol = symbols.events
+  static readonly filter: unique symbol = symbols.filter
+  static readonly isolate: unique symbol = symbols.isolate
+  static readonly internal: unique symbol = symbols.internal
+  static readonly intercept: unique symbol = symbols.intercept
+
+  /** @deprecated */
+  static readonly init = symbols.init
 
   static is<C extends Context>(value: any): value is C {
     return !!value?.[Context.is as any]
