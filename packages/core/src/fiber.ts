@@ -4,11 +4,8 @@ import { Inject, Plugin, resolveConfig } from './registry.js'
 import { buildOuterStack, composeError, DisposableList, getTraceable, isConstructor, isObject, symbols } from './utils.js'
 
 declare module './context' {
-  export interface Context {
+  export interface Context extends Pick<Fiber, 'effect'> {
     fiber: Fiber<this>
-    effect(execute: () => SyncEffect, label?: string): Disposable<void | Promise<void>>
-    effect(execute: () => AsyncEffect, label?: string): AsyncDisposable<Promise<void>>
-    effect(execute: () => Effect, label?: string): AsyncDisposable<void | Promise<void>>
   }
 }
 
@@ -217,6 +214,8 @@ export class Fiber<out C extends Context = Context> {
     }, runner.getOuterStack)
   }
 
+  effect(execute: () => SyncEffect, label?: string): Disposable<Promise<void>>
+  effect(execute: () => Effect, label?: string): AsyncDisposable<Promise<void>>
   effect(execute: () => Effect, label = 'anonymous'): any {
     this.assertActive()
 
@@ -392,6 +391,7 @@ export class Fiber<out C extends Context = Context> {
       await this.inertia
     }
     if (this._error) throw this._error
+    return this
   }
 
   async restart() {

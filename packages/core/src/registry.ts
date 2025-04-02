@@ -116,7 +116,7 @@ declare module './context' {
   }
 }
 
-class Registry<out C extends Context = Context> {
+export class RegistryService<out C extends Context = Context> {
   private _counter = 0
   private _internal = new Map<Function, Plugin.Runtime<C>>()
   protected context: Context
@@ -188,7 +188,7 @@ class Registry<out C extends Context = Context> {
     return this.plugin({ inject, apply: callback, name: callback.name })
   }
 
-  plugin(plugin: Plugin<C>, config?: any, getOuterStack = buildOuterStack()): Fiber<C> & PromiseLike<Fiber<C>> {
+  plugin(plugin: Plugin<C>, config?: any, getOuterStack = buildOuterStack()) {
     // check if it's a valid plugin
     const callback = this.resolve(plugin)
     if (!callback) throw new Error('invalid plugin, expect function or object with an "apply" method, received ' + typeof plugin)
@@ -202,15 +202,11 @@ class Registry<out C extends Context = Context> {
       this._internal.set(callback, runtime)
     }
 
-    const fiber = new Fiber(this.ctx, config, Inject.resolve(plugin.inject), runtime, getOuterStack) as Fiber<C> & PromiseLike<Fiber<C>>
-    fiber.then = (onFulfilled, onRejected) => {
-      return fiber.await()
-        .finally(() => fiber.then = undefined!)
-        .then(() => fiber)
-        .then(onFulfilled, onRejected)
+    const fiber = new Fiber(this.ctx, config, Inject.resolve(plugin.inject), runtime, getOuterStack)
+    const wrapped = Object.create(fiber) as Fiber<C> & PromiseLike<Fiber<C>>
+    wrapped.then = (onFulfilled, onRejected) => {
+      return fiber.await().then(onFulfilled, onRejected)
     }
-    return fiber
+    return wrapped
   }
 }
-
-export default Registry

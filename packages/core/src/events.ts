@@ -44,7 +44,7 @@ export interface Hook extends EventOptions {
   callback: (...args: any[]) => any
 }
 
-class EventsService {
+export class EventsService {
   _hooks: Record<keyof any, Hook[]> = {}
 
   constructor(private ctx: Context) {
@@ -216,8 +216,6 @@ class EventsService {
     return dispose
   }
 }
-
-export default EventsService
 
 export interface Events<in C extends Context = Context> {
   'internal/plugin'(fiber: Fiber<C>): void

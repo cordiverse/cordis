@@ -1,11 +1,9 @@
 import { Dict } from 'cosmokit'
-import EventsService from './events'
-import ReflectService from './reflect'
-import Registry from './registry'
+import { EventsService } from './events'
+import { ReflectService } from './reflect'
+import { RegistryService } from './registry'
 import { getTraceable, symbols } from './utils'
 import { Fiber } from './fiber'
-
-export { EventsService, ReflectService, Registry }
 
 export namespace Context {
   export interface Item<C extends Context> {
@@ -46,7 +44,7 @@ export interface Context {
   root: this
   events: EventsService
   reflect: ReflectService
-  registry: Registry<this>
+  registry: RegistryService<this>
 }
 
 export class Context {
@@ -79,7 +77,7 @@ export class Context {
     self.root = self
     self.fiber = new Fiber(self, {}, Object.create(null), null, () => [])
     self.reflect = new ReflectService(self)
-    self.registry = new Registry(self)
+    self.registry = new RegistryService(self)
     self.events = new EventsService(self)
     // ignore internal effects
     self.fiber._disposables.clear()

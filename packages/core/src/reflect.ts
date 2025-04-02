@@ -17,12 +17,7 @@ declare module './context' {
   }
 }
 
-class ReflectService {
-  static resolveInject(ctx: Context, name: string) {
-    const internal = ctx[symbols.internal][name]
-    return [name, internal] as const
-  }
-
+export class ReflectService {
   static checkInject(ctx: Context, name: string, error: Error, key?: symbol) {
     ctx = ctx[symbols.shadow] ?? ctx
     // Case 1: built-in services and special properties
@@ -229,5 +224,3 @@ class ReflectService {
     })
   }
 }
-
-export default ReflectService
