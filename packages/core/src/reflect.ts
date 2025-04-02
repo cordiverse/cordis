@@ -17,19 +17,23 @@ declare module './context' {
   }
 }
 
+const RESERVED_WORDS = ['prototype', 'then']
+
+function enhanceError(error: Error, message: string) {
+  const lines = error.stack!.split('\n')
+  error.message = message
+  lines.splice(0, 2, `Error: ${message}`)
+  error.stack = lines.join('\n')
+  return error
+}
+
 export class ReflectService {
   static checkInject(ctx: Context, name: string, error: Error, key?: symbol) {
     ctx = ctx[symbols.shadow] ?? ctx
-    // Case 1: built-in services and special properties
-    // - prototype: prototype detection
-    // - then: async function return
-    if (['prototype', 'then'].includes(name)) return
-    // Case 2: `$` or `_` prefix
-    if (name[0] === '$' || name[0] === '_') return
-    // Case 3: access directly from root
+    // Case 1: access directly from root
     if (!ctx.fiber.runtime) return
-    // Case 4: custom inject checks
-    let message = `cannot get service "${name}" without inject`
+    // Case 2: custom inject checks
+    let message = `cannot get property "${name}" without inject`
     if (key) {
       const result = ctx.bail(ctx, 'internal/inject', name, key)
       if (result === true) return
@@ -37,17 +41,14 @@ export class ReflectService {
         message = result
       }
     }
-    const lines = error.stack!.split('\n')
-    error.message = message
-    lines.splice(0, 2, `Error: ${message}`)
-    error.stack = lines.join('\n')
-    throw error
+    throw enhanceError(error, message)
   }
 
   static handler: ProxyHandler<Context> = {
     get: (target, prop, ctx: Context) => {
-      if (typeof prop !== 'string') return Reflect.get(target, prop, ctx)
-
+      if (typeof prop !== 'string' || RESERVED_WORDS.includes(prop)) {
+        return Reflect.get(target, prop, ctx)
+      }
       if (Reflect.has(target, prop)) {
         return getTraceable(ctx, Reflect.get(target, prop, ctx))
       }
@@ -56,8 +57,7 @@ export class ReflectService {
       const error = new Error()
       const internal = target[symbols.internal][prop]
       if (!internal) {
-        ReflectService.checkInject(ctx, prop, error)
-        return Reflect.get(target, prop, ctx)
+        throw enhanceError(error, `cannot get property "${prop}" without inject`)
       } else if (internal.type === 'accessor') {
         return internal.get.call(ctx, ctx[symbols.receiver], error)
       } else {
@@ -70,7 +70,9 @@ export class ReflectService {
     },
 
     set: (target, prop, value, ctx: Context) => {
-      if (typeof prop !== 'string') return Reflect.set(target, prop, value, ctx)
+      if (typeof prop !== 'string' || RESERVED_WORDS.includes(prop)) {
+        return Reflect.set(target, prop, value, ctx)
+      }
 
       const internal = target[symbols.internal][prop]
       // trace caller
@@ -90,7 +92,9 @@ export class ReflectService {
     },
 
     has: (target, prop) => {
-      if (typeof prop !== 'string') return Reflect.has(target, prop)
+      if (typeof prop !== 'string' || RESERVED_WORDS.includes(prop)) {
+        return Reflect.has(target, prop)
+      }
       if (Reflect.has(target, prop)) return true
       return !!target[symbols.internal][prop]
     },
@@ -109,14 +113,15 @@ export class ReflectService {
     this._mixin('events', ['on', 'once', 'parallel', 'emit', 'serial', 'bail', 'waterfall'], true)
   }
 
-  get(name: string, strict = false) {
+  // FIXME active should default to true
+  get(name: string, active = false, traceable = true) {
     const internal = this.ctx[symbols.internal][name]
     if (internal?.type !== 'service') return
     const key = this.ctx[symbols.isolate][name]
     const item = this.ctx[symbols.store][key]
     if (!item) return
-    if (!strict) return getTraceable(this.ctx, item.value)
-    if (item.source.fiber.state !== FiberState.ACTIVE) return
+    if (active && item.source.fiber.state !== FiberState.ACTIVE) return
+    if (traceable) return getTraceable(this.ctx, item.value)
     return item.value
   }
 

@@ -15,11 +15,11 @@ describe('Reflect', () => {
     root.on('internal/warn', warn)
 
     await root.plugin((ctx) => {
-      // `$bar` is `$`-prefixed
-      expect(() => ctx['$bar']).to.not.throw()
-
       // `bar` is neither defined on context nor declared as injection
-      expect(() => ctx.bar).to.throw()
+      expect(() => ctx.bar).to.throw('cannot get property "bar" without inject')
+
+      // reserved word
+      expect(() => ctx['prototype']).to.not.throw()
 
       // non-service can be unproxyable
       expect(() => ctx.bar = new Set()).to.not.throw()
@@ -87,13 +87,13 @@ describe('Reflect', () => {
     const root = new Context()
     root.provide('foo')
     root.set('foo', { bar: 1 })
-    let inner!: Context
-    const fiber = await root.inject(['foo'], (ctx) => {
-      inner = ctx
-    })
-    expect(inner.foo).to.be.ok
-    await fiber.dispose()
-    expect(root.foo).to.be.ok
-    expect(() => inner.foo).to.throw('cannot get required service "foo" in inactive context')
+    const fiber1 = await root.inject({ foo: true }, () => {})
+    const fiber2 = await root.inject({ foo: false }, () => {})
+    expect(fiber1.ctx.foo).to.be.ok
+    expect(fiber2.ctx.foo).to.be.ok
+    await fiber1.dispose()
+    await fiber2.dispose()
+    expect(() => fiber1.ctx.foo).to.throw('cannot get required service "foo" in inactive context')
+    expect(() => fiber2.ctx.foo).to.not.throw()
   })
 })

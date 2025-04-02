@@ -44,7 +44,7 @@ describe('Association', () => {
     root.foo.bar = 3
     expect(root.foo.qux).to.equal(2)
     expect(root.foo.bar).to.equal(3)
-    expect(root[`foo.qux`]).to.be.undefined
+    expect(() => root[`foo.qux`]).to.throw('cannot get property "foo.qux" without inject')
     expect(root[`foo.bar`]).to.equal(3)
 
     root.foo.baz = function () {

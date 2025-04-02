@@ -308,7 +308,7 @@ export class Fiber<out C extends Context = Context> {
       const store = Object.create(null)
       for (const [name, inject] of Object.entries(this.inject)) {
         if (!inject!.required) continue
-        const service = this.ctx.reflect.get(name, true)
+        const service = this.ctx.reflect.get(name, true, false)
         if (isNullable(service)) return
         if (service[symbols.check]) {
           const _service = getTraceable(this.ctx, service)
