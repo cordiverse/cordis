@@ -82,7 +82,7 @@ export class Context {
     self.registry = new Registry(self)
     self.events = new EventsService(self)
     // ignore internal effects
-    self.fiber.disposables.clear()
+    self.fiber._disposables.clear()
     return self
   }
 

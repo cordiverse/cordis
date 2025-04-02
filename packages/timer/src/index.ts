@@ -1,5 +1,4 @@
 import { Context, Service } from 'cordis'
-import { defineProperty } from 'cosmokit'
 
 declare module 'cordis' {
   interface Context extends Pick<TimerService, 'interval' | 'timeout' | 'throttle' | 'debounce'> {
@@ -90,22 +89,17 @@ export class TimerService extends Service {
     }
   }
 
-  private _schedule(label: string, trigger: (args: any[], isDisposed: boolean) => any, noTrailing = false) {
-    this.ctx.fiber.assertActive()
-
+  private _schedule(label: string, trigger: (args: any[], isDisposed: boolean) => any, isDisposed = false) {
     let timer: number | NodeJS.Timeout | undefined
-    const dispose = defineProperty(() => {
-      noTrailing = true
-      remove()
+    const dispose = this.ctx.effect(() => () => {
+      isDisposed = true
       clearTimeout(timer)
-    }, Context.effect, { label, children: [] })
-
+    }, label)
     const wrapper: any = (...args: any[]) => {
       clearTimeout(timer)
-      timer = trigger(args, noTrailing)
+      timer = trigger(args, isDisposed)
     }
     wrapper.dispose = dispose
-    const remove = this.ctx.fiber.disposables.push(dispose)
     return wrapper
   }
 

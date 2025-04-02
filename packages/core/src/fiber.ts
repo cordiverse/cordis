@@ -1,7 +1,7 @@
 import { Awaitable, defineProperty, Dict, isNullable } from 'cosmokit'
 import { Context } from './context.js'
 import { Inject, Plugin, resolveConfig } from './registry.js'
-import { buildOuterStack, composeError, DisposableList, isConstructor, isObject, symbols } from './utils.js'
+import { buildOuterStack, composeError, DisposableList, getTraceable, isConstructor, isObject, symbols } from './utils.js'
 
 declare module './context' {
   export interface Context {
@@ -70,12 +70,13 @@ export class Fiber<out C extends Context = Context> {
   public ctx: C
   public config: any
   public acceptors = new DisposableList<(config: any) => boolean>()
-  public disposables = new DisposableList<Disposable>()
   public state = FiberState.PENDING
   public dispose: () => Promise<void>
   public store: Dict | undefined
   public version = 0
   public inertia: Promise<void> | undefined
+
+  public _disposables = new DisposableList<Disposable>()
 
   // Same as `this.ctx`, but with a more specific type.
   protected context: Context
@@ -92,7 +93,7 @@ export class Fiber<out C extends Context = Context> {
     getOuterStack: () => string[],
   ) {
     const collect = (dispose: Disposable) => {
-      this.disposables.push(dispose)
+      this._disposables.push(dispose)
     }
 
     if (runtime) {
@@ -241,7 +242,7 @@ export class Fiber<out C extends Context = Context> {
       isActive: true,
       collect: (dispose) => {
         disposables.push(dispose)
-        this.disposables.delete(dispose)
+        this._disposables.delete(dispose)
         if (dispose[symbols.effect]) {
           meta.children.push(dispose[symbols.effect])
         }
@@ -278,12 +279,12 @@ export class Fiber<out C extends Context = Context> {
         .then(() => disposeAsync)
         .then(onFulfilled, onRejected)
     }
-    disposables.push(this.disposables.push(wrapper))
+    disposables.push(this._disposables.push(wrapper))
     return wrapper
   }
 
   getEffects() {
-    return [...this.disposables]
+    return [...this._disposables]
       .map<EffectMeta>(dispose => dispose[symbols.effect])
       .filter(Boolean)
   }
@@ -310,7 +311,10 @@ export class Fiber<out C extends Context = Context> {
         if (!inject!.required) continue
         const service = this.ctx.reflect.get(name, true)
         if (isNullable(service)) return
-        if (service[symbols.check] && !service[symbols.check](this.ctx)) return
+        if (service[symbols.check]) {
+          const _service = getTraceable(this.ctx, service)
+          if (!_service[symbols.check]()) return
+        }
         store[name] = service
       }
       return this._store = store
@@ -361,7 +365,7 @@ export class Fiber<out C extends Context = Context> {
   }
 
   private async _unload() {
-    await Promise.all(this.disposables.clear().map(async (dispose) => {
+    await Promise.all(this._disposables.clear().map(async (dispose) => {
       try {
         await composeError(async (info) => {
           await Promise.resolve()
@@ -392,6 +396,14 @@ export class Fiber<out C extends Context = Context> {
 
   then(onFulfilled?: () => any, onRejected?: (reason: any) => any) {
     return this._await().then(onFulfilled, onRejected)
+  }
+
+  catch(onRejected?: (reason: any) => any) {
+    return this._await().catch(onRejected)
+  }
+
+  finally(onFinally?: () => any) {
+    return this._await().finally(onFinally)
   }
 
   async restart() {

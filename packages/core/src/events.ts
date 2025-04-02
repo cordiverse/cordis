@@ -61,7 +61,7 @@ class EventsService {
         return () => false
       } else if (name === 'dispose') {
         defineProperty(listener, 'name', 'event <dispose>')
-        return this.fiber.disposables.push(listener)
+        return this.fiber._disposables.push(listener)
       } else if (name === 'internal/update' && !options.global) {
         return this.fiber.acceptors.push(listener)
       }
