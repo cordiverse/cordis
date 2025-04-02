@@ -1,9 +1,11 @@
 import { Context, Service } from '../src'
 import { expect } from 'chai'
+import { allowRootAccess } from './utils'
 
 describe('Association', () => {
   it('service injection', async () => {
     const root = new Context()
+    await root.plugin(allowRootAccess)
 
     class Foo extends Service {
       qux = 1
@@ -29,6 +31,7 @@ describe('Association', () => {
 
   it('property injection', async () => {
     const root = new Context()
+    await root.plugin(allowRootAccess)
 
     class Foo extends Service {
       constructor(ctx: Context) {
@@ -189,6 +192,7 @@ describe('Association', () => {
     }
 
     const root = new Context()
+    await root.plugin(allowRootAccess)
     await root.plugin(Foo)
     class X {}
     root.foo.bar(X)

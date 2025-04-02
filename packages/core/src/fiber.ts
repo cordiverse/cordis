@@ -1,7 +1,7 @@
 import { Awaitable, defineProperty, Dict, isNullable } from 'cosmokit'
 import { Context } from './context.js'
 import { Inject, Plugin, resolveConfig } from './registry.js'
-import { buildOuterStack, composeError, DisposableList, getTraceable, isConstructor, isObject, symbols } from './utils.js'
+import { buildOuterStack, composeError, DisposableList, isConstructor, isObject, symbols } from './utils.js'
 
 declare module './context' {
   export interface Context extends Pick<Fiber, 'effect'> {
@@ -308,11 +308,10 @@ export class Fiber<out C extends Context = Context> {
       const store = Object.create(null)
       for (const [name, inject] of Object.entries(this.inject)) {
         if (!inject!.required) continue
-        const service = this.ctx.reflect.get(name, true, false)
+        const service = this.ctx.reflect.get(name, true)
         if (isNullable(service)) return
         if (service[symbols.check]) {
-          const _service = getTraceable(this.ctx, service)
-          if (!_service[symbols.check]()) return
+          if (!service[symbols.check]()) return
         }
         store[name] = service
       }

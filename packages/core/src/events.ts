@@ -75,21 +75,21 @@ export class EventsService {
       })
     }
 
-    this.on('internal/before-service', function (this: Context, name) {
-      for (const runtime of this.registry.values()) {
+    this.on('internal/before-service', function (name) {
+      for (const runtime of ctx.registry.values()) {
         for (const fiber of runtime.fibers) {
           if (!fiber.inject[name]?.required) continue
-          if (!this[symbols.filter](fiber.ctx)) continue
+          if (this[symbols.filter] && !this[symbols.filter](fiber.ctx)) continue
           fiber._setActive(false)
         }
       }
     }, { global: true })
 
-    this.on('internal/service', function (this: Context, name) {
-      for (const runtime of this.registry.values()) {
+    this.on('internal/service', function (name) {
+      for (const runtime of ctx.registry.values()) {
         for (const fiber of runtime.fibers) {
           if (!fiber.inject[name]?.required) continue
-          if (!this[symbols.filter](fiber.ctx)) continue
+          if (this[symbols.filter] && !this[symbols.filter](fiber.ctx)) continue
           fiber._setActive(true)
         }
       }
@@ -104,23 +104,6 @@ export class EventsService {
           item.source.emit(item.source, 'internal/service', item.name, item.value)
         }
       }
-    }, { global: true })
-
-    this.on('internal/inject', function (this: Context, name: string, key: symbol) {
-      const provider = this[symbols.store][key]?.source.fiber
-      let fiber = this.fiber
-      while (true) {
-        if (fiber === provider) return true
-        const inject = fiber.inject[name]
-        if (inject) {
-          if (!inject.required || fiber.store) return true
-          return `cannot get required service "${name}" in inactive context`
-        }
-        if (!fiber.runtime) break
-        if (fiber.parent[symbols.isolate][name] !== key) break
-        fiber = fiber.parent.fiber
-      }
-      return false
     }, { global: true })
 
     this.on('internal/update', (fiber: Fiber, config) => {
@@ -223,10 +206,10 @@ export interface Events<in C extends Context = Context> {
   'internal/info'(this: C, format: any, ...param: any[]): void
   'internal/error'(this: C, format: any, ...param: any[]): void
   'internal/warn'(this: C, format: any, ...param: any[]): void
-  'internal/before-service'(this: C, name: string, value: any): void
-  'internal/service'(this: C, name: string, value: any): void
+  'internal/before-service'(name: string, value: any): void
+  'internal/service'(name: string, value: any): void
   'internal/update'(fiber: Fiber<C>, config: any): boolean | void
-  'internal/inject'(this: C, name: string, key: symbol): boolean | string
+  'internal/get'(ctx: C, name: string, error: Error, next: () => void): void
   'internal/listener'(this: C, name: string, listener: any, prepend: boolean): void
   'internal/dispatch'(mode: DispatchMode, name: string, args: any[], thisArg: any): void
 }

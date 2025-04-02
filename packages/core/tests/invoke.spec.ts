@@ -1,6 +1,6 @@
 import { expect } from 'chai'
 import { Context, Service } from '../src'
-import './utils'
+import { allowRootAccess } from './utils'
 
 describe('Functional Service', () => {
   it('functional service', async () => {
@@ -39,6 +39,7 @@ describe('Functional Service', () => {
     }
 
     const root = new Context()
+    await root.plugin(allowRootAccess)
     await root.plugin(Foo, { a: 1 })
 
     // access from context

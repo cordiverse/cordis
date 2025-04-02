@@ -1,7 +1,7 @@
 import { Context, Service } from '../src'
 import { expect } from 'chai'
 import { mock } from 'node:test'
-import { Counter, getHookSnapshot, sleep } from './utils'
+import { allowRootAccess, Counter, getHookSnapshot, sleep } from './utils'
 
 describe('Service', () => {
   it('pending inject', async () => {
@@ -51,6 +51,7 @@ describe('Service', () => {
     }
 
     const root = new Context()
+    await root.plugin(allowRootAccess)
     const warning = mock.fn()
     root.on('internal/warn', warning)
     root.set('counter', new Counter(root))
@@ -88,6 +89,7 @@ describe('Service', () => {
     }
 
     const root = new Context()
+    await root.plugin(allowRootAccess)
     root.set('counter', new Counter(root))
 
     await root.plugin(Foo)

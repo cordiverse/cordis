@@ -1,11 +1,12 @@
 import { Context, Service } from '../src'
 import { expect } from 'chai'
 import { mock } from 'node:test'
-import { event, sleep } from './utils'
+import { allowRootAccess, event, sleep } from './utils'
 
 describe('Isolation', () => {
   it('isolated context', async () => {
     const root = new Context()
+    await root.plugin(allowRootAccess)
     root.provide('foo')
     const ctx = root.isolate('foo')
 

@@ -12,7 +12,7 @@ export namespace Context {
     source: C
   }
 
-  export type Internal = Internal.Service | Internal.Accessor | Internal.Alias
+  export type Internal = Internal.Service | Internal.Accessor
 
   export namespace Internal {
     export interface Service {
@@ -23,11 +23,6 @@ export namespace Context {
       type: 'accessor'
       get: (this: Context, receiver: any, error: Error) => any
       set?: (this: Context, value: any, receiver: any, error: Error) => boolean
-    }
-
-    export interface Alias {
-      type: 'alias'
-      name: string
     }
   }
 }
