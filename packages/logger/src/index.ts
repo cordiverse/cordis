@@ -1,4 +1,4 @@
-import { Context, Service } from 'cordis'
+import { Context, Fiber, Service } from 'cordis'
 import { hyphenate } from 'cosmokit'
 import { Exporter, Factory, Logger, Message, Type } from 'reggol'
 import z from 'schemastery'
@@ -7,7 +7,7 @@ export * from 'reggol'
 
 declare module 'cordis' {
   interface Context {
-    logger: LoggerService
+    logger: LoggerService<this>
   }
 
   interface Intercept {
@@ -17,7 +17,7 @@ declare module 'cordis' {
 
 declare module 'reggol' {
   interface Message {
-    ctx?: WeakRef<Context>
+    fiber?: WeakRef<Fiber>
   }
 }
 
@@ -36,7 +36,7 @@ interface LoggerService extends Pick<Logger, Type> {
   (name?: string): Logger
 }
 
-class LoggerService extends Service<LoggerService.Intercept> {
+class LoggerService<C extends Context = Context> extends Service<LoggerService.Intercept, C> {
   Config = z.object({
     name: z.string(),
     level: z.number(),
@@ -45,7 +45,7 @@ class LoggerService extends Service<LoggerService.Intercept> {
   factory = new Factory()
   buffer: Message[] = []
 
-  constructor(ctx: Context, public config: LoggerService.Config = {}) {
+  constructor(ctx: C, public config: LoggerService.Config = {}) {
     super(ctx, 'logger')
 
     const { bufferSize = 1000 } = config
@@ -90,7 +90,7 @@ class LoggerService extends Service<LoggerService.Intercept> {
     name ??= hyphenate(this.ctx.name)
     return this.factory.createLogger(name, {
       level: config.level,
-      meta: { ctx: new WeakRef(this.ctx) },
+      meta: { fiber: new WeakRef(this.ctx.fiber) },
     })
   }
 

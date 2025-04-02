@@ -98,9 +98,10 @@ export class EventsService {
       if (fiber.state !== FiberState.ACTIVE) return
       for (const key of Reflect.ownKeys(ctx.reflect.store)) {
         const item = ctx.reflect.store[key as symbol]
-        if (item.source.fiber !== fiber) continue
+        if (item.fiber !== fiber) continue
         if (item.value) {
-          item.source.emit(item.source, 'internal/service', item.name, item.value)
+          // FIXME filter?
+          ctx.emit(item.fiber.ctx, 'internal/service', item.name, item.value)
         }
       }
     }, { global: true })

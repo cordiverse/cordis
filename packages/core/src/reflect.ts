@@ -1,7 +1,7 @@
 import { defineProperty, Dict, isNullable } from 'cosmokit'
 import { Context } from './context'
 import { getTraceable, isUnproxyable, symbols, withProps } from './utils'
-import { FiberState } from './fiber'
+import { Fiber, FiberState } from './fiber'
 
 declare module './context' {
   interface Context {
@@ -47,10 +47,10 @@ export namespace Property {
   }
 }
 
-export interface Impl<C extends Context> {
+export interface Impl<C extends Context = Context> {
   name: string
   value?: any
-  source: C
+  fiber: Fiber<C>
 }
 
 export class ReflectService<C extends Context = Context> {
@@ -74,7 +74,7 @@ export class ReflectService<C extends Context = Context> {
 
         return ctx.events.waterfall('internal/get', ctx, prop, error, () => {
           const key = target[symbols.isolate][prop]
-          const provider = ctx.reflect.store[key]?.source.fiber
+          const provider = ctx.reflect.store[key]?.fiber
           let fiber = (ctx[symbols.shadow] as Context ?? ctx).fiber
           while (true) {
             if (fiber === provider) return ctx.reflect.get(prop, false)
@@ -145,10 +145,10 @@ export class ReflectService<C extends Context = Context> {
     const internal = this.props[name]
     if (internal?.type !== 'service') return
     const key = this.ctx[symbols.isolate][name]
-    const item = this.store[key]
-    if (!item) return
-    if (strict && item.source.fiber.state !== FiberState.ACTIVE) return
-    return getTraceable(this.ctx, item.value)
+    const impl = this.store[key]
+    if (!impl) return
+    if (strict && impl.fiber.state !== FiberState.ACTIVE) return
+    return getTraceable(this.ctx, impl.value)
   }
 
   set(name: string, value: any) {
@@ -180,7 +180,7 @@ export class ReflectService<C extends Context = Context> {
     }
 
     ctx.events.emit(self, 'internal/before-service', name, value)
-    ctx.reflect.store[key] = { name, value, source: self }
+    ctx.reflect.store[key] = { name, value, fiber: ctx.fiber }
     if (ctx.fiber.state === FiberState.ACTIVE) {
       ctx.events.emit(self, 'internal/service', name, oldValue)
     }
@@ -194,7 +194,7 @@ export class ReflectService<C extends Context = Context> {
       throw new Error(`propery "${name}" is already declared as ${this.props[name].type}`)
     }
     const key = this.ctx.root[symbols.isolate][name] ??= Symbol(name)
-    this.store[key] ??= { name, value: undefined, source: this.ctx }
+    this.store[key] ??= { name, value: undefined, fiber: this.ctx.fiber }
   }
 
   _accessor(name: string, options: Omit<Property.Accessor, 'type'>) {
