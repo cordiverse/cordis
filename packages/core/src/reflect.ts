@@ -126,8 +126,8 @@ export class ReflectService<C extends Context = Context> {
     },
   }
 
-  store: Dict<Impl<C>, symbol> = Object.create(null)
-  props: Dict<Property> = Object.create(null)
+  public store: Dict<Impl<C>, symbol> = Object.create(null)
+  public props: Dict<Property> = Object.create(null)
 
   constructor(public ctx: C) {
     defineProperty(this, symbols.tracker, {

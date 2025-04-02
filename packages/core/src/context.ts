@@ -1,17 +1,13 @@
 import { Dict } from 'cosmokit'
 import { EventsService } from './events'
 import { ReflectService } from './reflect'
-import { RegistryService } from './registry'
+import { InjectKey, RegistryService } from './registry'
 import { getTraceable, symbols } from './utils'
 import { Fiber } from './fiber'
 
-// https://github.com/typescript-eslint/typescript-eslint/issues/6720
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export interface Intercept<C extends Context = Context> {}
-
 export interface Context {
   [symbols.isolate]: Dict<symbol>
-  [symbols.intercept]: Intercept<this>
+  [symbols.intercept]: Dict
   /** @experimental */
   root: this
   events: EventsService
@@ -52,16 +48,7 @@ export class Context {
   }
 
   [Symbol.for('nodejs.util.inspect.custom')]() {
-    return `Context <${this.name}>`
-  }
-
-  get name() {
-    let fiber = this.fiber
-    do {
-      if (fiber.runtime?.name) return fiber.runtime.name
-      fiber = fiber.parent.fiber
-    } while (fiber !== fiber.parent.fiber)
-    return 'root'
+    return `Context <${this.fiber.name}>`
   }
 
   extend(meta = {}): this {
@@ -80,7 +67,9 @@ export class Context {
     return this.extend({ [symbols.isolate]: shadow })
   }
 
-  intercept<K extends keyof Intercept>(name: K, config: Intercept[K]) {
+  intercept<K extends InjectKey<this>>(name: K, config: this[K] extends { [symbols.config]: infer T } ? T : never): this
+  intercept(name: string, config: any): this
+  intercept(name: string, config: any) {
     const intercept = Object.create(this[symbols.intercept])
     intercept[name] = config
     return this.extend({ [symbols.intercept]: intercept })

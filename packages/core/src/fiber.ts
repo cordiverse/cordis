@@ -164,6 +164,15 @@ export class Fiber<out C extends Context = Context> {
     }
   }
 
+  get name() {
+    let fiber: Fiber<C> = this
+    do {
+      if (fiber.runtime?.name) return fiber.runtime.name
+      fiber = fiber.parent.fiber
+    } while (fiber !== fiber.parent.fiber)
+    return 'root'
+  }
+
   assertActive() {
     if (this.uid !== null) return
     throw new CordisError('INACTIVE_EFFECT')

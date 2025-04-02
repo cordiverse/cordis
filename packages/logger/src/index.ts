@@ -87,7 +87,7 @@ class LoggerService<C extends Context = Context> extends Service<LoggerService.I
   [Service.invoke](name?: string) {
     const config = this[Service.resolveConfig]()
     name ??= config.name
-    name ??= hyphenate(this.ctx.name)
+    name ??= hyphenate(this.ctx.fiber.name)
     return this.factory.createLogger(name, {
       level: config.level,
       meta: { fiber: new WeakRef(this.ctx.fiber) },

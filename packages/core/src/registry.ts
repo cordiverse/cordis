@@ -9,9 +9,11 @@ function isApplicable<C extends Context>(object: Plugin<C>) {
 
 export type Inject<M = Dict> = (keyof M)[] | { [K in keyof M]: boolean | Inject.Meta<M[K]> }
 
-export function Inject<
-  K extends keyof { [K in keyof Context & string as Context[K] extends { [symbols.config]: any } ? K : never]: any }
->(name: K, required = true, config?: Context[K] extends { [symbols.config]: infer T } ? T : never) {
+export type InjectKey<C extends Context> = keyof {
+  [K in keyof C & string as C[K] extends { [symbols.config]: any } ? K : never]: any
+}
+
+export function Inject<K extends InjectKey<Context>>(name: K, required = true, config?: Context[K] extends { [symbols.config]: infer T } ? T : never) {
   return function (value: any, decorator: ClassDecoratorContext<any> | ClassMethodDecoratorContext<any>) {
     if (decorator.kind === 'class') {
       if (!Object.hasOwn(value, 'inject')) {
