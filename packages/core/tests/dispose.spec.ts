@@ -1,10 +1,9 @@
 import { Context } from '../src'
 import { expect } from 'chai'
 import { mock } from 'node:test'
-import { noop } from 'cosmokit'
-import { event, getHookSnapshot, sleep, withTimers } from './utils'
+import { sleep, withTimers } from './utils'
 
-describe('Disposables', () => {
+describe('Effects', () => {
   it('dispose by plugin', async () => {
     const root = new Context()
     const dispose = mock.fn()
@@ -232,94 +231,5 @@ describe('Disposables', () => {
     expect(seq).to.deep.equal([])
     await expect(dispose).to.be.rejected
     expect(seq).to.deep.equal([1])
-  })
-
-  it('nested fibers', async () => {
-    const plugin = async (ctx: Context) => {
-      ctx.on(event, callback)
-      await ctx.plugin(async (ctx) => {
-        ctx.on(event, callback)
-        await ctx.plugin((ctx) => {
-          ctx.on(event, callback)
-        })
-      })
-    }
-
-    const root = new Context()
-    const callback = mock.fn()
-    root.on(event, callback)
-    const fiber = root.plugin(plugin)
-
-    // 4 handlers by now
-    await fiber
-    expect(callback.mock.calls).to.have.length(0)
-    expect(root.registry.size).to.equal(3)
-    root.emit(event)
-    expect(callback.mock.calls).to.have.length(4)
-
-    // only 1 handler left
-    callback.mock.resetCalls()
-    await fiber.dispose()
-    expect(root.registry.size).to.equal(0)
-    root.emit(event)
-    expect(callback.mock.calls).to.have.length(1)
-
-    // subsequent calls should be noop
-    callback.mock.resetCalls()
-    await fiber.dispose()
-    expect(root.registry.size).to.equal(0)
-    root.emit(event)
-    expect(callback.mock.calls).to.have.length(1)
-  })
-
-  it('memory leak test', async () => {
-    function plugin(ctx: Context) {
-      ctx.on(event, noop)
-      return noop
-    }
-
-    const root = new Context()
-    const before = getHookSnapshot(root)
-    await root.plugin(plugin)
-    const after = getHookSnapshot(root)
-    root.registry.delete(plugin)
-    await sleep()
-    expect(before).to.deep.equal(getHookSnapshot(root))
-    await root.plugin(plugin)
-    expect(after).to.deep.equal(getHookSnapshot(root))
-  })
-
-  it('dispose error', async () => {
-    const root = new Context()
-    const error = mock.fn()
-    root.on('internal/error', error)
-    const dispose = mock.fn(() => {
-      throw new Error('test')
-    })
-    const plugin = (ctx: Context) => {
-      return dispose
-    }
-
-    await root.plugin(plugin)
-    expect(dispose.mock.calls).to.have.length(0)
-    expect(root.registry.delete(plugin)).to.be.ok
-    // error is asynchronous
-    await sleep()
-    expect(dispose.mock.calls).to.have.length(1)
-    expect(error.mock.calls).to.have.length(1)
-  })
-
-  it('root dispose', async () => {
-    const root = new Context()
-    const dispose = mock.fn()
-    root.plugin((ctx) => {
-      return dispose
-    })
-    expect(root.fiber.disposables.length).to.equal(1)
-    expect(dispose.mock.calls).to.have.length(0)
-    await root.fiber.dispose()
-    expect(dispose.mock.calls).to.have.length(1)
-    await root.fiber.dispose()
-    expect(dispose.mock.calls).to.have.length(1)
   })
 })

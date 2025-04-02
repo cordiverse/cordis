@@ -2,7 +2,7 @@ import { expect } from 'chai'
 import { Context, Service } from '../src'
 import './utils'
 
-describe('functional service', () => {
+describe('Functional Service', () => {
   it('functional service', async () => {
     interface Config {}
 

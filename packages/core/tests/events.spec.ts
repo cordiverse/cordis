@@ -14,8 +14,8 @@ function setup() {
   return { root, warn }
 }
 
-describe('Event Listener', () => {
-  it('context.prototype.on', async () => {
+describe('Events', () => {
+  it('ctx.on()', async () => {
     const { root } = setup()
     const callback = mock.fn()
     const dispose = root.on(event, callback)
@@ -28,7 +28,7 @@ describe('Event Listener', () => {
     expect(callback.mock.calls).to.have.length(2)
   })
 
-  it('context.prototype.once', async () => {
+  it('ctx.once()', async () => {
     const { root } = setup()
     const callback = mock.fn()
     const dispose = root.once(event, callback)
@@ -40,10 +40,8 @@ describe('Event Listener', () => {
     root.emit(event)
     expect(callback.mock.calls).to.have.length(1)
   })
-})
 
-describe('Events Emitter', () => {
-  it('context.prototype.parallel', async () => {
+  it('ctx.parallel()', async () => {
     const { root } = setup()
     await root.parallel(event)
     const callback = mock.fn()
@@ -62,7 +60,7 @@ describe('Events Emitter', () => {
     await expect(root.parallel(event)).to.be.rejectedWith('test')
   })
 
-  it('context.prototype.emit', async () => {
+  it('ctx.emit()', async () => {
     const { root } = setup()
     root.emit(event)
     const callback = mock.fn()
@@ -81,7 +79,7 @@ describe('Events Emitter', () => {
     expect(() => root.emit(event)).to.throw('test')
   })
 
-  it('context.prototype.serial', async () => {
+  it('ctx.serial()', async () => {
     const { root } = setup()
     root.serial(event)
     const callback = mock.fn()
@@ -100,7 +98,7 @@ describe('Events Emitter', () => {
     await expect(root.serial(event)).to.be.rejectedWith('message')
   })
 
-  it('context.prototype.bail', async () => {
+  it('ctx.bail()', async () => {
     const { root } = setup()
     root.bail(event)
     const callback = mock.fn()
@@ -119,7 +117,7 @@ describe('Events Emitter', () => {
     expect(() => root.bail(event)).to.throw('message')
   })
 
-  it('context.prototype.waterfall', async () => {
+  it('ctx.waterfall()', async () => {
     const { root } = setup()
     const cb1 = mock.fn<Events['test/waterfall']>((value, next) => value + next())
     root.on('test/waterfall', cb1)
