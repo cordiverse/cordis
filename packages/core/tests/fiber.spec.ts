@@ -37,8 +37,7 @@ describe('Fiber', () => {
       return dispose
     }
 
-    const fiber = root.plugin(plugin)
-    await fiber
+    const fiber = await root.plugin(plugin)
     expect(dispose.mock.calls).to.have.length(0)
     await expect(fiber.dispose()).to.be.fulfilled
     await sleep()

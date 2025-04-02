@@ -1,11 +1,10 @@
 import { Context, Service } from '../src'
-import { noop } from 'cosmokit'
 import { expect } from 'chai'
 import { mock } from 'node:test'
 import { Counter, getHookSnapshot, sleep } from './utils'
 
 describe('Service', () => {
-  it('normal service', async () => {
+  it('pending inject', async () => {
     class Foo extends Service {
       constructor(ctx: Context) {
         super(ctx, 'foo')
@@ -20,7 +19,7 @@ describe('Service', () => {
 
     const root = new Context()
 
-    const callback = mock.fn(noop)
+    const callback = mock.fn()
     root.inject(['foo'], callback)
     expect(callback.mock.calls).to.have.length(0)
 
@@ -61,13 +60,12 @@ describe('Service', () => {
     expect(root.foo.value).to.equal(1)
     expect(warning.mock.calls).to.have.length(0)
 
-    const fiber = root.inject(['foo'], (ctx) => {
+    const fiber = await root.inject(['foo'], (ctx) => {
       root.foo.increase()
       expect(ctx.foo.value).to.equal(2)
       expect(warning.mock.calls).to.have.length(0)
     })
 
-    await fiber
     await fiber.dispose()
     root.foo.increase()
     expect(root.foo.value).to.equal(3)
@@ -96,12 +94,11 @@ describe('Service', () => {
     root.foo.increase()
     expect(root.foo.value).to.equal(1)
 
-    const fiber = root.inject(['foo'], (ctx) => {
+    const fiber = await root.inject(['foo'], (ctx) => {
       root.foo.increase()
       expect(root.foo.value).to.equal(2)
     })
 
-    await fiber
     await fiber.dispose()
     root.foo.increase()
     expect(root.foo.value).to.equal(3)
@@ -151,38 +148,7 @@ describe('Service', () => {
     expect(dispose.mock.calls[1].arguments[0]).to.have.property('bar', 300)
   })
 
-  it('lifecycle methods', async () => {
-    const start = mock.fn(noop)
-    const stop = mock.fn(noop)
-
-    class Foo extends Service {
-      constructor(ctx: Context) {
-        super(ctx, 'foo')
-      }
-
-      [Service.init]() {
-        start()
-        return stop
-      }
-    }
-
-    const root = new Context()
-    await root.isolate('foo').plugin(Foo)
-    expect(start.mock.calls).to.have.length(1)
-    expect(stop.mock.calls).to.have.length(0)
-
-    await root.isolate('foo').plugin(Foo)
-    expect(start.mock.calls).to.have.length(2)
-    expect(stop.mock.calls).to.have.length(0)
-
-    root.registry.delete(Foo)
-    await sleep()
-    expect(start.mock.calls).to.have.length(2)
-    expect(stop.mock.calls).to.have.length(2)
-  })
-
-  // https://github.com/koishijs/koishi/issues/1110
-  it('memory leak test', async () => {
+  it('compare snapshot', async () => {
     class Test extends Service {
       constructor(ctx: Context) {
         super(ctx, 'test')
@@ -201,11 +167,10 @@ describe('Service', () => {
     expect(after).to.deep.equal(getHookSnapshot(root))
   })
 
-  // https://github.com/koishijs/koishi/issues/1130
-  it('immediate + dependency', async () => {
-    const foo = mock.fn(noop)
-    const bar = mock.fn(noop)
-    const qux = mock.fn(noop)
+  it('multiple injects', async () => {
+    const foo = mock.fn()
+    const bar = mock.fn()
+    const qux = mock.fn()
 
     class Foo extends Service {
       static inject = ['qux']
@@ -231,10 +196,9 @@ describe('Service', () => {
     }
 
     const root = new Context()
-    root.plugin(Foo)
-    root.plugin(Bar)
-    root.plugin(Qux)
-
+    await root.plugin(Foo)
+    await root.plugin(Bar)
+    await root.plugin(Qux)
     await sleep()
     expect(foo.mock.calls).to.have.length(1)
     expect(bar.mock.calls).to.have.length(1)

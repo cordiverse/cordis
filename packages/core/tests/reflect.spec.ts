@@ -88,10 +88,9 @@ describe('Reflect', () => {
     root.provide('foo')
     root.set('foo', { bar: 1 })
     let inner!: Context
-    const fiber = root.inject(['foo'], (ctx) => {
+    const fiber = await root.inject(['foo'], (ctx) => {
       inner = ctx
     })
-    await fiber
     expect(inner.foo).to.be.ok
     await fiber.dispose()
     expect(root.foo).to.be.ok

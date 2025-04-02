@@ -147,7 +147,7 @@ export class Fiber<out C extends Context = Context> {
             }
           }
           this._setActive(false)
-          await this
+          await this.await()
         }
       }, 'ctx.plugin()')
     } else {
@@ -387,23 +387,11 @@ export class Fiber<out C extends Context = Context> {
     })
   }
 
-  private async _await() {
+  async await() {
     while (this.inertia) {
       await this.inertia
     }
     if (this._error) throw this._error
-  }
-
-  then(onFulfilled?: () => any, onRejected?: (reason: any) => any) {
-    return this._await().then(onFulfilled, onRejected)
-  }
-
-  catch(onRejected?: (reason: any) => any) {
-    return this._await().catch(onRejected)
-  }
-
-  finally(onFinally?: () => any) {
-    return this._await().finally(onFinally)
   }
 
   async restart() {

@@ -19,8 +19,7 @@ describe('Association', () => {
     }
 
     await root.plugin(Foo)
-    const fiber = root.plugin(FooBar)
-    await fiber
+    const fiber = await root.plugin(FooBar)
     expect(root.foo).to.be.instanceof(Foo)
     expect(root.foo.bar).to.be.instanceof(FooBar)
     expect(root.foo.qux).to.equal(1)

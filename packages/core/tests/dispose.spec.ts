@@ -7,10 +7,9 @@ describe('Effects', () => {
   it('dispose by plugin', async () => {
     const root = new Context()
     const dispose = mock.fn()
-    const fiber = root.plugin((ctx) => {
+    const fiber = await root.plugin((ctx) => {
       ctx.effect(() => dispose, 'test')
     })
-    await fiber
     expect(fiber.getEffects()).to.deep.equal([
       { label: 'test', children: [] },
     ])

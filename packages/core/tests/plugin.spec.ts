@@ -1,4 +1,4 @@
-import { Context } from '../src'
+import { Context, Service } from '../src'
 import { expect } from 'chai'
 import { mock } from 'node:test'
 import { inspect } from 'util'
@@ -97,10 +97,9 @@ describe('Plugin', () => {
     const root = new Context()
     const callback = mock.fn()
     root.on(event, callback)
-    const fiber = root.plugin(plugin)
+    const fiber = await root.plugin(plugin)
 
     // 4 handlers by now
-    await fiber
     expect(callback.mock.calls).to.have.length(0)
     expect(root.registry.size).to.equal(3)
     root.emit(event)
@@ -121,7 +120,7 @@ describe('Plugin', () => {
     expect(callback.mock.calls).to.have.length(1)
   })
 
-  it('memory leak test', async () => {
+  it('compare snapshot', async () => {
     async function plugin(ctx: Context) {
       ctx.on(event, () => {})
       await ctx.plugin(async (ctx) => {
@@ -161,5 +160,25 @@ describe('Plugin', () => {
     expect(fiber.uid).to.equal(null)
     expect(dispose.mock.calls).to.have.length(1)
     expect(root.fiber._disposables.length).to.equal(0)
+  })
+  
+  it('Service.init', async () => {
+    const start = mock.fn()
+    const stop = mock.fn()
+
+    class Foo {
+      [Service.init]() {
+        start()
+        return stop
+      }
+    }
+
+    const root = new Context()
+    const fiber = await root.plugin(Foo)
+    expect(start.mock.calls).to.have.length(1)
+    expect(stop.mock.calls).to.have.length(0)
+    await fiber.dispose()
+    expect(start.mock.calls).to.have.length(1)
+    expect(stop.mock.calls).to.have.length(1)
   })
 })

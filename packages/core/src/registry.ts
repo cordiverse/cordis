@@ -106,13 +106,13 @@ export type Spread<T> = undefined extends T ? [config?: T] : [config: T]
 
 declare module './context' {
   export interface Context {
-    inject(deps: Inject, callback: Plugin.Function<this, void>): Fiber<this>
-    plugin<T = undefined, S = T>(plugin: Plugin.Function<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): Fiber<this>
-    plugin<T = undefined, S = T>(plugin: Plugin.Constructor<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): Fiber<this>
-    plugin<T = undefined, S = T>(plugin: Plugin.Object<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): Fiber<this>
-    plugin<T = undefined>(plugin: Plugin.Function<this, T>, ...args: Spread<T>): Fiber<this>
-    plugin<T = undefined>(plugin: Plugin.Constructor<this, T>, ...args: Spread<T>): Fiber<this>
-    plugin<T = undefined>(plugin: Plugin.Object<this, T>, ...args: Spread<T>): Fiber<this>
+    inject(deps: Inject, callback: Plugin.Function<this, void>): Fiber<this> & PromiseLike<Fiber<this>>
+    plugin<T = undefined, S = T>(plugin: Plugin.Function<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): Fiber<this> & PromiseLike<Fiber<this>>
+    plugin<T = undefined, S = T>(plugin: Plugin.Constructor<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): Fiber<this> & PromiseLike<Fiber<this>>
+    plugin<T = undefined, S = T>(plugin: Plugin.Object<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): Fiber<this> & PromiseLike<Fiber<this>>
+    plugin<T = undefined>(plugin: Plugin.Function<this, T>, ...args: Spread<T>): Fiber<this> & PromiseLike<Fiber<this>>
+    plugin<T = undefined>(plugin: Plugin.Constructor<this, T>, ...args: Spread<T>): Fiber<this> & PromiseLike<Fiber<this>>
+    plugin<T = undefined>(plugin: Plugin.Object<this, T>, ...args: Spread<T>): Fiber<this> & PromiseLike<Fiber<this>>
   }
 }
 
@@ -188,7 +188,7 @@ class Registry<out C extends Context = Context> {
     return this.plugin({ inject, apply: callback, name: callback.name })
   }
 
-  plugin(plugin: Plugin<C>, config?: any, getOuterStack = buildOuterStack()) {
+  plugin(plugin: Plugin<C>, config?: any, getOuterStack = buildOuterStack()): Fiber<C> & PromiseLike<Fiber<C>> {
     // check if it's a valid plugin
     const callback = this.resolve(plugin)
     if (!callback) throw new Error('invalid plugin, expect function or object with an "apply" method, received ' + typeof plugin)
@@ -202,7 +202,14 @@ class Registry<out C extends Context = Context> {
       this._internal.set(callback, runtime)
     }
 
-    return new Fiber(this.ctx, config, Inject.resolve(plugin.inject), runtime, getOuterStack)
+    const fiber = new Fiber(this.ctx, config, Inject.resolve(plugin.inject), runtime, getOuterStack) as Fiber<C> & PromiseLike<Fiber<C>>
+    fiber.then = (onFulfilled, onRejected) => {
+      return fiber.await()
+        .finally(() => fiber.then = undefined!)
+        .then(() => fiber)
+        .then(onFulfilled, onRejected)
+    }
+    return fiber
   }
 }
 
