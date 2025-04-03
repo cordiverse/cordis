@@ -85,10 +85,6 @@ export function isConstructor(func: any): func is new (...args: any) => any {
   return true
 }
 
-export function isUnproxyable(value: any) {
-  return [Map, Set, Date, Promise].some(constructor => value instanceof constructor)
-}
-
 export function joinPrototype(proto1: {}, proto2: {}) {
   if (proto1 === Object.prototype) return proto2
   const result = Object.create(joinPrototype(Object.getPrototypeOf(proto1), proto2))

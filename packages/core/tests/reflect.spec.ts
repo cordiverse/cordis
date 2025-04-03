@@ -9,39 +9,22 @@ describe('Reflect', () => {
     expect(Context.is(new SubContext())).to.equal(true)
   })
 
-  it('non-service access', async () => {
+  it('access check', async () => {
     const root = new Context()
-    const warn = mock.fn()
-    root.on('internal/warn', warn)
+    root.provide('foo')
 
     await root.plugin((ctx) => {
       expect(() => ctx['prototype']).to.not.throw()
       expect(() => ctx.constructor).to.not.throw()
       expect(() => ctx.bar).to.throw('cannot get property "bar" without inject')
       expect(() => ctx.bar = 0).to.throw('cannot set property "bar" without provide')
+      expect(() => ctx.foo = 0).to.not.throw()
     })
-  })
 
-  it('service access', async () => {
-    const root = new Context()
-    const warn = mock.fn()
-    root.on('internal/warn', warn)
-    root.provide('foo')
-
-    await root.plugin((ctx) => {
-      // direct assignment is not recommended
-      // ctx.foo = undefined
-      // expect(warn.mock.calls).to.have.length(1)
-
-      // service should be proxyable
-      ctx.set('foo', new Set())
-      expect(warn.mock.calls).to.have.length(1) // 2
-
-      // `foo` is not declared as injection
-      ctx.foo.add(1)
-
-      // service cannot be overwritten
-      expect(() => ctx.foo = new Set()).to.throw()
+    await root.isolate('foo').plugin((ctx) => {
+      expect(() => ctx.foo = 0).to.throw('cannot set property "foo" without provide')
+      expect(() => ctx.provide('foo')).to.not.throw()
+      expect(() => ctx.provide('foo')).to.throw('service "foo" has been registered at <root>')
     })
   })
 

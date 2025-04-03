@@ -54,6 +54,7 @@ describe('Service', () => {
     await root.plugin(allowRootAccess)
     const warning = mock.fn()
     root.on('internal/warn', warning)
+    root.provide('counter')
     root.set('counter', new Counter(root))
 
     await root.plugin(Foo)
@@ -90,6 +91,7 @@ describe('Service', () => {
 
     const root = new Context()
     await root.plugin(allowRootAccess)
+    root.provide('counter')
     root.set('counter', new Counter(root))
 
     await root.plugin(Foo)

@@ -10,7 +10,7 @@ export interface Context {
   [symbols.intercept]: Dict
   /** @experimental */
   root: this
-  events: EventsService
+  events: EventsService<this>
   reflect: ReflectService<this>
   registry: RegistryService<this>
 }

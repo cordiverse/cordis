@@ -1,16 +1,16 @@
 import { defineProperty, Dict, isNullable } from 'cosmokit'
 import { Context } from './context'
-import { getTraceable, isUnproxyable, symbols, withProps } from './utils'
+import { getTraceable, symbols, withProps } from './utils'
 import { Fiber, FiberState } from './fiber'
 
 declare module './context' {
   interface Context {
     get<K extends string & keyof this>(name: K, strict?: boolean): undefined | this[K]
     get(name: string, strict?: boolean): any
-    set<K extends string & keyof this>(name: K, value: undefined | this[K]): () => void
-    set(name: string, value: any): () => void
-    /** @deprecated use `ctx.set()` instead */
-    provide(name: string): void
+    set<K extends string & keyof this>(name: K, value: undefined | this[K]): void
+    set(name: string, value: any): void
+    provide<K extends string & keyof this>(name: K, value: undefined | this[K]): () => void
+    provide(name: string, value?: any): () => void
     accessor(name: string, options: Omit<Property.Accessor, 'type'>): void
     mixin<K extends string & keyof this>(name: K, mixins: (keyof this & keyof this[K])[] | Dict<string>): void
     mixin<T extends {}>(source: T, mixins: (keyof this & keyof T)[] | Dict<string>): void
@@ -64,12 +64,12 @@ export class ReflectService<C extends Context = Context> {
       }
 
       const error = new Error(`cannot get property "${prop}" without inject`)
-      const internal = target.reflect.props[prop]
-      if (!internal) throw enhanceError(error)
+      const def = target.reflect.props[prop]
+      if (!def) throw enhanceError(error)
 
       try {
-        if (internal.type === 'accessor') {
-          return internal.get.call(ctx, ctx[symbols.receiver], error)
+        if (def.type === 'accessor') {
+          return def.get.call(ctx, ctx[symbols.receiver], error)
         }
 
         return ctx.events.waterfall('internal/get', ctx, prop, error, () => {
@@ -101,17 +101,18 @@ export class ReflectService<C extends Context = Context> {
       }
 
       const error = new Error(`cannot set property "${prop}" without provide`)
-      const internal = target.reflect.props[prop]
-      if (!internal) throw enhanceError(error)
+      const def = target.reflect.props[prop]
+      if (!def) throw enhanceError(error)
 
       try {
-        if (internal.type === 'accessor') {
-          if (!internal.set) return false
-          return internal.set.call(ctx, value, ctx[symbols.receiver], error)
+        if (def.type === 'accessor') {
+          if (!def.set) return false
+          return def.set.call(ctx, value, ctx[symbols.receiver], error)
         }
 
-        ctx.reflect.set(prop, value)
-        return true
+        return ctx.events.waterfall('internal/set', ctx, prop, value, error, () => {
+          return ctx.reflect.set(prop, value, error)
+        })
       } catch (e: any) {
         throw e === error ? enhanceError(e) : e
       }
@@ -135,109 +136,93 @@ export class ReflectService<C extends Context = Context> {
       noShadow: true,
     })
 
-    this._mixin('reflect', ['get', 'set', 'provide', 'accessor', 'mixin'], true)
-    this._mixin('fiber', ['runtime', 'effect'], true)
-    this._mixin('registry', ['inject', 'plugin'], true)
-    this._mixin('events', ['on', 'once', 'parallel', 'emit', 'serial', 'bail', 'waterfall'], true)
+    this.mixin('reflect', ['get', 'set', 'provide', 'accessor', 'mixin'])
+    this.mixin('fiber', ['runtime', 'effect'])
+    this.mixin('registry', ['inject', 'plugin'])
+    this.mixin('events', ['on', 'once', 'parallel', 'emit', 'serial', 'bail', 'waterfall'])
   }
 
   get(name: string, strict = true) {
-    const internal = this.props[name]
-    if (internal?.type !== 'service') return
     const key = this.ctx[symbols.isolate][name]
-    const impl = this.store[key]
+    const impl = key && this.store[key]
     if (!impl) return
     if (strict && impl.fiber.state !== FiberState.ACTIVE) return
     return getTraceable(this.ctx, impl.value)
   }
 
-  set(name: string, value: any) {
-    this.provide(name)
+  set(name: string, value: any, error?: Error) {
     const key = this.ctx[symbols.isolate][name]
-    const oldValue = this.store[key]?.value
-    value ??= undefined
-    let dispose = () => {}
-    if (oldValue === value) return dispose
-
-    // check override
-    if (!isNullable(value) && !isNullable(oldValue)) {
-      throw new Error(`service ${name} has been registered`)
-    }
-    const ctx: Context = this.ctx
-    if (!isNullable(value)) {
-      dispose = ctx.fiber.effect(() => () => {
-        this.set(name, undefined)
-      }, `ctx.set(${JSON.stringify(name)})`)
-    }
-    if (isUnproxyable(value)) {
-      ctx.events.emit(ctx, 'internal/warn', new Error(`service ${name} is an unproxyable object, which may lead to unexpected behavior`))
-    }
-
-    // setup filter for events
-    const self = Object.create(ctx)
-    self[symbols.filter] = (ctx2: Context) => {
-      return ctx[symbols.isolate][name] === ctx2[symbols.isolate][name]
-    }
-
-    ctx.events.emit(self, 'internal/before-service', name, value)
-    ctx.reflect.store[key] = { name, value, fiber: ctx.fiber }
-    if (ctx.fiber.state === FiberState.ACTIVE) {
-      ctx.events.emit(self, 'internal/service', name, oldValue)
-    }
-    return dispose
+    const impl = this.store[key]
+    if (!impl) throw error ?? new Error(`cannot set property "${name}" without provide`)
+    impl.value = value
+    return true
   }
 
-  provide(name: string) {
-    if (!this.props[name]) {
-      this.props[name] ??= { type: 'service' }
-    } else if (this.props[name].type !== 'service') {
-      throw new Error(`propery "${name}" is already declared as ${this.props[name].type}`)
-    }
-    const key = this.ctx.root[symbols.isolate][name] ??= Symbol(name)
-    this.store[key] ??= { name, value: undefined, fiber: this.ctx.fiber }
-  }
+  provide(name: string, value?: any) {
+    return this.ctx.fiber.effect(() => {
+      if (!this.props[name]) {
+        this.props[name] ??= { type: 'service' }
+      } else if (this.props[name].type !== 'service') {
+        throw new Error(`propery "${name}" is already declared as ${this.props[name].type}`)
+      }
+      this.props[name] = { type: 'service' }
 
-  _accessor(name: string, options: Omit<Property.Accessor, 'type'>) {
-    if (name in this.props) return () => {}
-    this.props[name] = { type: 'accessor', ...options }
-    return () => delete this.props[name]
+      this.ctx.root[symbols.isolate][name] ??= Symbol(name)
+      const key = this.ctx[symbols.isolate][name]
+      if (!this.store[key]) {
+        this.store[key] = { name, value, fiber: this.ctx.fiber }
+      } else {
+        throw new Error(`service "${name}" has been registered at <${this.store[key].fiber.name}>`)
+      }
+      const self = Object.create(this.ctx)
+      self[symbols.filter] = (ctx2: Context) => {
+        return this.ctx[symbols.isolate][name] === ctx2[symbols.isolate][name]
+      }
+      if (this.ctx.fiber.state === FiberState.ACTIVE) {
+        this.ctx.events.emit(self, 'internal/service', name)
+      }
+      return () => {
+        delete this.store[key]
+        this.ctx.events.emit(self, 'internal/before-service', name, value)
+      }
+    }, `ctx.provide(${JSON.stringify(name)})`)
   }
 
   accessor(name: string, options: Omit<Property.Accessor, 'type'>) {
-    this.ctx.fiber.effect(() => {
-      return this._accessor(name, options)
+    return this.ctx.fiber.effect(() => {
+      if (name in this.props) {
+        throw new Error(`propery "${name}" is already declared as ${this.props[name].type}`)
+      }
+      this.props[name] = { type: 'accessor', ...options }
+      return () => delete this.props[name]
     }, `ctx.accessor(${JSON.stringify(name)})`)
   }
 
-  _mixin(source: string, mixins: string[] | Dict<string>, strict = false) {
-    const entries = Array.isArray(mixins) ? mixins.map(key => [key, key]) : Object.entries(mixins)
-    const getTarget = (ctx: Context, error: Error) => {
-      // TODO enhance error message
-      return ctx[source]
-    }
-    const disposables = entries.map(([key, value]) => {
-      return this._accessor(value, {
-        get(receiver, error) {
-          const service = getTarget(this, error)
-          if (isNullable(service)) return service
-          const mixin = receiver ? withProps(receiver, service) : service
-          const value = Reflect.get(service, key, mixin)
-          if (typeof value !== 'function') return value
-          return value.bind(mixin ?? service)
-        },
-        set(value, receiver, error) {
-          const service = getTarget(this, error)
-          const mixin = receiver ? withProps(receiver, service) : service
-          return Reflect.set(service, key, value, mixin)
-        },
-      })
-    })
-    return () => disposables.forEach(dispose => dispose())
-  }
-
   mixin(source: any, mixins: string[] | Dict<string>) {
-    this.ctx.fiber.effect(() => {
-      return this._mixin(source, mixins)
+    const self = this
+    return this.ctx.fiber.effect(function* () {
+      const entries = Array.isArray(mixins) ? mixins.map(key => [key, key]) : Object.entries(mixins)
+      const getTarget = (ctx: Context, error: Error) => {
+        // TODO enhance error message
+        return ctx[source]
+      }
+      for (const [key, value] of entries) {
+        yield self.accessor(value, {
+          get(receiver, error) {
+            const service = getTarget(this, error)
+            if (isNullable(service)) return service
+            const mixin = receiver ? withProps(receiver, service) : service
+            const value = Reflect.get(service, key, mixin)
+            if (typeof value !== 'function') return value
+            return value.bind(mixin ?? service)
+          },
+          set(value, receiver, error) {
+            const service = getTarget(this, error)
+            const mixin = receiver ? withProps(receiver, service) : service
+            return Reflect.set(service, key, value, mixin)
+          },
+        })
+      }
     }, `ctx.mixin(${JSON.stringify(source)})`)
   }
 

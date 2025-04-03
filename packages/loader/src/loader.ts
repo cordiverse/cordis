@@ -1,5 +1,5 @@
 import { Context, Inject, Service } from '@cordisjs/core'
-import { Dict, isNullable } from 'cosmokit'
+import { defineProperty, Dict, isNullable } from 'cosmokit'
 import { ModuleLoader } from './internal.ts'
 import { Entry, EntryOptions } from './config/entry.ts'
 import { LoaderFile } from './config/file.ts'
@@ -67,7 +67,13 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
   constructor(public ctx: C, public config: Loader.Config) {
     super(ctx)
 
-    ctx.set('loader', this)
+    defineProperty(this, Service.tracker, {
+      associate: 'loader',
+      property: 'ctx',
+      noShadow: true,
+    })
+
+    ctx.provide('loader', this)
 
     ctx.on('internal/update', (fiber, config) => {
       if (!fiber.entry) return
@@ -128,8 +134,7 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
     this.ctx.get('logger')?.('loader').info('%s plugin %c', type, entry.options.name)
   }
 
-  locate(ctx = this.ctx) {
-    let fiber = ctx.fiber
+  locate(fiber = this.ctx.fiber) {
     while (1) {
       if (fiber.entry) return fiber.entry.id
       const next = fiber.parent.fiber

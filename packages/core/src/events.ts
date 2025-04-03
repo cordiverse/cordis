@@ -44,10 +44,10 @@ export interface Hook extends EventOptions {
   callback: (...args: any[]) => any
 }
 
-export class EventsService {
+export class EventsService<C extends Context = Context> {
   _hooks: Record<keyof any, Hook[]> = {}
 
-  constructor(private ctx: Context) {
+  constructor(private ctx: C) {
     defineProperty(this, symbols.tracker, {
       property: 'ctx',
       noShadow: true,
@@ -94,14 +94,14 @@ export class EventsService {
       }
     }, { global: true })
 
-    this.on('internal/status', function (fiber: Fiber) {
+    this.on('internal/status', (fiber: Fiber) => {
       if (fiber.state !== FiberState.ACTIVE) return
       for (const key of Reflect.ownKeys(ctx.reflect.store)) {
         const item = ctx.reflect.store[key as symbol]
         if (item.fiber !== fiber) continue
         if (item.value) {
           // FIXME filter?
-          ctx.emit(item.fiber.ctx, 'internal/service', item.name, item.value)
+          this.emit(item.fiber.ctx, 'internal/service', item.name, item.value)
         }
       }
     }, { global: true })
@@ -206,10 +206,11 @@ export interface Events<in C extends Context = Context> {
   'internal/info'(this: C, format: any, ...param: any[]): void
   'internal/error'(this: C, format: any, ...param: any[]): void
   'internal/warn'(this: C, format: any, ...param: any[]): void
-  'internal/before-service'(name: string, value: any): void
-  'internal/service'(name: string, value: any): void
+  'internal/before-service'(this: C, name: string, value: any): void
+  'internal/service'(this: C, name: string, value: any): void
   'internal/update'(fiber: Fiber<C>, config: any): boolean | void
   'internal/get'(ctx: C, name: string, error: Error, next: () => void): void
+  'internal/set'(ctx: C, name: string, value: any, error: Error, next: () => boolean): boolean
   'internal/listener'(this: C, name: string, listener: any, prepend: boolean): void
   'internal/dispatch'(mode: DispatchMode, name: string, args: any[], thisArg: any): void
 }
