@@ -1,9 +1,9 @@
 import { expect } from 'chai'
-import { Context } from '@cordisjs/core'
+import { Context, FiberState } from '@cordisjs/core'
 import MockLoader, { sleep } from './utils'
 import { Mock } from 'node:test'
 
-describe('loader: basic support', () => {
+describe('Loader: basic support', () => {
   const root = new Context()
 
   let loader!: MockLoader
@@ -92,5 +92,60 @@ describe('loader: basic support', () => {
       id: '4',
       name: 'qux',
     }])
+  })
+})
+
+describe('Loader: intercept config', () => {
+  const root = new Context()
+
+  let loader!: MockLoader
+  let foo!: string
+  let bar!: string
+  let qux!: string
+
+  const { promise, resolve } = Promise.withResolvers<void>()
+
+  before(async () => {
+    await root.plugin(MockLoader)
+    loader = root.loader as any
+
+    loader.mock('foo', () => promise)
+    Object.assign(loader.mock('bar', (ctx: Context) => ctx.on('internal/update', () => true)), {
+      inject: ['never'],
+    })
+    loader.mock('qux', () => {})
+  })
+
+  it('pending', async () => {
+    foo = await loader.create({
+      name: 'foo',
+    })
+    bar = await loader.create({
+      name: 'bar',
+    })
+    qux = await loader.create({
+      name: 'qux',
+      inject: {
+        loader: true,
+      },
+      intercept: {
+        loader: {
+          await: true,
+        },
+      },
+    })
+
+    await sleep()
+    expect(loader.expectFiber(foo).state).to.equal(FiberState.LOADING)
+    expect(loader.expectFiber(bar).state).to.equal(FiberState.PENDING)
+    expect(loader.expectFiber(qux).state).to.equal(FiberState.PENDING)
+  })
+
+  it('resolved', async () => {
+    resolve()
+    await sleep()
+    expect(loader.expectFiber(foo).state).to.equal(FiberState.ACTIVE)
+    expect(loader.expectFiber(bar).state).to.equal(FiberState.PENDING)
+    expect(loader.expectFiber(qux).state).to.equal(FiberState.ACTIVE)
   })
 })

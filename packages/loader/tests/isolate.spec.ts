@@ -3,7 +3,7 @@ import { expect } from 'chai'
 import { Context, FiberState, Service } from '@cordisjs/core'
 import MockLoader, { sleep } from './utils'
 
-describe('service isolation: basic', () => {
+describe('Service Isolation: basic', () => {
   const root = new Context()
   const dispose = mock.fn()
 
@@ -139,7 +139,7 @@ describe('service isolation: basic', () => {
   })
 })
 
-describe('service isolation: realm', () => {
+describe('Service Isolation: realm', () => {
   const root = new Context()
   const dispose = mock.fn()
 
@@ -454,7 +454,7 @@ describe('service isolation: realm', () => {
   })
 })
 
-describe('service isolation: transfer', () => {
+describe('Service Isolation: transfer', () => {
   const root = new Context()
   const dispose = mock.fn()
 

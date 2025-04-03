@@ -49,7 +49,7 @@ export default class MockLoader<C extends Context = Context> extends Loader<C> {
   async read(data: any) {
     this.file.write(data)
     await this.root.update(data)
-    await this.wait()
+    await this.await()
   }
 
   async import(name: string) {

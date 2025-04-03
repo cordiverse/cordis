@@ -3,7 +3,7 @@ import { expect } from 'chai'
 import { Context } from '@cordisjs/core'
 import MockLoader, { sleep } from './utils'
 
-describe('group management: basic support', () => {
+describe('Group: basic support', () => {
   const root = new Context()
   const dispose = mock.fn()
 
@@ -41,8 +41,9 @@ describe('group management: basic support', () => {
       }],
     }, outer)
 
-    await loader.expectFiber(outer)
-    await loader.expectFiber(inner)
+    await sleep()
+    loader.expectFiber(outer)
+    loader.expectFiber(inner)
     expect(foo.mock.calls).to.have.length(2)
     expect(dispose.mock.calls).to.have.length(0)
     expect([...loader.entries()]).to.have.length(4)
@@ -82,7 +83,7 @@ describe('group management: basic support', () => {
   })
 })
 
-describe('group management: transfer', () => {
+describe('Group: transfer', () => {
   const root = new Context()
   const dispose = mock.fn()
 
@@ -167,7 +168,7 @@ describe('group management: transfer', () => {
   })
 })
 
-describe('group management: intercept', () => {
+describe('Group: intercept', () => {
   const root = new Context()
   const callback = mock.fn()
 

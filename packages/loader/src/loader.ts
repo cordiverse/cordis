@@ -43,7 +43,9 @@ export namespace Loader {
     filename?: string
   }
 
-  export interface Intercept {}
+  export interface Intercept {
+    await?: boolean
+  }
 }
 
 export abstract class Loader<C extends Context = Context> extends ImportTree<C> {
@@ -57,6 +59,7 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
     env: process.env,
   }
 
+  public name = 'loader'
   public files: Dict<LoaderFile> = Object.create(null)
   public delims: Dict<symbol> = Object.create(null)
   public internal?: ModuleLoader
@@ -70,7 +73,7 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
       noShadow: true,
     })
 
-    ctx.provide('loader', this)
+    ctx.reflect.provide('loader', this, this[Service.check])
 
     ctx.on('internal/update', (fiber, config) => {
       if (!fiber.entry) return
@@ -123,6 +126,12 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
   async* [Service.init]() {
     await this.init(process.cwd(), this.config)
     yield* super[Service.init]()
+  }
+
+  [Service.check]() {
+    const config: Loader.Intercept = Service.prototype[Service.resolveConfig].call(this)
+    if (config.await && this.getTasks().length) return false
+    return true
   }
 
   showLog(entry: Entry, type: string) {

@@ -157,7 +157,8 @@ export class Entry<C extends Context = Context> {
       this._initTask = undefined
     }
     this.fiber?.await().finally(() => {
-      this.context.emit(this.loader as any as C, 'internal/service', 'loader', this.loader)
+      if (this.loader.getTasks().length) return
+      this.ctx.reflect.notify(['loader'])
     })
   }
 

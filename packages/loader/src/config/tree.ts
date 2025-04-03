@@ -1,5 +1,5 @@
 import { composeError, Context } from '@cordisjs/core'
-import { Dict } from 'cosmokit'
+import { Dict, isNonNullable } from 'cosmokit'
 import { Entry, EntryOptions } from './entry.ts'
 import { EntryGroup } from './group.ts'
 
@@ -28,12 +28,15 @@ export abstract class EntryTree<C extends Context = Context> {
     }
   }
 
+  getTasks() {
+    return [...this.entries()]
+      .map(entry => entry._initTask || entry.fiber?.inertia)
+      .filter(isNonNullable)
+  }
+
   async await() {
     while (true) {
-      await new Promise(resolve => setTimeout(resolve, 0))
-      const tasks = [...this.entries()]
-        .map(entry => entry._initTask || entry.fiber?.inertia)
-        .filter(Boolean)
+      const tasks = this.getTasks()
       if (!tasks.length) return
       await Promise.allSettled(tasks)
     }
