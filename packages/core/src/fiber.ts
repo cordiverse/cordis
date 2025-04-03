@@ -130,14 +130,14 @@ export class Fiber<out C extends Context = Context> {
 
       for (const [name, inject] of Object.entries(this.inject)) {
         if (!inject!.required) continue
-        this._notify(name)
+        this._checkImpl(name)
       }
 
       this.dispose = parent.fiber.effect(() => {
         const remove = runtime.fibers.push(this)
         try {
           this.config = resolveConfig(runtime, config)
-          this._activate()
+          this._refresh()
         } catch (error) {
           this.context.emit('internal/error', error)
           this._error = error
@@ -151,7 +151,7 @@ export class Fiber<out C extends Context = Context> {
               this.ctx.registry.delete(runtime.callback)
             }
           }
-          this._deactivate()
+          this._setVersion(INACTIVE)
           await this.await()
         }
       }, 'ctx.plugin()')
@@ -322,44 +322,37 @@ export class Fiber<out C extends Context = Context> {
     for (const key of Reflect.ownKeys(this.ctx.reflect.store)) {
       const impl = this.ctx.reflect.store[key as symbol]
       if (impl.fiber !== this) continue
-      this.ctx.reflect.notify(impl.name)
+      this.ctx.reflect.notify([impl.name])
     }
   }
 
-  _notify(name: string) {
+  _checkImpl(name: string) {
     const impl = this.ctx.reflect._getImpl(name, true)
-    if (!impl) {
-      delete this._store[name]
-      return this._deactivate()
-    }
+    if (!impl) return delete this._store[name]
     try {
       if (impl.check && !impl.check.call(getTraceable(this.ctx, impl.value))) {
-        delete this._store[name]
-        return this._deactivate()
+        return delete this._store[name]
       }
     } catch (error) {
       this.context.emit(impl.fiber.ctx, 'internal/error', error)
-      delete this._store[name]
-      return this._deactivate()
+      return delete this._store[name]
     }
     this._store[name] = impl
-    this._activate()
   }
 
-  private _activate() {
+  _refresh() {
     let version: string | boolean = false
     version = ''
     for (const [name, inject] of Object.entries(this.inject)) {
       if (!inject!.required) continue
       const impl = this._store[name]
-      if (!impl) return
+      if (!impl) {
+        version = INACTIVE
+        break
+      }
       version += ':' + impl.fiber.uid
     }
     this._setVersion(version)
-  }
-
-  private _deactivate() {
-    this._setVersion(INACTIVE)
   }
 
   private _setVersion(version: string) {
@@ -433,8 +426,8 @@ export class Fiber<out C extends Context = Context> {
 
   async restart() {
     this.assertActive()
-    this._deactivate()
-    this._activate()
+    this._setVersion(INACTIVE)
+    this._refresh()
     await this.await()
   }
 
@@ -446,7 +439,7 @@ export class Fiber<out C extends Context = Context> {
     } catch (error) {
       this.context.emit('internal/error', error)
       this._error = error
-      this._deactivate()
+      this._setVersion(INACTIVE)
       return
     }
     this._error = undefined

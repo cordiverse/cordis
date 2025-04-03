@@ -54,11 +54,6 @@ export interface Impl<C extends Context = Context> {
   check?: () => boolean
 }
 
-function defaultNotifyFilter(ctx: Context, name: string) {
-  const key = ctx[symbols.isolate][name]
-  return (ctx: Context) => key === ctx[symbols.isolate][name]
-}
-
 export class ReflectService<C extends Context = Context> {
   static handler: ProxyHandler<Context> = {
     get: (target, prop, ctx: Context) => {
@@ -190,23 +185,28 @@ export class ReflectService<C extends Context = Context> {
         throw new Error(`service "${name}" has been registered at <${this.store[key].fiber.name}>`)
       }
       if (this.ctx.fiber.state === FiberState.ACTIVE) {
-        this.notify(name)
+        this.notify([name])
       }
       return () => {
         delete this.store[key]
         if (this.ctx.fiber.state === FiberState.ACTIVE) {
-          this.notify(name)
+          this.notify([name])
         }
       }
     }, `ctx.provide(${JSON.stringify(name)})`)
   }
 
-  notify(name: string, filter = defaultNotifyFilter(this.ctx, name)) {
+  notify(names: string[], filter = (ctx: Context, name: string) => ctx[symbols.isolate][name] === this.ctx[symbols.isolate][name]) {
     for (const runtime of this.ctx.registry.values()) {
       for (const fiber of runtime.fibers) {
-        if (!fiber.inject[name]?.required) continue
-        if (!filter(fiber.ctx)) continue
-        fiber._notify(name)
+        let hasUpdate = false
+        for (const name of names) {
+          if (!fiber.inject[name]?.required) continue
+          if (!filter(fiber.ctx, name)) continue
+          hasUpdate = true
+          fiber._checkImpl(name)
+        }
+        if (hasUpdate) fiber._refresh()
       }
     }
   }

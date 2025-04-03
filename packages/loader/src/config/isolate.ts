@@ -96,7 +96,7 @@ export default function isolate(ctx: Context) {
     }
 
     // step 2: generate service diff
-    const diff: [string, symbol, symbol, symbol, symbol][] = []
+    const diff: Dict<[symbol, symbol, symbol, symbol]> = Object.create(null)
     const oldMap = entry.ctx[Context.isolate]
     for (const name in { ...newMap, ...entry.loader.delims }) {
       if (newMap[name] === oldMap[name]) continue
@@ -109,7 +109,7 @@ export default function isolate(ctx: Context) {
           entry.ctx.emit(entry.ctx, 'internal/warn', new Error(`expected service ${name} to be implemented`))
           continue
         }
-        diff.push([name, oldMap[name], newMap[name], entry.ctx[delim], impl.fiber.ctx[delim]])
+        diff[name] = [oldMap[name], newMap[name], entry.ctx[delim], impl.fiber.ctx[delim]]
         if (entry.ctx[delim] !== impl.fiber.ctx[delim]) break
       }
     }
@@ -120,26 +120,26 @@ export default function isolate(ctx: Context) {
     swap(entry.ctx[Context.isolate], newMap)
     swap(entry.ctx[Context.intercept], entry.options.intercept)
 
+    // step 4: reload fiber
     next()
 
-    // step 4: replace service impl
-    for (const [, symbol1, symbol2, flag1, flag2] of diff) {
+    // step 5: replace service impl
+    for (const [symbol1, symbol2, flag1, flag2] of Object.values(diff)) {
       if (flag1 === flag2 && entry.ctx.reflect.store[symbol1] && !entry.ctx.reflect.store[symbol2]) {
         entry.ctx.reflect.store[symbol2] = entry.ctx.reflect.store[symbol1]
         delete entry.ctx.reflect.store[symbol1]
       }
     }
 
-    // step 5: reflect notify
-    for (const [name, symbol1, symbol2, flag1, flag2] of diff) {
-      ctx.reflect.notify(name, (ctx) => {
-        const symbol3 = ctx[Context.isolate][name]
-        const flag3 = ctx[entry.loader.delims[name]]
-        return (symbol1 === symbol3 || symbol2 === symbol3) && (flag1 === flag3) !== (flag1 === flag2)
-      })
-    }
+    // step 6: reflect notify
+    ctx.reflect.notify(Object.keys(diff), (ctx, name) => {
+      const [symbol1, symbol2, flag1, flag2] = diff[name]
+      const symbol3 = ctx[Context.isolate][name]
+      const flag3 = ctx[entry.loader.delims[name]]
+      return (symbol1 === symbol3 || symbol2 === symbol3) && (flag1 === flag3) !== (flag1 === flag2)
+    })
 
-    // step 6: clean up delimiters
+    // step 7: clean up delimiters
     for (const name in entry.loader.delims) {
       if (!Reflect.ownKeys(newMap).includes(name)) {
         delete entry.ctx[entry.loader.delims[name]]
