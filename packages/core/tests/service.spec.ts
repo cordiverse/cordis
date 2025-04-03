@@ -108,50 +108,6 @@ describe('Service', () => {
     expect(root.foo.value).to.equal(3)
   })
 
-  it('dependency update', async () => {
-    const callback = mock.fn((foo: any) => {})
-    const dispose = mock.fn((foo: any) => {})
-    const plugin = mock.fn((ctx: Context) => {
-      callback(ctx.foo)
-      return () => dispose(ctx.foo)
-    })
-
-    const root = new Context()
-    root.provide('foo')
-    root.inject(['foo'], plugin)
-
-    expect(callback.mock.calls).to.have.length(0)
-    expect(dispose.mock.calls).to.have.length(0)
-
-    const old = { bar: 100 }
-    root.set('foo', old)
-    await sleep()
-    expect(callback.mock.calls).to.have.length(1)
-    expect(callback.mock.calls[0].arguments[0]).to.have.property('bar', 100)
-    expect(dispose.mock.calls).to.have.length(0)
-
-    // do not trigger event if reference has not changed
-    old.bar = 200
-    root.set('foo', old)
-    await sleep()
-    expect(callback.mock.calls).to.have.length(1)
-    expect(dispose.mock.calls).to.have.length(0)
-
-    root.set('foo', null)
-    root.set('foo', { bar: 300 })
-    await sleep()
-    expect(callback.mock.calls).to.have.length(2)
-    expect(callback.mock.calls[1].arguments[0]).to.have.property('bar', 300)
-    expect(dispose.mock.calls).to.have.length(1)
-    expect(dispose.mock.calls[0].arguments[0]).to.have.property('bar', 200)
-
-    root.set('foo', null)
-    await sleep()
-    expect(callback.mock.calls).to.have.length(2)
-    expect(dispose.mock.calls).to.have.length(2)
-    expect(dispose.mock.calls[1].arguments[0]).to.have.property('bar', 300)
-  })
-
   it('compare snapshot', async () => {
     class Test extends Service {
       constructor(ctx: Context) {

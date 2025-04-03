@@ -33,8 +33,8 @@ export interface EffectMeta {
   children: EffectMeta[]
 }
 
-interface EffectRunner {
-  isActive: boolean
+interface EffectRunner<T> {
+  version: T
   execute: () => any
   collect: (dispose: Disposable) => void
   getOuterStack: () => string[]
@@ -63,6 +63,8 @@ export namespace CordisError {
   } as const
 }
 
+const INACTIVE = '__INACTIVE__'
+
 export class Fiber<out C extends Context = Context> {
   public uid: number | null
   public ctx: C
@@ -70,8 +72,7 @@ export class Fiber<out C extends Context = Context> {
   public acceptors = new DisposableList<(config: any) => boolean>()
   public state = FiberState.PENDING
   public dispose: () => Promise<void>
-  public store: Dict | undefined
-  public version = 0
+  public store: Dict<Impl<C>> | undefined
   public inertia: Promise<void> | undefined
 
   public _disposables = new DisposableList<Disposable>()
@@ -80,8 +81,8 @@ export class Fiber<out C extends Context = Context> {
   protected context: Context
 
   private _error: any
-  private _runner: EffectRunner
-  private _store: Dict = Object.create(null)
+  private _runner: EffectRunner<string>
+  private _store: Dict<Impl<C>> = Object.create(null)
 
   constructor(
     public parent: C,
@@ -108,7 +109,7 @@ export class Fiber<out C extends Context = Context> {
       }
 
       this._runner = {
-        isActive: false,
+        version: INACTIVE,
         getOuterStack,
         execute: () => {
           if (isConstructor(runtime.callback)) {
@@ -134,7 +135,7 @@ export class Fiber<out C extends Context = Context> {
         const remove = runtime.fibers.push(this)
         try {
           this.config = resolveConfig(runtime, config)
-          this._setActive(true)
+          this._activate()
         } catch (error) {
           this.context.emit('internal/error', error)
           this._error = error
@@ -149,7 +150,7 @@ export class Fiber<out C extends Context = Context> {
               this.ctx.registry.delete(runtime.callback)
             }
           }
-          this._setActive(false)
+          this._deactivate()
           await this.await()
         }
       }, 'ctx.plugin()')
@@ -158,15 +159,12 @@ export class Fiber<out C extends Context = Context> {
       this.ctx = this.context = parent
       this.state = FiberState.ACTIVE
       this._runner = {
-        isActive: true,
+        version: '',
         getOuterStack,
         execute: () => {},
         collect,
       }
-      this.dispose = async () => {
-        this._setActive(false)
-        await this.inertia
-      }
+      this.dispose = () => this.restart()
     }
   }
 
@@ -184,7 +182,8 @@ export class Fiber<out C extends Context = Context> {
     throw new CordisError('INACTIVE_EFFECT')
   }
 
-  private _execute(runner: EffectRunner) {
+  private _execute<T>(runner: EffectRunner<T>) {
+    const version = runner.version
     return composeError((info) => {
       const safeCollect = (dispose: void | Disposable) => {
         if (typeof dispose === 'function') {
@@ -217,7 +216,7 @@ export class Fiber<out C extends Context = Context> {
           await Promise.resolve()
           info.error = new Error()
           while (true) {
-            if (!runner.isActive) return
+            if (runner.version !== version) return
             const result = await iter.next()
             safeCollect(result.value)
             if (result.done) return
@@ -251,9 +250,9 @@ export class Fiber<out C extends Context = Context> {
     }
 
     const meta: EffectMeta = { label, children: [] }
-    const runner: EffectRunner = {
+    const runner: EffectRunner<boolean> = {
       execute,
-      isActive: true,
+      version: true,
       collect: (dispose) => {
         disposables.push(dispose)
         this._disposables.delete(dispose)
@@ -278,14 +277,14 @@ export class Fiber<out C extends Context = Context> {
     })
 
     const wrapper = defineProperty(() => {
-      if (!runner.isActive) return
-      runner.isActive = false
+      if (!runner.version) return
+      runner.version = false
       return task ? task.then(dispose) : dispose()
     }, symbols.effect, meta) as AsyncDisposable
 
     const disposeAsync = () => {
-      if (!runner.isActive) return
-      runner.isActive = false
+      if (!runner.version) return
+      runner.version = false
       return dispose()
     }
     wrapper.then = async (onFulfilled, onRejected) => {
@@ -306,7 +305,7 @@ export class Fiber<out C extends Context = Context> {
   private _getState() {
     if (this.uid === null) return FiberState.DISPOSED
     if (this._error) return FiberState.FAILED
-    if (this._runner.isActive) return FiberState.ACTIVE
+    if (this._runner.version !== INACTIVE) return FiberState.ACTIVE
     return FiberState.PENDING
   }
 
@@ -326,16 +325,47 @@ export class Fiber<out C extends Context = Context> {
     }
   }
 
-  private _setActive(value: boolean) {
-    if (value === this._runner.isActive) return
-    if (value && !Object.entries(this.inject).every(([name, inject]) => !inject!.required || name in this._store)) {
-      return
+  _setImpl(name: string, impl: Impl<C> | undefined) {
+    if (!impl) {
+      delete this._store[name]
+      return this._deactivate()
     }
+    try {
+      if (impl.check && !impl.check.call(getTraceable(this.ctx, impl.value))) {
+        delete this._store[name]
+        return this._deactivate()
+      }
+    } catch (error) {
+      this.context.emit(impl.fiber.ctx, 'internal/error', error)
+      delete this._store[name]
+      return this._deactivate()
+    }
+    this._store[name] = impl
+    this._activate()
+  }
+
+  private _activate() {
+    let version: string | boolean = false
+    version = ''
+    for (const [name, inject] of Object.entries(this.inject)) {
+      if (!inject!.required) continue
+      const impl = this._store[name]
+      if (!impl) return
+      version += ':' + impl.fiber.uid
+    }
+    this._setVersion(version)
+  }
+
+  private _deactivate() {
+    this._setVersion(INACTIVE)
+  }
+
+  private _setVersion(version: string) {
+    if (version === this._runner.version) return
+    this._runner.version = version
+    if (this.inertia) return
     this._updateState(() => {
-      const createInert = !this.inertia && value !== this._runner.isActive
-      this._runner.isActive = value
-      if (!createInert) return
-      if (value) {
+      if (version !== INACTIVE) {
         this.inertia = this._reload()
         return FiberState.LOADING
       } else {
@@ -345,40 +375,20 @@ export class Fiber<out C extends Context = Context> {
     })
   }
 
-  _setImpl(name: string, impl: Impl<C> | undefined) {
-    if (!impl) {
-      delete this._store[name]
-      return this._setActive(false)
-    }
-    const value = getTraceable(this.ctx, impl.value)
-    try {
-      if (impl.check && !impl.check.call(value)) {
-        delete this._store[name]
-        return this._setActive(false)
-      }
-    } catch (error) {
-      this.context.emit(impl.fiber.ctx, 'internal/error', error)
-      delete this._store[name]
-      return this._setActive(false)
-    }
-    this._store[name] = value
-    this._setActive(true)
-  }
-
   private async _reload() {
     this.store = { ...this._store }
-    this.version += 1
+    const version = this._runner.version
     try {
       await Promise.resolve()
       await this._execute(this._runner)
     } catch (reason) {
-      // the registry impl guarantees that the error is non-null
+      // impl guarantees that the error is non-null (?)
       this.context.emit(this.ctx, 'internal/error', reason)
       this._error = reason
-      this._runner.isActive = false
+      this._runner.version = INACTIVE
     }
     this._updateState(() => {
-      if (this._runner.isActive) {
+      if (this._runner.version === version) {
         this.inertia = undefined
       } else {
         this.inertia = this._unload()
@@ -401,11 +411,11 @@ export class Fiber<out C extends Context = Context> {
     }))
     this.store = undefined
     this._updateState(() => {
-      if (this._runner.isActive) {
+      if (this._runner.version === INACTIVE) {
+        this.inertia = undefined
+      } else {
         this.inertia = this._reload()
         return FiberState.LOADING
-      } else {
-        this.inertia = undefined
       }
     })
   }
@@ -420,8 +430,9 @@ export class Fiber<out C extends Context = Context> {
 
   async restart() {
     this.assertActive()
-    this._setActive(false)
-    this._setActive(true)
+    this._deactivate()
+    this._activate()
+    await this.await()
   }
 
   update(config: any) {
@@ -432,10 +443,10 @@ export class Fiber<out C extends Context = Context> {
     } catch (error) {
       this.context.emit('internal/error', error)
       this._error = error
-      this._setActive(false)
+      this._deactivate()
       return
     }
     this._error = undefined
-    this.restart()
+    return this.restart()
   }
 }

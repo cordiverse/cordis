@@ -1,9 +1,70 @@
-import { Context, FiberState } from '../src'
+import { Context, FiberState, Service } from '../src'
 import { expect } from 'chai'
 import { mock } from 'node:test'
-import { event, sleep } from './utils'
+import { event, sleep, withTimers } from './utils'
 
 describe('Fiber', () => {
+  it('inertia lock 1', withTimers(async (root, clock) => {
+    const dispose = root.provide('foo', 1)
+    const fiber = root.inject(['foo'], async () => {
+      await sleep(1000)
+      return () => sleep(1000)
+    })
+    await clock.tickAsync(400) // 400
+    expect(fiber.state).to.equal(FiberState.LOADING)
+    dispose()
+    await clock.tickAsync(400) // 800
+    expect(fiber.state).to.equal(FiberState.LOADING)
+    await clock.tickAsync(400) // 1200
+    expect(fiber.state).to.equal(FiberState.UNLOADING)
+    root.provide('foo', 1)
+    await clock.tickAsync(1000) // 2200
+    expect(fiber.state).to.equal(FiberState.LOADING)
+    await clock.tickAsync(1000) // 3200
+    expect(fiber.state).to.equal(FiberState.ACTIVE)
+  }))
+
+  it('inertia lock 2', withTimers(async (root, clock) => {
+    const dispose = root.provide('foo', 1)
+    const fiber = root.inject(['foo'], async () => {
+      await sleep(1000)
+      return () => sleep(1000)
+    })
+    await clock.tickAsync(400) // 400
+    expect(fiber.state).to.equal(FiberState.LOADING)
+    dispose()
+    await clock.tickAsync(400) // 800
+    expect(fiber.state).to.equal(FiberState.LOADING)
+    root.provide('foo', 2)
+    await clock.tickAsync(400) // 1200
+    expect(fiber.state).to.equal(FiberState.ACTIVE)
+  }))
+
+  it('inertia lock 3', withTimers(async (root, clock) => {
+    class Foo extends Service {
+      constructor(ctx: Context) {
+        super(ctx, 'foo')
+      }
+    }
+    const provider = await root.plugin(Foo)
+    const fiber = root.inject(['foo'], async () => {
+      await sleep(1000)
+      return () => sleep(1000)
+    })
+    await clock.tickAsync(400) // 400
+    expect(fiber.state).to.equal(FiberState.LOADING)
+    await provider.dispose()
+    await clock.tickAsync(400) // 800
+    expect(fiber.state).to.equal(FiberState.LOADING)
+    await root.plugin(Foo)
+    await clock.tickAsync(400) // 1200
+    expect(fiber.state).to.equal(FiberState.UNLOADING)
+    await clock.tickAsync(1000) // 2200
+    expect(fiber.state).to.equal(FiberState.LOADING)
+    await clock.tickAsync(1000) // 3200
+    expect(fiber.state).to.equal(FiberState.ACTIVE)
+  }))
+
   it('plugin error', async () => {
     const root = new Context()
     const callback = mock.fn()

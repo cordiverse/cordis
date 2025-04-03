@@ -82,7 +82,7 @@ export class ReflectService<C extends Context = Context> {
             const inject = fiber.inject[prop]
             if (inject) {
               if (!inject.required) return ctx.reflect.get(prop, true)
-              if (fiber.store) return getTraceable(ctx, fiber.store[prop])
+              if (fiber.store) return getTraceable(ctx, fiber.store[prop].value)
               error.message = `cannot get required service "${prop}" in inactive context`
               throw error
             }
@@ -196,14 +196,15 @@ export class ReflectService<C extends Context = Context> {
     }, `ctx.provide(${JSON.stringify(name)})`)
   }
 
-  notify(name: string) {
+  notify(name: string, filter = (() => {
     const key = this.ctx[symbols.isolate][name]
-    let impl: Impl<C> | undefined = this.store[key]
-    if (impl?.fiber.state !== FiberState.ACTIVE) impl = undefined
+    return (target: Context) => key === target[symbols.isolate][name]
+  })()) {
+    const impl = this._getImpl(name, true)
     for (const runtime of this.ctx.registry.values()) {
       for (const fiber of runtime.fibers) {
         if (!fiber.inject[name]?.required) continue
-        if (key !== fiber.ctx[symbols.isolate][name]) continue
+        if (!filter(fiber.ctx)) continue
         fiber._setImpl(name, impl)
       }
     }

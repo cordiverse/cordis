@@ -42,10 +42,10 @@ describe('Effects', () => {
     const dispose3 = mock.fn(() => seq.push(3))
     const dispose = root.effect(function* () {
       yield dispose1
-      yield root.on('internal/service', () => {})
+      yield root.on('custom-event', () => {})
       yield dispose2
       yield root.effect(function* () {
-        yield root.on('internal/before-service', () => {})
+        yield root.on('custom-event', () => {})
         yield dispose3
       })
     })
@@ -55,11 +55,11 @@ describe('Effects', () => {
         label: 'anonymous',
         children: [
           // only root level anonymous effects are included
-          { label: 'ctx.on("internal/service")', children: [] },
+          { label: 'ctx.on("custom-event")', children: [] },
           {
             label: 'anonymous',
             children: [
-              { label: 'ctx.on("internal/before-service")', children: [] },
+              { label: 'ctx.on("custom-event")', children: [] },
             ],
           },
         ],

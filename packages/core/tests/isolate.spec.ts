@@ -4,43 +4,9 @@ import { mock } from 'node:test'
 import { allowRootAccess, event, sleep } from './utils'
 
 describe('Isolation', () => {
-  it.skip('isolated context', async () => {
+  it('isolated context', async () => {
     const root = new Context()
     await root.plugin(allowRootAccess)
-    const ctx1 = root.isolate('foo')
-
-    const outer = mock.fn()
-    const inner = mock.fn()
-    root.on('internal/service', outer)
-    ctx1.on('internal/service', inner)
-
-    const dispose1 = root.provide('foo', { bar: 100 })
-    expect(root.foo).to.have.property('bar', 100)
-    expect(ctx1.foo).to.be.not.ok
-    expect(outer.mock.calls).to.have.length(1)
-    expect(inner.mock.calls).to.have.length(0)
-
-    const dispose2 = ctx1.provide('foo', { bar: 200 })
-    expect(root.foo).to.have.property('bar', 100)
-    expect(ctx1.foo).to.have.property('bar', 200)
-    expect(outer.mock.calls).to.have.length(1)
-    expect(inner.mock.calls).to.have.length(1)
-
-    dispose1()
-    expect(root.foo).to.be.not.ok
-    expect(ctx1.foo).to.have.property('bar', 200)
-    expect(outer.mock.calls).to.have.length(2)
-    expect(inner.mock.calls).to.have.length(1)
-
-    dispose2()
-    expect(root.foo).to.be.not.ok
-    expect(ctx1.foo).to.be.not.ok
-    expect(outer.mock.calls).to.have.length(2)
-    expect(inner.mock.calls).to.have.length(2)
-  })
-
-  it('isolated fiber', async () => {
-    const root = new Context()
     const callback = mock.fn(() => {})
     const dispose = mock.fn(() => {})
     const plugin = {
@@ -51,22 +17,43 @@ describe('Isolation', () => {
       },
     }
 
+    await root.plugin(plugin)
     const ctx1 = root.isolate('foo')
     await ctx1.plugin(plugin)
     const ctx2 = root.isolate('foo')
     await ctx2.plugin(plugin)
-    expect(callback.mock.calls).to.have.length(0)
 
-    root.provide('foo', { bar: 100 })
-    await sleep()
-    expect(callback.mock.calls).to.have.length(0)
-    ctx1.provide('foo', { bar: 200 })
+    const dispose0 = root.provide('foo', { bar: 100 })
+    expect(root.foo).to.have.property('bar', 100)
+    expect(ctx1.foo).to.be.undefined
+    expect(ctx2.foo).to.be.undefined
     await sleep()
     expect(callback.mock.calls).to.have.length(1)
-    ctx2.provide('foo', { bar: 300 })
+    expect(dispose.mock.calls).to.have.length(0)
+
+    const dispose1 = ctx1.provide('foo', { bar: 200 })
+    expect(root.foo).to.have.property('bar', 100)
+    expect(ctx1.foo).to.have.property('bar', 200)
+    expect(ctx2.foo).to.be.undefined
     await sleep()
     expect(callback.mock.calls).to.have.length(2)
     expect(dispose.mock.calls).to.have.length(0)
+
+    dispose0()
+    expect(root.foo).to.be.undefined
+    expect(ctx1.foo).to.have.property('bar', 200)
+    expect(ctx2.foo).to.be.undefined
+    await sleep()
+    expect(callback.mock.calls).to.have.length(2)
+    expect(dispose.mock.calls).to.have.length(1)
+
+    const dispose2 = ctx2.provide('foo', { bar: 300 })
+    expect(root.foo).to.be.undefined
+    expect(ctx1.foo).to.have.property('bar', 200)
+    expect(ctx2.foo).to.have.property('bar', 300)
+    await sleep()
+    expect(callback.mock.calls).to.have.length(3)
+    expect(dispose.mock.calls).to.have.length(1)
   })
 
   it('shared label', async () => {
@@ -82,6 +69,7 @@ describe('Isolation', () => {
     }
 
     const label = Symbol('test')
+    await root.plugin(plugin)
     const ctx1 = root.isolate('foo', label)
     await ctx1.plugin(plugin)
     const ctx2 = root.isolate('foo', label)
@@ -89,23 +77,29 @@ describe('Isolation', () => {
     await sleep()
     expect(callback.mock.calls).to.have.length(0)
 
-    root.provide('foo', { bar: 100 })
+    const dispose0 = root.provide('foo', { bar: 100 })
+    expect(root.foo).to.have.property('bar', 100)
+    expect(ctx1.foo).to.be.undefined
+    expect(ctx2.foo).to.be.undefined
     await sleep()
-    expect(callback.mock.calls).to.have.length(0)
-    ctx1.provide('foo', { bar: 200 })
-    await sleep()
-    expect(callback.mock.calls).to.have.length(2)
+    expect(callback.mock.calls).to.have.length(1)
     expect(dispose.mock.calls).to.have.length(0)
-    ctx2.foo = null
+
+    const dispose12 = ctx1.provide('foo', { bar: 200 })
+    expect(root.foo).to.have.property('bar', 100)
+    expect(ctx1.foo).to.have.property('bar', 200)
+    expect(ctx2.foo).to.have.property('bar', 200)
     await sleep()
+    expect(callback.mock.calls).to.have.length(3)
+    expect(dispose.mock.calls).to.have.length(0)
+    
+    dispose12()
+    expect(root.foo).to.have.property('bar', 100)
+    expect(ctx1.foo).to.be.undefined
+    expect(ctx2.foo).to.be.undefined
+    await sleep()
+    expect(callback.mock.calls).to.have.length(3)
     expect(dispose.mock.calls).to.have.length(2)
-    ctx2.foo = { bar: 300 }
-    await sleep()
-    expect(callback.mock.calls).to.have.length(4)
-    expect(dispose.mock.calls).to.have.length(2)
-    ctx1.foo = null
-    await sleep()
-    expect(dispose.mock.calls).to.have.length(4)
   })
 
   it('isolated event', async () => {
