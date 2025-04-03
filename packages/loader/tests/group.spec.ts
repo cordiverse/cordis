@@ -1,7 +1,7 @@
 import { Mock, mock } from 'node:test'
 import { expect } from 'chai'
 import { Context } from '@cordisjs/core'
-import MockLoader from './utils'
+import MockLoader, { sleep } from './utils'
 
 describe('group management: basic support', () => {
   const root = new Context()
@@ -75,7 +75,7 @@ describe('group management: basic support', () => {
   it('enable outer', async () => {
     await loader.update(outer, { disabled: null })
 
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await sleep()
     expect(foo.mock.calls).to.have.length(2)
     expect(dispose.mock.calls).to.have.length(0)
     expect([...loader.entries()]).to.have.length(4)

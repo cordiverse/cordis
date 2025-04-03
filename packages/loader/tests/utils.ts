@@ -78,3 +78,7 @@ export default class MockLoader<C extends Context = Context> extends Loader<C> {
     return this.store[id]!.fiber!
   }
 }
+
+export function sleep(ms = 0) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms))
+}

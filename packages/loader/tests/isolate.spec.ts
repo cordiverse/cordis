@@ -1,7 +1,7 @@
 import { Mock, mock } from 'node:test'
 import { expect } from 'chai'
 import { Context, FiberState, Service } from '@cordisjs/core'
-import MockLoader from './utils'
+import MockLoader, { sleep } from './utils'
 
 describe('service isolation: basic', () => {
   const root = new Context()
@@ -16,7 +16,7 @@ describe('service isolation: basic', () => {
     loader = root.loader as any
 
     foo = Object.assign(loader.mock('foo', () => dispose), {
-      'inject': ['bar']
+      inject: ['bar'],
     })
   
     bar = loader.mock('bar', class Bar extends Service {
@@ -39,7 +39,7 @@ describe('service isolation: basic', () => {
     provider = await loader.create({ name: 'bar' })
     injector = await loader.create({ name: 'foo' })
 
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await sleep()
     expect(foo.mock.calls).to.have.length(1)
     expect(dispose.mock.calls).to.have.length(0)
   })
@@ -51,7 +51,7 @@ describe('service isolation: basic', () => {
       },
     })
 
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await sleep()
     expect(foo.mock.calls).to.have.length(0)
     expect(dispose.mock.calls).to.have.length(1)
   })
@@ -64,7 +64,7 @@ describe('service isolation: basic', () => {
       },
     })
 
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await sleep()
     expect(foo.mock.calls).to.have.length(0)
     expect(dispose.mock.calls).to.have.length(0)
   })
@@ -76,7 +76,7 @@ describe('service isolation: basic', () => {
       },
     })
 
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await sleep()
     expect(foo.mock.calls).to.have.length(1)
     expect(dispose.mock.calls).to.have.length(0)
   })
@@ -86,7 +86,7 @@ describe('service isolation: basic', () => {
       isolate: null,
     })
 
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await sleep()
     expect(foo.mock.calls).to.have.length(0)
     expect(dispose.mock.calls).to.have.length(0)
   })
@@ -98,7 +98,7 @@ describe('service isolation: basic', () => {
       },
     })
 
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await sleep()
     expect(foo.mock.calls).to.have.length(0)
     expect(dispose.mock.calls).to.have.length(1)
   })
@@ -111,7 +111,7 @@ describe('service isolation: basic', () => {
       },
     })
 
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await sleep()
     expect(foo.mock.calls).to.have.length(0)
     expect(dispose.mock.calls).to.have.length(0)
   })
@@ -123,7 +123,7 @@ describe('service isolation: basic', () => {
       },
     })
 
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await sleep()
     expect(foo.mock.calls).to.have.length(1)
     expect(dispose.mock.calls).to.have.length(0)
   })
@@ -133,7 +133,7 @@ describe('service isolation: basic', () => {
       isolate: null,
     })
 
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await sleep()
     expect(foo.mock.calls).to.have.length(0)
     expect(dispose.mock.calls).to.have.length(0)
   })
@@ -156,7 +156,7 @@ describe('service isolation: realm', () => {
     })
   
     bar = Object.assign(loader.mock('bar', (ctx: Context, config = {}) => {
-      ctx.set('bar', config)
+      ctx.provide('bar', config)
     }))
   })
 
@@ -192,7 +192,7 @@ describe('service isolation: realm', () => {
       }],
     })
 
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await sleep()
     expect(root.registry.get(bar)?.fibers).to.have.length(2)
     expect(foo.mock.calls).to.have.length(0)
     expect(dispose.mock.calls).to.have.length(0)
@@ -205,7 +205,7 @@ describe('service isolation: realm', () => {
       },
     })
 
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await sleep()
     expect(root.registry.get(bar)?.fibers).to.have.length(2)
     expect(foo.mock.calls).to.have.length(0)
     expect(dispose.mock.calls).to.have.length(0)
@@ -234,7 +234,7 @@ describe('service isolation: realm', () => {
       },
     }, alpha)
 
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await sleep()
     expect(foo.mock.calls).to.have.length(2)
     expect(dispose.mock.calls).to.have.length(0)
     const fiber1 = loader.expectFiber(nested1)
@@ -260,7 +260,7 @@ describe('service isolation: realm', () => {
     })
   
     Object.assign(loader.mock('bar', (ctx: Context, config = {}) => {
-      ctx.set('bar', config)
+      ctx.provide('bar', config)
     }))
 
     const outer = await loader.create({
@@ -292,7 +292,7 @@ describe('service isolation: realm', () => {
       name: 'foo',
     }, inner)
 
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await sleep()
     const fiber1 = loader.expectFiber(alpha)
     const fiber2 = loader.expectFiber(beta)
     expect(fiber1.ctx.get('bar')!.value).to.equal('custom')
@@ -307,7 +307,7 @@ describe('service isolation: realm', () => {
       },
     })
 
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await sleep()
     expect(foo.mock.calls).to.have.length(0)
     expect(dispose.mock.calls).to.have.length(0)
 
@@ -318,7 +318,7 @@ describe('service isolation: realm', () => {
       isolate: {},
     })
 
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await sleep()
     expect(foo.mock.calls).to.have.length(0)
     expect(dispose.mock.calls).to.have.length(0)
   })
@@ -329,13 +329,13 @@ describe('service isolation: realm', () => {
     const loader = root.loader as MockLoader
   
     const dispose = mock.fn()
-  
+
     const foo = Object.assign(loader.mock('foo', () => dispose), {
       inject: ['bar'],
     })
-  
+
     Object.assign(loader.mock('bar', (ctx: Context, config = {}) => {
-      ctx.set('bar', config)
+      ctx.provide('bar', config)
     }))
 
     await loader.create({
@@ -366,7 +366,7 @@ describe('service isolation: realm', () => {
       name: 'foo',
     }, group)
 
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await sleep()
     expect(foo.mock.calls).to.have.length(1)
     expect(dispose.mock.calls).to.have.length(0)
     const fiber = loader.expectFiber(id)
@@ -381,7 +381,7 @@ describe('service isolation: realm', () => {
       },
     })
 
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await sleep()
     expect(foo.mock.calls).to.have.length(1)
     expect(dispose.mock.calls).to.have.length(1)
     expect(fiber.ctx.get('bar')!.value).to.equal('beta')
@@ -399,7 +399,7 @@ describe('service isolation: realm', () => {
     })
   
     const bar = loader.mock('bar', (ctx: Context, config = {}) => {
-      ctx.set('bar', config)
+      ctx.provide('bar', config)
     })
 
     const alpha = await loader.create({
@@ -429,7 +429,7 @@ describe('service isolation: realm', () => {
     }, group)
 
     await loader.expectFiber(inner)
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await sleep()
     expect(foo.mock.calls).to.have.length(1)
     expect(dispose.mock.calls).to.have.length(0)
     const fiber1 = loader.expectFiber(alpha)
@@ -446,7 +446,7 @@ describe('service isolation: realm', () => {
       },
     })
 
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await sleep()
     expect(foo.mock.calls).to.have.length(1)
     expect(dispose.mock.calls).to.have.length(1)
     expect(fiber1.ctx.get('bar')).to.be.undefined
@@ -499,7 +499,7 @@ describe('service isolation: transfer', () => {
     provider = await loader.create({ name: 'bar' })
     injector = await loader.create({ name: 'foo' })
 
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await sleep()
     expect(foo.mock.calls).to.have.length(1)
     expect(dispose.mock.calls).to.have.length(0)
   })
@@ -507,7 +507,7 @@ describe('service isolation: transfer', () => {
   it('transfer injector into group', async () => {
     loader.update(injector, {}, group)
 
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await sleep()
     expect(foo.mock.calls).to.have.length(0)
     expect(dispose.mock.calls).to.have.length(1)
   })
@@ -515,7 +515,7 @@ describe('service isolation: transfer', () => {
   it('transfer provider into group', async () => {
     loader.update(provider, {}, group)
 
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await sleep()
     expect(foo.mock.calls).to.have.length(1)
     expect(dispose.mock.calls).to.have.length(0)
   })
@@ -523,7 +523,7 @@ describe('service isolation: transfer', () => {
   it('transfer injector out of group', async () => {
     loader.update(injector, {}, null)
 
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await sleep()
     expect(foo.mock.calls).to.have.length(0)
     expect(dispose.mock.calls).to.have.length(1)
   })
@@ -531,7 +531,7 @@ describe('service isolation: transfer', () => {
   it('transfer provider out of group', async () => {
     loader.update(provider, {}, null)
 
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await sleep()
     expect(foo.mock.calls).to.have.length(1)
     expect(dispose.mock.calls).to.have.length(0)
   })

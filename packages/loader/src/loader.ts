@@ -4,14 +4,12 @@ import { ModuleLoader } from './internal.ts'
 import { Entry, EntryOptions } from './config/entry.ts'
 import { LoaderFile } from './config/file.ts'
 import { ImportTree } from './config/import.ts'
-import inject from './config/inject.ts'
 import isolate from './config/isolate.ts'
 
 export * from './config/entry.ts'
 export * from './config/file.ts'
 export * from './config/group.ts'
 export * from './config/import.ts'
-export * from './config/inject.ts'
 export * from './config/isolate.ts'
 export * from './config/tree.ts'
 
@@ -20,7 +18,6 @@ declare module '@cordisjs/core' {
     'exit'(signal: NodeJS.Signals): Promise<void>
     'loader/config-update'(): void
     'loader/entry-init'(entry: Entry): void
-    'loader/entry-check'(entry: Entry): boolean | undefined
     'loader/partial-dispose'(entry: Entry, legacy: Partial<EntryOptions>, active: boolean): void
     'loader/patch-context'(entry: Entry, next: () => void): void
   }
@@ -114,13 +111,12 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
 
       // case 4: fiber is disposed by loader behavior
       // such as inject checker, config file update, ancestor group disable
-      if (!fiber.entry.check()) return
+      if (fiber.entry.disabled) return
 
       fiber.entry.options.disabled = true
       fiber.entry.parent.tree.write()
     })
 
-    ctx.plugin(inject)
     ctx.plugin(isolate)
   }
 

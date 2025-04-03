@@ -54,6 +54,11 @@ export interface Impl<C extends Context = Context> {
   check?: () => boolean
 }
 
+function defaultNotifyFilter(ctx: Context, name: string) {
+  const key = ctx[symbols.isolate][name]
+  return (ctx: Context) => key === ctx[symbols.isolate][name]
+}
+
 export class ReflectService<C extends Context = Context> {
   static handler: ProxyHandler<Context> = {
     get: (target, prop, ctx: Context) => {
@@ -196,16 +201,12 @@ export class ReflectService<C extends Context = Context> {
     }, `ctx.provide(${JSON.stringify(name)})`)
   }
 
-  notify(name: string, filter = (() => {
-    const key = this.ctx[symbols.isolate][name]
-    return (target: Context) => key === target[symbols.isolate][name]
-  })()) {
-    const impl = this._getImpl(name, true)
+  notify(name: string, filter = defaultNotifyFilter(this.ctx, name)) {
     for (const runtime of this.ctx.registry.values()) {
       for (const fiber of runtime.fibers) {
         if (!fiber.inject[name]?.required) continue
         if (!filter(fiber.ctx)) continue
-        fiber._setImpl(name, impl)
+        fiber._notify(name)
       }
     }
   }

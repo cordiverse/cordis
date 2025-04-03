@@ -1,6 +1,6 @@
 import { expect } from 'chai'
 import { Context } from '@cordisjs/core'
-import MockLoader from './utils'
+import MockLoader, { sleep } from './utils'
 import { Mock } from 'node:test'
 
 describe('loader: basic support', () => {
@@ -69,7 +69,7 @@ describe('loader: basic support', () => {
 
   it('plugin self-update', async () => {
     loader.expectFiber('1').update({ a: 3 })
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await sleep()
     expect(loader.file.data).to.deep.equal([{
       id: '1',
       name: 'foo',
@@ -82,7 +82,7 @@ describe('loader: basic support', () => {
 
   it('plugin self-dispose', async () => {
     loader.expectFiber('1').dispose()
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await sleep()
     expect(loader.file.data).to.deep.equal([{
       id: '1',
       name: 'foo',

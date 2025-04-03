@@ -1,4 +1,4 @@
-import { Context, Fiber } from '@cordisjs/core'
+import { Context, Fiber, Inject } from '@cordisjs/core'
 import { isNullable } from 'cosmokit'
 import { Loader } from '../loader.ts'
 import { EntryGroup } from './group.ts'
@@ -11,6 +11,7 @@ export interface EntryOptions {
   config?: any
   group?: boolean | null
   disabled?: boolean | null
+  inject?: Inject | null
 }
 
 function takeEntries(object: {}, keys: string[]) {
@@ -101,14 +102,10 @@ export class Entry<C extends Context = Context> {
     })
   }
 
-  check() {
-    return !this.disabled && !this.context.bail('loader/entry-check', this)
-  }
-
   async refresh() {
     if (this.fiber) return
-    if (!this.check()) return
-    await (this._initTask ??= this._init())
+    if (this.disabled) return
+    await this.init()
   }
 
   async update(options: Partial<EntryOptions>, override = false) {
@@ -139,8 +136,7 @@ export class Entry<C extends Context = Context> {
       this.context.emit('loader/partial-dispose', this, legacy, true)
       this._patchContext(options)
     } else {
-      // FIXME: lock init task
-      await (this._initTask = this._init())
+      await this.init()
     }
   }
 
@@ -152,6 +148,17 @@ export class Entry<C extends Context = Context> {
       entry = entry.parent.ctx.fiber.entry
     } while (entry)
     return result
+  }
+
+  async init() {
+    try {
+      await (this._initTask ??= this._init())
+    } finally {
+      this._initTask = undefined
+    }
+    this.fiber?.await().finally(() => {
+      this.context.emit(this.loader as any as C, 'internal/service', 'loader', this.loader)
+    })
   }
 
   private async _init() {

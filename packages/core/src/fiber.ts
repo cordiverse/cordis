@@ -126,9 +126,11 @@ export class Fiber<out C extends Context = Context> {
         collect,
       }
 
+      this.context.emit('internal/plugin', this)
+
       for (const [name, inject] of Object.entries(this.inject)) {
         if (!inject!.required) continue
-        this._setImpl(name, this.ctx.reflect._getImpl(name, true))
+        this._notify(name)
       }
 
       this.dispose = parent.fiber.effect(() => {
@@ -140,7 +142,6 @@ export class Fiber<out C extends Context = Context> {
           this.context.emit('internal/error', error)
           this._error = error
         }
-        this.context.emit('internal/plugin', this)
         return async () => {
           this.uid = null
           this.context.emit('internal/plugin', this)
@@ -325,7 +326,8 @@ export class Fiber<out C extends Context = Context> {
     }
   }
 
-  _setImpl(name: string, impl: Impl<C> | undefined) {
+  _notify(name: string) {
+    const impl = this.ctx.reflect._getImpl(name, true)
     if (!impl) {
       delete this._store[name]
       return this._deactivate()
@@ -361,11 +363,12 @@ export class Fiber<out C extends Context = Context> {
   }
 
   private _setVersion(version: string) {
-    if (version === this._runner.version) return
+    const oldVersion = this._runner.version
+    if (version === oldVersion) return
     this._runner.version = version
     if (this.inertia) return
     this._updateState(() => {
-      if (version !== INACTIVE) {
+      if (version !== INACTIVE && oldVersion === INACTIVE) {
         this.inertia = this._reload()
         return FiberState.LOADING
       } else {
