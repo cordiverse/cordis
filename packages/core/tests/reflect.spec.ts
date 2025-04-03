@@ -13,13 +13,11 @@ describe('Reflect', () => {
     const root = new Context()
     root.provide('foo')
 
-    await root.plugin((ctx) => {
-      expect(() => ctx['prototype']).to.not.throw()
-      expect(() => ctx.constructor).to.not.throw()
-      expect(() => ctx.bar).to.throw('cannot get property "bar" without inject')
-      expect(() => ctx.bar = 0).to.throw('cannot set property "bar" without provide')
-      expect(() => ctx.foo = 0).to.not.throw()
-    })
+    expect(() => root['prototype']).to.not.throw()
+    expect(() => root.constructor).to.not.throw()
+    expect(() => root.bar).to.throw('cannot get property "bar" without inject')
+    expect(() => root.bar = 0).to.throw('cannot set property "bar" without provide')
+    expect(() => root.foo = 0).to.not.throw()
 
     await root.isolate('foo').plugin((ctx) => {
       expect(() => ctx.foo = 0).to.throw('cannot set property "foo" without provide')

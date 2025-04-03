@@ -74,38 +74,6 @@ export class EventsService<C extends Context = Context> {
       })
     }
 
-    this.on('internal/before-service', function (name) {
-      for (const runtime of ctx.registry.values()) {
-        for (const fiber of runtime.fibers) {
-          if (!fiber.inject[name]?.required) continue
-          if (this[symbols.filter] && !this[symbols.filter](fiber.ctx)) continue
-          fiber._setActive(false)
-        }
-      }
-    }, { global: true })
-
-    this.on('internal/service', function (name) {
-      for (const runtime of ctx.registry.values()) {
-        for (const fiber of runtime.fibers) {
-          if (!fiber.inject[name]?.required) continue
-          if (this[symbols.filter] && !this[symbols.filter](fiber.ctx)) continue
-          fiber._setActive(true)
-        }
-      }
-    }, { global: true })
-
-    this.on('internal/status', (fiber: Fiber) => {
-      if (fiber.state !== FiberState.ACTIVE) return
-      for (const key of Reflect.ownKeys(ctx.reflect.store)) {
-        const item = ctx.reflect.store[key as symbol]
-        if (item.fiber !== fiber) continue
-        if (item.value) {
-          // FIXME filter?
-          this.emit(item.fiber.ctx, 'internal/service', item.name, item.value)
-        }
-      }
-    }, { global: true })
-
     this.on('internal/update', (fiber: Fiber, config) => {
       for (const acceptor of fiber.acceptors) {
         if (acceptor.call(fiber, config)) return true

@@ -22,12 +22,12 @@ describe('Decorator', () => {
       @Inject('foo')
       method() {
         callback()
-        this.ctx.effect(() => dispose)
+        return dispose
       }
     }
 
     const root = new Context()
-    root.plugin(Bar)
+    await root.plugin(Bar)
     expect(callback.mock.calls).to.have.length(0)
     expect(dispose.mock.calls).to.have.length(0)
     const fiber = await root.plugin(Foo)

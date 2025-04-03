@@ -49,8 +49,9 @@ export namespace Property {
 
 export interface Impl<C extends Context = Context> {
   name: string
-  value?: any
   fiber: Fiber<C>
+  value?: any
+  check?: () => boolean
 }
 
 export class ReflectService<C extends Context = Context> {
@@ -143,22 +144,31 @@ export class ReflectService<C extends Context = Context> {
   }
 
   get(name: string, strict = true) {
+    return getTraceable(this.ctx, this._getImpl(name, strict)?.value)
+  }
+
+  _getImpl(name: string, strict = true) {
     const key = this.ctx[symbols.isolate][name]
     const impl = key && this.store[key]
     if (!impl) return
     if (strict && impl.fiber.state !== FiberState.ACTIVE) return
-    return getTraceable(this.ctx, impl.value)
+    return impl
   }
 
   set(name: string, value: any, error?: Error) {
     const key = this.ctx[symbols.isolate][name]
     const impl = this.store[key]
-    if (!impl) throw error ?? new Error(`cannot set property "${name}" without provide`)
+    if (!impl) {
+      throw new Error(`cannot set property "${name}" without provide`)
+    }
+    if (impl.fiber !== this.ctx.fiber) {
+      throw new Error(`cannot set property "${name}" in multiple fibers`)
+    }
     impl.value = value
     return true
   }
 
-  provide(name: string, value?: any) {
+  provide(name: string, value?: any, check?: () => boolean) {
     return this.ctx.fiber.effect(() => {
       if (!this.props[name]) {
         this.props[name] ??= { type: 'service' }
@@ -170,22 +180,33 @@ export class ReflectService<C extends Context = Context> {
       this.ctx.root[symbols.isolate][name] ??= Symbol(name)
       const key = this.ctx[symbols.isolate][name]
       if (!this.store[key]) {
-        this.store[key] = { name, value, fiber: this.ctx.fiber }
+        this.store[key] = { name, value, fiber: this.ctx.fiber, check }
       } else {
         throw new Error(`service "${name}" has been registered at <${this.store[key].fiber.name}>`)
       }
-      const self = Object.create(this.ctx)
-      self[symbols.filter] = (ctx2: Context) => {
-        return this.ctx[symbols.isolate][name] === ctx2[symbols.isolate][name]
-      }
       if (this.ctx.fiber.state === FiberState.ACTIVE) {
-        this.ctx.events.emit(self, 'internal/service', name)
+        this.notify(name)
       }
       return () => {
         delete this.store[key]
-        this.ctx.events.emit(self, 'internal/before-service', name, value)
+        if (this.ctx.fiber.state === FiberState.ACTIVE) {
+          this.notify(name)
+        }
       }
     }, `ctx.provide(${JSON.stringify(name)})`)
+  }
+
+  notify(name: string) {
+    const key = this.ctx[symbols.isolate][name]
+    let impl: Impl<C> | undefined = this.store[key]
+    if (impl?.fiber.state !== FiberState.ACTIVE) impl = undefined
+    for (const runtime of this.ctx.registry.values()) {
+      for (const fiber of runtime.fibers) {
+        if (!fiber.inject[name]?.required) continue
+        if (key !== fiber.ctx[symbols.isolate][name]) continue
+        fiber._setImpl(name, impl)
+      }
+    }
   }
 
   accessor(name: string, options: Omit<Property.Accessor, 'type'>) {

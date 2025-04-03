@@ -1,7 +1,8 @@
 import { Awaitable, defineProperty, Dict, isNullable } from 'cosmokit'
-import { Context } from './context.js'
-import { Inject, Plugin, resolveConfig } from './registry.js'
-import { buildOuterStack, composeError, DisposableList, isConstructor, isObject, symbols } from './utils.js'
+import { Context } from './context'
+import { Inject, Plugin, resolveConfig } from './registry'
+import { buildOuterStack, composeError, DisposableList, getTraceable, isConstructor, isObject, symbols } from './utils'
+import { Impl } from './reflect'
 
 declare module './context' {
   export interface Context extends Pick<Fiber, 'effect'> {
@@ -80,7 +81,7 @@ export class Fiber<out C extends Context = Context> {
 
   private _error: any
   private _runner: EffectRunner
-  private _store: Dict | undefined
+  private _store: Dict = Object.create(null)
 
   constructor(
     public parent: C,
@@ -122,6 +123,11 @@ export class Fiber<out C extends Context = Context> {
           }
         },
         collect,
+      }
+
+      for (const [name, inject] of Object.entries(this.inject)) {
+        if (!inject!.required) continue
+        this._setImpl(name, this.ctx.reflect._getImpl(name, true))
       }
 
       this.dispose = parent.fiber.effect(() => {
@@ -305,36 +311,26 @@ export class Fiber<out C extends Context = Context> {
   }
 
   private _updateState(callback: () => void | FiberState) {
-    const oldValue = this.state
+    const oldState = this.state
     this.state = callback() ?? this._getState()
-    if (oldValue !== this.state) {
-      this.context.emit('internal/status', this, oldValue)
+    if (oldState === this.state) return
+    // FIXME internal/fiber-info
+    this.context.emit('internal/status', this, oldState)
+
+    // only notify changes between ACTIVE and NON-ACTIVE states
+    if (oldState !== FiberState.ACTIVE && this.state !== FiberState.ACTIVE) return
+    for (const key of Reflect.ownKeys(this.ctx.reflect.store)) {
+      const impl = this.ctx.reflect.store[key as symbol]
+      if (impl.fiber !== this) continue
+      this.ctx.reflect.notify(impl.name)
     }
   }
 
-  private _getStore(): Dict | undefined {
-    try {
-      const store = Object.create(null)
-      for (const [name, inject] of Object.entries(this.inject)) {
-        if (!inject!.required) continue
-        const service = this.ctx.reflect.get(name, true)
-        if (isNullable(service)) return
-        if (service[symbols.check]) {
-          if (!service[symbols.check]()) return
-        }
-        store[name] = service
-      }
-      return this._store = store
-    } catch (error) {
-      this.context.emit(this.ctx, 'internal/error', error)
-      this._error = error
-      this._runner.isActive = false
-    }
-  }
-
-  _setActive(value: boolean) {
+  private _setActive(value: boolean) {
     if (value === this._runner.isActive) return
-    if (value && (!this.uid || !this._getStore())) return
+    if (value && !Object.entries(this.inject).every(([name, inject]) => !inject!.required || name in this._store)) {
+      return
+    }
     this._updateState(() => {
       const createInert = !this.inertia && value !== this._runner.isActive
       this._runner.isActive = value
@@ -349,8 +345,28 @@ export class Fiber<out C extends Context = Context> {
     })
   }
 
+  _setImpl(name: string, impl: Impl<C> | undefined) {
+    if (!impl) {
+      delete this._store[name]
+      return this._setActive(false)
+    }
+    const value = getTraceable(this.ctx, impl.value)
+    try {
+      if (impl.check && !impl.check.call(value)) {
+        delete this._store[name]
+        return this._setActive(false)
+      }
+    } catch (error) {
+      this.context.emit(impl.fiber.ctx, 'internal/error', error)
+      delete this._store[name]
+      return this._setActive(false)
+    }
+    this._store[name] = value
+    this._setActive(true)
+  }
+
   private async _reload() {
-    this.store = this._store
+    this.store = { ...this._store }
     this.version += 1
     try {
       await Promise.resolve()
@@ -403,11 +419,13 @@ export class Fiber<out C extends Context = Context> {
   }
 
   async restart() {
+    this.assertActive()
     this._setActive(false)
     this._setActive(true)
   }
 
   update(config: any) {
+    this.assertActive()
     if (this.context.bail(this, 'internal/update', this, config)) return
     try {
       this.config = resolveConfig(this.runtime!, config)
