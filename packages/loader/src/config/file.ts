@@ -87,11 +87,4 @@ export namespace LoaderFile {
   }
 
   export const supported = new Set(Object.keys(writable))
-
-  if (typeof require !== 'undefined') {
-    // eslint-disable-next-line n/no-deprecated-api
-    for (const extname in require.extensions) {
-      supported.add(extname)
-    }
-  }
 }

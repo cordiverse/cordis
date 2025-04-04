@@ -1,5 +1,5 @@
 import { Context, Inject, Service } from '@cordisjs/core'
-import {} from '@cordisjs/plugin-logger'
+import type {} from '@cordisjs/plugin-logger'
 import { defineProperty, Dict, isNullable } from 'cosmokit'
 import { ModuleLoader } from './internal.ts'
 import { Entry, EntryOptions } from './config/entry.ts'
