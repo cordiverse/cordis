@@ -176,7 +176,7 @@ export interface Events<in C extends Context = Context> {
   'internal/warn'(this: C, format: any, ...param: any[]): void
   'internal/service'(this: C, name: string, value: any): void
   'internal/update'(fiber: Fiber<C>, config: any): boolean | void
-  'internal/get'(ctx: C, name: string, error: Error, next: () => void): void
+  'internal/get'(ctx: C, name: string, error: Error, next: () => any): any
   'internal/set'(ctx: C, name: string, value: any, error: Error, next: () => boolean): boolean
   'internal/listener'(this: C, name: string, listener: any, prepend: boolean): void
   'internal/dispatch'(mode: DispatchMode, name: string, args: any[], thisArg: any): void

@@ -38,7 +38,7 @@ export class Context {
     this[symbols.isolate] = Object.create(null)
     this[symbols.intercept] = Object.create(null)
     const self = new Proxy<this>(this, ReflectService.handler)
-    this.root = this
+    this.root = self
     this.fiber = new Fiber(self, {}, Object.create(null), null, () => [])
     this.reflect = new ReflectService(self)
     this.registry = new RegistryService(self)

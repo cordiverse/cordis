@@ -272,10 +272,8 @@ export class Fiber<out C extends Context = Context> {
       throw reason
     }
 
-    task &&= task.catch((reason) => {
-      dispose()
-      throw reason
-    })
+    // prevent unhandled rejection
+    task?.catch(dispose)
 
     const wrapper = defineProperty(() => {
       if (!runner.version) return

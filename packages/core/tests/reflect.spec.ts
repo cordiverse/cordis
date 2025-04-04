@@ -11,18 +11,19 @@ describe('Reflect', () => {
 
   it('access check', async () => {
     const root = new Context()
-    root.provide('foo')
 
-    expect(() => root['prototype']).to.not.throw()
-    expect(() => root.constructor).to.not.throw()
-    expect(() => root.bar).to.throw('cannot get property "bar" without inject')
-    expect(() => root.bar = 0).to.throw('cannot set property "bar" without provide')
-    expect(() => root.foo = 0).to.not.throw()
+    await root.plugin((ctx) => {
+      expect(() => ctx['prototype']).to.not.throw()
+      expect(() => ctx.constructor).to.not.throw()
+      expect(() => ctx.bar).to.throw('cannot get property "bar" without inject')
+      expect(() => ctx.bar = 0).to.throw('cannot set property "bar" without provide')
+    })
 
-    await root.isolate('foo').plugin((ctx) => {
+    await root.plugin((ctx) => {
       expect(() => ctx.foo = 0).to.throw('cannot set property "foo" without provide')
       expect(() => ctx.provide('foo')).to.not.throw()
       expect(() => ctx.provide('foo')).to.throw('service "foo" has been registered at <root>')
+      expect(() => ctx.foo = 0).to.not.throw()
     })
   })
 

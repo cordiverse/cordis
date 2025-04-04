@@ -49,16 +49,6 @@ declare module '../src/events' {
   }
 }
 
-// allow direct service access from root
-export function allowRootAccess(ctx: Context) {
-  ctx.on('internal/get', function (ctx, prop, error, next) {
-    if (!ctx.fiber.runtime) {
-      return ctx.get(prop)
-    }
-    return next()
-  })
-}
-
 export class Counter {
   [Service.tracker] = {
     associate: 'counter',

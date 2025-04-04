@@ -29,8 +29,12 @@ const RESERVED_WORDS = ['prototype', 'then']
 // - is a symbol
 // - is a reserved word (prototype, then)
 // - is a number string (0, 1, 2, ...)
+// - starts with `_`
 function isSpecialProperty(prop: string | symbol): prop is symbol {
-  return typeof prop === 'symbol' || RESERVED_WORDS.includes(prop) || parseInt(prop).toString() === prop
+  return typeof prop === 'symbol'
+    || RESERVED_WORDS.includes(prop)
+    || parseInt(prop).toString() === prop
+    || prop.startsWith('_')
 }
 
 export type Property = Property.Service | Property.Accessor
@@ -66,13 +70,17 @@ export class ReflectService<C extends Context = Context> {
 
       const error = new Error(`cannot get property "${prop}" without inject`)
       const def = target.reflect.props[prop]
-      if (!def) throw enhanceError(error)
+      if (!def) {
+        if (!ctx.fiber.runtime) return undefined
+        throw enhanceError(error)
+      }
 
       try {
         if (def.type === 'accessor') {
           return def.get.call(ctx, ctx[symbols.receiver], error)
         }
 
+        if (!ctx.fiber.runtime) return ctx.reflect.get(prop, false)
         return ctx.events.waterfall('internal/get', ctx, prop, error, () => {
           const key = target[symbols.isolate][prop]
           const provider = ctx.reflect.store[key]?.fiber
@@ -103,7 +111,10 @@ export class ReflectService<C extends Context = Context> {
 
       const error = new Error(`cannot set property "${prop}" without provide`)
       const def = target.reflect.props[prop]
-      if (!def) throw enhanceError(error)
+      if (!def) {
+        if (!ctx.fiber.runtime) return Reflect.set(target, prop, value, ctx)
+        throw enhanceError(error)
+      }
 
       try {
         if (def.type === 'accessor') {

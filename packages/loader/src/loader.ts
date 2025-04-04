@@ -1,4 +1,5 @@
 import { Context, Inject, Service } from '@cordisjs/core'
+import {} from '@cordisjs/plugin-logger'
 import { defineProperty, Dict, isNullable } from 'cosmokit'
 import { ModuleLoader } from './internal.ts'
 import { Entry, EntryOptions } from './config/entry.ts'
@@ -136,7 +137,7 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
 
   showLog(entry: Entry, type: string) {
     if (entry.options.group) return
-    this.ctx.get('logger')?.('loader').info('%s plugin %c', type, entry.options.name)
+    this.ctx.root.logger?.('loader').info('%s plugin %c', type, entry.options.name)
   }
 
   locate(fiber = this.ctx.fiber) {
