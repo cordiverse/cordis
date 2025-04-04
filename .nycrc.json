@@ -1,6 +1,6 @@
 {
   "exclude": [
-    ".yarn/**",
-    "scripts"
+    "**/*.spec.ts",
+    ".yarn/**"
   ]
 }

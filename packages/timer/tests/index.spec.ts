@@ -18,7 +18,7 @@ function withContext(callback: (ctx: Context, clock: InstalledClock) => any, con
 }
 
 describe('ctx.timer', () => {
-  describe('ctx.setTimeout()', () => {
+  describe('ctx.timeout()', () => {
     it('basic support', withContext(async (ctx, clock) => {
       const callback = mock.fn()
       ctx.timeout(callback, 1000)
@@ -38,7 +38,7 @@ describe('ctx.timer', () => {
       assert.strictEqual(callback.mock.calls.length, 0)
     }))
 
-    it('without callback', withContext(async (ctx, clock) => {
+    it('promise', withContext(async (ctx, clock) => {
       const resolve = mock.fn()
       const reject = mock.fn()
       ctx.timeout(1000).then(resolve, reject)
@@ -55,7 +55,7 @@ describe('ctx.timer', () => {
     }))
   })
 
-  describe('ctx.setInterval()', () => {
+  describe('ctx.interval()', () => {
     it('basic support', withContext(async (ctx, clock) => {
       const callback = mock.fn()
       const dispose = ctx.interval(callback, 1000)
@@ -69,7 +69,7 @@ describe('ctx.timer', () => {
       assert.strictEqual(callback.mock.calls.length, 2)
     }))
 
-    it('without callback (manual dispose)', withContext(async (ctx, clock) => {
+    it('async iterator (manual return)', withContext(async (ctx, clock) => {
       const callback = mock.fn()
       const iterator = ctx.interval(1000)
       async function iterate() {
@@ -92,7 +92,78 @@ describe('ctx.timer', () => {
       assert.strictEqual(reject.mock.calls.length, 0)
     }))
 
-    it('without callback (context dispose)', withContext(async function* (ctx, clock) {
+    it('async iterator (manual throw)', withContext(async (ctx, clock) => {
+      const callback = mock.fn()
+      const iterator = ctx.interval(1000)
+      async function iterate() {
+        for await (const _ of iterator) {
+          callback()
+        }
+      }
+      const resolve = mock.fn()
+      const reject = mock.fn()
+      iterate().then(resolve, reject)
+      assert.strictEqual(callback.mock.calls.length, 0)
+      await clock.tickAsync(1000)
+      assert.strictEqual(callback.mock.calls.length, 1)
+      await clock.tickAsync(1000)
+      assert.strictEqual(callback.mock.calls.length, 2)
+      iterator.throw!()
+      await clock.tickAsync(1000)
+      assert.strictEqual(callback.mock.calls.length, 2)
+      assert.strictEqual(resolve.mock.calls.length, 0)
+      assert.strictEqual(reject.mock.calls.length, 1)
+    }))
+
+    it('async iterator (break return)', withContext(async (ctx, clock) => {
+      const callback = mock.fn()
+      const iterator = ctx.interval(1000)
+      async function iterate() {
+        let i = 0
+        for await (const _ of iterator) {
+          if (++i > 2) break
+          callback()
+        }
+      }
+      const resolve = mock.fn()
+      const reject = mock.fn()
+      iterate().then(resolve, reject)
+      assert.strictEqual(callback.mock.calls.length, 0)
+      await clock.tickAsync(1000)
+      assert.strictEqual(callback.mock.calls.length, 1)
+      await clock.tickAsync(1000)
+      assert.strictEqual(callback.mock.calls.length, 2)
+      await clock.tickAsync(1000)
+      assert.strictEqual(callback.mock.calls.length, 2)
+      assert.strictEqual(resolve.mock.calls.length, 1)
+      assert.strictEqual(reject.mock.calls.length, 0)
+    }))
+
+    it('async iterator (break throw)', withContext(async (ctx, clock) => {
+      const callback = mock.fn()
+      const iterator = ctx.interval(1000)
+      async function iterate() {
+        let i = 0
+        for await (const _ of iterator) {
+          if (++i > 2) throw new Error('test')
+          callback()
+        }
+      }
+      const resolve = mock.fn()
+      const reject = mock.fn()
+      iterate().then(resolve, reject)
+      assert.strictEqual(callback.mock.calls.length, 0)
+      await clock.tickAsync(1000)
+      assert.strictEqual(callback.mock.calls.length, 1)
+      await clock.tickAsync(1000)
+      assert.strictEqual(callback.mock.calls.length, 2)
+      await clock.tickAsync(1000)
+      assert.strictEqual(callback.mock.calls.length, 2)
+      assert.strictEqual(resolve.mock.calls.length, 0)
+      assert.strictEqual(reject.mock.calls.length, 1)
+    }))
+
+    it('async iterator (context dispose)', withContext(async function* (ctx, clock) {
       const callback = mock.fn()
       const iterator = ctx.interval(1000)
       async function iterate() {
