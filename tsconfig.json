@@ -4,6 +4,7 @@
     "baseUrl": ".",
     "paths": {
       // explicitly override subpath exports
+      "cordis/lib/*": ["packages/cordis/src/*"],
       "cordis/*": ["packages/cordis/src/*"],
       "cordis": ["packages/cordis/src"],
       "create-cordis": ["packages/*/src"],

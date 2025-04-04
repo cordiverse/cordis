@@ -61,7 +61,7 @@ class NodeLoader extends Loader {
     const body = JSON.stringify(this.envData)
     process.send?.({ type: 'shared', body }, (err: any) => {
       if (err) this.ctx.emit(this.ctx, 'internal/error', 'failed to send shared data')
-      this.ctx.emit(this.ctx, 'internal/info', 'trigger full reload')
+      this.ctx.root.logger?.('loader').info('trigger full reload')
       process.exit(code)
     })
   }
