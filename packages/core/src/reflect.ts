@@ -70,13 +70,10 @@ export class ReflectService<C extends Context = Context> {
 
       const error = new Error(`cannot get property "${prop}" without inject`)
       const def = target.reflect.props[prop]
-      if (!def) {
-        if (!ctx.fiber.runtime) return undefined
-        throw enhanceError(error)
-      }
+      if (!def && !ctx.fiber.runtime) return undefined
 
       try {
-        if (def.type === 'accessor') {
+        if (def?.type === 'accessor') {
           return def.get.call(ctx, ctx[symbols.receiver], error)
         }
 
