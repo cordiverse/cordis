@@ -24,6 +24,7 @@ declare module 'reggol' {
 namespace LoggerService {
   export interface Config {
     bufferSize?: number
+    console?: Exporter.Console.Options & { enabled?: boolean }
   }
 
   export interface Intercept {
@@ -37,6 +38,13 @@ interface LoggerService extends Pick<Logger, Type> {
 }
 
 class LoggerService<C extends Context = Context> extends Service<LoggerService.Intercept, C> {
+  static Config: z<LoggerService.Config> = z.object({
+    bufferSize: z.number().default(1000),
+    console: z.object({
+      enabled: z.boolean().default(true),
+    }),
+  })
+
   Config = z.object({
     name: z.string(),
     level: z.number(),
@@ -45,20 +53,21 @@ class LoggerService<C extends Context = Context> extends Service<LoggerService.I
   factory = new Factory()
   buffer: Message[] = []
 
-  constructor(ctx: C, public config: LoggerService.Config = {}) {
+  constructor(ctx: C, public config: LoggerService.Config) {
     super(ctx, 'logger')
 
-    const { bufferSize = 1000 } = config
-
-    this.factory.addExporter(new Exporter.Console({
-      timestamp: Date.now(),
-    }))
+    if (config.console!.enabled) {
+      this.factory.addExporter(new Exporter.Console({
+        timestamp: Date.now(),
+        ...config.console,
+      }))
+    }
 
     this.factory.addExporter({
       colors: 3,
       export: (message) => {
         this.buffer.push(message)
-        this.buffer = this.buffer.slice(-bufferSize)
+        this.buffer = this.buffer.slice(-config.bufferSize!)
       },
     })
 
