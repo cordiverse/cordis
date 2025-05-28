@@ -109,12 +109,8 @@ export type Spread<T> = undefined extends T ? [config?: T] : [config: T]
 declare module './context' {
   export interface Context {
     inject(deps: Inject, callback: Plugin.Function<this, void>): Fiber<this> & PromiseLike<Fiber<this>>
-    plugin<T = undefined, S = T>(plugin: Plugin.Function<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): Fiber<this> & PromiseLike<Fiber<this>>
-    plugin<T = undefined, S = T>(plugin: Plugin.Constructor<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): Fiber<this> & PromiseLike<Fiber<this>>
-    plugin<T = undefined, S = T>(plugin: Plugin.Object<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): Fiber<this> & PromiseLike<Fiber<this>>
-    plugin<T = undefined>(plugin: Plugin.Function<this, T>, ...args: Spread<T>): Fiber<this> & PromiseLike<Fiber<this>>
-    plugin<T = undefined>(plugin: Plugin.Constructor<this, T>, ...args: Spread<T>): Fiber<this> & PromiseLike<Fiber<this>>
-    plugin<T = undefined>(plugin: Plugin.Object<this, T>, ...args: Spread<T>): Fiber<this> & PromiseLike<Fiber<this>>
+    plugin<T = undefined, S = T>(plugin: Plugin<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): Fiber<this> & PromiseLike<Fiber<this>>
+    plugin<T = undefined>(plugin: Plugin<this, T>, ...args: Spread<T>): Fiber<this> & PromiseLike<Fiber<this>>
   }
 }
 
