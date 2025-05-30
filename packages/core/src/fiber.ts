@@ -159,6 +159,7 @@ export class Fiber<out C extends Context = Context> {
       this.uid = 0
       this.ctx = this.context = parent
       this.state = FiberState.ACTIVE
+      this.store = Object.create(null)
       this._runner = {
         epoch: '',
         getOuterStack,
