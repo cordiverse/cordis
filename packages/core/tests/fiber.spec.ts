@@ -53,16 +53,13 @@ describe('Fiber', () => {
     })
     await clock.tickAsync(400) // 400
     expect(fiber.state).to.equal(FiberState.LOADING)
-    await provider.dispose()
-    await clock.tickAsync(400) // 800
-    expect(fiber.state).to.equal(FiberState.LOADING)
-    await root.plugin(Foo)
-    await clock.tickAsync(400) // 1200
-    expect(fiber.state).to.equal(FiberState.UNLOADING)
-    await clock.tickAsync(1000) // 2200
-    expect(fiber.state).to.equal(FiberState.LOADING)
-    await clock.tickAsync(1000) // 3200
+    await clock.runAllAsync() // 1000
     expect(fiber.state).to.equal(FiberState.ACTIVE)
+    await Promise.all([
+      provider.dispose(),
+      clock.runAllAsync(), // 2000
+    ])
+    expect(fiber.state).to.equal(FiberState.PENDING)
   }))
 
   it('plugin error', async () => {

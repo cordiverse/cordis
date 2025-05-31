@@ -196,10 +196,8 @@ export class ReflectService<C extends Context = Context> {
       }
       return async () => {
         delete this.store[key]
-        if (this.ctx.fiber.state === FiberState.ACTIVE) {
-          const fibers = this.notify([name])
-          await Promise.all(fibers.map(fiber => fiber.await()))
-        }
+        const fibers = this.notify([name])
+        await Promise.allSettled(fibers.map(fiber => fiber.await()))
         // ensure self access before dependencies cleanup
         delete this.ctx.fiber.store![name]
       }

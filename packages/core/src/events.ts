@@ -69,11 +69,11 @@ export class EventsService<C extends Context = Context> {
       })
     }
 
-    this.on('internal/update', function (config, _, next) {
+    this.on('internal/update', function (config, noSave, next) {
       const cbs = [...this._hooks['internal/update'] || []]
       const _next = () => {
         const cb = cbs.shift() ?? next
-        return cb.call(this, config, _next)
+        return cb.call(this, config, noSave, _next)
       }
       return _next()
     }, { global: true, prepend: true })
