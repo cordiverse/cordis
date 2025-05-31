@@ -67,6 +67,7 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
 
   constructor(public ctx: C, public config: Loader.Config) {
     super(ctx)
+    const self = this
 
     defineProperty(this, Service.tracker, {
       associate: 'loader',
@@ -76,18 +77,18 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
 
     ctx.reflect.provide('loader', this, this[Service.check])
 
-    ctx.on('internal/update', (fiber, config) => {
-      if (!fiber.entry) return
-      this.showLog(fiber.entry, 'reload')
+    ctx.on('internal/update', function (config, next) {
+      if (!this.entry) return next()
+      if (this.entry.suspend) {
+        this.entry.suspend = false
+      } else {
+        const unparse = this.runtime?.Config?.['simplify']
+        this.entry.options.config = unparse ? unparse(config) : config
+        this.entry.parent.tree.write()
+      }
+      self.showLog(this.entry, 'reload')
+      return next()
     }, { global: true })
-
-    ctx.on('internal/update', (fiber, config) => {
-      if (!fiber.entry) return
-      if (fiber.entry.suspend) return fiber.entry.suspend = false
-      const unparse = fiber.runtime?.Config?.['simplify']
-      fiber.entry.options.config = unparse ? unparse(config) : config
-      fiber.entry.parent.tree.write()
-    }, { global: true, prepend: true })
 
     ctx.on('internal/plugin', (fiber) => {
       // 1. set `fiber.entry`

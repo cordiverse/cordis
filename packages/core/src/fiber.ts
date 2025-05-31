@@ -69,12 +69,12 @@ export class Fiber<out C extends Context = Context> {
   public uid: number | null
   public ctx: C
   public config: any
-  public acceptors = new DisposableList<(config: any) => boolean>()
   public state = FiberState.PENDING
   public dispose: () => Promise<void>
   public store: Dict<Impl<C>> | undefined
   public inertia: Promise<void> | undefined
 
+  public _hooks: Dict<DisposableList<Function>> = Object.create(null)
   public _disposables = new DisposableList<Disposable>()
 
   // Same as `this.ctx`, but with a more specific type.
@@ -432,16 +432,11 @@ export class Fiber<out C extends Context = Context> {
 
   update(config: any) {
     this.assertActive()
-    if (this.context.bail(this, 'internal/update', this, config)) return
-    try {
-      this.config = resolveConfig(this.runtime!, config)
-    } catch (error) {
-      this.context.emit('internal/error', error)
-      this._error = error
-      this._setEpoch(INACTIVE)
-      return
-    }
-    this._error = undefined
-    return this.restart()
+    config = resolveConfig(this.runtime!, config)
+    this.context.waterfall(this, 'internal/update', config, () => {
+      this.config = config
+      this._error = undefined
+      return this.restart()
+    })
   }
 }

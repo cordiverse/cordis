@@ -18,7 +18,7 @@ describe('Service Isolation: basic', () => {
     foo = Object.assign(loader.mock('foo', () => dispose), {
       inject: ['bar'],
     })
-  
+
     bar = loader.mock('bar', class Bar extends Service {
       constructor(ctx: Context) {
         super(ctx, 'bar')

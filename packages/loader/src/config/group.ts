@@ -22,7 +22,8 @@ export class EntryGroup<C extends Context = Context> {
     // Entry may be moved from another group,
     // so we need to update the parent reference.
     entry.parent = this
-    await entry.update(options, true)
+    // Use `create: true` to replace existing entry.options.
+    await entry.update(options, true, true)
     return entry.id
   }
 
@@ -73,9 +74,8 @@ export class Group extends EntryGroup {
 
   constructor(public ctx: Context, public config: EntryOptions[]) {
     super(ctx, ctx.fiber.entry!.parent.tree)
-    ctx.on('internal/update', (_, config) => {
+    ctx.on('internal/update', (config) => {
       this.update(config)
-      return true
     })
   }
 

@@ -1,5 +1,5 @@
 import { Context, Fiber, Inject } from '@cordisjs/core'
-import { isNullable } from 'cosmokit'
+import { deepEqual, isNullable } from 'cosmokit'
 import { Loader } from '../loader.ts'
 import { EntryGroup } from './group.ts'
 import { EntryTree } from './tree.ts'
@@ -38,7 +38,8 @@ export class Entry<C extends Context = Context> {
   public fiber?: Fiber<C>
   public suspend = false
   public parent!: EntryGroup<C>
-  public options!: EntryOptions
+  // safety: call `entry.update()` immediately after creating an entry
+  public options = {} as EntryOptions
   public subgroup?: EntryGroup<C>
   public subtree?: EntryTree<C>
 
@@ -81,23 +82,13 @@ export class Entry<C extends Context = Context> {
     return interpolate(this.ctx, this.options.config)
   }
 
-  private _patchContext(options: Partial<EntryOptions> = {}) {
+  private _patchContext(diff: string[]) {
     this.context.waterfall('loader/patch-context', this, () => {
-      // step 1: set prototype for transferred context
       Object.setPrototypeOf(this.ctx, this.parent.ctx)
 
-      if (this.fiber && 'config' in options) {
-        // step 2: update fork (when options.config is updated)
+      if (this.fiber?.uid && (diff.includes('config') || this.options.group)) {
         this.suspend = true
-        this.fiber.update(this._resolveConfig(this.fiber.runtime?.callback))
-      } else if (this.subgroup && 'disabled' in options) {
-        // step 3: check children (when options.disabled is updated)
-        const tree = this.subtree ?? this.parent.tree
-        for (const options of this.subgroup.data) {
-          tree.store[options.id].update({
-            disabled: options.disabled,
-          })
-        }
+        this.fiber.update(this._resolveConfig(this.fiber.runtime!.callback))
       }
     })
   }
@@ -108,11 +99,11 @@ export class Entry<C extends Context = Context> {
     await this.init()
   }
 
-  async update(options: Partial<EntryOptions>, override = false) {
+  async update(options: Partial<EntryOptions>, create = false, force = false) {
     const legacy = { ...this.options }
 
     // step 1: update options
-    if (override) {
+    if (create) {
       this.options = options as EntryOptions
     } else {
       for (const [key, value] of Object.entries(options)) {
@@ -126,15 +117,19 @@ export class Entry<C extends Context = Context> {
     sortKeys(this.options)
 
     // step 2: execute
-    // this._check() is only a init-time optimization
     if (this.disabled) {
       this.fiber?.dispose()
       return
     }
 
+    // step 3: check if options are changed
     if (this.fiber?.uid) {
+      const diff = Object
+        .keys({ ...this.options, ...legacy })
+        .filter(key => !deepEqual(this.options[key], legacy[key]))
+      if (!diff.length && !force) return
       this.context.emit('loader/partial-dispose', this, legacy, true)
-      this._patchContext(options)
+      this._patchContext(diff)
     } else {
       await this.init()
     }
@@ -173,7 +168,7 @@ export class Entry<C extends Context = Context> {
       this._initTask = undefined
     }
     const plugin = this.loader.unwrapExports(exports)
-    this._patchContext()
+    this._patchContext([])
     this.loader.showLog(this, 'apply')
     this.fiber = this.ctx.registry.plugin(plugin, this._resolveConfig(plugin), this.getOuterStack)
   }

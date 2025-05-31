@@ -1,7 +1,7 @@
-import { deepEqual, defineProperty, Promisify } from 'cosmokit'
+import { defineProperty, Promisify } from 'cosmokit'
 import { Context } from './context'
 import { Fiber, FiberState } from './fiber'
-import { symbols } from './utils'
+import { DisposableList, symbols } from './utils'
 
 export function isBailed(value: any) {
   return value !== null && value !== false && value !== undefined
@@ -19,15 +19,15 @@ declare module './context' {
     /* eslint-disable max-len */
     [Context.events]: Events<this>
     parallel<K extends keyof GetEvents<this>>(name: K, ...args: Parameters<GetEvents<this>[K]>): Promise<void>
-    parallel<K extends keyof GetEvents<this>>(thisArg: ThisType<GetEvents<this>[K]>, name: K, ...args: Parameters<GetEvents<this>[K]>): Promise<void>
+    parallel<K extends keyof GetEvents<this>>(thisArg: NoInfer<ThisType<GetEvents<this>[K]>>, name: K, ...args: Parameters<GetEvents<this>[K]>): Promise<void>
     emit<K extends keyof GetEvents<this>>(name: K, ...args: Parameters<GetEvents<this>[K]>): void
-    emit<K extends keyof GetEvents<this>>(thisArg: ThisType<GetEvents<this>[K]>, name: K, ...args: Parameters<GetEvents<this>[K]>): void
+    emit<K extends keyof GetEvents<this>>(thisArg: NoInfer<ThisType<GetEvents<this>[K]>>, name: K, ...args: Parameters<GetEvents<this>[K]>): void
     serial<K extends keyof GetEvents<this>>(name: K, ...args: Parameters<GetEvents<this>[K]>): Promisify<ReturnType<GetEvents<this>[K]>>
-    serial<K extends keyof GetEvents<this>>(thisArg: ThisType<GetEvents<this>[K]>, name: K, ...args: Parameters<GetEvents<this>[K]>): Promisify<ReturnType<GetEvents<this>[K]>>
+    serial<K extends keyof GetEvents<this>>(thisArg: NoInfer<ThisType<GetEvents<this>[K]>>, name: K, ...args: Parameters<GetEvents<this>[K]>): Promisify<ReturnType<GetEvents<this>[K]>>
     bail<K extends keyof GetEvents<this>>(name: K, ...args: Parameters<GetEvents<this>[K]>): ReturnType<GetEvents<this>[K]>
-    bail<K extends keyof GetEvents<this>>(thisArg: ThisType<GetEvents<this>[K]>, name: K, ...args: Parameters<GetEvents<this>[K]>): ReturnType<GetEvents<this>[K]>
+    bail<K extends keyof GetEvents<this>>(thisArg: NoInfer<ThisType<GetEvents<this>[K]>>, name: K, ...args: Parameters<GetEvents<this>[K]>): ReturnType<GetEvents<this>[K]>
     waterfall<K extends keyof GetEvents<this>>(name: K, ...args: Parameters<GetEvents<this>[K]>): ReturnType<GetEvents<this>[K]>
-    waterfall<K extends keyof GetEvents<this>>(thisArg: ThisType<GetEvents<this>[K]>, name: K, ...args: Parameters<GetEvents<this>[K]>): ReturnType<GetEvents<this>[K]>
+    waterfall<K extends keyof GetEvents<this>>(thisArg: NoInfer<ThisType<GetEvents<this>[K]>>, name: K, ...args: Parameters<GetEvents<this>[K]>): ReturnType<GetEvents<this>[K]>
     on<K extends keyof GetEvents<this>>(name: K, listener: GetEvents<this>[K], options?: boolean | EventOptions): () => boolean
     once<K extends keyof GetEvents<this>>(name: K, listener: GetEvents<this>[K], options?: boolean | EventOptions): () => boolean
     /* eslint-enable max-len */
@@ -53,16 +53,11 @@ export class EventsService<C extends Context = Context> {
       noShadow: true,
     })
 
-    // TODO: deprecate these events
     this.on('internal/listener', function (this: Context, name, listener, options: EventOptions) {
-      if (name === 'ready') {
-        Promise.resolve().then(listener)
-        return () => false
-      } else if (name === 'dispose') {
-        defineProperty(listener, 'name', 'event <dispose>')
-        return this.fiber._disposables.push(listener)
-      } else if (name === 'internal/update' && !options.global) {
-        return this.fiber.acceptors.push(listener)
+      if (name === 'internal/update' && !options.global) {
+        const hooks = this.fiber._hooks['internal/update'] ??= new DisposableList()
+        const method = options.prepend ? 'unshift' : 'push'
+        return hooks[method](listener)
       }
     })
 
@@ -74,12 +69,14 @@ export class EventsService<C extends Context = Context> {
       })
     }
 
-    this.on('internal/update', (fiber: Fiber, config) => {
-      for (const acceptor of fiber.acceptors) {
-        if (acceptor.call(fiber, config)) return true
+    this.on('internal/update', function (config, _next) {
+      const cbs = [...this._hooks['internal/update'] || []]
+      const next = () => {
+        const cb = cbs.shift() ?? _next
+        return cb.call(this, config, next)
       }
-      return deepEqual(fiber.config, config)
-    }, { global: true })
+      return next()
+    }, { global: true, prepend: true })
   }
 
   dispatch(type: string, args: any[]) {
@@ -175,7 +172,7 @@ export interface Events<in C extends Context = Context> {
   'internal/error'(this: C, format: any, ...param: any[]): void
   'internal/warn'(this: C, format: any, ...param: any[]): void
   'internal/service'(this: C, name: string, value: any): void
-  'internal/update'(fiber: Fiber<C>, config: any): boolean | void
+  'internal/update'(this: Fiber<C>, config: any, next: () => void): void
   'internal/get'(ctx: C, name: string, error: Error, next: () => any): any
   'internal/set'(ctx: C, name: string, value: any, error: Error, next: () => boolean): boolean
   'internal/listener'(this: C, name: string, listener: any, prepend: boolean): void

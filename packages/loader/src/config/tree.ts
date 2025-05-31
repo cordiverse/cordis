@@ -95,7 +95,7 @@ export abstract class EntryTree<C extends Context = Context> {
       entry.parent = target
     }
     source.tree.write()
-    return entry.update(options)
+    return entry.update(options, false, true)
   }
 
   import(name: string, getOuterStack?: () => string[], useInternal = false) {
