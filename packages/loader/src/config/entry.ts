@@ -36,7 +36,6 @@ export class Entry<C extends Context = Context> {
 
   public ctx: C
   public fiber?: Fiber<C>
-  public suspend = false
   public parent!: EntryGroup<C>
   // safety: call `entry.update()` immediately after creating an entry
   public options = {} as EntryOptions
@@ -87,8 +86,7 @@ export class Entry<C extends Context = Context> {
       Object.setPrototypeOf(this.ctx, this.parent.ctx)
 
       if (this.fiber?.uid && (diff.includes('config') || this.options.group)) {
-        this.suspend = true
-        this.fiber.update(this._resolveConfig(this.fiber.runtime!.callback))
+        this.fiber.update(this._resolveConfig(this.fiber.runtime!.callback), true)
       }
     })
   }

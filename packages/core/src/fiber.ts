@@ -430,10 +430,10 @@ export class Fiber<out C extends Context = Context> {
     await this.await()
   }
 
-  update(config: any) {
+  update(config: any, noSave = false) {
     this.assertActive()
     config = resolveConfig(this.runtime!, config)
-    this.context.waterfall(this, 'internal/update', config, () => {
+    this.context.waterfall(this, 'internal/update', config, noSave, () => {
       this.config = config
       this._error = undefined
       return this.restart()

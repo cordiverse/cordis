@@ -69,13 +69,13 @@ export class EventsService<C extends Context = Context> {
       })
     }
 
-    this.on('internal/update', function (config, _next) {
+    this.on('internal/update', function (config, _, next) {
       const cbs = [...this._hooks['internal/update'] || []]
-      const next = () => {
-        const cb = cbs.shift() ?? _next
-        return cb.call(this, config, next)
+      const _next = () => {
+        const cb = cbs.shift() ?? next
+        return cb.call(this, config, _next)
       }
-      return next()
+      return _next()
     }, { global: true, prepend: true })
   }
 
@@ -172,7 +172,7 @@ export interface Events<in C extends Context = Context> {
   'internal/error'(this: C, format: any, ...param: any[]): void
   'internal/warn'(this: C, format: any, ...param: any[]): void
   'internal/service'(this: C, name: string, value: any): void
-  'internal/update'(this: Fiber<C>, config: any, next: () => void): void
+  'internal/update'(this: Fiber<C>, config: any, noSave: boolean, next: () => void): void
   'internal/get'(ctx: C, name: string, error: Error, next: () => any): any
   'internal/set'(ctx: C, name: string, value: any, error: Error, next: () => boolean): boolean
   'internal/listener'(this: C, name: string, listener: any, prepend: boolean): void

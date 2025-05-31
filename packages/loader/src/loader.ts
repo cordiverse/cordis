@@ -77,15 +77,16 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
 
     ctx.reflect.provide('loader', this, this[Service.check])
 
-    ctx.on('internal/update', function (config, next) {
+    ctx.on('internal/update', function (config, noSave, next) {
+      if (!this.entry || noSave) return next()
+      const unparse = this.runtime?.Config?.['simplify']
+      this.entry.options.config = unparse ? unparse(config) : config
+      this.entry.parent.tree.write()
+      return next()
+    }, { global: true, prepend: true })
+
+    ctx.on('internal/update', function (config, _, next) {
       if (!this.entry) return next()
-      if (this.entry.suspend) {
-        this.entry.suspend = false
-      } else {
-        const unparse = this.runtime?.Config?.['simplify']
-        this.entry.options.config = unparse ? unparse(config) : config
-        this.entry.parent.tree.write()
-      }
       self.showLog(this.entry, 'reload')
       return next()
     }, { global: true })
