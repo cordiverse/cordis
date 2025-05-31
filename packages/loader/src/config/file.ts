@@ -10,10 +10,11 @@ import { dirname } from 'node:path'
 export const schema = yaml.JSON_SCHEMA.extend(JsExpr)
 
 export class LoaderFile {
-  public suspend = false
   public readonly: boolean
   public trees: ImportTree[] = []
   public writeTask?: NodeJS.Timeout
+  public content?: string
+  public data?: EntryOptions[]
 
   constructor(public name: string, public type?: string) {
     this.readonly = !type
@@ -45,28 +46,40 @@ export class LoaderFile {
     }
   }
 
-  async read(): Promise<EntryOptions[]> {
+  async read(forced = false) {
+    const content = await readFile(this.name, 'utf8')
+    if (!forced && this.content === content) return false
+    this.content = content
     if (this.type === 'application/yaml') {
-      return yaml.load(await readFile(this.name, 'utf8'), { schema }) as any
+      this.data = yaml.load(this.content, { schema }) as any
     } else if (this.type === 'application/json') {
       // we do not use require / import here because it will pollute cache
-      return JSON.parse(await readFile(this.name, 'utf8')) as any
+      this.data = JSON.parse(this.content) as any
     } else {
       const module = await import(this.name)
-      return module.default || module
+      this.data = module.default || module
+    }
+    await this.checkAccess()
+    return true
+  }
+
+  async refresh() {
+    if (!await this.read()) return
+    for (const tree of this.trees) {
+      await tree.root.update(this.data!)
     }
   }
 
   private async _write(config: EntryOptions[]) {
-    this.suspend = true
     if (this.readonly) {
       throw new Error(`cannot overwrite readonly config`)
     }
     if (this.type === 'application/yaml') {
-      await writeFile(this.name + '.tmp', yaml.dump(config, { schema }))
+      this.content = yaml.dump(config, { schema })
     } else if (this.type === 'application/json') {
-      await writeFile(this.name + '.tmp', JSON.stringify(config, null, 2))
+      this.content = JSON.stringify(config, null, 2)
     }
+    await writeFile(this.name + '.tmp', this.content!)
     await rename(this.name + '.tmp', this.name)
   }
 

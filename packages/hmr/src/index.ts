@@ -125,13 +125,7 @@ class HMR extends Service {
       // config reload
       const file = this.ctx.loader.files[url]
       if (!file) return
-      if (file.suspend) {
-        file.suspend = false
-        return
-      }
-      for (const tree of file.trees) {
-        tree.start()
-      }
+      await file.refresh()
     })
   }
 

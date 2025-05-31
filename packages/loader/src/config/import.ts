@@ -11,13 +11,8 @@ export class ImportTree<C extends Context = Context> extends EntryTree<C> {
 
   async* [Service.init]() {
     yield () => this.stop()
-    await this.start()
-  }
-
-  async start() {
-    const data = await this.file.read()
-    await this.file.checkAccess()
-    await this.root.update(data)
+    await this.file.read()
+    this.root.update(this.file.data!)
   }
 
   stop() {
@@ -87,6 +82,10 @@ export namespace Import {
 export class Import extends ImportTree {
   constructor(ctx: Context, public config: Import.Config) {
     super(ctx)
+    ctx.on('internal/update', (config, _, next) => {
+      if (config.url !== this.config.url) return next()
+      this.root.update(this.file.data!)
+    })
   }
 
   async* [Service.init]() {

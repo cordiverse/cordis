@@ -33,11 +33,13 @@ export class EntryGroup<C extends Context = Context> {
     if (index >= 0) config.splice(index, 1)
   }
 
-  remove(id: string) {
+  remove(id: string, isDispose = false) {
     const entry = this.tree.store[id]
     if (!entry) return
     entry.fiber?.dispose()
-    this.unlink(entry.options)
+    if (!isDispose) {
+      this.unlink(entry.options)
+    }
     delete this.tree.store[id]
     this.context.emit('loader/partial-dispose', entry, entry.options, false)
   }
@@ -63,7 +65,7 @@ export class EntryGroup<C extends Context = Context> {
 
   stop() {
     for (const options of this.data) {
-      this.remove(options.id)
+      this.remove(options.id, true)
     }
   }
 }
