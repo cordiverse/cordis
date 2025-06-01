@@ -1,9 +1,17 @@
-- name: yakumo
+- id: 7lm6xp
+  name: yakumo
   config:
     pipeline:
       build:
         - tsc
         - esbuild
-- name: yakumo-tsc
-- name: yakumo-esbuild
-- name: yakumo-mocha
+- id: 4uj1tb
+  name: yakumo-tsc
+- id: txeyu8
+  name: yakumo-esbuild
+- id: 16zkfo
+  name: yakumo-mocha
+- id: n19xsc
+  name: yakumo/list
+- id: tl99ol
+  name: yakumo/run

@@ -1,6 +1,6 @@
 import { Context, Inject, Plugin, Service, z } from 'cordis'
 import { Dict } from 'cosmokit'
-import { ModuleJob, ModuleLoader } from 'cordis/loader'
+import { ModuleJob, ModuleLoader } from '@cordisjs/plugin-loader'
 import { ChokidarOptions, FSWatcher, watch } from 'chokidar'
 import { relative, resolve } from 'node:path'
 import { handleError } from './error.ts'
