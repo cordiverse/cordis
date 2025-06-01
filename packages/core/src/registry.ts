@@ -104,17 +104,28 @@ export function resolveConfig(runtime: Plugin.Runtime, config: any) {
   return runtime.Config ? runtime.Config(config) : config
 }
 
-export type Spread<T> = undefined extends T ? [config?: T] : [config: T]
+type Spread<T> = undefined extends T ? [config?: T] : [config: T]
+
+type GetPluginParameters<P> =
+  | P extends (ctx: Context, ...args: infer R) => any
+  ? R
+  : P extends new (ctx: Context, ...args: infer R) => any
+  ? R
+  : P extends { apply(ctx: Context, ...args: infer R): any }
+  ? R
+  : never
+
+type GetPluginConfig<P> =
+  | P extends Plugin.Transform<infer S, any>
+  ? S
+  : GetPluginParameters<P> extends [infer T]
+  ? T
+  : undefined
 
 declare module './context' {
   export interface Context {
     inject(deps: Inject, callback: Plugin.Function<this, void>): Fiber<this> & PromiseLike<Fiber<this>>
-    plugin<T = undefined, S = T>(plugin: Plugin.Function<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): Fiber<this> & PromiseLike<Fiber<this>>
-    plugin<T = undefined, S = T>(plugin: Plugin.Constructor<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): Fiber<this> & PromiseLike<Fiber<this>>
-    plugin<T = undefined, S = T>(plugin: Plugin.Object<this, T> & Plugin.Transform<S, T>, ...args: Spread<S>): Fiber<this> & PromiseLike<Fiber<this>>
-    plugin<T = undefined>(plugin: Plugin.Function<this, T>, ...args: Spread<T>): Fiber<this> & PromiseLike<Fiber<this>>
-    plugin<T = undefined>(plugin: Plugin.Constructor<this, T>, ...args: Spread<T>): Fiber<this> & PromiseLike<Fiber<this>>
-    plugin<T = undefined>(plugin: Plugin.Object<this, T>, ...args: Spread<T>): Fiber<this> & PromiseLike<Fiber<this>>
+    plugin<P extends Plugin<this>>(plugin: P, ...args: Spread<GetPluginConfig<P>>): Fiber<this> & PromiseLike<Fiber<this>>
   }
 }
 

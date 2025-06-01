@@ -23,14 +23,6 @@
       "types": "./lib/plugins/import.d.ts",
       "default": "./lib/plugins/import.js"
     },
-    "./loader": {
-      "types": "./lib/plugins/loader.d.ts",
-      "default": "./lib/plugins/loader.js"
-    },
-    "./logger": {
-      "types": "./lib/plugins/logger.d.ts",
-      "default": "./lib/plugins/logger.js"
-    },
     "./worker": {
       "types": "./lib/worker/index.d.ts",
       "default": "./lib/worker/index.js"
