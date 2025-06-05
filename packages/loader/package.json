@@ -48,7 +48,6 @@
   },
   "dependencies": {
     "cosmokit": "^1.8.0",
-    "dotenv": "^16.4.7",
     "js-yaml": "^4.1.0"
   }
 }

@@ -2,9 +2,9 @@ import { Context, Service } from '@cordisjs/core'
 import { dirname, extname, resolve } from 'node:path'
 import { readdir, stat } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import { EntryTree } from './tree.ts'
+import { EntryTree } from './config/tree.ts'
 import { LoaderFile } from './file.ts'
-import Loader from '../loader.ts'
+import Loader from './loader.ts'
 
 export class ImportTree<C extends Context = Context> extends EntryTree<C> {
   public file!: LoaderFile

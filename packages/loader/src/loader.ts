@@ -3,16 +3,16 @@ import type {} from '@cordisjs/plugin-logger'
 import { defineProperty, Dict, isNullable } from 'cosmokit'
 import { ModuleLoader } from './internal.ts'
 import { Entry, EntryOptions } from './config/entry.ts'
-import { LoaderFile } from './config/file.ts'
-import { ImportTree } from './config/import.ts'
+import { EntryTree } from './config/tree.ts'
 import isolate from './config/isolate.ts'
+import { LoaderFile } from './loader.ts'
 
 export * from './config/entry.ts'
-export * from './config/file.ts'
 export * from './config/group.ts'
-export * from './config/import.ts'
 export * from './config/isolate.ts'
 export * from './config/tree.ts'
+export * from './file.ts'
+export * from './import.ts'
 
 declare module '@cordisjs/core' {
   interface Events {
@@ -49,7 +49,7 @@ export namespace Loader {
   }
 }
 
-export abstract class Loader<C extends Context = Context> extends ImportTree<C> {
+export abstract class Loader<C extends Context = Context> extends EntryTree<C> {
   declare [Service.config]: Loader.Intercept
 
   public envData = process.env.CORDIS_SHARED
@@ -126,10 +126,10 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
     ctx.plugin(isolate)
   }
 
-  async* [Service.init]() {
-    await this.init(process.cwd(), this.config)
-    yield* super[Service.init]()
-  }
+  // async* [Service.init]() {
+  //   await this.init(process.cwd(), this.config)
+  //   yield* super[Service.init]()
+  // }
 
   [Service.check]() {
     const config: Loader.Intercept = Service.prototype[Service.resolveConfig].call(this)
@@ -151,7 +151,14 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
     }
   }
 
-  exit() {}
+  exit() {
+    // const body = JSON.stringify(this.envData)
+    // process.send?.({ type: 'shared', body }, (err: any) => {
+    //   if (err) this.ctx.emit(this.ctx, 'internal/error', 'failed to send shared data')
+    //   this.ctx.root.logger?.('loader').info('trigger full reload')
+    //   process.exit(code)
+    // })
+  }
 
   unwrapExports(exports: any) {
     if (isNullable(exports)) return exports

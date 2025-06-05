@@ -57,12 +57,15 @@ export namespace ModuleLoader {
     (require) => require('internal/process/esm_loader').esmLoader,
   ]
 
+  let _cachedLoader: ModuleLoader | undefined
+
   export function fromInternal() {
     if (!process.execArgv.includes('--expose-internals')) return
+    if (_cachedLoader) return _cachedLoader
     const require = createRequire(import.meta.url)
     for (const loader of internalLoaders) {
       try {
-        return loader(require)
+        return _cachedLoader = loader(require)
       } catch {}
     }
   }

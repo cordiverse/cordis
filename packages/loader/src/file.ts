@@ -2,9 +2,9 @@ import { access, constants, readFile, rename, writeFile } from 'node:fs/promises
 import { pathToFileURL } from 'node:url'
 import { remove } from 'cosmokit'
 import * as yaml from 'js-yaml'
-import { EntryOptions } from './entry.ts'
+import { EntryOptions } from './config/entry.ts'
+import { JsExpr } from './config/utils.ts'
 import { ImportTree } from './import.ts'
-import { JsExpr } from './utils.ts'
 import { dirname } from 'node:path'
 
 export const schema = yaml.JSON_SCHEMA.extend(JsExpr)
