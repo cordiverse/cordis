@@ -67,15 +67,15 @@ const INACTIVE = '__INACTIVE__'
 
 export class Fiber<out C extends Context = Context> {
   public uid: number | null
-  public ctx: C
+  public readonly ctx: C
   public config: any
   public state = FiberState.PENDING
-  public dispose: () => Promise<void>
+  public readonly dispose: () => Promise<void>
   public store: Dict<Impl<C>> | undefined
   public inertia: Promise<void> | undefined
 
-  public _hooks: Dict<DisposableList<Function>> = Object.create(null)
-  public _disposables = new DisposableList<Disposable>()
+  public readonly _hooks: Dict<DisposableList<Function>> = Object.create(null)
+  public readonly _disposables = new DisposableList<Disposable>()
 
   // Same as `this.ctx`, but with a more specific type.
   protected context: Context

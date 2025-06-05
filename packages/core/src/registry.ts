@@ -132,15 +132,12 @@ declare module './context' {
 export class RegistryService<out C extends Context = Context> {
   private _counter = 0
   private _internal = new Map<Function, Plugin.Runtime<C>>()
-  protected context: Context
 
   constructor(public ctx: C) {
     defineProperty(this, symbols.tracker, {
       property: 'ctx',
       noShadow: true,
     })
-
-    this.context = ctx
   }
 
   get counter() {
