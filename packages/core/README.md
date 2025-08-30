@@ -1,1 +1,1 @@
-# @cordisjs/core
+# cordis

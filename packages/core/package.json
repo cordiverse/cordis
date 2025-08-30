@@ -1,5 +1,5 @@
 {
-  "name": "@cordisjs/core",
+  "name": "cordis",
   "description": "Meta-Framework for Modern JavaScript Applications",
   "version": "4.0.0-beta.5",
   "sideEffects": false,

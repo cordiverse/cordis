@@ -1,6 +1,6 @@
 import { Mock, mock } from 'node:test'
 import { expect } from 'chai'
-import { Context, FiberState, Service } from '@cordisjs/core'
+import { Context, FiberState, Service } from 'cordis'
 import MockLoader, { sleep } from './utils'
 
 describe('Service Isolation: basic', () => {

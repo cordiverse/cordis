@@ -1,5 +1,5 @@
 {
-  "name": "cordis",
+  "name": "@cordisjs/cli",
   "description": "Meta-Framework for Modern JavaScript Applications",
   "version": "4.0.0-beta.5",
   "type": "module",
@@ -65,10 +65,10 @@
     }
   },
   "dependencies": {
-    "@cordisjs/core": "4.0.0-beta.5",
     "@cordisjs/plugin-loader": "^1.0.0-beta.3",
     "@cordisjs/plugin-logger": "^1.0.1",
     "cac": "^6.7.14",
+    "cordis": "4.0.0-beta.5",
     "cosmokit": "^1.8.0",
     "dotenv": "^16.4.7",
     "kleur": "^4.1.5",

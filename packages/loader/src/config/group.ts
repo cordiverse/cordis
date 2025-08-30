@@ -1,4 +1,4 @@
-import { Context, Service } from '@cordisjs/core'
+import { Context, Service } from 'cordis'
 import { Entry, EntryOptions } from './entry.ts'
 import { EntryTree } from './tree.ts'
 

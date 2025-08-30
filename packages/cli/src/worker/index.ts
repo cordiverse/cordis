@@ -1,4 +1,4 @@
-// DO NOT change this import to `@cordisjs/core` as it is related to HMR semantics
+// DO NOT change this import to `cordis` as it is related to HMR semantics
 import { Context } from 'cordis'
 import Loader from '@cordisjs/plugin-loader'
 import Logger from '@cordisjs/plugin-logger'

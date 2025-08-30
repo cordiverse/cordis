@@ -8,8 +8,7 @@
   "exports": {
     ".": {
       "types": "./lib/index.d.ts",
-      "node": "./lib/index.js",
-      "default": "./lib/loader.js"
+      "default": "./lib/index.js"
     },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
@@ -36,12 +35,11 @@
     "service"
   ],
   "devDependencies": {
-    "@cordisjs/core": "^4.0.0-beta.5",
     "@cordisjs/plugin-logger": "^1.0.1",
     "@types/chai": "^5.2.0",
     "@types/js-yaml": "^4.0.9",
     "chai": "^5.2.0",
-    "cordis": "npm:@cordisjs/core@^4.0.0-beta.5"
+    "cordis": "^4.0.0-beta.5"
   },
   "peerDependencies": {
     "cordis": "^4.0.0-beta.5"

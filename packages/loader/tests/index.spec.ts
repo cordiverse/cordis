@@ -1,5 +1,5 @@
 import { expect } from 'chai'
-import { Context, FiberState } from '@cordisjs/core'
+import { Context, FiberState } from 'cordis'
 import MockLoader, { sleep } from './utils'
 import { Mock } from 'node:test'
 

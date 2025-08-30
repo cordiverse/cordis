@@ -1,6 +1,6 @@
-import { Context, Fiber, Inject } from '@cordisjs/core'
+import { Context, Fiber, Inject } from 'cordis'
 import { deepEqual, isNullable } from 'cosmokit'
-import { Loader } from '../loader.ts'
+import { Loader } from '../index.ts'
 import { EntryGroup } from './group.ts'
 import { EntryTree } from './tree.ts'
 import { evaluate, interpolate } from './utils.ts'

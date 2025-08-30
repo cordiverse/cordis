@@ -1,6 +1,6 @@
 import { Mock, mock } from 'node:test'
 import { expect } from 'chai'
-import { Context } from '@cordisjs/core'
+import { Context } from 'cordis'
 import MockLoader, { sleep } from './utils'
 
 describe('Group: basic support', () => {
