@@ -66,6 +66,7 @@ export class GlobalRealm extends Realm {
 
 export default function isolate(ctx: Context) {
   const realms: Dict<GlobalRealm> = Object.create(null)
+  const delims: Dict<symbol> = Object.create(null)
 
   function access(entry: Entry, name: string, create: true): symbol
   function access(entry: Entry, name: string, create?: boolean): symbol | undefined
@@ -98,9 +99,9 @@ export default function isolate(ctx: Context) {
     // step 2: generate service diff
     const diff: Dict<[symbol, symbol, symbol, symbol]> = Object.create(null)
     const oldMap = entry.ctx[Context.isolate]
-    for (const name in { ...newMap, ...entry.loader.delims }) {
+    for (const name in { ...newMap, ...delims }) {
       if (newMap[name] === oldMap[name]) continue
-      const delim = entry.loader.delims[name] ??= Symbol(`delim:${name}`)
+      const delim = delims[name] ??= Symbol(`delim:${name}`)
       entry.ctx[delim] = Symbol(`${name}#${entry.id}`)
       for (const symbol of [oldMap[name], newMap[name]]) {
         const impl = symbol && entry.ctx.reflect.store[symbol]
@@ -135,14 +136,14 @@ export default function isolate(ctx: Context) {
     ctx.reflect.notify(Object.keys(diff), (ctx, name) => {
       const [symbol1, symbol2, flag1, flag2] = diff[name]
       const symbol3 = ctx[Context.isolate][name]
-      const flag3 = ctx[entry.loader.delims[name]]
+      const flag3 = ctx[delims[name]]
       return (symbol1 === symbol3 || symbol2 === symbol3) && (flag1 === flag3) !== (flag1 === flag2)
     })
 
     // step 7: clean up delimiters
-    for (const name in entry.loader.delims) {
+    for (const name in delims) {
       if (!Reflect.ownKeys(newMap).includes(name)) {
-        delete entry.ctx[entry.loader.delims[name]]
+        delete entry.ctx[delims[name]]
       }
     }
   })

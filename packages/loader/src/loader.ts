@@ -62,7 +62,6 @@ export abstract class Loader<C extends Context = Context> extends EntryTree<C> {
 
   public name = 'loader'
   public files: Dict<LoaderFile> = Object.create(null)
-  public delims: Dict<symbol> = Object.create(null)
   public internal?: ModuleLoader
 
   constructor(public ctx: C, public config: Loader.Config) {
