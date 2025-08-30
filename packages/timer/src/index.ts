@@ -1,7 +1,7 @@
 import { Context, Service } from 'cordis'
 
 declare module 'cordis' {
-  interface Context extends Pick<TimerService, 'interval' | 'timeout' | 'throttle' | 'debounce'> {
+  interface Context extends Pick<TimerService, 'interval' | 'timeout' | 'throttle' | 'debounce' | 'setTimeout' | 'setInterval'> {
     timer: TimerService
   }
 }
@@ -11,7 +11,17 @@ type WithDispose<T> = T & { dispose: () => void }
 export class TimerService extends Service {
   constructor(ctx: Context) {
     super(ctx, 'timer')
-    ctx.mixin('timer', ['timeout', 'interval', 'throttle', 'debounce'])
+    ctx.mixin('timer', ['timeout', 'interval', 'throttle', 'debounce', 'setTimeout', 'setInterval'])
+  }
+
+  /** @deprecated use `ctx.timeout()` instead */
+  setTimeout(callback: () => void, delay: number) {
+    return this.timeout(callback, delay)
+  }
+
+  /** @deprecated use `ctx.interval()` instead */
+  setInterval(callback: () => void, delay: number) {
+    return this.interval(callback, delay)
   }
 
   timeout(callback: () => void, delay: number): () => void
