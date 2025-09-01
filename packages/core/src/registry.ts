@@ -1,4 +1,5 @@
 import { defineProperty, Dict } from 'cosmokit'
+import { StandardSchemaV1 } from '@standard-schema/spec'
 import { Context } from './context'
 import { Fiber } from './fiber'
 import { buildOuterStack, DisposableList, symbols, withProps } from './utils'
@@ -69,7 +70,7 @@ export type Plugin<C extends Context = Context, T = any> =
 export namespace Plugin {
   export interface Base<T = any> {
     name?: string
-    Config?: (config: any) => T
+    Config?: StandardSchemaV1<any, T>
     inject?: Inject
     provide?: string | string[]
     intercept?: Dict<boolean>
@@ -96,12 +97,8 @@ export namespace Plugin {
     name?: string
     fibers: DisposableList<Fiber<C>>
     callback: globalThis.Function
-    Config?: (config: any) => any
+    Config?: StandardSchemaV1
   }
-}
-
-export function resolveConfig(runtime: Plugin.Runtime, config: any) {
-  return runtime.Config ? runtime.Config(config) : config
 }
 
 type Spread<T> = undefined extends T ? [config?: T] : [config: T]
@@ -118,9 +115,7 @@ type GetPluginParameters<P> =
 type GetPluginConfig<P> =
   | P extends Plugin.Transform<infer S, any>
   ? S
-  : GetPluginParameters<P> extends [infer T]
-  ? T
-  : undefined
+  : GetPluginParameters<P>[0]
 
 declare module './context' {
   export interface Context {

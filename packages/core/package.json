@@ -35,6 +35,7 @@
     "chai-as-promised": "^8.0.1"
   },
   "dependencies": {
+    "@standard-schema/spec": "^1.0.0",
     "cosmokit": "^1.8.0"
   }
 }

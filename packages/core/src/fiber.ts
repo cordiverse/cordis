@@ -1,12 +1,32 @@
 import { Awaitable, defineProperty, Dict, isNullable } from 'cosmokit'
 import { Context } from './context'
-import { Inject, Plugin, resolveConfig } from './registry'
+import { Inject, Plugin } from './registry'
 import { buildOuterStack, composeError, DisposableList, getTraceable, isConstructor, isObject, symbols } from './utils'
 import { Impl } from './reflect'
+import { StandardSchemaV1 } from '@standard-schema/spec'
 
 declare module './context' {
   export interface Context extends Pick<Fiber, 'effect'> {
     fiber: Fiber<this>
+  }
+}
+
+export class ValidationError extends TypeError {
+  name = 'ValidationError'
+
+  constructor(issues: readonly StandardSchemaV1.Issue[]) {
+    super(`invalid config:\n` + issues.map(issue => `  - ${issue.message} (at ${issue.path?.join('.')})`).join('\n'))
+  }
+}
+
+export async function resolveConfig(runtime: Plugin.Runtime, config: any) {
+  if (!runtime.Config) return config
+  // FIXME: async validation
+  const result = runtime.Config['~standard'].validate(config) as StandardSchemaV1.Result<unknown>
+  if (result.issues) {
+    throw new ValidationError(result.issues)
+  } else {
+    return result.value
   }
 }
 
