@@ -11,18 +11,33 @@ declare module './context' {
   }
 }
 
+const kValidationError = Symbol.for('ValidationError')
+
 export class ValidationError extends TypeError {
   name = 'ValidationError'
 
   constructor(issues: readonly StandardSchemaV1.Issue[]) {
-    super(`invalid config:\n` + issues.map(issue => `  - ${issue.message} (at ${issue.path?.join('.')})`).join('\n'))
+    super(`invalid config:\n` + issues.map(issue => {
+      if (issue.path) {
+        return `  - ${issue.message} (at ${issue.path.join('.')})`
+      } else {
+        return `  - ${issue.message}`
+      }
+    }).join('\n'))
   }
 }
 
-export async function resolveConfig(runtime: Plugin.Runtime, config: any) {
+Object.defineProperty(ValidationError.prototype, kValidationError, {
+  value: true,
+})
+
+export function resolveConfig(runtime: Plugin.Runtime, config: any) {
   if (!runtime.Config) return config
-  // FIXME: async validation
-  const result = runtime.Config['~standard'].validate(config) as StandardSchemaV1.Result<unknown>
+  // TODO: async validation
+  const result = runtime.Config['~standard'].validate(config)
+  if ('then' in result) {
+    throw new TypeError('Async config validation is not supported')
+  }
   if (result.issues) {
     throw new ValidationError(result.issues)
   } else {
