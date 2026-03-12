@@ -3,15 +3,17 @@ import type {} from '@cordisjs/plugin-logger'
 import { defineProperty, Dict, isNullable } from 'cosmokit'
 import { ModuleLoader } from './internal.ts'
 import { Entry, EntryOptions } from './config/entry.ts'
-import { ImportTree } from './import.ts'
+import { Import, ImportTree } from './import.ts'
 import isolate from './config/isolate.ts'
 import { LoaderFile } from './index.ts'
+import { Group } from './config/group.ts'
 
 export * from './config/entry.ts'
 export * from './config/group.ts'
 export * from './config/isolate.ts'
 export * from './config/tree.ts'
 export * from './file.ts'
+export * from './internal.ts'
 export * from './import.ts'
 
 declare module 'cordis' {
@@ -49,7 +51,7 @@ export namespace Loader {
   }
 }
 
-export abstract class Loader<C extends Context = Context> extends ImportTree<C> {
+export class Loader<C extends Context = Context> extends ImportTree<C> {
   declare [Service.config]: Loader.Intercept
 
   public envData = process.env.CORDIS_SHARED
@@ -62,7 +64,9 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
 
   public name = 'loader'
   public files: Dict<LoaderFile> = Object.create(null)
-  public internal?: ModuleLoader
+  public internal = ModuleLoader.fromInternal()
+
+  public builtins: Dict<any> = Object.create(null)
 
   constructor(public ctx: C, public config: Loader.Config) {
     super(ctx)
@@ -73,6 +77,9 @@ export abstract class Loader<C extends Context = Context> extends ImportTree<C> 
       property: 'ctx',
       noShadow: true,
     })
+
+    this.builtins.group = Group
+    this.builtins.import = Import
 
     ctx.reflect.provide('loader', this, this[Service.check])
 

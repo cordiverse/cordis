@@ -171,7 +171,7 @@ describe('Service Isolation: realm', () => {
 
   it('add isolate group', async () => {
     alpha = await loader.create({
-      name: 'cordis/group',
+      name: 'cordis:group',
       isolate: {
         bar: true,
       },
@@ -182,7 +182,7 @@ describe('Service Isolation: realm', () => {
     })
 
     beta = await loader.create({
-      name: 'cordis/group',
+      name: 'cordis:group',
       isolate: {
         bar: 'beta',
       },
@@ -264,12 +264,12 @@ describe('Service Isolation: realm', () => {
     }))
 
     const outer = await loader.create({
-      name: 'cordis/group',
+      name: 'cordis:group',
       config: [],
     })
 
     const inner = await loader.create({
-      name: 'cordis/group',
+      name: 'cordis:group',
       isolate: {
         bar: 'custom',
       },
@@ -355,7 +355,7 @@ describe('Service Isolation: realm', () => {
     })
 
     const group = await loader.create({
-      name: 'cordis/group',
+      name: 'cordis:group',
       isolate: {
         bar: 'alpha',
       },
@@ -417,7 +417,7 @@ describe('Service Isolation: realm', () => {
     })
 
     const group = await loader.create({
-      name: 'cordis/group',
+      name: 'cordis:group',
       isolate: {
         bar: 'alpha',
       },
@@ -489,7 +489,7 @@ describe('Service Isolation: transfer', () => {
 
   it('initiate', async () => {
     group = await loader.create({
-      name: 'cordis/group',
+      name: 'cordis:group',
       isolate: {
         bar: true,
       },

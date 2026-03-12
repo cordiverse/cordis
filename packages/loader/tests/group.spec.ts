@@ -26,7 +26,7 @@ describe('Group: basic support', () => {
 
   it('initialize', async () => {
     outer = await loader.create({
-      name: 'cordis/group',
+      name: 'cordis:group',
       group: true,
       config: [{
         name: 'foo',
@@ -34,7 +34,7 @@ describe('Group: basic support', () => {
     })
 
     inner = await loader.create({
-      name: 'cordis/group',
+      name: 'cordis:group',
       group: true,
       config: [{
         name: 'foo',
@@ -112,20 +112,20 @@ describe('Group: transfer', () => {
     })
 
     alpha = await loader.create({
-      name: 'cordis/group',
+      name: 'cordis:group',
       group: true,
       config: [],
     })
 
     beta = await loader.create({
-      name: 'cordis/group',
+      name: 'cordis:group',
       group: true,
       disabled: true,
       config: [],
     }, alpha)
 
     gamma = await loader.create({
-      name: 'cordis/group',
+      name: 'cordis:group',
       group: true,
       config: [],
     }, beta)
@@ -192,7 +192,7 @@ describe('Group: intercept', () => {
 
   it('initialize', async () => {
     outer = await loader.create({
-      name: 'cordis/group',
+      name: 'cordis:group',
       group: true,
       intercept: {
         foo: {
@@ -203,7 +203,7 @@ describe('Group: intercept', () => {
     })
 
     inner = await loader.create({
-      name: 'cordis/group',
+      name: 'cordis:group',
       group: true,
       intercept: {
         foo: {

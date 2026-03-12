@@ -99,6 +99,9 @@ export abstract class EntryTree<C extends Context = Context> {
   }
 
   import(name: string, getOuterStack?: () => string[], useInternal = false) {
+    if (name.startsWith('cordis:')) {
+      return this.ctx.loader.builtins[name.slice(7)]
+    }
     return composeError(async (info) => {
       // ModuleJob.run
       // onImport.tracePromise.__proto__

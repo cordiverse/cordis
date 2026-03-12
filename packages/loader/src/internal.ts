@@ -59,7 +59,7 @@ export namespace ModuleLoader {
 
   let _cachedLoader: ModuleLoader | undefined
 
-  export function fromInternal() {
+  export function fromInternal(): ModuleLoader | undefined {
     if (!process.execArgv.includes('--expose-internals')) return
     if (_cachedLoader) return _cachedLoader
     const require = createRequire(import.meta.url)
