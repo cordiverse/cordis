@@ -1,4 +1,4 @@
-import { Context, Inject, Plugin, Service, z } from 'cordis'
+import { Context, Inject, Plugin, Service } from 'cordis'
 import { Dict } from 'cosmokit'
 import { ModuleJob, ModuleLoader } from '@cordisjs/plugin-loader'
 import { ChokidarOptions, FSWatcher, watch } from 'chokidar'
@@ -10,6 +10,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import picomatch from 'picomatch'
 import enUS from './locales/en-US.yml'
 import zhCN from './locales/zh-CN.yml'
+import z from 'schemastery'
 
 declare module 'cordis' {
   interface Context {
@@ -105,7 +106,7 @@ class HMR extends Service {
     })
 
     // files independent from any plugins will trigger a full reload
-    const mainJob = await loader.internal!.getModuleJobForImport('cordis/worker', import.meta.url, {})!
+    const mainJob = await this.internal.getModuleJobForImport('@cordisjs/cli/worker', import.meta.url, {})!
     this.externals = await loadDependencies(mainJob)
     const partialReload = this.ctx.debounce(() => this.partialReload(), this.config.debounce)
 

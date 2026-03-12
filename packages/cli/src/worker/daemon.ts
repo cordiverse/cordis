@@ -1,4 +1,4 @@
-import { Context } from '../index.ts'
+import { Context } from 'cordis'
 
 export interface Config {
   autoRestart?: boolean
@@ -15,7 +15,7 @@ export function* apply(ctx: Context, config: Config = {}) {
       process.send!({ type: 'exit' })
     }
     ctx.emit(ctx, 'internal/info', `terminated by ${signal}`)
-    ctx.parallel('exit', signal).finally(() => process.exit())
+    // ctx.parallel('exit', signal).finally(() => process.exit())
   }
 
   process.on('SIGINT', handleSignal)

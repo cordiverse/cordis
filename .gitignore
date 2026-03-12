@@ -26,6 +26,7 @@ tsconfig.temp.json
 tsconfig.tsbuildinfo
 report.*.json
 
+.claude
 .eslintcache
 .DS_Store
 .idea
@@ -34,3 +35,5 @@ report.*.json
 *.ntvs*
 *.njsproj
 *.sln
+
+CLAUDE.md

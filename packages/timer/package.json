@@ -40,6 +40,6 @@
     "cordis": "^4.0.0-beta.5"
   },
   "dependencies": {
-    "cosmokit": "^1.8.0"
+    "cosmokit": "^1.8.1"
   }
 }

@@ -69,9 +69,9 @@
     "@cordisjs/plugin-logger": "^1.0.1",
     "cac": "^6.7.14",
     "cordis": "4.0.0-beta.5",
-    "cosmokit": "^1.8.0",
-    "dotenv": "^16.4.7",
+    "cosmokit": "^1.8.1",
+    "dotenv": "^16.6.1",
     "kleur": "^4.1.5",
-    "schemastery": "^3.15.0"
+    "schemastery": "^3.18.0"
   }
 }
