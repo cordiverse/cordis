@@ -52,6 +52,9 @@ export default class MockLoader<C extends Context = Context> extends Loader<C> {
   }
 
   async import(name: string) {
+    if (name.startsWith('cordis:')) {
+      return this.ctx.loader.builtins[name.slice(7)]
+    }
     return this.modules[name]
   }
 
