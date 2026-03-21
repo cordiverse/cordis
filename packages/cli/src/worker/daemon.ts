@@ -10,12 +10,13 @@ export const name = 'daemon'
 
 export function* apply(ctx: Context, config: Config = {}) {
   function handleSignal(signal: NodeJS.Signals) {
+    process.stderr.write('\x1b[2K\r')
     // prevent restarting when child process is exiting
     if (config.autoRestart) {
       process.send!({ type: 'exit' })
     }
     ctx.emit(ctx, 'internal/info', `terminated by ${signal}`)
-    // ctx.parallel('exit', signal).finally(() => process.exit())
+    ctx.parallel('exit', signal).finally(() => process.exit())
   }
 
   process.on('SIGINT', handleSignal)
