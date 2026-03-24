@@ -119,9 +119,12 @@ export class Loader<C extends Context = Context> extends ImportTree<C> {
       // plugin hmr: delete(plugin) -> runtime dispose -> fiber dispose
       if (!ctx.registry.has(fiber.runtime!.callback)) return
 
+      // case 4: loader itself is being disposed (don't write disabled to config)
+      if (!this.ctx.fiber.uid) return
+
       this.showLog(fiber.entry, 'unload')
 
-      // case 4: fiber is disposed by loader behavior
+      // case 5: fiber is disposed by loader behavior
       // such as inject checker, config file update, ancestor group disable
       if (fiber.entry.disabled) return
 
