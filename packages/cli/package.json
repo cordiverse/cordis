@@ -1,24 +1,10 @@
 {
-  "name": "@cordisjs/cli",
+  "name": "@cordisjs/plugin-cli",
   "description": "Meta-Framework for Modern JavaScript Applications",
-  "version": "4.0.0-beta.6",
+  "version": "1.0.0-alpha.0",
   "type": "module",
-  "bin": "lib/bin/cordis.js",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./lib/index.d.ts",
-      "default": "./lib/index.js"
-    },
-    "./worker": {
-      "types": "./lib/worker/index.d.ts",
-      "default": "./lib/worker/index.js"
-    },
-    "./main": "./lib/worker/main.js",
-    "./src/*": "./src/*",
-    "./package.json": "./package.json"
-  },
   "files": [
     "lib"
   ],
@@ -41,14 +27,15 @@
     "effect",
     "framework"
   ],
-  "dependencies": {
+  "peerDependencies": {
     "@cordisjs/plugin-loader": "^1.0.0-beta.4",
-    "@cordisjs/plugin-logger": "^1.0.1",
-    "cac": "^6.7.14",
-    "cordis": "4.0.0-beta.6",
-    "cosmokit": "^1.8.1",
-    "dotenv": "^16.6.1",
-    "kleur": "^4.1.5",
-    "schemastery": "^3.18.0"
+    "cordis": "4.0.0-beta.6"
+  },
+  "devDependencies": {
+    "@cordisjs/plugin-loader": "^1.0.0-beta.4",
+    "cordis": "4.0.0-beta.6"
+  },
+  "dependencies": {
+    "cosmokit": "^1.8.1"
   }
 }

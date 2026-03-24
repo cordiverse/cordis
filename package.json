@@ -10,7 +10,7 @@
   ],
   "license": "MIT",
   "scripts": {
-    "yakumo": "yakumo --import tsx",
+    "yakumo": "yakumo --import tsx --import yml-register",
     "build": "yarn yakumo build",
     "lint": "eslint --cache",
     "test": "yarn yakumo mocha --import tsx",

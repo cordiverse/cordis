@@ -127,9 +127,9 @@ class HMR extends Service {
 
     // Collect externals: files that are part of the CLI framework itself.
     // Changes to these files require a full process restart, not HMR.
-    // This may fail in test environments where @cordisjs/cli is not available.
+    // This may fail in test environments where @cordisjs/plugin-cli-run is not available.
     try {
-      const mainJob = await this._getModuleJob('@cordisjs/cli/worker', import.meta.url, {})!
+      const mainJob = await this._getModuleJob('@cordisjs/plugin-cli-run/worker', import.meta.url, {})!
       this.externals = await loadDependencies(mainJob)
     } catch {
       this.externals = new Set()
