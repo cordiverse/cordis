@@ -2,11 +2,9 @@
   "extends": "./tsconfig.base",
   "compilerOptions": {
     "paths": {
-      // explicitly override subpath exports
-      "cordis/lib/*": ["./packages/cordis/src/*"],
-      "cordis/*": ["./packages/cordis/src/*"],
-      "cordis": ["./packages/cordis/src"],
-      "create-cordis": ["./packages/*/src"],
+      "@cordisjs/cli/*": ["./packages/cli/src/*"],
+      "cordis": ["./packages/core/src"],
+      "create-cordis": ["./packages/create/src"],
       "@cordisjs/plugin-*": ["./packages/*/src"],
       "@cordisjs/*": ["./packages/*/src"],
     },
