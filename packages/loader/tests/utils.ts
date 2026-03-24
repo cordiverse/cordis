@@ -52,8 +52,8 @@ export default class MockLoader<C extends Context = Context> extends Loader<C> {
   }
 
   async import(name: string) {
-    if (name.startsWith('@cordisjs/plugin-')) {
-      return this.ctx.loader.builtins[name.slice(17)]
+    if (name === '@cordisjs/plugin-group') {
+      return Group
     }
     return this.modules[name]
   }
