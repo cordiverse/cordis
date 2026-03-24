@@ -1,1 +1,1 @@
-./packages/cordis/README.md
+./packages/core/README.md
