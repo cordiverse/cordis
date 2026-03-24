@@ -11,18 +11,6 @@
       "types": "./lib/index.d.ts",
       "default": "./lib/index.js"
     },
-    "./cli": {
-      "types": "./lib/cli.d.ts",
-      "default": "./lib/cli.js"
-    },
-    "./group": {
-      "types": "./lib/plugins/group.d.ts",
-      "default": "./lib/plugins/group.js"
-    },
-    "./import": {
-      "types": "./lib/plugins/import.d.ts",
-      "default": "./lib/plugins/import.js"
-    },
     "./worker": {
       "types": "./lib/worker/index.d.ts",
       "default": "./lib/worker/index.js"
