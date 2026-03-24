@@ -73,14 +73,14 @@ export class ImportTree<C extends Context = Context> extends EntryTree<C> {
   }
 }
 
-export namespace Import {
+export namespace Include {
   export interface Config {
     url: string
   }
 }
 
-export class Import extends ImportTree {
-  constructor(ctx: Context, public config: Import.Config) {
+export class Include extends ImportTree {
+  constructor(ctx: Context, public config: Include.Config) {
     super(ctx)
     ctx.on('internal/update', (config, _, next) => {
       if (config.url !== this.config.url) return next()

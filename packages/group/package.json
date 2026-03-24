@@ -1,0 +1,24 @@
+{
+  "name": "@cordisjs/plugin-group",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "lib/index.js",
+  "typings": "lib/index.d.ts",
+  "files": [
+    "lib"
+  ],
+  "author": "Shigma <shigma10826@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cordiverse/cordis.git",
+    "directory": "packages/group"
+  },
+  "bugs": {
+    "url": "https://github.com/cordiverse/cordis/issues"
+  },
+  "homepage": "https://cordis.io/",
+  "peerDependencies": {
+    "@cordisjs/plugin-loader": "^1.0.0-beta.3"
+  }
+}

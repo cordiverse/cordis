@@ -3,10 +3,9 @@ import type {} from '@cordisjs/plugin-logger'
 import { defineProperty, Dict, isNullable } from 'cosmokit'
 import { ModuleLoader } from './internal.ts'
 import { Entry, EntryOptions } from './config/entry.ts'
-import { Import, ImportTree } from './import.ts'
+import { ImportTree } from './import.ts'
 import isolate from './config/isolate.ts'
 import { LoaderFile } from './index.ts'
-import { Group } from './config/group.ts'
 
 export * from './config/entry.ts'
 export * from './config/group.ts'
@@ -77,9 +76,6 @@ export class Loader<C extends Context = Context> extends ImportTree<C> {
       property: 'ctx',
       noShadow: true,
     })
-
-    this.builtins.group = Group
-    this.builtins.import = Import
 
     ctx.reflect.provide('loader', this, this[Service.check])
 

@@ -41,17 +41,6 @@
     "effect",
     "framework"
   ],
-  "cordis": {
-    "exports": {
-      ".": null,
-      "./group": {
-        "description": "Group Plugins"
-      },
-      "./import": {
-        "description": "Import Configurations"
-      }
-    }
-  },
   "dependencies": {
     "@cordisjs/plugin-loader": "^1.0.0-beta.3",
     "@cordisjs/plugin-logger": "^1.0.1",

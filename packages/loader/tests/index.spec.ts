@@ -26,7 +26,7 @@ describe('Loader: basic support', () => {
       name: 'foo',
     }, {
       id: '2',
-      name: 'cordis:group',
+      name: '@cordisjs/plugin-group',
       config: [{
         id: '3',
         name: 'bar',

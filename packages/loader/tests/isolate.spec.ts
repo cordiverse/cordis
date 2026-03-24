@@ -44,7 +44,7 @@ describe('Service Isolation: basic', () => {
     expect(dispose.mock.calls).to.have.length(0)
   })
 
-  it('add isolate on injector (relavent)', async () => {
+  it('add isolate on injector (relevant)', async () => {
     await loader.update(injector, {
       isolate: {
         bar: true,
@@ -56,7 +56,7 @@ describe('Service Isolation: basic', () => {
     expect(dispose.mock.calls).to.have.length(1)
   })
 
-  it('add isolate on injector (irrelavent)', async () => {
+  it('add isolate on injector (irrelevant)', async () => {
     await loader.update(injector, {
       isolate: {
         bar: true,
@@ -69,7 +69,7 @@ describe('Service Isolation: basic', () => {
     expect(dispose.mock.calls).to.have.length(0)
   })
 
-  it('remove isolate on injector (relavent)', async () => {
+  it('remove isolate on injector (relevant)', async () => {
     await loader.update(injector, {
       isolate: {
         qux: true,
@@ -81,7 +81,7 @@ describe('Service Isolation: basic', () => {
     expect(dispose.mock.calls).to.have.length(0)
   })
 
-  it('remove isolate on injector (irrelavent)', async () => {
+  it('remove isolate on injector (irrelevant)', async () => {
     await loader.update(injector, {
       isolate: null,
     })
@@ -91,7 +91,7 @@ describe('Service Isolation: basic', () => {
     expect(dispose.mock.calls).to.have.length(0)
   })
 
-  it('add isolate on provider (relavent)', async () => {
+  it('add isolate on provider (relevant)', async () => {
     await loader.update(provider, {
       isolate: {
         bar: true,
@@ -103,7 +103,7 @@ describe('Service Isolation: basic', () => {
     expect(dispose.mock.calls).to.have.length(1)
   })
 
-  it('add isolate on provider (irrelavent)', async () => {
+  it('add isolate on provider (irrelevant)', async () => {
     await loader.update(provider, {
       isolate: {
         bar: true,
@@ -116,7 +116,7 @@ describe('Service Isolation: basic', () => {
     expect(dispose.mock.calls).to.have.length(0)
   })
 
-  it('remove isolate on provider (relavent)', async () => {
+  it('remove isolate on provider (relevant)', async () => {
     await loader.update(provider, {
       isolate: {
         qux: true,
@@ -128,7 +128,7 @@ describe('Service Isolation: basic', () => {
     expect(dispose.mock.calls).to.have.length(0)
   })
 
-  it('remove isolate on provider (irrelavent)', async () => {
+  it('remove isolate on provider (irrelevant)', async () => {
     await loader.update(provider, {
       isolate: null,
     })
@@ -171,7 +171,7 @@ describe('Service Isolation: realm', () => {
 
   it('add isolate group', async () => {
     alpha = await loader.create({
-      name: 'cordis:group',
+      name: '@cordisjs/plugin-group',
       isolate: {
         bar: true,
       },
@@ -182,7 +182,7 @@ describe('Service Isolation: realm', () => {
     })
 
     beta = await loader.create({
-      name: 'cordis:group',
+      name: '@cordisjs/plugin-group',
       isolate: {
         bar: 'beta',
       },
@@ -264,12 +264,12 @@ describe('Service Isolation: realm', () => {
     }))
 
     const outer = await loader.create({
-      name: 'cordis:group',
+      name: '@cordisjs/plugin-group',
       config: [],
     })
 
     const inner = await loader.create({
-      name: 'cordis:group',
+      name: '@cordisjs/plugin-group',
       isolate: {
         bar: 'custom',
       },
@@ -355,7 +355,7 @@ describe('Service Isolation: realm', () => {
     })
 
     const group = await loader.create({
-      name: 'cordis:group',
+      name: '@cordisjs/plugin-group',
       isolate: {
         bar: 'alpha',
       },
@@ -417,7 +417,7 @@ describe('Service Isolation: realm', () => {
     })
 
     const group = await loader.create({
-      name: 'cordis:group',
+      name: '@cordisjs/plugin-group',
       isolate: {
         bar: 'alpha',
       },
@@ -489,7 +489,7 @@ describe('Service Isolation: transfer', () => {
 
   it('initiate', async () => {
     group = await loader.create({
-      name: 'cordis:group',
+      name: '@cordisjs/plugin-group',
       isolate: {
         bar: true,
       },
