@@ -1,12 +1,13 @@
 import { Context, Inject, Plugin, Service } from 'cordis'
 import { Dict } from 'cosmokit'
-import { ModuleJob, ModuleLoader } from '@cordisjs/plugin-loader'
+import { ModuleJob, ModuleLoader, ResolveResult } from '@cordisjs/plugin-loader'
 import { ChokidarOptions, FSWatcher, watch } from 'chokidar'
 import { relative, resolve } from 'node:path'
 import { handleError } from './error.ts'
 import type {} from '@cordisjs/plugin-timer'
 import type {} from '@cordisjs/plugin-logger'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { createRequire } from 'node:module'
 import picomatch from 'picomatch'
 import enUS from './locales/en-US.yml'
 import zhCN from './locales/zh-CN.yml'
@@ -22,6 +23,10 @@ declare module 'cordis' {
   }
 }
 
+/**
+ * Recursively collect all module dependencies from a ModuleJob.
+ * Skips node: builtins and node_modules to focus on user code.
+ */
 async function loadDependencies(job: ModuleJob, ignored = new Set<string>()) {
   const dependencies = new Set<string>()
   async function traverse(job: ModuleJob) {
@@ -48,29 +53,24 @@ class HMR extends Service {
   private watcher!: FSWatcher
 
   /**
-   * changes from externals E will always trigger a full reload
-   *
-   * - root R -> external E -> none of plugin Q
+   * Changes from externals will always trigger a full reload.
+   * Externals are the dependency tree of the CLI worker entry point.
    */
   private externals!: Set<string>
 
   /**
-   * files X that should be reloaded
-   *
-   * - including all stashed files S
-   * - some plugin P -> file X -> some change C
+   * Files that should be reloaded (accepted changes).
+   * Includes all stashed files and their dependents.
    */
   private accepted!: Set<string>
 
   /**
-   * files X that should not be reloaded
-   *
-   * - including all externals E
-   * - some change C -> file X -> none of change D
+   * Files that should NOT be reloaded.
+   * Includes externals and files whose dependents are all declined.
    */
   private declined!: Set<string>
 
-  /** stashed changes */
+  /** Stashed file changes waiting to be processed */
   private stashed = new Set<string>()
 
   constructor(ctx: Context, public config: HMR.Config) {
@@ -80,6 +80,26 @@ class HMR extends Service {
     }
     this.internal = this.ctx.loader.internal
     this.base = resolve(ctx.baseDir, config.base || '')
+  }
+
+  /**
+   * Get a ModuleJob for a specifier, compatible with Node 22-24.
+   */
+  private _getModuleJob(specifier: string, parentURL: string, attributes: ImportAttributes) {
+    switch (this.internal.version) {
+      case 'v1': return this.internal.getModuleJobForImport(specifier, parentURL, attributes)
+      case 'v2': return this.internal.getOrCreateModuleJob(parentURL, { specifier, attributes })
+    }
+  }
+
+  /**
+   * Resolve a module specifier to a URL, compatible with Node 22-24.
+   */
+  private async _resolve(specifier: string, parentURL: string, attrs: ImportAttributes): Promise<ResolveResult> {
+    switch (this.internal.version) {
+      case 'v1': return await this.internal.resolve(specifier, parentURL, attrs)
+      case 'v2': return this.internal.resolveSync(parentURL, { specifier, attributes: attrs })
+    }
   }
 
   relative(filename: string) {
@@ -105,25 +125,34 @@ class HMR extends Service {
       ignored: path => match(relative(this.base, path)),
     })
 
-    // files independent from any plugins will trigger a full reload
-    const mainJob = await this.internal.getModuleJobForImport('@cordisjs/cli/worker', import.meta.url, {})!
-    this.externals = await loadDependencies(mainJob)
+    // Collect externals: files that are part of the CLI framework itself.
+    // Changes to these files require a full process restart, not HMR.
+    // This may fail in test environments where @cordisjs/cli is not available.
+    try {
+      const mainJob = await this._getModuleJob('@cordisjs/cli/worker', import.meta.url, {})!
+      this.externals = await loadDependencies(mainJob)
+    } catch {
+      this.externals = new Set()
+    }
+
     const partialReload = this.ctx.debounce(() => this.partialReload(), this.config.debounce)
 
     this.watcher.on('change', async (path) => {
       this.ctx.logger.debug('change detected at %c', path)
       const url = pathToFileURL(resolve(this.base, path)).href
 
-      // full reload
+      // Full reload: the changed file is part of the framework
       if (this.externals.has(url)) return loader.exit()
 
-      // partial reload
+      // Partial reload: the file is in the ESM loadCache
+      // In Node 24, both CJS and ESM modules imported via import() end up
+      // in loadCache, so this check covers all module formats.
       if (loader.internal!.loadCache.has(url)) {
         this.stashed.add(url)
         return partialReload()
       }
 
-      // config reload
+      // Config reload: the file is a loader config file (e.g. cordis.yml)
       const file = this.ctx.loader.files[url]
       if (!file) return
       await file.refresh()
@@ -136,15 +165,20 @@ class HMR extends Service {
   ]
 
   async getLinked(filename: string) {
-    // The second parameter `type` should always be `javascript`.
     const job = this.internal.loadCache.get(pathToFileURL(filename).toString())
     if (!job) return []
     const linked = await job.linked
     return linked.map(job => fileURLToPath(job.url))
   }
 
+  /**
+   * Classify changed files into accepted (should reload) and declined (should not).
+   *
+   * A file is accepted if it's directly changed (stashed) or if any of its
+   * dependents are accepted. A file is declined if all its dependents are
+   * declined or if it's an external.
+   */
   private async analyzeChanges() {
-    /** files pending classification */
     const pending: string[] = []
 
     this.accepted = new Set(this.stashed)
@@ -165,15 +199,11 @@ class HMR extends Service {
         const children = await this.getLinked(filename)
         let isDeclined = true, isAccepted = false
         for (const filename of children) {
-          // ignore all declined children
           if (this.declined.has(filename) || filename.includes('/node_modules/')) continue
           if (this.accepted.has(filename)) {
-            // mark the module as accepted if any child is accepted
             isAccepted = true
             break
           } else {
-            // the child module is neither accepted nor declined
-            // so we need to perform further analysis
             isDeclined = false
             if (!pending.includes(filename)) {
               hasUpdate = true
@@ -187,14 +217,12 @@ class HMR extends Service {
           if (isAccepted) {
             this.accepted.add(filename)
           } else {
-            // mark the module as declined if all children are declined
             this.declined.add(filename)
           }
         } else {
           index++
         }
       }
-      // infinite loop
       if (!hasUpdate) break
     }
 
@@ -206,22 +234,21 @@ class HMR extends Service {
   private async partialReload() {
     await this.analyzeChanges()
 
-    /** plugins pending classification */
     const pending = new Map<ModuleJob, Plugin>()
-
-    /** plugins that should be reloaded */
     const reloads = new Map<Plugin, Reload>()
 
-    // Plugin entry files should be "atomic".
-    // Which means, reloading them will not cause any other reloads.
+    // Build a map of plugin names per config tree URL.
+    // Plugin entry files are treated as atomic reload units.
     const nameMap: Dict<Set<string>> = Object.create(null)
     for (const entry of this.ctx.loader.entries()) {
       (nameMap[entry.parent.tree.url] ??= new Set()).add(entry.options.name)
     }
+
+    // Resolve each plugin name to its file URL and check if it needs reload
     for (const baseURL in nameMap) {
       for (const name of nameMap[baseURL]) {
         try {
-          const { url } = await this.internal.resolve(name, baseURL, {})
+          const { url } = await this._resolve(name, baseURL, {})
           if (this.declined.has(url)) continue
           const job = this.internal.loadCache.get(url)
           const plugin = this.ctx.loader.unwrapExports(job?.module?.getNamespace())
@@ -234,41 +261,68 @@ class HMR extends Service {
       }
     }
 
+    // Check each pending plugin's dependency tree for accepted files
     for (const [job, plugin] of pending) {
-      // check if it is a dependent of the changed file
       this.declined.delete(job.url)
       const dependencies = [...await loadDependencies(job, this.declined)]
       this.declined.add(job.url)
 
-      // we only detect reloads at plugin level
-      // a plugin will be reloaded if any of its dependencies are accepted
       if (!dependencies.some(dep => this.accepted.has(dep))) continue
       dependencies.forEach(dep => this.accepted.add(dep))
 
-      // prepare for reload
       reloads.set(plugin, {
         filename: job.url,
         runtime: this.ctx.registry.get(plugin),
       })
     }
 
-    // save cache for rollback
-    // and delete cache before re-import
-    const backup: Dict = Object.create(null)
+    /**
+     * Clear module caches for all accepted files before re-importing.
+     *
+     * We need to clear both:
+     * 1. ESM loadCache — managed by Node's internal ModuleLoader
+     * 2. CJS Module._cache — for CJS modules that were imported via import()
+     *
+     * In Node 24, CJS modules loaded via import() appear in both caches.
+     * If we only clear loadCache, the CJS cache may serve stale modules.
+     *
+     * We use Map.prototype methods directly on loadCache because:
+     * - In Node 22/23, loadCache is a plain Map<url, ModuleJob>
+     * - In Node 24, loadCache is a LoadCache extends Map<url, { [type]: ModuleJob }>
+     *   where .delete() only sets the type slot to undefined (doesn't remove the entry)
+     * Using Map.prototype.delete ensures complete removal in both versions.
+     */
+    const esmBackup: Dict = Object.create(null)
+    const cjsBackup: Dict = Object.create(null)
+    const require = createRequire(import.meta.url)
     for (const filename of this.accepted) {
+      // Backup and clear ESM loadCache
       const job = Map.prototype.get.call(this.internal.loadCache, filename)
-      backup[filename] = job
+      esmBackup[filename] = job
       Map.prototype.delete.call(this.internal.loadCache, filename)
-    }
 
-    /** rollback cache */
-    const rollback = () => {
-      for (const filename in backup) {
-        Map.prototype.set.call(this.internal.loadCache, filename, backup[filename])
+      // Backup and clear CJS Module._cache
+      try {
+        const filepath = fileURLToPath(filename)
+        if (require.cache[filepath]) {
+          cjsBackup[filepath] = require.cache[filepath]
+          delete require.cache[filepath]
+        }
+      } catch {
+        // filename might not be a file: URL (e.g. node: protocol), ignore
       }
     }
 
-    // attempt to load entry files
+    const rollback = () => {
+      for (const filename in esmBackup) {
+        Map.prototype.set.call(this.internal.loadCache, filename, esmBackup[filename])
+      }
+      for (const filepath in cjsBackup) {
+        require.cache[filepath] = cjsBackup[filepath]
+      }
+    }
+
+    // Attempt to re-import all plugin entry files
     const attempts: Dict = {}
     try {
       for (const [, { filename }] of reloads) {
@@ -310,7 +364,7 @@ class HMR extends Service {
         }
       }
     } catch {
-      // rollback cache and plugin states
+      // Rollback: restore caches and re-register old plugins
       rollback()
       for (const [plugin, { filename, runtime }] of reloads) {
         if (!runtime) continue
@@ -324,10 +378,7 @@ class HMR extends Service {
       return
     }
 
-    // emit reload event on success
     this.ctx.emit('hmr/reload', reloads)
-
-    // reset stashed files
     this.stashed = new Set()
   }
 }

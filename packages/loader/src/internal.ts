@@ -1,15 +1,15 @@
 import { createRequire, LoadHookContext } from 'node:module'
 import { Dict } from 'cosmokit'
 
-type ModuleFormat = 'builtin' | 'commonjs' | 'json' | 'module' | 'wasm'
-type ModuleSource = string | ArrayBuffer
+export type ModuleFormat = 'builtin' | 'commonjs' | 'json' | 'module' | 'wasm'
+export type ModuleSource = string | ArrayBuffer
 
-interface ResolveResult {
+export interface ResolveResult {
   format: ModuleFormat
   url: string
 }
 
-interface LoadResult {
+export interface LoadResult {
   format: ModuleFormat
   source?: ModuleSource
 }
@@ -39,34 +39,75 @@ export interface ModuleJob {
   run(): Promise<{ module: ModuleWrap }>
 }
 
-/** @see https://github.com/nodejs/node/blob/main/lib/internal/modules/esm/loader.js */
-export interface ModuleLoader {
+/**
+ * Node 22/23 ModuleLoader interface.
+ *
+ * Key methods:
+ * - getModuleJobForImport(specifier, parentURL, importAttributes)
+ * - resolve(specifier, parentURL, importAttributes) → Promise<ResolveResult>
+ * - resolveSync(specifier, parentURL, importAttributes) → ResolveResult
+ */
+export interface ModuleLoaderV1 {
+  version: 'v1'
   loadCache: LoadCache
   import(specifier: string, parentURL: string, importAttributes: ImportAttributes): Promise<any>
   register(specifier: string | URL, parentURL?: string | URL, data?: any, transferList?: any[]): void
   getModuleJobForImport(specifier: string, parentURL: string, importAttributes: ImportAttributes): Promise<ModuleJob>
-  resolve(originalSpecifier: string, parentURL: string, importAttributes: ImportAttributes): Promise<ResolveResult>
-  resolveSync(originalSpecifier: string, parentURL: string, importAttributes: ImportAttributes): ResolveResult
+  resolve(specifier: string, parentURL: string, importAttributes: ImportAttributes): Promise<ResolveResult>
+  resolveSync(specifier: string, parentURL: string, importAttributes: ImportAttributes): ResolveResult
   load(specifier: string, context: Pick<LoadHookContext, 'format' | 'importAttributes'>): Promise<LoadResult>
 }
 
-export namespace ModuleLoader {
-  const internalLoaders: ((require: NodeJS.Require) => any)[] = [
-    // Node 20.13 and above
-    (require) => require('internal/modules/esm/loader').getOrInitializeCascadedLoader(),
-    (require) => require('internal/process/esm_loader').esmLoader,
-  ]
+export interface ModuleRequest {
+  specifier: string
+  attributes?: ImportAttributes
+  phase?: ModulePhase
+}
 
+/** @see https://github.com/nodejs/node/blob/main/src/module_wrap.h */
+export const enum ModulePhase {
+  Source = 1,
+  Evaluation = 2,
+}
+
+export type ModuleRequestType = unknown // internal symbols
+
+/**
+ * Node 24+ ModuleLoader interface.
+ *
+ * Breaking changes from v1:
+ * - getModuleJobForImport removed → getOrCreateModuleJob(parentURL, request, requestType)
+ * - resolve removed (became private #resolve) → resolveSync(parentURL, request)
+ * - Parameter order reversed for resolveSync, request object { specifier, attributes }
+ * - LoadCache became typed Map<url, { [type]: ModuleJob }> with delete only setting undefined
+ */
+export interface ModuleLoaderV2 {
+  version: 'v2'
+  loadCache: LoadCache
+  import(specifier: string, parentURL: string, importAttributes: ImportAttributes, phase?: ModulePhase, isEntryPoint?: boolean): Promise<any>
+  register(specifier: string | URL, parentURL?: string | URL, data?: any, transferList?: any[], isInternal?: boolean): void
+  getOrCreateModuleJob(parentURL: string, request: ModuleRequest, requestType?: ModuleRequestType): Promise<ModuleJob>
+  resolveSync(parentURL: string, request: ModuleRequest): ResolveResult
+  load(url: string, context: Pick<LoadHookContext, 'format' | 'importAttributes'>): Promise<LoadResult>
+}
+
+export type ModuleLoader = ModuleLoaderV1 | ModuleLoaderV2
+
+export namespace ModuleLoader {
   let _cachedLoader: ModuleLoader | undefined
 
   export function fromInternal(): ModuleLoader | undefined {
     if (!process.execArgv.includes('--expose-internals')) return
     if (_cachedLoader) return _cachedLoader
     const require = createRequire(import.meta.url)
-    for (const loader of internalLoaders) {
-      try {
-        return _cachedLoader = loader(require)
-      } catch {}
+    const [major] = process.versions.node.split('.').map(Number)
+
+    if (major >= 24) {
+      const raw = require('internal/modules/esm/loader').getOrInitializeCascadedLoader()
+      return _cachedLoader = Object.assign(raw, { version: 'v2' })
+    } else if (major >= 22) {
+      const raw = require('internal/modules/esm/loader').getOrInitializeCascadedLoader()
+      return _cachedLoader = Object.assign(raw, { version: 'v1' })
     }
   }
 }
