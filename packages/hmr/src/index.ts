@@ -30,7 +30,9 @@ declare module 'cordis' {
 async function loadDependencies(job: ModuleJob, ignored = new Set<string>()) {
   const dependencies = new Set<string>()
   async function traverse(job: ModuleJob) {
-    if (ignored.has(job.url) || dependencies.has(job.url) || job.url.startsWith('node:') || job.url.includes('/node_modules/')) return
+    if (ignored.has(job.url) || dependencies.has(job.url)) return
+    if (job.url.startsWith('node:') || job.url.includes('/node_modules/')) return
+    if (job.url.endsWith('/.loader.mjs')) return
     dependencies.add(job.url)
     const children = await job.linked
     await Promise.all(Array.prototype.map.call(children, traverse))
@@ -125,13 +127,13 @@ class HMR extends Service {
       ignored: path => match(relative(this.base, path)),
     })
 
-    // Collect externals: files that are part of the CLI framework itself.
+    // Collect externals: framework modules reachable from the main entry.
     // Changes to these files require a full process restart, not HMR.
-    // This may fail in test environments where @cordisjs/plugin-cli-run is not available.
-    try {
-      const mainJob = await this._getModuleJob('@cordisjs/plugin-cli-run/worker', import.meta.url, {})!
+    const mainURL = pathToFileURL(resolve(process.argv[1])).href
+    const mainJob = Map.prototype.get.call(this.internal.loadCache, mainURL)
+    if (mainJob) {
       this.externals = await loadDependencies(mainJob)
-    } catch {
+    } else {
       this.externals = new Set()
     }
 
