@@ -1,0 +1,32 @@
+{
+  "name": "@cordisjs/plugin-cli-help",
+  "description": "Help command for cordis CLI",
+  "version": "1.0.0-alpha.0",
+  "type": "module",
+  "main": "lib/index.js",
+  "typings": "lib/index.d.ts",
+  "files": [
+    "lib"
+  ],
+  "engines": {
+    "node": "^18.0.0 || >=20.0.0"
+  },
+  "author": "Shigma <shigma10826@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cordiverse/cordis.git",
+    "directory": "packages/cli-help"
+  },
+  "peerDependencies": {
+    "@cordisjs/plugin-cli": "^1.0.0-alpha.0",
+    "cordis": "^4.0.0-beta.6"
+  },
+  "devDependencies": {
+    "@cordisjs/plugin-cli": "^1.0.0-alpha.0",
+    "cordis": "^4.0.0-beta.6"
+  },
+  "dependencies": {
+    "cosmokit": "^1.8.1"
+  }
+}
