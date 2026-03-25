@@ -1,7 +1,7 @@
 import { Context, DisposableList, Service } from 'cordis'
 import { camelize, defineProperty, Dict } from 'cosmokit'
 import { Param, ResolveTypeInit, TypeInit, Types } from '.'
-import { Input } from './parser.ts'
+import { Input } from './parser'
 
 export interface CommandConfig {
   unknownNegative?: 'option' | 'string'
@@ -212,11 +212,10 @@ export class Command<A extends any[] = any[], O extends {} = {}> {
     while (!input.isEmpty()) {
       // variadic argument
       const param = this._arguments[args.length] || variadic
-      if (param.variadic) variadic = param
-      if (!param) throw new TypeError('too many arguments')
+      if (param?.variadic) variadic = param
 
       // greedy argument
-      if (param.greedy) {
+      if (param?.greedy) {
         args.push(param.parse(input.drain()))
         break
       }
@@ -227,6 +226,7 @@ export class Command<A extends any[] = any[], O extends {} = {}> {
       // 3. numeric tokens at numeric type
       let { content, quotes } = input.next()
       if (isParam(content)) {
+        if (!param) throw new TypeError('too many arguments')
         args.push(param.parse(content))
         continue
       }
@@ -298,8 +298,9 @@ export class Command<A extends any[] = any[], O extends {} = {}> {
     }
 
     // check argument count
-    if (args.length < this._arguments.length) {
-      const extra = this._arguments.slice(args.length)
+    const requiredArgs = this._arguments.filter(arg => arg.required)
+    if (args.length < requiredArgs.length) {
+      const extra = requiredArgs.slice(args.length)
       throw new TypeError(`missing arguments: ${extra.map(arg => `"${arg.name}"`).join(', ')}`)
     }
 

@@ -5,6 +5,7 @@ import { Command, CommandConfig, ParseArgument } from './command'
 import { Input } from './parser'
 
 export * from './command'
+export * from './parser'
 
 declare module 'cordis' {
   interface Context {
@@ -67,9 +68,7 @@ export interface Param extends Type {
 }
 
 export namespace CLI {
-  export interface Config {
-    cli?: boolean
-  }
+  export interface Config {}
 }
 
 export class CLI extends Service {
@@ -114,19 +113,17 @@ export class CLI extends Service {
       throw new Error('internal.invalid-date')
     })
 
-    if (config.cli) {
-      ctx.inject({
-        loader: {
-          required: true,
-          config: { await: true },
-        },
-      }, async () => {
-        const input = new Input.Argv()
-        const output = await this.execute(input)
-        // eslint-disable-next-line no-console
-        if (output) console.log(output)
-      })
-    }
+    ctx.inject({
+      loader: {
+        required: true,
+        config: { await: true },
+      },
+    }, async () => {
+      const input = new Input.Argv()
+      const output = await this.execute(input)
+      // eslint-disable-next-line no-console
+      if (output) console.log(output)
+    })
   }
 
   define<K extends keyof Types>(name: K, parse: Type.Parse<Types[K]>, options?: Omit<Type<Types[K]>, 'parse'>) {
