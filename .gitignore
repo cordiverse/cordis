@@ -1,8 +1,6 @@
 lib
 dist
 
-.loader.mjs
-
 /external
 
 .pnp.*

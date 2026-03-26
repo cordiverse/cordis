@@ -32,7 +32,6 @@ async function loadDependencies(job: ModuleJob, ignored = new Set<string>()) {
   async function traverse(job: ModuleJob) {
     if (ignored.has(job.url) || dependencies.has(job.url)) return
     if (job.url.startsWith('node:') || job.url.includes('/node_modules/')) return
-    if (job.url.endsWith('/.loader.mjs')) return
     dependencies.add(job.url)
     const children = await job.linked
     await Promise.all(Array.prototype.map.call(children, traverse))

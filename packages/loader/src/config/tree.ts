@@ -1,8 +1,5 @@
 import { composeError, Context } from 'cordis'
 import { Dict, isNonNullable } from 'cosmokit'
-import { dirname, join } from 'node:path'
-import { writeFile } from 'node:fs/promises'
-import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Entry, EntryOptions } from './entry.ts'
 import { EntryGroup } from './group.ts'
 
@@ -112,27 +109,12 @@ export abstract class EntryTree<C extends Context = Context> {
       info.offset += 3
       if (useInternal && this.ctx.loader.internal) {
         return await this.ctx.loader.internal.import(name, this.url, {})
+      } else if (name.startsWith('.')) {
+        return await import(new URL(name, this.url).href)
       } else {
-        // Create a .loader.mjs in the config file's directory so that
-        // relative imports resolve correctly without --expose-internals.
-        // The .loader.mjs re-exports import(), and since its import.meta.url
-        // is in the config directory, relative specifiers resolve from there.
-        const _import = await this._getImport()
-        return await _import(name)
+        return await import(name)
       }
     }, getOuterStack)
-  }
-
-  private _import?: (name: string) => Promise<any>
-
-  private async _getImport() {
-    if (this._import) return this._import
-    const configDir = dirname(fileURLToPath(this.url))
-    const loaderPath = join(configDir, '.loader.mjs')
-    await writeFile(loaderPath, 'export default (name) => import(name)\n')
-    const { default: _import } = await import(pathToFileURL(loaderPath).href)
-    this._import = _import
-    return this._import!
   }
 
   abstract write(): void
