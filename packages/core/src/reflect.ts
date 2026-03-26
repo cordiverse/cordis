@@ -179,7 +179,7 @@ export class ReflectService<C extends Context = Context> {
       if (!this.props[name]) {
         this.props[name] ??= { type: 'service' }
       } else if (this.props[name].type !== 'service') {
-        throw new Error(`propery "${name}" is already declared as ${this.props[name].type}`)
+        throw new Error(`property "${name}" is already declared as ${this.props[name].type}`)
       }
       this.props[name] = { type: 'service' }
 
@@ -226,7 +226,7 @@ export class ReflectService<C extends Context = Context> {
   accessor(name: string, options: Omit<Property.Accessor, 'type'>) {
     return this.ctx.fiber.effect(() => {
       if (name in this.props) {
-        throw new Error(`propery "${name}" is already declared as ${this.props[name].type}`)
+        throw new Error(`property "${name}" is already declared as ${this.props[name].type}`)
       }
       this.props[name] = { type: 'accessor', ...options }
       return () => delete this.props[name]
