@@ -1,0 +1,8 @@
+- id: timer
+  name: '@cordisjs/plugin-timer'
+- id: group
+  name: '@cordisjs/plugin-group'
+  group: true
+  config:
+    - id: inner
+      name: ./test-plugin

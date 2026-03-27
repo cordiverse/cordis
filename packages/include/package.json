@@ -24,6 +24,7 @@
   },
   "devDependencies": {
     "@cordisjs/plugin-loader": "^1.0.0-beta.5",
+    "@cordisjs/plugin-logger": "^1.0.1",
     "cordis": "^4.0.0-beta.7"
   },
   "dependencies": {
