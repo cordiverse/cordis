@@ -6,6 +6,7 @@ import { EntryGroup } from './group.ts'
 export abstract class EntryTree<C extends Context = Context> {
   static readonly sep = ':'
 
+  public enableLogs = false
   public url!: string
   public root: EntryGroup<C>
   public store: Dict<Entry<C>> = Object.create(null)

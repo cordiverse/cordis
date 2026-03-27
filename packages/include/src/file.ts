@@ -2,8 +2,16 @@ import { access, constants, readFile, rename, writeFile } from 'node:fs/promises
 import { pathToFileURL } from 'node:url'
 import { remove } from 'cosmokit'
 import * as yaml from 'js-yaml'
-import { EntryOptions, EntryTree, JsExpr } from '@cordisjs/plugin-loader'
+import { EntryOptions, EntryTree, isJsExpr } from '@cordisjs/plugin-loader'
 import { dirname } from 'node:path'
+
+export const JsExpr = new yaml.Type('tag:yaml.org,2002:js', {
+  kind: 'scalar',
+  resolve: (data) => typeof data === 'string',
+  construct: (data) => ({ __jsExpr: data }),
+  predicate: isJsExpr,
+  represent: (data) => data['__jsExpr'],
+})
 
 export const schema = yaml.JSON_SCHEMA.extend(JsExpr)
 

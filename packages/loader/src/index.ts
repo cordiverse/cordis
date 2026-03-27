@@ -38,6 +38,10 @@ declare module 'cordis' {
 }
 
 export namespace Loader {
+  export interface Config {
+    baseUrl?: string
+  }
+
   export interface Intercept {
     await?: boolean
   }
@@ -59,9 +63,9 @@ export class Loader<C extends Context = Context> extends EntryTree<C> {
 
   public builtins: Dict<any> = Object.create(null)
 
-  constructor(public ctx: C) {
+  constructor(public ctx: C, public config: Loader.Config = {}) {
     super(ctx)
-    this.url = pathToFileURL(process.cwd()).href + '/'
+    this.url = config.baseUrl ?? pathToFileURL(process.cwd()).href + '/'
     const self = this
 
     defineProperty(this, Service.tracker, {
@@ -135,7 +139,7 @@ export class Loader<C extends Context = Context> extends EntryTree<C> {
   }
 
   showLog(entry: Entry, type: string) {
-    if (entry.options.group) return
+    if (entry.options.group || !entry.parent.tree.enableLogs) return
     this.ctx.root.logger?.('loader').info('%s plugin %c', type, entry.options.name)
   }
 

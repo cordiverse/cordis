@@ -25,6 +25,7 @@ export namespace Include {
     url: string
     initial?: any[]
     patches?: PatchOptions[]
+    enableLogs?: boolean
   }
 }
 
@@ -33,6 +34,7 @@ export class Include extends EntryTree {
 
   constructor(ctx: Context, public config: Include.Config) {
     super(ctx)
+    this.enableLogs = !!config.enableLogs
     ctx.on('internal/update', (config, _, next) => {
       if (config.url !== this.config.url) return next()
       this.root.update(this.file.data!)
