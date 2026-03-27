@@ -1,0 +1,10 @@
+- id: timer
+  name: '@cordisjs/plugin-timer'
+- id: hmr
+  name: '@cordisjs/plugin-hmr'
+  config:
+    root:
+      - .
+    debounce: 50
+- id: test-error
+  name: ./plugin-error
