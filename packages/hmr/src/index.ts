@@ -1,6 +1,7 @@
 import { Context, Inject, Plugin, Service } from 'cordis'
 import { Dict } from 'cosmokit'
 import { ModuleJob, ModuleLoader, ResolveResult } from '@cordisjs/plugin-loader'
+import { ConfigFile } from '@cordisjs/plugin-include'
 import { ChokidarOptions, FSWatcher, watch } from 'chokidar'
 import { relative, resolve } from 'node:path'
 import { handleError } from './error.ts'
@@ -154,9 +155,12 @@ class Hmr extends Service {
       }
 
       // Config reload: the file is a loader config file (e.g. cordis.yml)
-      const file = this.ctx.loader.files[url]
-      if (!file) return
-      await file.refresh()
+      for (const entry of this.ctx.loader.entries()) {
+        const file = (entry.subtree as any)?.file as ConfigFile | undefined
+        if (file?.name !== fileURLToPath(url)) continue
+        await file.refresh()
+        return
+      }
     })
   }
 

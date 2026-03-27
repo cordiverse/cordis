@@ -70,7 +70,7 @@ describe('Loader: basic support', () => {
   it('plugin self-update', async () => {
     loader.expectFiber('1').update({ a: 3 })
     await sleep()
-    expect(loader.file.data).to.deep.equal([{
+    expect(loader.data).to.deep.equal([{
       id: '1',
       name: 'foo',
       config: { a: 3 },
@@ -83,7 +83,7 @@ describe('Loader: basic support', () => {
   it('plugin self-dispose', async () => {
     loader.expectFiber('1').dispose()
     await sleep()
-    expect(loader.file.data).to.deep.equal([{
+    expect(loader.data).to.deep.equal([{
       id: '1',
       name: 'foo',
       disabled: true,

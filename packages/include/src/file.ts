@@ -2,14 +2,12 @@ import { access, constants, readFile, rename, writeFile } from 'node:fs/promises
 import { pathToFileURL } from 'node:url'
 import { remove } from 'cosmokit'
 import * as yaml from 'js-yaml'
-import { EntryOptions } from './config/entry.ts'
-import { JsExpr } from './config/utils.ts'
+import { EntryOptions, EntryTree, JsExpr } from '@cordisjs/plugin-loader'
 import { dirname } from 'node:path'
-import { EntryTree } from './config/tree.ts'
 
 export const schema = yaml.JSON_SCHEMA.extend(JsExpr)
 
-export class LoaderFile {
+export class ConfigFile {
   public readonly: boolean
   public trees: EntryTree[] = []
   public writeTask?: NodeJS.Timeout
@@ -23,7 +21,6 @@ export class LoaderFile {
   ref(tree: EntryTree) {
     this.trees.push(tree)
     tree.url = pathToFileURL(this.name).href
-    tree.ctx.loader.files[tree.url] ??= this
     // use defineProperty to prevent provide check
     Object.defineProperty(tree.ctx, 'baseDir', {
       value: dirname(this.name),
@@ -33,8 +30,6 @@ export class LoaderFile {
 
   unref(tree: EntryTree) {
     remove(this.trees, tree)
-    if (this.trees.length) return
-    delete tree.ctx.loader.files[tree.url]
   }
 
   async checkAccess() {
@@ -92,8 +87,8 @@ export class LoaderFile {
   }
 }
 
-export namespace LoaderFile {
-  export const writable = {
+export namespace ConfigFile {
+  export const writable: Record<string, string> = {
     '.json': 'application/json',
     '.yaml': 'application/yaml',
     '.yml': 'application/yaml',

@@ -4,7 +4,6 @@ import { defineProperty, Dict, isNullable } from 'cosmokit'
 import { ModuleLoader } from './internal.ts'
 import { Entry, EntryOptions } from './config/entry.ts'
 import isolate from './config/isolate.ts'
-import { LoaderFile } from './index.ts'
 import { EntryTree } from './config/tree.ts'
 import { pathToFileURL } from 'node:url'
 
@@ -12,9 +11,8 @@ export * from './config/entry.ts'
 export * from './config/group.ts'
 export * from './config/isolate.ts'
 export * from './config/tree.ts'
-export * from './file.ts'
+export * from './config/utils.ts'
 export * from './internal.ts'
-export * from './import.ts'
 
 declare module 'cordis' {
   interface Events {
@@ -57,7 +55,6 @@ export class Loader<C extends Context = Context> extends EntryTree<C> {
   }
 
   public name = 'loader'
-  public files: Dict<LoaderFile> = Object.create(null)
   public internal = ModuleLoader.fromInternal()
 
   public builtins: Dict<any> = Object.create(null)

@@ -1,6 +1,6 @@
 import { Dict } from 'cosmokit'
 import { Context, Fiber, Plugin } from 'cordis'
-import { EntryOptions, Group, Loader, LoaderFile } from '../src'
+import { EntryOptions, Group, Loader } from '../src'
 import { Mock, mock } from 'node:test'
 import { expect } from 'chai'
 
@@ -13,26 +13,12 @@ declare module '../src' {
   }
 }
 
-class MockLoaderFile extends LoaderFile {
-  data: EntryOptions[] = []
-
-  async read() {
-    return this.data
-  }
-
-  write(data: EntryOptions[]) {
-    this.data = data
-  }
-}
-
 export default class MockLoader<C extends Context = Context> extends Loader<C> {
-  public file: MockLoaderFile
+  public data: EntryOptions[] = []
   public modules: Dict<Plugin.Object> = Object.create(null)
 
   constructor(ctx: C) {
     super(ctx)
-    this.file = new MockLoaderFile('config-1.yml')
-    this.file.ref(this)
     ctx.on('internal/get', (ctx, prop, error, next) => {
       if (!ctx.fiber.runtime && prop === 'loader') {
         return ctx.get(prop)
@@ -42,11 +28,11 @@ export default class MockLoader<C extends Context = Context> extends Loader<C> {
   }
 
   write() {
-    this.file.write(this.root.data)
+    this.data = this.root.data
   }
 
   async read(data: any) {
-    this.file.write(data)
+    this.data = data
     await this.root.update(data)
     await this.await()
   }
