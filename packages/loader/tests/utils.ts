@@ -26,12 +26,13 @@ class MockLoaderFile extends LoaderFile {
 }
 
 export default class MockLoader<C extends Context = Context> extends Loader<C> {
-  declare file: MockLoaderFile
-
+  public file: MockLoaderFile
   public modules: Dict<Plugin.Object> = Object.create(null)
 
   constructor(ctx: C) {
-    super(ctx, { name: 'cordis' })
+    super(ctx)
+    this.file = new MockLoaderFile('config-1.yml')
+    this.file.ref(this)
     ctx.on('internal/get', (ctx, prop, error, next) => {
       if (!ctx.fiber.runtime && prop === 'loader') {
         return ctx.get(prop)
@@ -40,9 +41,8 @@ export default class MockLoader<C extends Context = Context> extends Loader<C> {
     })
   }
 
-  async init(baseDir: string, options: Loader.Config) {
-    this.file = new MockLoaderFile('config-1.yml')
-    this.file.ref(this)
+  write() {
+    this.file.write(this.root.data)
   }
 
   async read(data: any) {

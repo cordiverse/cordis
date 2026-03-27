@@ -3,9 +3,10 @@ import type {} from '@cordisjs/plugin-logger'
 import { defineProperty, Dict, isNullable } from 'cosmokit'
 import { ModuleLoader } from './internal.ts'
 import { Entry, EntryOptions } from './config/entry.ts'
-import { ImportTree } from './import.ts'
 import isolate from './config/isolate.ts'
 import { LoaderFile } from './index.ts'
+import { EntryTree } from './config/tree.ts'
+import { pathToFileURL } from 'node:url'
 
 export * from './config/entry.ts'
 export * from './config/group.ts'
@@ -39,18 +40,12 @@ declare module 'cordis' {
 }
 
 export namespace Loader {
-  export interface Config {
-    name: string
-    initial?: Omit<EntryOptions, 'id'>[]
-    filename?: string
-  }
-
   export interface Intercept {
     await?: boolean
   }
 }
 
-export class Loader<C extends Context = Context> extends ImportTree<C> {
+export class Loader<C extends Context = Context> extends EntryTree<C> {
   declare [Service.config]: Loader.Intercept
 
   public envData = process.env.CORDIS_SHARED
@@ -67,8 +62,9 @@ export class Loader<C extends Context = Context> extends ImportTree<C> {
 
   public builtins: Dict<any> = Object.create(null)
 
-  constructor(public ctx: C, public config: Loader.Config) {
+  constructor(public ctx: C) {
     super(ctx)
+    this.url = pathToFileURL(process.cwd()).href + '/'
     const self = this
 
     defineProperty(this, Service.tracker, {
@@ -115,8 +111,8 @@ export class Loader<C extends Context = Context> extends ImportTree<C> {
       // plugin hmr: delete(plugin) -> runtime dispose -> fiber dispose
       if (!ctx.registry.has(fiber.runtime!.callback)) return
 
-      // case 4: loader itself is being disposed (don't write disabled to config)
-      if (!this.ctx.fiber.uid) return
+      // case 4: the entry's tree is being disposed
+      if (!fiber.entry.parent.tree.ctx.fiber.uid) return
 
       this.showLog(fiber.entry, 'unload')
 
@@ -131,9 +127,8 @@ export class Loader<C extends Context = Context> extends ImportTree<C> {
     ctx.plugin(isolate)
   }
 
-  async* [Service.init]() {
-    await this.init(process.cwd(), this.config)
-    yield* super[Service.init]()
+  write() {
+    // Loader's root tree is in-memory; writes are no-ops.
   }
 
   [Service.check]() {

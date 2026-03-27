@@ -46,6 +46,7 @@
     "cordis": "^4.0.0-beta.7"
   },
   "devDependencies": {
+    "@cordisjs/plugin-include": "^1.0.0",
     "@cordisjs/plugin-loader": "^1.0.0-beta.5",
     "@cordisjs/plugin-timer": "^1.1.1",
     "@types/babel__code-frame": "^7.27.0",

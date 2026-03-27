@@ -1,10 +1,16 @@
 import { Context, Service } from 'cordis'
 import { dirname, extname, resolve } from 'node:path'
 import { readdir, stat } from 'node:fs/promises'
-import { fileURLToPath } from 'node:url'
 import { EntryTree } from './config/tree.ts'
 import { LoaderFile } from './file.ts'
-import Loader from './index.ts'
+
+export namespace ImportTree {
+  export interface Config {
+    name: string
+    initial?: any[]
+    filename?: string
+  }
+}
 
 export class ImportTree<C extends Context = Context> extends EntryTree<C> {
   public file!: LoaderFile
@@ -25,7 +31,7 @@ export class ImportTree<C extends Context = Context> extends EntryTree<C> {
     return this.file.write(this.root.data)
   }
 
-  async init(baseDir: string, options: Loader.Config) {
+  async init(baseDir: string, options: ImportTree.Config) {
     if (options.filename) {
       const filename = resolve(baseDir, options.filename)
       const stats = await stat(filename)
@@ -47,7 +53,7 @@ export class ImportTree<C extends Context = Context> extends EntryTree<C> {
     }
   }
 
-  private async _init(baseDir: string, options: Loader.Config) {
+  private async _init(baseDir: string, options: ImportTree.Config) {
     const { name, initial } = options
     const dirents = await readdir(baseDir, { withFileTypes: true })
     for (const extension of LoaderFile.supported) {
@@ -70,33 +76,5 @@ export class ImportTree<C extends Context = Context> extends EntryTree<C> {
       return this.file.write(initial as any)
     }
     throw new Error('config file not found')
-  }
-}
-
-export namespace Include {
-  export interface Config {
-    url: string
-  }
-}
-
-export class Include extends ImportTree {
-  constructor(ctx: Context, public config: Include.Config) {
-    super(ctx)
-    ctx.on('internal/update', (config, _, next) => {
-      if (config.url !== this.config.url) return next()
-      this.root.update(this.file.data!)
-    })
-  }
-
-  async* [Service.init]() {
-    const { url } = this.config
-    const filename = fileURLToPath(new URL(url, this.ctx.fiber.entry!.parent.tree.url))
-    const ext = extname(filename)
-    if (!LoaderFile.supported.has(ext)) {
-      throw new Error(`extension "${ext}" not supported`)
-    }
-    this.file = new LoaderFile(filename, LoaderFile.writable[ext])
-    this.file.ref(this)
-    yield* super[Service.init]()
   }
 }

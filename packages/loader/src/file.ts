@@ -4,14 +4,14 @@ import { remove } from 'cosmokit'
 import * as yaml from 'js-yaml'
 import { EntryOptions } from './config/entry.ts'
 import { JsExpr } from './config/utils.ts'
-import { ImportTree } from './import.ts'
 import { dirname } from 'node:path'
+import { EntryTree } from './config/tree.ts'
 
 export const schema = yaml.JSON_SCHEMA.extend(JsExpr)
 
 export class LoaderFile {
   public readonly: boolean
-  public trees: ImportTree[] = []
+  public trees: EntryTree[] = []
   public writeTask?: NodeJS.Timeout
   public content?: string
   public data?: EntryOptions[]
@@ -20,7 +20,7 @@ export class LoaderFile {
     this.readonly = !type
   }
 
-  ref(tree: ImportTree) {
+  ref(tree: EntryTree) {
     this.trees.push(tree)
     tree.url = pathToFileURL(this.name).href
     tree.ctx.loader.files[tree.url] ??= this
@@ -31,7 +31,7 @@ export class LoaderFile {
     })
   }
 
-  unref(tree: ImportTree) {
+  unref(tree: EntryTree) {
     remove(this.trees, tree)
     if (this.trees.length) return
     delete tree.ctx.loader.files[tree.url]

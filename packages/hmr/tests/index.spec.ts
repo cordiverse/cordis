@@ -4,6 +4,7 @@ import Logger from '@cordisjs/plugin-logger'
 import { writeFileSync, readFileSync, unlinkSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { expect } from 'chai'
+import { pathToFileURL } from 'node:url'
 
 const testDir = new URL('.', import.meta.url).pathname
 
@@ -59,9 +60,12 @@ function waitForEvent(ctx: Context, event: string, timeout = 8000): Promise<any[
 async function createContext(configFile: string): Promise<{ ctx: Context; fiber: Fiber<Context> }> {
   const ctx = new Context()
   await ctx.plugin(Logger)
-  const fiber = await ctx.plugin(Loader, {
-    name: 'cordis',
-    filename: resolve(testDir, configFile),
+  const fiber = await ctx.plugin(Loader)
+  await ctx.loader.create({
+    name: '@cordisjs/plugin-include',
+    config: {
+      url: pathToFileURL(resolve(testDir, configFile)).href,
+    },
   })
   await waitFor(() => ctx.hmr, 5000)
   await new Promise(r => setTimeout(r, 500))

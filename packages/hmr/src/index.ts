@@ -15,7 +15,7 @@ import z from 'schemastery'
 
 declare module 'cordis' {
   interface Context {
-    hmr: HMR
+    hmr: Hmr
   }
 
   interface Events {
@@ -48,7 +48,7 @@ interface Reload {
 @Inject('loader')
 @Inject('timer')
 @Inject('logger')
-class HMR extends Service {
+class Hmr extends Service {
   private base: string
   private internal: ModuleLoader
   private watcher!: FSWatcher
@@ -74,7 +74,7 @@ class HMR extends Service {
   /** Stashed file changes waiting to be processed */
   private stashed = new Set<string>()
 
-  constructor(ctx: Context, public config: HMR.Config) {
+  constructor(ctx: Context, public config: Hmr.Config) {
     super(ctx, 'hmr')
     if (!this.ctx.loader.internal) {
       throw new Error('--expose-internals is required for HMR service')
@@ -128,8 +128,8 @@ class HMR extends Service {
 
     // Collect externals: framework modules reachable from the main entry.
     // Changes to these files require a full process restart, not HMR.
-    const mainURL = pathToFileURL(resolve(process.argv[1])).href
-    const mainJob = Map.prototype.get.call(this.internal.loadCache, mainURL)
+    const mainUrl = pathToFileURL(resolve(process.argv[1])).href
+    const mainJob = this.internal.loadCache.get(mainUrl)
     if (mainJob) {
       this.externals = await loadDependencies(mainJob)
     } else {
@@ -384,7 +384,7 @@ class HMR extends Service {
   }
 }
 
-namespace HMR {
+namespace Hmr {
   export interface Config extends ChokidarOptions {
     base?: string
     root: string[]
@@ -411,4 +411,4 @@ namespace HMR {
   })
 }
 
-export default HMR
+export default Hmr

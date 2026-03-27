@@ -19,6 +19,11 @@
   },
   "homepage": "https://cordis.io/",
   "peerDependencies": {
-    "@cordisjs/plugin-loader": "^1.0.0-beta.5"
+    "@cordisjs/plugin-loader": "^1.0.0-beta.5",
+    "cordis": "^4.0.0-beta.7"
+  },
+  "devDependencies": {
+    "@cordisjs/plugin-loader": "^1.0.0-beta.5",
+    "cordis": "^4.0.0-beta.7"
   }
 }

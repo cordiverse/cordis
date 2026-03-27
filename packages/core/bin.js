@@ -3,4 +3,11 @@
 import { Context } from 'cordis'
 import Loader from '@cordisjs/plugin-loader'
 
-await new Context().plugin(Loader, { name: 'cordis' })
+const ctx = new Context()
+await ctx.plugin(Loader)
+await ctx.loader.create({
+  name: '@cordisjs/plugin-include',
+  config: {
+    url: './cordis.yml',
+  },
+})
