@@ -1,7 +1,7 @@
 import { Context, Inject, Plugin, Service } from 'cordis'
 import { Dict } from 'cosmokit'
 import { ModuleJob, ModuleLoader, ResolveResult } from '@cordisjs/plugin-loader'
-import { ConfigFile } from '@cordisjs/plugin-include'
+import type { Include } from '@cordisjs/plugin-include'
 import { ChokidarOptions, FSWatcher, watch } from 'chokidar'
 import { relative, resolve } from 'node:path'
 import { handleError } from './error.ts'
@@ -131,7 +131,8 @@ class Hmr extends Service {
 
     this.watcher.on('change', async (path) => {
       this.ctx.logger.debug('change detected at %c', path)
-      const url = pathToFileURL(resolve(this.base, path)).href
+      const filename = resolve(this.base, path)
+      const url = pathToFileURL(filename).href
 
       // Full reload: the changed file is part of the framework
       if (this.externals.has(url)) return loader.exit()
@@ -146,9 +147,9 @@ class Hmr extends Service {
 
       // Config reload: the file is a loader config file (e.g. cordis.yml)
       for (const entry of this.ctx.loader.entries()) {
-        const file = (entry.subtree as any)?.file as ConfigFile | undefined
-        if (file?.name !== fileURLToPath(url)) continue
-        await file.refresh()
+        const include = entry.subtree as Include | undefined
+        if (include?.filename !== filename) continue
+        await include.refresh()
         return
       }
     })
