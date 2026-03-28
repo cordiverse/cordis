@@ -50,7 +50,7 @@ interface Reload {
 @Inject('timer')
 @Inject('logger')
 class Hmr extends Service {
-  private base: string
+  private baseUrl: string
   private internal: ModuleLoader
   private watcher!: FSWatcher
 
@@ -81,17 +81,7 @@ class Hmr extends Service {
       throw new Error('--expose-internals is required for HMR service')
     }
     this.internal = this.ctx.loader.internal
-    this.base = resolve(ctx.baseDir, config.base || '')
-  }
-
-  /**
-   * Get a ModuleJob for a specifier, compatible with Node 22-24.
-   */
-  private _getModuleJob(specifier: string, parentURL: string, attributes: ImportAttributes) {
-    switch (this.internal.version) {
-      case 'v1': return this.internal.getModuleJobForImport(specifier, parentURL, attributes)
-      case 'v2': return this.internal.getOrCreateModuleJob(parentURL, { specifier, attributes })
-    }
+    this.baseUrl = new URL(config.base || '', ctx.get('baseUrl')).href
   }
 
   /**
@@ -105,8 +95,8 @@ class Hmr extends Service {
   }
 
   relative(filename: string) {
-    if (!this.base) return filename
-    return relative(this.base, filename)
+    if (!this.baseUrl) return filename
+    return relative(this.baseUrl, filename)
   }
 
   async* [Service.init]() {
@@ -114,17 +104,17 @@ class Hmr extends Service {
 
     const { loader } = this.ctx
     const { root, ignored } = this.config
-    if (this.base === this.ctx.baseDir) {
+    if (this.baseUrl === this.ctx.get('baseUrl')) {
       this.ctx.logger.debug('watching %o', root)
     } else {
-      this.ctx.logger.debug('watching %o in %s', root, this.base)
+      this.ctx.logger.debug('watching %o in %s', root, this.baseUrl)
     }
 
     const match = picomatch(ignored)
     this.watcher = watch(root, {
       ...this.config,
-      cwd: this.base,
-      ignored: path => match(relative(this.base, path)),
+      cwd: this.baseUrl,
+      ignored: path => match(relative(this.baseUrl, path)),
     })
 
     // Collect externals: framework modules reachable from the main entry.
@@ -141,7 +131,7 @@ class Hmr extends Service {
 
     this.watcher.on('change', async (path) => {
       this.ctx.logger.debug('change detected at %c', path)
-      const url = pathToFileURL(resolve(this.base, path)).href
+      const url = pathToFileURL(resolve(this.baseUrl, path)).href
 
       // Full reload: the changed file is part of the framework
       if (this.externals.has(url)) return loader.exit()

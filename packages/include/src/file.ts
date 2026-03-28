@@ -3,7 +3,6 @@ import { pathToFileURL } from 'node:url'
 import { remove } from 'cosmokit'
 import * as yaml from 'js-yaml'
 import { EntryOptions, EntryTree, isJsExpr } from '@cordisjs/plugin-loader'
-import { dirname } from 'node:path'
 
 export const JsExpr = new yaml.Type('tag:yaml.org,2002:js', {
   kind: 'scalar',
@@ -28,12 +27,7 @@ export class ConfigFile {
 
   ref(tree: EntryTree) {
     this.trees.push(tree)
-    tree.url = pathToFileURL(this.name).href
-    // use defineProperty to prevent provide check
-    Object.defineProperty(tree.ctx, 'baseDir', {
-      value: dirname(this.name),
-      configurable: true,
-    })
+    tree.ctx.baseUrl = pathToFileURL(this.name).href
   }
 
   unref(tree: EntryTree) {

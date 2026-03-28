@@ -114,7 +114,7 @@ export class Include extends EntryTree {
 
   async* [Service.init]() {
     const { url, initial } = this.config
-    const filename = fileURLToPath(new URL(url, this.ctx.fiber.entry!.parent.tree.url))
+    const filename = fileURLToPath(new URL(url, this.ctx.fiber.entry!.parent.tree.ctx.baseUrl))
     const ext = extname(filename)
     if (!ConfigFile.supported.has(ext)) {
       throw new Error(`extension "${ext}" not supported`)

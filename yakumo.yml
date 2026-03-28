@@ -1,7 +1,6 @@
 - name: '@cordisjs/plugin-cli'
   config:
     name: yakumo
-- name: '@cordisjs/plugin-cli-help'
 - id: 7lm6xp
   name: yakumo
   config:

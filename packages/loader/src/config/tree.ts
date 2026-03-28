@@ -6,14 +6,16 @@ import { EntryGroup } from './group.ts'
 export abstract class EntryTree<C extends Context = Context> {
   static readonly sep = ':'
 
+  public ctx: C
   public enableLogs = false
-  public url!: string
   public root: EntryGroup<C>
   public store: Dict<Entry<C>> = Object.create(null)
 
-  constructor(public ctx: C) {
-    this.root = new EntryGroup(ctx, this)
-    const entry = ctx.fiber.entry
+  constructor(ctx: C) {
+    this.ctx = ctx.isolate('baseUrl')
+    this.ctx.provide('baseUrl')
+    this.root = new EntryGroup(this.ctx, this)
+    const entry = this.ctx.fiber.entry
     if (entry) entry.subtree = this
   }
 
@@ -109,9 +111,9 @@ export abstract class EntryTree<C extends Context = Context> {
       // internal.import
       info.offset += 3
       if (useInternal && this.ctx.loader.internal) {
-        return await this.ctx.loader.internal.import(name, this.url, {})
+        return await this.ctx.loader.internal.import(name, this.ctx.baseUrl!, {})
       } else if (name.startsWith('.')) {
-        return await import(new URL(name, this.url).href)
+        return await import(new URL(name, this.ctx.baseUrl).href)
       } else {
         return await import(name)
       }

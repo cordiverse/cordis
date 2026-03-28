@@ -137,7 +137,7 @@ export class Entry<C extends Context = Context> {
     let entry: Entry<C> | undefined = this
     const result: string[] = []
     do {
-      result.push(`    at ${entry.parent.tree.url}#${entry.options.id}`)
+      result.push(`    at ${entry.parent.tree.ctx.baseUrl}#${entry.options.id}`)
       entry = entry.parent.ctx.fiber.entry
     } while (entry)
     return result

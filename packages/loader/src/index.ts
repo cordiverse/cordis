@@ -24,7 +24,7 @@ declare module 'cordis' {
   }
 
   interface Context {
-    baseDir: string
+    baseUrl?: string
     loader: Loader<this>
   }
 
@@ -54,18 +54,14 @@ export class Loader<C extends Context = Context> extends EntryTree<C> {
     ? JSON.parse(process.env.CORDIS_SHARED)
     : { startTime: Date.now() }
 
-  public params = {
-    env: process.env,
-  }
-
   public name = 'loader'
   public internal = ModuleLoader.fromInternal()
 
   public builtins: Dict<any> = Object.create(null)
 
-  constructor(public ctx: C, public config: Loader.Config = {}) {
+  constructor(ctx: C, public config: Loader.Config = {}) {
     super(ctx)
-    this.url = config.baseUrl ?? pathToFileURL(process.cwd()).href + '/'
+    this.ctx.baseUrl = config.baseUrl ?? pathToFileURL(process.cwd()).href + '/'
     const self = this
 
     defineProperty(this, Service.tracker, {

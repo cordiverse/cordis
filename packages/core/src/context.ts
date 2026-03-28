@@ -22,9 +22,6 @@ export class Context {
   static readonly isolate: unique symbol = symbols.isolate
   static readonly intercept: unique symbol = symbols.intercept
 
-  /** @deprecated */
-  static readonly init = symbols.init
-
   static is<C extends Context>(value: any): value is C {
     return !!value?.[Context.is as any]
   }
