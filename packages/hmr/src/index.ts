@@ -50,7 +50,7 @@ interface Reload {
 @Inject('timer')
 @Inject('logger')
 class Hmr extends Service {
-  private baseUrl: string
+  private base: string
   private internal: ModuleLoader
   private watcher!: FSWatcher
 
@@ -81,7 +81,7 @@ class Hmr extends Service {
       throw new Error('--expose-internals is required for HMR service')
     }
     this.internal = this.ctx.loader.internal
-    this.baseUrl = new URL(config.base || '', ctx.get('baseUrl')).href
+    this.base = fileURLToPath(new URL(config.base || '.', ctx.get('baseUrl')))
   }
 
   /**
@@ -95,8 +95,8 @@ class Hmr extends Service {
   }
 
   relative(filename: string) {
-    if (!this.baseUrl) return filename
-    return relative(this.baseUrl, filename)
+    if (!this.base) return filename
+    return relative(this.base, filename)
   }
 
   async* [Service.init]() {
@@ -104,17 +104,17 @@ class Hmr extends Service {
 
     const { loader } = this.ctx
     const { root, ignored } = this.config
-    if (this.baseUrl === this.ctx.get('baseUrl')) {
+    if (!this.config.base) {
       this.ctx.logger.debug('watching %o', root)
     } else {
-      this.ctx.logger.debug('watching %o in %s', root, this.baseUrl)
+      this.ctx.logger.debug('watching %o in %s', root, this.base)
     }
 
     const match = picomatch(ignored)
     this.watcher = watch(root, {
       ...this.config,
-      cwd: this.baseUrl,
-      ignored: path => match(relative(this.baseUrl, path)),
+      cwd: this.base,
+      ignored: path => match(relative(this.base, path)),
     })
 
     // Collect externals: framework modules reachable from the main entry.
@@ -131,7 +131,7 @@ class Hmr extends Service {
 
     this.watcher.on('change', async (path) => {
       this.ctx.logger.debug('change detected at %c', path)
-      const url = pathToFileURL(resolve(this.baseUrl, path)).href
+      const url = pathToFileURL(resolve(this.base, path)).href
 
       // Full reload: the changed file is part of the framework
       if (this.externals.has(url)) return loader.exit()
@@ -163,7 +163,7 @@ class Hmr extends Service {
     const job = this.internal.loadCache.get(pathToFileURL(filename).toString())
     if (!job) return []
     const linked = await job.linked
-    return linked.map(job => fileURLToPath(job.url))
+    return Array.prototype.map.call(linked, (job: ModuleJob) => fileURLToPath(job.url)) as string[]
   }
 
   /**
@@ -236,14 +236,14 @@ class Hmr extends Service {
     // Plugin entry files are treated as atomic reload units.
     const nameMap: Dict<Set<string>> = Object.create(null)
     for (const entry of this.ctx.loader.entries()) {
-      (nameMap[entry.parent.tree.url] ??= new Set()).add(entry.options.name)
+      (nameMap[entry.parent.tree.ctx.baseUrl!] ??= new Set()).add(entry.options.name)
     }
 
     // Resolve each plugin name to its file URL and check if it needs reload
-    for (const baseURL in nameMap) {
-      for (const name of nameMap[baseURL]) {
+    for (const baseUrl in nameMap) {
+      for (const name of nameMap[baseUrl]) {
         try {
-          const { url } = await this._resolve(name, baseURL, {})
+          const { url } = await this._resolve(name, baseUrl, {})
           if (this.declined.has(url)) continue
           const job = this.internal.loadCache.get(url)
           const plugin = this.ctx.loader.unwrapExports(job?.module?.getNamespace())
