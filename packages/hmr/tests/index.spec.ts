@@ -64,7 +64,7 @@ async function createContext(configFile: string): Promise<{ ctx: Context; fiber:
   await ctx.loader.create({
     name: '@cordisjs/plugin-include',
     config: {
-      url: pathToFileURL(resolve(testDir, configFile)).href,
+      path: pathToFileURL(resolve(testDir, configFile)).href,
     },
   })
   await waitFor(() => ctx.hmr, 5000)

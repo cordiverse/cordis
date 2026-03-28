@@ -8,6 +8,6 @@ await ctx.plugin(Loader)
 await ctx.loader.create({
   name: '@cordisjs/plugin-include',
   config: {
-    url: './cordis.yml',
+    path: './cordis.yml',
   },
 })

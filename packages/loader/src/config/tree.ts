@@ -7,7 +7,7 @@ export abstract class EntryTree<C extends Context = Context> {
   static readonly sep = ':'
 
   public ctx: C
-  public enableLogs = false
+  public enableLogs?: boolean
   public root: EntryGroup<C>
   public store: Dict<Entry<C>> = Object.create(null)
 

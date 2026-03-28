@@ -22,7 +22,7 @@ export interface PatchOptions {
 
 export namespace Include {
   export interface Config {
-    url: string
+    path: string
     initial?: any[]
     patches?: PatchOptions[]
     enableLogs?: boolean
@@ -34,9 +34,9 @@ export class Include extends EntryTree {
 
   constructor(ctx: Context, public config: Include.Config) {
     super(ctx)
-    this.enableLogs = !!config.enableLogs
+    this.enableLogs = config.enableLogs ?? ctx.fiber.entry!.parent.tree.enableLogs
     ctx.on('internal/update', (config, _, next) => {
-      if (config.url !== this.config.url) return next()
+      if (config.path !== this.config.path) return next()
       this.root.update(this.file.data!)
     })
   }
@@ -113,8 +113,8 @@ export class Include extends EntryTree {
   }
 
   async* [Service.init]() {
-    const { url, initial } = this.config
-    const filename = fileURLToPath(new URL(url, this.ctx.fiber.entry!.parent.tree.ctx.baseUrl))
+    const { path, initial } = this.config
+    const filename = fileURLToPath(new URL(path, this.ctx.fiber.entry!.parent.tree.ctx.baseUrl))
     const ext = extname(filename)
     if (!ConfigFile.supported.has(ext)) {
       throw new Error(`extension "${ext}" not supported`)

@@ -31,7 +31,7 @@ describe('Include patches', () => {
     await ctx.loader.create({
       name: '@cordisjs/plugin-include',
       config: {
-        url: './fixtures/base.yml',
+        path: './fixtures/base.yml',
       },
     })
     await waitFor(() => ctx.bail('test/get-value'))
@@ -48,7 +48,7 @@ describe('Include patches', () => {
     await ctx.loader.create({
       name: '@cordisjs/plugin-include',
       config: {
-        url: './fixtures/base.yml',
+        path: './fixtures/base.yml',
         patches: [
           { id: 'inner', disabled: true },
         ],
@@ -69,7 +69,7 @@ describe('Include patches', () => {
     await ctx.loader.create({
       name: '@cordisjs/plugin-include',
       config: {
-        url: './fixtures/base.yml',
+        path: './fixtures/base.yml',
         patches: [
           { id: 'inner', config: { custom: true } },
         ],
@@ -94,7 +94,7 @@ describe('Include patches', () => {
     await ctx.loader.create({
       name: '@cordisjs/plugin-include',
       config: {
-        url: './fixtures/base.yml',
+        path: './fixtures/base.yml',
         patches: [
           { id: 'inner', name: 'wrong-name', disabled: true },
         ],
@@ -115,7 +115,7 @@ describe('Include patches', () => {
     await ctx.loader.create({
       name: '@cordisjs/plugin-include',
       config: {
-        url: './fixtures/base.yml',
+        path: './fixtures/base.yml',
         patches: [
           { id: 'nonexistent', disabled: true },
         ],
@@ -136,7 +136,7 @@ describe('Include patches', () => {
     await ctx.loader.create({
       name: '@cordisjs/plugin-include',
       config: {
-        url: './fixtures/base.yml',
+        path: './fixtures/base.yml',
         patches: [
           {
             insert: [
@@ -162,7 +162,7 @@ describe('Include patches', () => {
     await ctx.loader.create({
       name: '@cordisjs/plugin-include',
       config: {
-        url: './fixtures/base.yml',
+        path: './fixtures/base.yml',
         patches: [
           {
             id: 'group',
@@ -187,7 +187,7 @@ describe('Include patches', () => {
     await ctx.loader.create({
       name: '@cordisjs/plugin-include',
       config: {
-        url: './fixtures/base.yml',
+        path: './fixtures/base.yml',
         patches: [
           {
             id: 'timer',
@@ -213,7 +213,7 @@ describe('Include patches', () => {
     await ctx.loader.create({
       name: '@cordisjs/plugin-include',
       config: {
-        url: './fixtures/base.yml',
+        path: './fixtures/base.yml',
         patches: [
           { id: 'inner', disabled: true },
           {
@@ -240,7 +240,7 @@ describe('Include patches', () => {
     await ctx.loader.create({
       name: '@cordisjs/plugin-include',
       config: {
-        url: './fixtures/base.yml',
+        path: './fixtures/base.yml',
         patches: [
           { id: 'inner', name: './test-plugin', disabled: true },
         ],
