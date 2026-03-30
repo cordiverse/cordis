@@ -12,7 +12,7 @@
   "scripts": {
     "lint": "eslint --cache",
     "yakumo": "node --expose-internals --import tsx --import yml-register node_modules/yakumo/lib/cli.js",
-    "build": "yarn yakumo build",
+    "build": "yarn yakumo esbuild && yarn yakumo tsc",
     "test": "yarn yakumo mocha",
     "test:text": "shx rm -rf coverage && c8 -r text yarn test",
     "test:json": "shx rm -rf coverage && c8 -r json yarn test",
@@ -20,7 +20,6 @@
   },
   "devDependencies": {
     "@cordisjs/eslint-config": "^1.1.1",
-    "@cordisjs/plugin-cli": "^1.0.3",
     "@sinonjs/fake-timers": "^6.0.1",
     "@types/node": "^25.3.5",
     "@types/sinonjs__fake-timers": "^6.0.4",
@@ -31,7 +30,7 @@
     "shx": "^0.4.0",
     "tsx": "npm:@cordiverse/tsx@4.19.3-fix.3",
     "typescript": "^5.9.3",
-    "yakumo": "^3.0.3",
+    "yakumo": "^3.1.0",
     "yakumo-esbuild": "^3.0.1",
     "yakumo-mocha": "^3.0.1",
     "yakumo-tsc": "^3.0.1",

@@ -47,6 +47,8 @@ export namespace Include {
 }
 
 export class Include extends EntryTree {
+  static inject = ['loader']
+
   public filename!: string
   private type?: string
   private readonly!: boolean
@@ -56,7 +58,7 @@ export class Include extends EntryTree {
 
   constructor(ctx: Context, public config: Include.Config) {
     super(ctx)
-    this.enableLogs = config.enableLogs ?? ctx.fiber.entry!.parent.tree.enableLogs
+    this.enableLogs = config.enableLogs ?? ctx.fiber.entry?.parent.tree.enableLogs ?? false
     ctx.on('internal/update', (config, _, next) => {
       if (config.path !== this.config.path) return next()
       this.root.update(this.data!)
@@ -155,7 +157,8 @@ export class Include extends EntryTree {
 
   async* [Service.init]() {
     const { path, initial } = this.config
-    this.filename = fileURLToPath(new URL(path, this.ctx.fiber.entry!.parent.tree.ctx.baseUrl))
+    const baseUrl = this.ctx.fiber.entry?.parent.tree.ctx.baseUrl ?? pathToFileURL(process.cwd() + '/').href
+    this.filename = fileURLToPath(new URL(path, baseUrl))
     const ext = extname(this.filename)
     if (!supported.has(ext)) {
       throw new Error(`extension "${ext}" not supported`)
@@ -177,7 +180,7 @@ export class Include extends EntryTree {
 
     yield () => this.stop()
     const data = this.applyPatches([...this.data!])
-    this.root.update(data)
+    await this.root.update(data)
   }
 
   stop() {
