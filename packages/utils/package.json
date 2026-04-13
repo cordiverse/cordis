@@ -1,6 +1,7 @@
 {
   "name": "@cordisjs/utils",
   "description": "Utilities for cordis",
+  "private": true,
   "version": "1.0.0",
   "type": "module",
   "main": "lib/index.js",
@@ -24,10 +25,10 @@
     "utilties"
   ],
   "devDependencies": {
-    "cordis": "^4.0.0-rc.0"
+    "cordis": "^4.0.0-rc.1"
   },
   "peerDependencies": {
-    "cordis": "^4.0.0-rc.0"
+    "cordis": "^4.0.0-rc.1"
   },
   "dependencies": {
     "cosmokit": "^1.8.1"

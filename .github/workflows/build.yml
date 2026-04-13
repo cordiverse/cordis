@@ -10,9 +10,9 @@ jobs:
 
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
       - name: Enable Corepack
         run: corepack enable
       - name: Install
@@ -23,19 +23,31 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    permissions:
+      id-token: write
+      contents: read
+
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
       - name: Enable Corepack
         run: corepack enable
       - name: Install
         run: yarn --no-immutable
-      - name: Build Core
+      - name: Build (1)
         run: yarn build core
-      - name: Build
+      - name: Build (2)
         run: yarn build
+      - name: Publish
+        if: >-
+          github.event_name == 'push' &&
+          contains(fromJson('["refs/heads/main"]'), github.ref)
+        run: |-
+          yarn config set npmPublishProvenance true
+          yarn config set npmRegistryServer https://registry.npmjs.org/
+          yarn yakumo publish --debug
 
   test:
     runs-on: ubuntu-latest
@@ -43,13 +55,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: [18, 20, 22]
+        node-version: [24]
 
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.node-version }}
       - name: Enable Corepack
@@ -64,32 +76,3 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           file: ./coverage/coverage-final.json
           name: codecov
-
-  publish:
-    needs: build
-
-    if: >-
-      github.event_name == 'push' &&
-      contains(fromJson('["refs/heads/main"]'), github.ref)
-
-    permissions:
-      id-token: write
-      contents: read
-
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out
-        uses: actions/checkout@v6
-      - name: Set up Node
-        uses: actions/setup-node@v6
-      - name: Enable Corepack
-        run: corepack enable
-      - name: Install
-        run: yarn --no-immutable
-      - name: Build
-        run: yarn build
-      - name: Publish
-        run: |-
-          yarn config set npmPublishProvenance true
-          yarn config set npmRegistryServer https://registry.npmjs.org/
-          yarn yakumo publish --debug

@@ -32,7 +32,7 @@
     "typescript": "^5.9.3",
     "yakumo": "^3.1.0",
     "yakumo-esbuild": "^3.0.1",
-    "yakumo-mocha": "^3.0.1",
+    "yakumo-mocha": "^3.0.3",
     "yakumo-tsc": "^3.0.1",
     "yml-register": "^1.2.5"
   }

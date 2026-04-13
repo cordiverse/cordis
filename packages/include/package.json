@@ -19,13 +19,13 @@
   },
   "homepage": "https://cordis.io/",
   "peerDependencies": {
-    "@cordisjs/plugin-loader": "^1.0.0-rc.0",
-    "cordis": "^4.0.0-rc.0"
+    "@cordisjs/plugin-loader": "^1.0.0-rc.1",
+    "cordis": "^4.0.0-rc.1"
   },
   "devDependencies": {
-    "@cordisjs/plugin-loader": "^1.0.0-rc.0",
-    "@cordisjs/plugin-logger": "^1.0.1",
-    "cordis": "^4.0.0-rc.0"
+    "@cordisjs/plugin-loader": "^1.0.0-rc.1",
+    "@cordisjs/plugin-logger": "^1.0.2",
+    "cordis": "^4.0.0-rc.1"
   },
   "dependencies": {
     "cosmokit": "^1.8.1",
