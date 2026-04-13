@@ -7,7 +7,7 @@ import { StandardSchemaV1 } from '@standard-schema/spec'
 
 declare module './context' {
   export interface Context extends Pick<Fiber, 'effect'> {
-    fiber: Fiber<this>
+    fiber: Fiber
   }
 }
 
@@ -100,13 +100,13 @@ export namespace CordisError {
 
 const INACTIVE = '__INACTIVE__'
 
-export class Fiber<out C extends Context = Context> {
+export class Fiber {
   public uid: number | null
-  public readonly ctx: C
+  public readonly ctx: Context
   public config: any
   public state = FiberState.PENDING
   public readonly dispose: () => Promise<void>
-  public store: Dict<Impl<C>> | undefined
+  public store: Dict<Impl> | undefined
   public inertia: Promise<void> | undefined
 
   public readonly _hooks: Dict<DisposableList<Function>> = Object.create(null)
@@ -117,10 +117,10 @@ export class Fiber<out C extends Context = Context> {
 
   private _error: any
   private _runner: EffectRunner<string>
-  private _store: Dict<Impl<C>> = Object.create(null)
+  private _store: Dict<Impl> = Object.create(null)
 
   constructor(
-    public parent: C,
+    public parent: Context,
     config: any,
     public inject: Dict<Inject.Meta | undefined>,
     public runtime: Plugin.Runtime | null,
@@ -206,7 +206,7 @@ export class Fiber<out C extends Context = Context> {
   }
 
   get name() {
-    let fiber: Fiber<C> = this
+    let fiber: Fiber = this
     do {
       if (fiber.runtime?.name) return fiber.runtime.name
       fiber = fiber.parent.fiber

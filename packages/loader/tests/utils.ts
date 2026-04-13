@@ -13,11 +13,11 @@ declare module '../src' {
   }
 }
 
-export default class MockLoader<C extends Context = Context> extends Loader<C> {
+export default class MockLoader extends Loader {
   public data: EntryOptions[] = []
   public modules: Dict<Plugin.Object> = Object.create(null)
 
-  constructor(ctx: C) {
+  constructor(ctx: Context) {
     super(ctx)
     ctx.on('internal/get', (ctx, prop, error, next) => {
       if (!ctx.fiber.runtime && prop === 'loader') {

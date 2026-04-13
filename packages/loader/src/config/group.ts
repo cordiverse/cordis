@@ -2,12 +2,12 @@ import { Context, Service } from 'cordis'
 import { Entry, EntryOptions } from './entry.ts'
 import { EntryTree } from './tree.ts'
 
-export class EntryGroup<C extends Context = Context> {
+export class EntryGroup {
   static readonly key = Symbol.for('cordis.group')
 
   public data: EntryOptions[] = []
 
-  constructor(public ctx: C, public tree: EntryTree<C>) {
+  constructor(public ctx: Context, public tree: EntryTree) {
     const entry = ctx.fiber.entry
     if (entry) entry.subgroup = this
   }
@@ -18,7 +18,7 @@ export class EntryGroup<C extends Context = Context> {
 
   async create(options: Omit<EntryOptions, 'id'>) {
     const id = this.tree.ensureId(options)
-    const entry: Entry<C> = this.tree.store[id] ??= new Entry(this.ctx.loader)
+    const entry: Entry = this.tree.store[id] ??= new Entry(this.ctx.loader)
     // Entry may be moved from another group,
     // so we need to update the parent reference.
     entry.parent = this

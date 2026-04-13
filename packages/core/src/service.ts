@@ -2,7 +2,7 @@ import { defineProperty } from 'cosmokit'
 import { Context } from './context'
 import { createCallable, joinPrototype, symbols, Tracker } from './utils'
 
-export abstract class Service<out T = never, out C extends Context = Context> {
+export abstract class Service<out T = never> {
   static readonly init: unique symbol = symbols.init
   static readonly check: unique symbol = symbols.check
   static readonly config: unique symbol = symbols.config
@@ -15,7 +15,7 @@ export abstract class Service<out T = never, out C extends Context = Context> {
 
   public name!: string
 
-  constructor(protected ctx: C, name: string) {
+  constructor(protected ctx: Context, name: string) {
     name ??= this.constructor['provide'] as string
 
     let self = this

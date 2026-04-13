@@ -25,15 +25,15 @@ declare module 'cordis' {
 
   interface Context {
     baseUrl?: string
-    loader: Loader<this>
+    loader: Loader
   }
 
   interface EnvData {
     startTime?: number
   }
 
-  interface Fiber<C> {
-    entry?: Entry<C>
+  interface Fiber {
+    entry?: Entry
   }
 }
 
@@ -47,7 +47,7 @@ export namespace Loader {
   }
 }
 
-export class Loader<C extends Context = Context> extends EntryTree<C> {
+export class Loader extends EntryTree {
   declare [Service.config]: Loader.Intercept
 
   public envData = process.env.CORDIS_SHARED
@@ -59,7 +59,7 @@ export class Loader<C extends Context = Context> extends EntryTree<C> {
 
   public builtins: Dict<any> = Object.create(null)
 
-  constructor(ctx: C, public config: Loader.Config = {}) {
+  constructor(ctx: Context, public config: Loader.Config = {}) {
     super(ctx)
     this.ctx.baseUrl = config.baseUrl ?? pathToFileURL(process.cwd()).href + '/'
     const self = this

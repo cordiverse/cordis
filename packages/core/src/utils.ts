@@ -55,7 +55,6 @@ export const symbols = {
 
   // context symbols
   effect: Symbol.for('cordis.effect') as typeof Context.effect,
-  events: Symbol.for('cordis.events') as typeof Context.events,
   filter: Symbol.for('cordis.filter') as typeof Context.filter,
   isolate: Symbol.for('cordis.isolate') as typeof Context.isolate,
   intercept: Symbol.for('cordis.intercept') as typeof Context.intercept,

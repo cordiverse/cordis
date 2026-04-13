@@ -10,26 +10,24 @@ export function isBailed(value: any) {
 export type Parameters<F> = F extends (...args: infer P) => any ? P : never
 export type ReturnType<F> = F extends (...args: any) => infer R ? R : never
 export type ThisType<F> = F extends (this: infer T, ...args: any) => any ? T : never
-export type GetEvents<C extends Context> = C[typeof Context.events]
 
 export type DispatchMode = 'emit' | 'parallel' | 'serial' | 'bail' | 'waterfall'
 
 declare module './context' {
   export interface Context {
     /* eslint-disable max-len */
-    [Context.events]: Events<this>
-    parallel<K extends keyof GetEvents<this>>(name: K, ...args: Parameters<GetEvents<this>[K]>): Promise<void>
-    parallel<K extends keyof GetEvents<this>>(thisArg: NoInfer<ThisType<GetEvents<this>[K]>>, name: K, ...args: Parameters<GetEvents<this>[K]>): Promise<void>
-    emit<K extends keyof GetEvents<this>>(name: K, ...args: Parameters<GetEvents<this>[K]>): void
-    emit<K extends keyof GetEvents<this>>(thisArg: NoInfer<ThisType<GetEvents<this>[K]>>, name: K, ...args: Parameters<GetEvents<this>[K]>): void
-    serial<K extends keyof GetEvents<this>>(name: K, ...args: Parameters<GetEvents<this>[K]>): Promisify<ReturnType<GetEvents<this>[K]>>
-    serial<K extends keyof GetEvents<this>>(thisArg: NoInfer<ThisType<GetEvents<this>[K]>>, name: K, ...args: Parameters<GetEvents<this>[K]>): Promisify<ReturnType<GetEvents<this>[K]>>
-    bail<K extends keyof GetEvents<this>>(name: K, ...args: Parameters<GetEvents<this>[K]>): ReturnType<GetEvents<this>[K]>
-    bail<K extends keyof GetEvents<this>>(thisArg: NoInfer<ThisType<GetEvents<this>[K]>>, name: K, ...args: Parameters<GetEvents<this>[K]>): ReturnType<GetEvents<this>[K]>
-    waterfall<K extends keyof GetEvents<this>>(name: K, ...args: Parameters<GetEvents<this>[K]>): ReturnType<GetEvents<this>[K]>
-    waterfall<K extends keyof GetEvents<this>>(thisArg: NoInfer<ThisType<GetEvents<this>[K]>>, name: K, ...args: Parameters<GetEvents<this>[K]>): ReturnType<GetEvents<this>[K]>
-    on<K extends keyof GetEvents<this>>(name: K, listener: GetEvents<this>[K], options?: boolean | EventOptions): () => boolean
-    once<K extends keyof GetEvents<this>>(name: K, listener: GetEvents<this>[K], options?: boolean | EventOptions): () => boolean
+    parallel<K extends keyof Events>(name: K, ...args: Parameters<Events[K]>): Promise<void>
+    parallel<K extends keyof Events>(thisArg: NoInfer<ThisType<Events[K]>>, name: K, ...args: Parameters<Events[K]>): Promise<void>
+    emit<K extends keyof Events>(name: K, ...args: Parameters<Events[K]>): void
+    emit<K extends keyof Events>(thisArg: NoInfer<ThisType<Events[K]>>, name: K, ...args: Parameters<Events[K]>): void
+    serial<K extends keyof Events>(name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
+    serial<K extends keyof Events>(thisArg: NoInfer<ThisType<Events[K]>>, name: K, ...args: Parameters<Events[K]>): Promisify<ReturnType<Events[K]>>
+    bail<K extends keyof Events>(name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
+    bail<K extends keyof Events>(thisArg: NoInfer<ThisType<Events[K]>>, name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
+    waterfall<K extends keyof Events>(name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
+    waterfall<K extends keyof Events>(thisArg: NoInfer<ThisType<Events[K]>>, name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
+    on<K extends keyof Events>(name: K, listener: Events[K], options?: boolean | EventOptions): () => boolean
+    once<K extends keyof Events>(name: K, listener: Events[K], options?: boolean | EventOptions): () => boolean
     /* eslint-enable max-len */
   }
 }
@@ -44,10 +42,10 @@ export interface Hook extends EventOptions {
   callback: (...args: any[]) => any
 }
 
-export class EventsService<C extends Context = Context> {
+export class EventsService {
   _hooks: Record<keyof any, Hook[]> = {}
 
-  constructor(private ctx: C) {
+  constructor(private ctx: Context) {
     defineProperty(this, symbols.tracker, {
       property: 'ctx',
       noShadow: true,
@@ -165,16 +163,16 @@ export class EventsService<C extends Context = Context> {
   }
 }
 
-export interface Events<in C extends Context = Context> {
-  'internal/plugin'(fiber: Fiber<C>): void
-  'internal/status'(fiber: Fiber<C>, oldValue: FiberState): void
-  'internal/info'(this: C, format: any, ...param: any[]): void
-  'internal/error'(this: C, format: any, ...param: any[]): void
-  'internal/warn'(this: C, format: any, ...param: any[]): void
-  'internal/service'(this: C, name: string, value: any): void
-  'internal/update'(this: Fiber<C>, config: any, noSave: boolean, next: () => void): void
-  'internal/get'(ctx: C, name: string, error: Error, next: () => any): any
-  'internal/set'(ctx: C, name: string, value: any, error: Error, next: () => boolean): boolean
-  'internal/listener'(this: C, name: string, listener: any, prepend: boolean): void
+export interface Events {
+  'internal/plugin'(fiber: Fiber): void
+  'internal/status'(fiber: Fiber, oldValue: FiberState): void
+  'internal/info'(this: Context, format: any, ...param: any[]): void
+  'internal/error'(this: Context, format: any, ...param: any[]): void
+  'internal/warn'(this: Context, format: any, ...param: any[]): void
+  'internal/service'(this: Context, name: string, value: any): void
+  'internal/update'(this: Fiber, config: any, noSave: boolean, next: () => void): void
+  'internal/get'(ctx: Context, name: string, error: Error, next: () => any): any
+  'internal/set'(ctx: Context, name: string, value: any, error: Error, next: () => boolean): boolean
+  'internal/listener'(this: Context, name: string, listener: any, prepend: boolean): void
   'internal/dispatch'(mode: DispatchMode, name: string, args: any[], thisArg: any): void
 }

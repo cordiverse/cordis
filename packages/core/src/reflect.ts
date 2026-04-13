@@ -51,14 +51,14 @@ export namespace Property {
   }
 }
 
-export interface Impl<C extends Context = Context> {
+export interface Impl {
   name: string
-  fiber: Fiber<C>
+  fiber: Fiber
   value?: any
   check?: () => boolean
 }
 
-export class ReflectService<C extends Context = Context> {
+export class ReflectService {
   static handler: ProxyHandler<Context> = {
     get: (target, prop, ctx: Context) => {
       if (isSpecialProperty(prop)) {
@@ -134,10 +134,10 @@ export class ReflectService<C extends Context = Context> {
     },
   }
 
-  public store: Dict<Impl<C>, symbol> = Object.create(null)
+  public store: Dict<Impl, symbol> = Object.create(null)
   public props: Dict<Property> = Object.create(null)
 
-  constructor(public ctx: C) {
+  constructor(public ctx: Context) {
     defineProperty(this, symbols.tracker, {
       property: 'ctx',
       noShadow: true,
@@ -185,7 +185,7 @@ export class ReflectService<C extends Context = Context> {
 
       this.ctx.root[symbols.isolate][name] ??= Symbol(name)
       const key = this.ctx[symbols.isolate][name]
-      const impl: Impl<C> = { name, value, fiber: this.ctx.fiber, check }
+      const impl: Impl = { name, value, fiber: this.ctx.fiber, check }
       if (this.store[key]) {
         throw new Error(`service "${name}" has been registered at <${this.store[key].fiber.name}>`)
       }
@@ -205,7 +205,7 @@ export class ReflectService<C extends Context = Context> {
   }
 
   notify(names: string[], filter = (ctx: Context, name: string) => ctx[symbols.isolate][name] === this.ctx[symbols.isolate][name]) {
-    const fibers: Fiber<C>[] = []
+    const fibers: Fiber[] = []
     for (const runtime of this.ctx.registry.values()) {
       for (const fiber of runtime.fibers) {
         let hasUpdate = false

@@ -3,15 +3,15 @@ import { Dict, isNonNullable } from 'cosmokit'
 import { Entry, EntryOptions } from './entry.ts'
 import { EntryGroup } from './group.ts'
 
-export abstract class EntryTree<C extends Context = Context> {
+export abstract class EntryTree {
   static readonly sep = ':'
 
-  public ctx: C
+  public ctx: Context
   public enableLogs?: boolean
-  public root: EntryGroup<C>
-  public store: Dict<Entry<C>> = Object.create(null)
+  public root: EntryGroup
+  public store: Dict<Entry> = Object.create(null)
 
-  constructor(ctx: C) {
+  constructor(ctx: Context) {
     this.ctx = ctx.isolate('baseUrl')
     this.ctx.provide('baseUrl')
     this.root = new EntryGroup(this.ctx, this)
@@ -23,7 +23,7 @@ export abstract class EntryTree<C extends Context = Context> {
     return this.ctx
   }
 
-  * entries(): Generator<Entry<C>, void, void> {
+  * entries(): Generator<Entry, void, void> {
     for (const entry of Object.values(this.store)) {
       yield entry
       if (!entry.subtree) continue

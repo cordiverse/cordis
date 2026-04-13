@@ -10,19 +10,18 @@ export interface Context {
   [symbols.intercept]: Dict
   /** @experimental */
   root: this
-  events: EventsService<this>
-  reflect: ReflectService<this>
-  registry: RegistryService<this>
+  events: EventsService
+  reflect: ReflectService
+  registry: RegistryService
 }
 
 export class Context {
   static readonly effect: unique symbol = symbols.effect
-  static readonly events: unique symbol = symbols.events
   static readonly filter: unique symbol = symbols.filter
   static readonly isolate: unique symbol = symbols.isolate
   static readonly intercept: unique symbol = symbols.intercept
 
-  static is<C extends Context>(value: any): value is C {
+  static is(value: any): value is Context {
     return !!value?.[Context.is as any]
   }
 
@@ -64,7 +63,7 @@ export class Context {
     return this.extend({ [symbols.isolate]: shadow })
   }
 
-  intercept<K extends InjectKey<this>>(name: K, config: this[K] extends { [symbols.config]: infer T } ? T : never): this
+  intercept<K extends InjectKey>(name: K, config: Context[K] extends { [symbols.config]: infer T } ? T : never): this
   intercept(name: string, config: any): this
   intercept(name: string, config: any) {
     const intercept = Object.create(this[symbols.intercept])

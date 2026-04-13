@@ -4,17 +4,17 @@ import { Context } from './context'
 import { Fiber } from './fiber'
 import { buildOuterStack, DisposableList, symbols, withProps } from './utils'
 
-function isApplicable<C extends Context>(object: Plugin<C>) {
+function isApplicable(object: Plugin) {
   return object && typeof object === 'object' && typeof object.apply === 'function'
 }
 
 export type Inject<M = Dict> = (keyof M)[] | { [K in keyof M]: boolean | Inject.Meta<M[K]> }
 
-export type InjectKey<C extends Context> = keyof {
-  [K in keyof C & string as C[K] extends { [symbols.config]: any } ? K : never]: any
+export type InjectKey = keyof {
+  [K in keyof Context & string as Context[K] extends { [symbols.config]: any } ? K : never]: any
 }
 
-export function Inject<K extends InjectKey<Context>>(name: K, required = true, config?: Context[K] extends { [symbols.config]: infer T } ? T : never) {
+export function Inject<K extends InjectKey>(name: K, required = true, config?: Context[K] extends { [symbols.config]: infer T } ? T : never) {
   return function (value: any, decorator: ClassDecoratorContext<any> | ClassMethodDecoratorContext<any>) {
     if (decorator.kind === 'class') {
       if (!Object.hasOwn(value, 'inject')) {
@@ -62,10 +62,10 @@ export namespace Inject {
   }
 }
 
-export type Plugin<C extends Context = Context, T = any> =
-  | Plugin.Function<C, T>
-  | Plugin.Constructor<C, T>
-  | Plugin.Object<C, T>
+export type Plugin<T = any> =
+  | Plugin.Function<T>
+  | Plugin.Constructor<T>
+  | Plugin.Object<T>
 
 export namespace Plugin {
   export interface Base<T = any> {
@@ -81,21 +81,21 @@ export namespace Plugin {
     Config: (config: S) => T
   }
 
-  export interface Function<in C extends Context = Context, T = any> extends Base<T> {
-    (ctx: C, config: T): any
+  export interface Function<T = any> extends Base<T> {
+    (ctx: Context, config: T): any
   }
 
-  export interface Constructor<in C extends Context = Context, T = any> extends Base<T> {
-    new (ctx: C, config: T): any
+  export interface Constructor<T = any> extends Base<T> {
+    new (ctx: Context, config: T): any
   }
 
-  export interface Object<in C extends Context = Context, T = any> extends Base<T> {
-    apply(ctx: C, config: T): any
+  export interface Object<T = any> extends Base<T> {
+    apply(ctx: Context, config: T): any
   }
 
-  export interface Runtime<out C extends Context = Context> {
+  export interface Runtime {
     name?: string
-    fibers: DisposableList<Fiber<C>>
+    fibers: DisposableList<Fiber>
     callback: globalThis.Function
     Config?: StandardSchemaV1
   }
@@ -119,16 +119,16 @@ type GetPluginConfig<P> =
 
 declare module './context' {
   export interface Context {
-    inject(deps: Inject, callback: Plugin.Function<this, void>): Fiber<this> & PromiseLike<Fiber<this>>
-    plugin<P extends Plugin<this>>(plugin: P, ...args: Spread<GetPluginConfig<P>>): Fiber<this> & PromiseLike<Fiber<this>>
+    inject(deps: Inject, callback: Plugin.Function<void>): Fiber & PromiseLike<Fiber>
+    plugin<P extends Plugin>(plugin: P, ...args: Spread<GetPluginConfig<P>>): Fiber & PromiseLike<Fiber>
   }
 }
 
-export class RegistryService<out C extends Context = Context> {
+export class RegistryService {
   private _counter = 0
-  private _internal = new Map<Function, Plugin.Runtime<C>>()
+  private _internal = new Map<Function, Plugin.Runtime>()
 
-  constructor(public ctx: C) {
+  constructor(public ctx: Context) {
     defineProperty(this, symbols.tracker, {
       property: 'ctx',
       noShadow: true,
@@ -143,7 +143,7 @@ export class RegistryService<out C extends Context = Context> {
     return this._internal.size
   }
 
-  resolve(plugin: Plugin<C>): Function | undefined {
+  resolve(plugin: Plugin): Function | undefined {
     // plugin.apply may throw
     try {
       if (typeof plugin === 'function') return plugin
@@ -151,17 +151,17 @@ export class RegistryService<out C extends Context = Context> {
     } catch {}
   }
 
-  get(plugin: Plugin<C>) {
+  get(plugin: Plugin) {
     const key = this.resolve(plugin)
     return key && this._internal.get(key)
   }
 
-  has(plugin: Plugin<C>) {
+  has(plugin: Plugin) {
     const key = this.resolve(plugin)
     return !!key && this._internal.has(key)
   }
 
-  delete(plugin: Plugin<C>) {
+  delete(plugin: Plugin) {
     const key = this.resolve(plugin)
     const runtime = key && this._internal.get(key)
     if (!runtime) return
@@ -184,15 +184,15 @@ export class RegistryService<out C extends Context = Context> {
     return this._internal.entries()
   }
 
-  forEach(callback: (value: Plugin.Runtime<C>, key: Function) => void) {
+  forEach(callback: (value: Plugin.Runtime, key: Function) => void) {
     return this._internal.forEach(callback)
   }
 
-  inject(inject: Inject, callback: Plugin.Function<C, void>) {
+  inject(inject: Inject, callback: Plugin.Function<void>) {
     return this.plugin({ inject, apply: callback, name: callback.name })
   }
 
-  plugin(plugin: Plugin<C>, config?: any, getOuterStack = buildOuterStack()) {
+  plugin(plugin: Plugin, config?: any, getOuterStack = buildOuterStack()) {
     // check if it's a valid plugin
     const callback = this.resolve(plugin)
     if (!callback) throw new Error('invalid plugin, expect function or object with an "apply" method, received ' + typeof plugin)
@@ -207,7 +207,7 @@ export class RegistryService<out C extends Context = Context> {
     }
 
     const fiber = new Fiber(this.ctx, config, Inject.resolve(plugin.inject), runtime, getOuterStack)
-    const wrapped = Object.create(fiber) as Fiber<C> & PromiseLike<Fiber<C>>
+    const wrapped = Object.create(fiber) as Fiber & PromiseLike<Fiber>
     wrapped.then = (onFulfilled, onRejected) => {
       return fiber.await().then(onFulfilled, onRejected)
     }

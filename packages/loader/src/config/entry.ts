@@ -31,20 +31,20 @@ function sortKeys<T extends {}>(object: T, prepend = ['id', 'name'], append = ['
   return Object.assign(object, Object.fromEntries([...part1, ...rest, ...part2]))
 }
 
-export class Entry<C extends Context = Context> {
+export class Entry {
   static readonly key = Symbol.for('cordis.entry')
 
-  public ctx: C
-  public fiber?: Fiber<C>
-  public parent!: EntryGroup<C>
+  public ctx: Context
+  public fiber?: Fiber
+  public parent!: EntryGroup
   // safety: call `entry.update()` immediately after creating an entry
   public options = {} as EntryOptions
-  public subgroup?: EntryGroup<C>
-  public subtree?: EntryTree<C>
+  public subgroup?: EntryGroup
+  public subtree?: EntryTree
 
   _initTask?: Promise<void>
 
-  constructor(public loader: Loader<C>) {
+  constructor(public loader: Loader) {
     this.ctx = loader.ctx.extend({ [Entry.key]: this })
     this.context.emit('loader/entry-init', this)
   }
@@ -134,7 +134,7 @@ export class Entry<C extends Context = Context> {
   }
 
   getOuterStack = () => {
-    let entry: Entry<C> | undefined = this
+    let entry: Entry | undefined = this
     const result: string[] = []
     do {
       result.push(`    at ${entry.parent.tree.ctx.baseUrl}#${entry.options.id}`)

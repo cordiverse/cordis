@@ -7,7 +7,7 @@ export * from 'reggol'
 
 declare module 'cordis' {
   interface Context {
-    logger: LoggerService<this>
+    logger: LoggerService
   }
 
   interface Intercept {
@@ -37,7 +37,7 @@ interface LoggerService extends Pick<Logger, Type> {
   (name?: string): Logger
 }
 
-class LoggerService<C extends Context = Context> extends Service<LoggerService.Intercept, C> {
+class LoggerService extends Service<LoggerService.Intercept> {
   static Config: z<LoggerService.Config> = z.object({
     bufferSize: z.number().default(1000),
     console: z.object({
@@ -53,7 +53,7 @@ class LoggerService<C extends Context = Context> extends Service<LoggerService.I
   factory = new Factory()
   buffer: Message[] = []
 
-  constructor(ctx: C, public config: LoggerService.Config) {
+  constructor(ctx: Context, public config: LoggerService.Config) {
     super(ctx, 'logger')
 
     if (config.console!.enabled) {
