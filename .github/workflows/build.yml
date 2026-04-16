@@ -71,8 +71,8 @@ jobs:
       - name: Unit Test
         run: yarn test:json
       - name: Report Coverage
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          file: ./coverage/coverage-final.json
+          files: ./coverage/coverage-final.json
           name: codecov

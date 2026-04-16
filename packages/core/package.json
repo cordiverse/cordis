@@ -1,12 +1,12 @@
 {
   "name": "cordis",
   "description": "Meta-Framework for Modern Applications",
-  "version": "4.0.0-rc.1",
+  "version": "4.0.0-rc.3",
   "sideEffects": false,
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
-  "bin": "lib/bin.js",
+  "bin": "bin.js",
   "exports": {
     ".": {
       "types": "./lib/index.d.ts",
@@ -16,7 +16,8 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib"
+    "lib",
+    "bin.js"
   ],
   "repository": {
     "type": "git",
@@ -31,7 +32,7 @@
   "license": "MIT",
   "peerDependencies": {
     "@cordisjs/plugin-include": "^1.0.2",
-    "@cordisjs/plugin-loader": "^1.0.0-rc.1"
+    "@cordisjs/plugin-loader": "^1.0.0-rc.2"
   },
   "peerDependenciesMeta": {
     "@cordisjs/plugin-include": {
