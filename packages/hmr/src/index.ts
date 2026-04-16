@@ -81,7 +81,7 @@ class Hmr extends Service {
       throw new Error('--expose-internals is required for HMR service')
     }
     this.internal = this.ctx.loader.internal
-    this.base = fileURLToPath(new URL(config.base || '.', ctx.get('baseUrl')))
+    this.base = fileURLToPath(new URL(config.base || '.', ctx.baseUrl))
   }
 
   /**

@@ -12,8 +12,7 @@ export abstract class EntryTree {
   public store: Dict<Entry> = Object.create(null)
 
   constructor(ctx: Context) {
-    this.ctx = ctx.isolate('baseUrl')
-    this.ctx.provide('baseUrl')
+    this.ctx = ctx.extend({ baseUrl: ctx.baseUrl })
     this.root = new EntryGroup(this.ctx, this)
     const entry = this.ctx.fiber.entry
     if (entry) entry.subtree = this
@@ -48,7 +47,7 @@ export abstract class EntryTree {
   ensureId(options: Partial<EntryOptions>) {
     if (!options.id) {
       do {
-        options.id = Math.random().toString(36).slice(2, 8)
+        options.id = Math.random().toString(16).slice(2, 10)
       } while (this.store[options.id])
     }
     return options.id!

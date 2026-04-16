@@ -10,6 +10,7 @@ export interface Context {
   [symbols.intercept]: Dict
   /** @experimental */
   root: this
+  baseUrl?: string
   events: EventsService
   reflect: ReflectService
   registry: RegistryService
@@ -35,6 +36,7 @@ export class Context {
     this[symbols.intercept] = Object.create(null)
     const self = new Proxy<this>(this, ReflectService.handler)
     this.root = self
+    this.baseUrl = undefined
     this.fiber = new Fiber(self, {}, Object.create(null), null, () => [])
     this.reflect = new ReflectService(self)
     this.registry = new RegistryService(self)

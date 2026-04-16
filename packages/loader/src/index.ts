@@ -5,7 +5,6 @@ import { ModuleLoader } from './internal.ts'
 import { Entry, EntryOptions } from './config/entry.ts'
 import isolate from './config/isolate.ts'
 import { EntryTree } from './config/tree.ts'
-import { pathToFileURL } from 'node:url'
 
 export * from './config/entry.ts'
 export * from './config/group.ts'
@@ -24,7 +23,6 @@ declare module 'cordis' {
   }
 
   interface Context {
-    baseUrl?: string
     loader: Loader
   }
 
@@ -61,7 +59,9 @@ export class Loader extends EntryTree {
 
   constructor(ctx: Context, public config: Loader.Config = {}) {
     super(ctx)
-    this.ctx.baseUrl = config.baseUrl ?? pathToFileURL(process.cwd()).href + '/'
+    if (config.baseUrl) {
+      this.ctx.baseUrl = config.baseUrl
+    }
     const self = this
 
     defineProperty(this, Service.tracker, {
