@@ -7,5 +7,5 @@ const { version } = require('../package.json')
 scaffold({
   name: 'cordis',
   version,
-  template: '@cordiverse/boilerplate',
+  template: '@cordisjs/boilerplate',
 })

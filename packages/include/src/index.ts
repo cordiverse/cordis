@@ -49,9 +49,9 @@ export namespace Include {
 export class Include extends EntryTree {
   static inject = ['loader']
 
-  public filename!: string
+  public filename: string
   private type?: string
-  private readonly!: boolean
+  private readonly: boolean
   private content?: string
   private data?: EntryOptions[]
   private writeTask?: NodeJS.Timeout
@@ -59,6 +59,15 @@ export class Include extends EntryTree {
   constructor(ctx: Context, public config: Include.Config) {
     super(ctx)
     this.enableLogs = config.enableLogs ?? ctx.fiber.entry?.parent.tree.enableLogs ?? false
+    this.filename = fileURLToPath(new URL(this.config.path, this.ctx.baseUrl))
+    const ext = extname(this.filename)
+    if (!supported.has(ext)) {
+      throw new Error(`extension "${ext}" not supported`)
+    }
+    this.type = writable[ext]
+    this.readonly = !this.type
+    this.ctx.baseUrl = new URL('.', pathToFileURL(this.filename)).href
+
     ctx.on('internal/update', (config, _, next) => {
       if (config.path !== this.config.path) return next()
       this.root.update(this.data!)
@@ -156,22 +165,11 @@ export class Include extends EntryTree {
   }
 
   async* [Service.init]() {
-    const { path, initial } = this.config
-    const baseUrl = this.ctx.fiber.entry?.parent.tree.ctx.baseUrl ?? pathToFileURL(process.cwd() + '/').href
-    this.filename = fileURLToPath(new URL(path, baseUrl))
-    const ext = extname(this.filename)
-    if (!supported.has(ext)) {
-      throw new Error(`extension "${ext}" not supported`)
-    }
-    this.type = writable[ext]
-    this.readonly = !this.type
-    this.ctx.baseUrl = new URL('.', pathToFileURL(this.filename)).href
-
     try {
       await this.read()
     } catch {
-      if (initial) {
-        this.writeFile(initial as any)
+      if (this.config.initial) {
+        this.writeFile(this.config.initial as any)
         await this.read()
       } else {
         throw new Error(`config file not found: ${this.filename}`)

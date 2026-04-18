@@ -46,7 +46,7 @@
     "cordis": "^4.0.0-rc.3"
   },
   "devDependencies": {
-    "@cordisjs/plugin-include": "^1.0.2",
+    "@cordisjs/plugin-include": "^1.0.3",
     "@cordisjs/plugin-loader": "^1.0.0-rc.2",
     "@cordisjs/plugin-timer": "^1.1.1",
     "@types/babel__code-frame": "^7.27.0",
