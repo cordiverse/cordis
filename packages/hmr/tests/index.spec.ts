@@ -710,16 +710,16 @@ export function apply(ctx: Context) {
     })
 
     it('should return linked dependencies for a loaded file', async () => {
-      const pluginDepPath = resolve(testDir, 'plugin-dep.ts')
-      const linked = await ctx.hmr.getLinked(pluginDepPath)
+      const pluginDepUrl = pathToFileURL(resolve(testDir, 'plugin-dep.ts')).href
+      const linked = await ctx.hmr.getLinked(pluginDepUrl)
 
       expect(linked).to.be.an('array')
-      const depPath = resolve(testDir, 'dep.ts')
-      expect(linked).to.include(depPath)
+      const depUrl = pathToFileURL(resolve(testDir, 'dep.ts')).href
+      expect(linked).to.include(depUrl)
     })
 
     it('should return empty array for unknown file', async () => {
-      const linked = await ctx.hmr.getLinked('/nonexistent/file.ts')
+      const linked = await ctx.hmr.getLinked(pathToFileURL('/nonexistent/file.ts').href)
       expect(linked).to.deep.equal([])
     })
   })

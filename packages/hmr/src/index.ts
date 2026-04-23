@@ -160,11 +160,11 @@ class Hmr extends Service {
     // '    at HMR.partialReload (<anonymous>)',
   ]
 
-  async getLinked(filename: string) {
-    const job = this.internal.loadCache.get(pathToFileURL(filename).toString())
+  async getLinked(url: string) {
+    const job = this.internal.loadCache.get(url)
     if (!job) return []
     const linked = await job.linked
-    return Array.prototype.map.call(linked, (job: ModuleJob) => fileURLToPath(job.url)) as string[]
+    return Array.prototype.map.call(linked, (job: ModuleJob) => job.url) as string[]
   }
 
   /**
@@ -180,30 +180,32 @@ class Hmr extends Service {
     this.accepted = new Set(this.stashed)
     this.declined = new Set(this.externals)
 
-    await Promise.all([...this.stashed].map(async (filename) => {
-      const children = await this.getLinked(filename)
-      for (const filename of children) {
-        if (this.accepted.has(filename) || this.declined.has(filename) || filename.includes('/node_modules/')) continue
-        pending.push(filename)
+    const isExcluded = (url: string) => url.startsWith('node:') || url.includes('/node_modules/')
+
+    await Promise.all([...this.stashed].map(async (url) => {
+      const children = await this.getLinked(url)
+      for (const child of children) {
+        if (this.accepted.has(child) || this.declined.has(child) || isExcluded(child)) continue
+        pending.push(child)
       }
     }))
 
     while (pending.length) {
       let index = 0, hasUpdate = false
       while (index < pending.length) {
-        const filename = pending[index]
-        const children = await this.getLinked(filename)
+        const url = pending[index]
+        const children = await this.getLinked(url)
         let isDeclined = true, isAccepted = false
-        for (const filename of children) {
-          if (this.declined.has(filename) || filename.includes('/node_modules/')) continue
-          if (this.accepted.has(filename)) {
+        for (const child of children) {
+          if (this.declined.has(child) || isExcluded(child)) continue
+          if (this.accepted.has(child)) {
             isAccepted = true
             break
           } else {
             isDeclined = false
-            if (!pending.includes(filename)) {
+            if (!pending.includes(child)) {
               hasUpdate = true
-              pending.push(filename)
+              pending.push(child)
             }
           }
         }
@@ -211,9 +213,9 @@ class Hmr extends Service {
           hasUpdate = true
           pending.splice(index, 1)
           if (isAccepted) {
-            this.accepted.add(filename)
+            this.accepted.add(url)
           } else {
-            this.declined.add(filename)
+            this.declined.add(url)
           }
         } else {
           index++
@@ -222,8 +224,8 @@ class Hmr extends Service {
       if (!hasUpdate) break
     }
 
-    for (const filename of pending) {
-      this.declined.add(filename)
+    for (const url of pending) {
+      this.declined.add(url)
     }
   }
 
