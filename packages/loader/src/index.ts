@@ -73,7 +73,7 @@ export class Loader extends EntryTree {
     ctx.reflect.provide('loader', this, this[Service.check])
 
     ctx.on('internal/update', function (config, noSave, next) {
-      if (!this.entry || noSave) return next()
+      if (!this.entry || noSave || this.parent.fiber?.entry === this.entry) return next()
       const unparse = this.runtime?.Config?.['simplify']
       this.entry.options.config = unparse ? unparse(config) : config
       this.entry.parent.tree.write()
@@ -81,7 +81,7 @@ export class Loader extends EntryTree {
     }, { global: true, prepend: true })
 
     ctx.on('internal/update', function (config, _, next) {
-      if (!this.entry) return next()
+      if (!this.entry || this.parent.fiber?.entry === this.entry) return next()
       self.showLog(this.entry, 'reload')
       return next()
     }, { global: true })
@@ -103,17 +103,20 @@ export class Loader extends EntryTree {
       // case 2: fiber is not tracked by loader
       if (!fiber.entry) return
 
-      // case 3: fiber is disposed on behalf of plugin deletion (such as plugin hmr)
+      // case 3: fiber is a child plugin under the entry (not the entry's root fiber)
+      if (fiber.parent.fiber?.entry === fiber.entry) return
+
+      // case 4: fiber is disposed on behalf of plugin deletion (such as plugin hmr)
       // self-dispose: ctx.fiber.dispose() -> fiber / runtime dispose -> delete(plugin)
       // plugin hmr: delete(plugin) -> runtime dispose -> fiber dispose
       if (!ctx.registry.has(fiber.runtime!.callback)) return
 
-      // case 4: the entry's tree is being disposed
+      // case 5: the entry's tree is being disposed
       if (!fiber.entry.parent.tree.ctx.fiber.uid) return
 
       this.showLog(fiber.entry, 'unload')
 
-      // case 5: fiber is disposed by loader behavior
+      // case 6: fiber is disposed by loader behavior
       // such as inject checker, config file update, ancestor group disable
       if (fiber.entry.disabled) return
 
