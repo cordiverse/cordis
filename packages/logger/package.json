@@ -33,10 +33,10 @@
     }
   },
   "devDependencies": {
-    "cordis": "^4.0.0-rc.3"
+    "cordis": "^4.0.0-rc.4"
   },
   "peerDependencies": {
-    "cordis": "^4.0.0-rc.3"
+    "cordis": "^4.0.0-rc.4"
   },
   "dependencies": {
     "cosmokit": "^1.8.1",
