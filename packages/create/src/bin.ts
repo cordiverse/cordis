@@ -1,11 +1,8 @@
-import { createRequire } from 'node:module'
+import pkg from '../package.json' with { type: 'json' }
 import scaffold from './index.ts'
-
-const require = createRequire(import.meta.url)
-const { version } = require('../package.json')
 
 scaffold({
   name: 'cordis',
-  version,
+  version: pkg.version,
   template: '@cordisjs/boilerplate',
 })

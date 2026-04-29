@@ -12,8 +12,8 @@
     "strict": true,
     "noImplicitAny": false,
     "types": [
-      "@types/node",
-      "yml-register/types",
+      "node",
+      "@cordisjs/unyaml/types",
     ],
   },
 }
