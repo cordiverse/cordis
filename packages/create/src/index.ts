@@ -48,6 +48,125 @@ async function confirm(message: string) {
   return yes as boolean
 }
 
+export interface YarnRc {
+  yarnPath?: string
+  [key: string]: any
+}
+
+export interface StageYarnAgent {
+  name: string
+  version?: string
+}
+
+export interface StageYarnOptions {
+  rootDir: string
+  registry: string
+  agent: StageYarnAgent | undefined
+  cacheDir?: string
+  tempDir?: string
+  fetcher?: typeof fetch
+}
+
+/**
+ * Set up a yarn binary in `rootDir` per the following spec. Returns the version
+ * staged (or already present), or `undefined` if nothing was done.
+ *
+ * 1. `package.json` has `packageManager` → no-op (the template opted into a
+ *    specific toolchain; respect it).
+ * 2. Caller isn't yarn (or is unknown) → no-op.
+ * 3. Caller is yarn AND `.yarnrc.yml` pins a recognizable `yarnPath`
+ *    (`.yarn/releases/yarn-<v>.cjs`):
+ *      - Pinned binary already on disk → no-op.
+ *      - Binary missing → fetch exactly that version and stage it.
+ * 4. Caller is yarn 1.x AND no yarnPath is declared → fetch
+ *    `@yarnpkg/cli-dist` at dist-tag `latest`, inject yarnPath into the rc,
+ *    stage the binary. This is the path that lets a global yarn 1 delegate
+ *    to a modern yarn on a template that didn't declare one.
+ * 5. Any other yarn case (2+/3+/4+ without yarnPath, or yarnPath with a
+ *    non-standard path) → no-op.
+ */
+export async function stageYarnBin(options: StageYarnOptions): Promise<string | undefined> {
+  const { rootDir: dir, registry, agent, fetcher = fetch } = options
+  const cacheDir = options.cacheDir ?? join(paths.cache, '.yarn/releases')
+  const tempDir = options.tempDir ?? join(paths.temp, '@yarnpkg/cli-dist')
+
+  let pkg: any
+  try {
+    pkg = JSON.parse(await readFile(join(dir, 'package.json'), 'utf8'))
+  } catch {
+    return undefined
+  }
+  // Rule 1.
+  if (pkg.packageManager) return undefined
+  // Rule 2.
+  if (agent?.name !== 'yarn') return undefined
+
+  const rcPath = join(dir, '.yarnrc.yml')
+  let rc: YarnRc = {}
+  try {
+    const loaded = yaml.load(await readFile(rcPath, 'utf8'))
+    if (loaded && typeof loaded === 'object') rc = loaded as YarnRc
+  } catch {}
+
+  const pinned = rc.yarnPath?.match(/^\.yarn\/releases\/yarn-([^/]+)\.cjs$/)?.[1]
+  let version: string
+  let writeRc = false
+
+  if (rc.yarnPath) {
+    // Rule 3. Non-standard yarnPath — we can't know which cli-dist version to
+    // fetch, so stay hands off.
+    if (!pinned) return undefined
+    const targetFile = join(dir, rc.yarnPath)
+    try {
+      await access(targetFile)
+      return pinned
+    } catch {
+      version = pinned
+    }
+  } else {
+    // Rule 4 vs 5. Only yarn 1.x without yarnPath triggers auto-latest.
+    if (!agent.version?.startsWith('1.')) return undefined
+    const resp = await fetcher(`${registry}/@yarnpkg/cli-dist`)
+    if (!resp.ok) return undefined
+    const meta = await resp.json() as any
+    version = meta?.['dist-tags']?.latest
+    if (!version) return undefined
+    rc.yarnPath = `.yarn/releases/yarn-${version}.cjs`
+    writeRc = true
+  }
+
+  // Shared cache so we don't redownload across scaffolds.
+  const cacheFile = join(cacheDir, `yarn-${version}.cjs`)
+  try {
+    await access(cacheFile)
+  } catch {
+    await mkdir(tempDir, { recursive: true })
+    await mkdir(cacheDir, { recursive: true })
+    const resp = await fetcher(`${registry}/@yarnpkg/cli-dist/-/cli-dist-${version}.tgz`)
+    await new Promise<void>((resolve, reject) => {
+      const stream = Readable.fromWeb(resp.body as any).pipe(tar.extract({
+        cwd: tempDir,
+        newer: true,
+        strip: 2,
+      }, ['package/bin/yarn.js']))
+      stream.on('finish', resolve)
+      stream.on('error', reject)
+    })
+    // https://github.com/satorijs/satori/issues/305
+    await copyFile(join(tempDir, 'yarn.js'), cacheFile)
+    await rm(tempDir, { recursive: true })
+  }
+
+  const targetDir = join(dir, '.yarn/releases')
+  await mkdir(targetDir, { recursive: true })
+  await copyFile(cacheFile, join(targetDir, `yarn-${version}.cjs`))
+
+  if (writeRc) {
+    await writeFile(rcPath, yaml.dump(rc))
+  }
+  return version
+}
+
 class Scaffold {
   registry?: string
 
@@ -87,45 +206,6 @@ class Scaffold {
     await mkdir(rootDir)
   }
 
-  async downloadYarn() {
-    interface YarnRC {
-      yarnPath?: string
-    }
-
-    const rc = yaml.load(await readFile(join(rootDir, '.yarnrc.yml'), 'utf8')) as any as YarnRC
-    const version = rc.yarnPath?.match(/^\.yarn\/releases\/yarn-([^/]+).cjs$/)?.[1]
-    if (!version) return
-
-    const cacheDir = join(paths.cache, '.yarn/releases')
-    const cacheFile = join(cacheDir, `yarn-${version}.cjs`)
-    try {
-      await access(cacheFile)
-    } catch {
-      const tempDir = join(paths.temp, '@yarnpkg/cli-dist')
-      await mkdir(tempDir, { recursive: true })
-      await mkdir(cacheDir, { recursive: true })
-      const resp3 = await fetch(`${this.registry}/@yarnpkg/cli-dist/-/cli-dist-${version}.tgz`)
-      await new Promise<void>((resolve, reject) => {
-        const stream = Readable.fromWeb(resp3.body as any).pipe(tar.extract({
-          cwd: tempDir,
-          newer: true,
-          strip: 2,
-        }, ['package/bin/yarn.js']))
-        stream.on('finish', resolve)
-        stream.on('error', reject)
-      })
-      // https://github.com/satorijs/satori/issues/305
-      await copyFile(join(tempDir, 'yarn.js'), cacheFile)
-      await rm(tempDir, { recursive: true })
-    }
-
-    const targetDir = join(rootDir, '.yarn/releases')
-    const targetFile = join(targetDir, `yarn-${version}.cjs`)
-    await mkdir(targetDir, { recursive: true })
-    await copyFile(cacheFile, targetFile)
-    return version
-  }
-
   async scaffold() {
     const registry = await getRegistry()
     if (!registry) {
@@ -159,17 +239,15 @@ class Scaffold {
       stream.on('error', reject)
     })
 
-    const yarnVersion = await this.downloadYarn()
-    const packageManager = yarnVersion ? `yarn@${yarnVersion}` : undefined
-    await this.writePackageJson(packageManager)
+    await stageYarnBin({ rootDir, registry: this.registry, agent: which() })
+    await this.writePackageJson()
     console.log(kleur.green('  Done.\n'))
   }
 
-  async writePackageJson(packageManager?: string) {
+  async writePackageJson() {
     const filename = join(rootDir, 'package.json')
     const meta = JSON.parse(await readFile(filename, 'utf8'))
     meta.name = project
-    meta.packageManager = packageManager
     if (argv.prod) {
       // https://github.com/koishijs/koishi/issues/994
       // Do not use `NODE_ENV` or `--production` flag.
