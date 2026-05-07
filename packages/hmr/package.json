@@ -1,7 +1,7 @@
 {
   "name": "@cordisjs/plugin-hmr",
   "description": "Hot Module Replacement Plugin for Cordis",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "type": "module",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",

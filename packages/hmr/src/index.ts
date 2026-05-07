@@ -20,6 +20,7 @@ declare module 'cordis' {
   }
 
   interface Events {
+    'hmr/change'(url: string): void
     'hmr/reload'(reloads: Map<Plugin, Reload>): void
   }
 }
@@ -152,6 +153,8 @@ class Hmr extends Service {
         await include.refresh()
         return
       }
+
+      this.ctx.emit('hmr/change', url)
     })
   }
 
