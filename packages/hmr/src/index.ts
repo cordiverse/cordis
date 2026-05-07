@@ -391,15 +391,12 @@ namespace Hmr {
 
   export const Config: z<Config> = z.object({
     base: z.string(),
-    root: z.union([
-      z.array(String).role('table'),
-      z.transform(String, (value) => [value]),
-    ]).default(['.']),
+    root: z.array(String).role('table').default(['.']),
     ignored: z.array(String).role('table').default([
-      '**/node_modules/**',
-      '**/.*/**',
-      'cache/**',
-      'data/**',
+      '**/node_modules',
+      '**/.*',
+      'cache',
+      'data',
     ]),
     debounce: z.natural().role('ms').default(100),
   }).i18n({
