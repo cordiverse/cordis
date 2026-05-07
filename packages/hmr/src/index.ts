@@ -51,7 +51,8 @@ interface Reload {
 @Inject('timer')
 @Inject('logger')
 class Hmr extends Service {
-  private base: string
+  public baseDir: string
+
   private internal: ModuleLoader
   private watcher!: FSWatcher
 
@@ -82,7 +83,7 @@ class Hmr extends Service {
       throw new Error('--expose-internals is required for HMR service')
     }
     this.internal = this.ctx.loader.internal
-    this.base = fileURLToPath(new URL(config.base || '.', ctx.baseUrl))
+    this.baseDir = fileURLToPath(new URL(config.base || '.', ctx.baseUrl))
   }
 
   /**
@@ -95,27 +96,22 @@ class Hmr extends Service {
     }
   }
 
-  relative(filename: string) {
-    if (!this.base) return filename
-    return relative(this.base, filename)
-  }
-
   async* [Service.init]() {
     yield () => this.watcher?.close()
 
     const { loader } = this.ctx
     const { root, ignored } = this.config
     if (!this.config.base) {
-      this.ctx.logger.debug('watching %o', root)
+      this.ctx.logger.info('watching %o', root)
     } else {
-      this.ctx.logger.debug('watching %o in %s', root, this.base)
+      this.ctx.logger.info('watching %o in %s', root, this.baseDir)
     }
 
     const match = picomatch(ignored)
     this.watcher = watch(root, {
       ...this.config,
-      cwd: this.base,
-      ignored: path => match(relative(this.base, path)),
+      cwd: this.baseDir,
+      ignored: path => match(relative(this.baseDir, path)),
     })
 
     // Collect externals: framework modules reachable from the main entry.
@@ -132,7 +128,7 @@ class Hmr extends Service {
 
     this.watcher.on('change', async (path) => {
       this.ctx.logger.debug('change detected at %c', path)
-      const filename = resolve(this.base, path)
+      const filename = resolve(this.baseDir, path)
       const url = pathToFileURL(filename).href
 
       // Full reload: the changed file is part of the framework
@@ -346,7 +342,7 @@ class Hmr extends Service {
     try {
       for (const [plugin, { filename, runtime }] of reloads) {
         if (!runtime) continue
-        const path = this.relative(fileURLToPath(filename))
+        const path = relative(this.baseDir, fileURLToPath(filename))
 
         try {
           this.ctx.registry.delete(plugin)
