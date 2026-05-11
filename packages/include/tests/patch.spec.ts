@@ -1,7 +1,7 @@
 import { Context, Fiber } from 'cordis'
 import Loader from '@cordisjs/plugin-loader'
 import Logger from '@cordisjs/plugin-logger'
-import { expect } from 'chai'
+import { expect, describe, it, afterEach } from 'vitest'
 
 function waitFor(condFn: () => any, timeout = 5000, interval = 100): Promise<void> {
   return new Promise<void>((resolve, reject) => {
@@ -21,8 +21,7 @@ describe('Include patches', () => {
     await new Promise(r => setTimeout(r, 200))
   })
 
-  it('should load without patches', async function () {
-    this.timeout(10000)
+  it('should load without patches', async () => {
     ctx = new Context()
     await ctx.plugin(Logger)
     fiber = await ctx.plugin(Loader, {
@@ -36,10 +35,9 @@ describe('Include patches', () => {
     })
     await waitFor(() => ctx.bail('test/get-value'))
     expect(ctx.bail('test/get-value')).to.equal('default')
-  })
+  }, 10000)
 
-  it('should disable an entry via patch', async function () {
-    this.timeout(10000)
+  it('should disable an entry via patch', async () => {
     ctx = new Context()
     await ctx.plugin(Logger)
     fiber = await ctx.plugin(Loader, {
@@ -57,10 +55,9 @@ describe('Include patches', () => {
     await new Promise(r => setTimeout(r, 1000))
     // inner plugin should be disabled
     expect(ctx.bail('test/get-value')).to.be.undefined
-  })
+  }, 10000)
 
-  it('should override config via patch', async function () {
-    this.timeout(10000)
+  it('should override config via patch', async () => {
     ctx = new Context()
     await ctx.plugin(Logger)
     fiber = await ctx.plugin(Loader, {
@@ -78,10 +75,9 @@ describe('Include patches', () => {
     await waitFor(() => ctx.bail('test/get-value'))
     // Plugin should still load (config override doesn't break it)
     expect(ctx.bail('test/get-value')).to.equal('default')
-  })
+  }, 10000)
 
-  it('should warn on name mismatch and skip patch', async function () {
-    this.timeout(10000)
+  it('should warn on name mismatch and skip patch', async () => {
     ctx = new Context()
     await ctx.plugin(Logger)
     fiber = await ctx.plugin(Loader, {
@@ -103,10 +99,9 @@ describe('Include patches', () => {
     await waitFor(() => ctx.bail('test/get-value'))
     // Plugin should still be active (patch was skipped due to name mismatch)
     expect(ctx.bail('test/get-value')).to.equal('default')
-  })
+  }, 10000)
 
-  it('should warn on non-existent id', async function () {
-    this.timeout(10000)
+  it('should warn on non-existent id', async () => {
     ctx = new Context()
     await ctx.plugin(Logger)
     fiber = await ctx.plugin(Loader, {
@@ -124,10 +119,9 @@ describe('Include patches', () => {
     await waitFor(() => ctx.bail('test/get-value'))
     // Should still work, patch just gets warned and ignored
     expect(ctx.bail('test/get-value')).to.equal('default')
-  })
+  }, 10000)
 
-  it('should insert entries into root group', async function () {
-    this.timeout(10000)
+  it('should insert entries into root group', async () => {
     ctx = new Context()
     await ctx.plugin(Logger)
     fiber = await ctx.plugin(Loader, {
@@ -150,10 +144,9 @@ describe('Include patches', () => {
     expect(ctx.bail('test/get-extra')).to.equal('extra')
     // Original plugin should still work
     expect(ctx.bail('test/get-value')).to.equal('default')
-  })
+  }, 10000)
 
-  it('should insert entries into a specific group', async function () {
-    this.timeout(10000)
+  it('should insert entries into a specific group', async () => {
     ctx = new Context()
     await ctx.plugin(Logger)
     fiber = await ctx.plugin(Loader, {
@@ -175,10 +168,9 @@ describe('Include patches', () => {
     })
     await waitFor(() => ctx.bail('test/get-extra'))
     expect(ctx.bail('test/get-extra')).to.equal('extra')
-  })
+  }, 10000)
 
-  it('should warn when inserting into a non-group entry', async function () {
-    this.timeout(10000)
+  it('should warn when inserting into a non-group entry', async () => {
     ctx = new Context()
     await ctx.plugin(Logger)
     fiber = await ctx.plugin(Loader, {
@@ -201,10 +193,9 @@ describe('Include patches', () => {
     await waitFor(() => ctx.bail('test/get-value'))
     // extra plugin should NOT be loaded (timer is not a group)
     expect(ctx.bail('test/get-extra')).to.be.undefined
-  })
+  }, 10000)
 
-  it('should apply multiple patches', async function () {
-    this.timeout(10000)
+  it('should apply multiple patches', async () => {
     ctx = new Context()
     await ctx.plugin(Logger)
     fiber = await ctx.plugin(Loader, {
@@ -228,10 +219,9 @@ describe('Include patches', () => {
     // inner disabled, extra loaded
     expect(ctx.bail('test/get-value')).to.be.undefined
     expect(ctx.bail('test/get-extra')).to.equal('extra')
-  })
+  }, 10000)
 
-  it('should validate name consistency (matching name is ok)', async function () {
-    this.timeout(10000)
+  it('should validate name consistency (matching name is ok)', async () => {
     ctx = new Context()
     await ctx.plugin(Logger)
     fiber = await ctx.plugin(Loader, {
@@ -249,5 +239,5 @@ describe('Include patches', () => {
     await new Promise(r => setTimeout(r, 1000))
     // Name matches, so patch should apply and inner should be disabled
     expect(ctx.bail('test/get-value')).to.be.undefined
-  })
+  }, 10000)
 })

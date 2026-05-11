@@ -100,7 +100,7 @@ export abstract class EntryTree {
     return entry.update(options, false, true)
   }
 
-  import(name: string, getOuterStack?: () => string[], useInternal = false) {
+  import(name: string, getOuterStack?: () => string[]) {
     if (name.startsWith('cordis:')) {
       return this.ctx.loader.builtins[name.slice(7)]
     }
@@ -109,12 +109,12 @@ export abstract class EntryTree {
       // onImport.tracePromise.__proto__
       // internal.import
       info.offset += 3
-      if (useInternal && this.ctx.loader.internal) {
+      if (this.ctx.loader.internal) {
         return await this.ctx.loader.internal.import(name, this.ctx.baseUrl!, {})
       } else if (name.startsWith('.')) {
-        return await import(new URL(name, this.ctx.baseUrl).href)
+        return await import(/* @vite-ignore */new URL(name, this.ctx.baseUrl).href)
       } else {
-        return await import(name)
+        return await import(/* @vite-ignore */name)
       }
     }, getOuterStack)
   }

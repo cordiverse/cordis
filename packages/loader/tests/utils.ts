@@ -2,7 +2,7 @@ import { Dict } from 'cosmokit'
 import { Context, Fiber, Plugin } from 'cordis'
 import { EntryOptions, Group, Loader } from '../src'
 import { Mock, mock } from 'node:test'
-import { expect } from 'chai'
+import { expect } from 'vitest'
 
 declare module '../src' {
   interface Loader {

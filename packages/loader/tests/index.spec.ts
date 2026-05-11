@@ -1,4 +1,4 @@
-import { expect } from 'chai'
+import { expect, describe, it, beforeAll } from 'vitest'
 import { Context, FiberState } from 'cordis'
 import MockLoader, { sleep } from './utils'
 import { Mock } from 'node:test'
@@ -11,7 +11,7 @@ describe('Loader: basic support', () => {
   let bar!: Mock<Function>
   let qux!: Mock<Function>
 
-  before(async () => {
+  beforeAll(async () => {
     await root.plugin(MockLoader)
     loader = root.loader as any
 
@@ -105,7 +105,7 @@ describe('Loader: intercept config', () => {
 
   const { promise, resolve } = Promise.withResolvers<void>()
 
-  before(async () => {
+  beforeAll(async () => {
     await root.plugin(MockLoader)
     loader = root.loader as any
 

@@ -1,4 +1,4 @@
-import { expect } from 'chai'
+import { expect, describe, it } from 'vitest'
 import { mock } from 'node:test'
 import { Context } from '../src'
 

@@ -42,12 +42,6 @@
       "optional": true
     }
   },
-  "devDependencies": {
-    "@types/chai": "^5.2.3",
-    "@types/chai-as-promised": "^8.0.2",
-    "chai": "^5.3.3",
-    "chai-as-promised": "^8.0.2"
-  },
   "dependencies": {
     "@standard-schema/spec": "^1.1.0",
     "cosmokit": "^1.8.1"

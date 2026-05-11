@@ -1,6 +1,6 @@
 import { Context, Service } from 'cordis'
 import { Inject } from '../src'
-import { expect } from 'chai'
+import { expect, describe, it } from 'vitest'
 import { mock } from 'node:test'
 
 describe('Decorator', () => {

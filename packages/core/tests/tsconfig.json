@@ -1,14 +1,6 @@
 {
-  "extends": "../../../tsconfig.base",
-  "compilerOptions": {
-    "noEmit": true,
-    "types": [
-      "mocha",
-      "node",
-    ],
-  },
+  "extends": "../../../tsconfig.test",
   "include": [
     ".",
-    "../src",
   ],
 }

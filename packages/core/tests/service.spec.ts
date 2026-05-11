@@ -1,5 +1,5 @@
 import { Context, Service } from '../src'
-import { expect } from 'chai'
+import { expect, describe, it } from 'vitest'
 import { mock } from 'node:test'
 import { Counter, getHookSnapshot, sleep } from './utils'
 

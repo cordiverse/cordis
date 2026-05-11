@@ -13,27 +13,26 @@
     "lint": "eslint --cache",
     "yakumo": "node --expose-internals --import tsx --import @cordisjs/unyaml node_modules/yakumo/lib/cli.js",
     "build": "yarn yakumo esbuild && yarn yakumo tsc",
-    "test": "yarn yakumo mocha",
-    "test:text": "shx rm -rf coverage && c8 -r text yarn test",
-    "test:json": "shx rm -rf coverage && c8 -r json yarn test",
-    "test:html": "shx rm -rf coverage && c8 -r html yarn test"
+    "test": "yarn yakumo vitest --import tsx",
+    "test:text": "shx rm -rf coverage && yarn test --coverage --coverage.reporter text",
+    "test:json": "shx rm -rf coverage && yarn test --coverage --coverage.reporter json",
+    "test:html": "shx rm -rf coverage && yarn test --coverage --coverage.reporter html"
   },
   "devDependencies": {
     "@cordisjs/eslint-config": "^1.1.1",
     "@cordisjs/unyaml": "^2.0.3",
-    "@sinonjs/fake-timers": "^6.0.1",
     "@types/node": "^25.3.5",
-    "@types/sinonjs__fake-timers": "^6.0.4",
-    "c8": "^10.1.3",
+    "@vitest/coverage-v8": "^4.1.5",
     "esbuild": "^0.28.0",
     "eslint": "^8.57.1",
-    "mocha": "^11.7.5",
     "shx": "^0.4.0",
     "tsx": "npm:@cordiverse/tsx@4.19.3-fix.3",
     "typescript": "^5.9.3",
-    "yakumo": "^3.1.1",
+    "vite": "^7.3.2",
+    "vitest": "^4.1.5",
+    "yakumo": "^3.2.1",
     "yakumo-esbuild": "^3.0.2",
-    "yakumo-mocha": "^3.0.3",
-    "yakumo-tsc": "^3.0.1"
+    "yakumo-tsc": "^3.0.1",
+    "yakumo-vitest": "^1.3.2"
   }
 }

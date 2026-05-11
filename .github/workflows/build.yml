@@ -51,7 +51,7 @@ jobs:
         run: |-
           yarn config set npmPublishProvenance true
           yarn config set npmRegistryServer https://registry.npmjs.org/
-          yarn yakumo publish --debug
+          yarn yakumo publish
 
   test:
     runs-on: ubuntu-latest

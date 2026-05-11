@@ -1,5 +1,5 @@
 import { Context } from '../src'
-import { expect } from 'chai'
+import { expect, describe, it, vi } from 'vitest'
 import { mock } from 'node:test'
 import { sleep, withTimers } from './utils'
 
@@ -73,7 +73,7 @@ describe('Effects', () => {
     expect(seq).to.deep.equal([3, 2, 1])
   })
 
-  it('async return 1', withTimers(async (root, clock) => {
+  it('async return 1', withTimers(async (root) => {
     const seq: number[] = []
     const dispose = root.effect(async () => {
       await sleep(100)
@@ -81,13 +81,13 @@ describe('Effects', () => {
       return () => seq.push(2)
     })
     expect(seq).to.deep.equal([])
-    await clock.tickAsync(100)
+    await vi.advanceTimersByTimeAsync(100)
     expect(seq).to.deep.equal([1])
     await dispose()
     expect(seq).to.deep.equal([1, 2])
   }))
 
-  it('async return 2', withTimers(async (root, clock) => {
+  it('async return 2', withTimers(async (root) => {
     const seq: number[] = []
     const dispose = root.effect(async () => {
       await sleep(100)
@@ -96,11 +96,11 @@ describe('Effects', () => {
     })
     dispose()
     expect(seq).to.deep.equal([])
-    await clock.tickAsync(100)
+    await vi.advanceTimersByTimeAsync(100)
     expect(seq).to.deep.equal([1, 2])
   }))
 
-  it('async yield 1', withTimers(async (root, clock) => {
+  it('async yield 1', withTimers(async (root) => {
     const seq: number[] = []
     const dispose = root.effect(async function* () {
       await sleep(100)
@@ -114,13 +114,13 @@ describe('Effects', () => {
       yield () => seq.push(6)
     })
     expect(seq).to.deep.equal([])
-    await clock.tickAsync(300)
+    await vi.advanceTimersByTimeAsync(300)
     expect(seq).to.deep.equal([1, 3, 5])
     await dispose()
     expect(seq).to.deep.equal([1, 3, 5, 6, 4, 2])
   }))
 
-  it('async yield 2 (aborted)', withTimers(async (root, clock) => {
+  it('async yield 2 (aborted)', withTimers(async (root) => {
     const seq: number[] = []
     const dispose = root.effect(async function* () {
       await sleep(100)
@@ -133,14 +133,14 @@ describe('Effects', () => {
       seq.push(5)
       yield () => seq.push(6)
     })
-    await clock.tickAsync(50)
+    await vi.advanceTimersByTimeAsync(50)
     dispose()
     expect(seq).to.deep.equal([])
-    await clock.tickAsync(300)
+    await vi.advanceTimersByTimeAsync(300)
     expect(seq).to.deep.equal([1, 2])
   }))
 
-  it('async yield 3 (aborted)', withTimers(async (root, clock) => {
+  it('async yield 3 (aborted)', withTimers(async (root) => {
     const seq: number[] = []
     const dispose = root.effect(async function* () {
       await sleep(100)
@@ -154,15 +154,15 @@ describe('Effects', () => {
       yield () => seq.push(6)
     })
     expect(seq).to.deep.equal([])
-    await clock.tickAsync(100)
+    await vi.advanceTimersByTimeAsync(100)
     expect(seq).to.deep.equal([1])
     dispose()
     expect(seq).to.deep.equal([1])
-    await clock.tickAsync(200)
+    await vi.advanceTimersByTimeAsync(200)
     expect(seq).to.deep.equal([1, 3, 4, 2])
   }))
 
-  it('async yield 4 (await dispose)', withTimers(async (root, clock) => {
+  it('async yield 4 (await dispose)', withTimers(async (root) => {
     const seq: number[] = []
     const dispose = root.effect(async function* () {
       await sleep(100)
@@ -176,7 +176,7 @@ describe('Effects', () => {
       yield () => seq.push(6)
     })
     expect(seq).to.deep.equal([])
-    const [dispose2] = await Promise.all([dispose, clock.tickAsync(300)])
+    const [dispose2] = await Promise.all([dispose, vi.advanceTimersByTimeAsync(300)])
     expect(seq).to.deep.equal([1, 3, 5])
     await dispose2()
     expect(seq).to.deep.equal([1, 3, 5, 6, 4, 2])
@@ -215,7 +215,7 @@ describe('Effects', () => {
       return () => seq.push(1)
     })
     expect(seq).to.deep.equal([])
-    await expect(dispose).to.be.rejected
+    await expect(dispose).rejects.toThrow()
     expect(seq).to.deep.equal([])
   })
 
@@ -228,7 +228,13 @@ describe('Effects', () => {
       yield () => seq.push(2)
     })
     expect(seq).to.deep.equal([])
-    await expect(dispose).to.be.rejected
+    let caught: unknown
+    try {
+      await dispose
+    } catch (e) {
+      caught = e
+    }
+    expect(caught).to.be.instanceOf(Error)
     expect(seq).to.deep.equal([1])
   })
 })

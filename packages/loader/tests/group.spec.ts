@@ -1,5 +1,5 @@
 import { Mock, mock } from 'node:test'
-import { expect } from 'chai'
+import { expect, describe, it, beforeAll, beforeEach } from 'vitest'
 import { Context } from 'cordis'
 import MockLoader, { sleep } from './utils'
 
@@ -10,7 +10,7 @@ describe('Group: basic support', () => {
   let loader!: MockLoader
   let foo!: Mock<Function>
 
-  before(async () => {
+  beforeAll(async () => {
     await root.plugin(MockLoader)
     loader = root.loader as any
     foo = loader.mock('foo', () => dispose)
@@ -90,7 +90,7 @@ describe('Group: transfer', () => {
   let loader!: MockLoader
   let foo!: Mock<Function>
 
-  before(async () => {
+  beforeAll(async () => {
     await root.plugin(MockLoader)
     loader = root.loader as any
     foo = loader.mock('foo', () => dispose)
@@ -174,7 +174,7 @@ describe('Group: intercept', () => {
 
   let loader!: MockLoader
 
-  before(async () => {
+  beforeAll(async () => {
     await root.plugin(MockLoader)
     loader = root.loader as any
     loader.mock('foo', (ctx: Context) => {

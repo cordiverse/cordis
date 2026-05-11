@@ -1,46 +1,46 @@
 import { Context, FiberState, Service } from '../src'
-import { expect } from 'chai'
+import { expect, describe, it, vi } from 'vitest'
 import { mock } from 'node:test'
 import { event, sleep, withTimers } from './utils'
 
 describe('Fiber', () => {
-  it('inertia lock 1', withTimers(async (root, clock) => {
+  it('inertia lock 1', withTimers(async (root) => {
     const dispose = root.provide('foo', 1)
     const fiber = root.inject(['foo'], async () => {
       await sleep(1000)
       return () => sleep(1000)
     })
-    await clock.tickAsync(400) // 400
+    await vi.advanceTimersByTimeAsync(400) // 400
     expect(fiber.state).to.equal(FiberState.LOADING)
     dispose()
-    await clock.tickAsync(400) // 800
+    await vi.advanceTimersByTimeAsync(400) // 800
     expect(fiber.state).to.equal(FiberState.LOADING)
-    await clock.tickAsync(400) // 1200
+    await vi.advanceTimersByTimeAsync(400) // 1200
     expect(fiber.state).to.equal(FiberState.UNLOADING)
     root.provide('foo', 1)
-    await clock.tickAsync(1000) // 2200
+    await vi.advanceTimersByTimeAsync(1000) // 2200
     expect(fiber.state).to.equal(FiberState.LOADING)
-    await clock.tickAsync(1000) // 3200
+    await vi.advanceTimersByTimeAsync(1000) // 3200
     expect(fiber.state).to.equal(FiberState.ACTIVE)
   }))
 
-  it('inertia lock 2', withTimers(async (root, clock) => {
+  it('inertia lock 2', withTimers(async (root) => {
     const dispose = root.provide('foo', 1)
     const fiber = root.inject(['foo'], async () => {
       await sleep(1000)
       return () => sleep(1000)
     })
-    await clock.tickAsync(400) // 400
+    await vi.advanceTimersByTimeAsync(400) // 400
     expect(fiber.state).to.equal(FiberState.LOADING)
     dispose()
-    await clock.tickAsync(400) // 800
+    await vi.advanceTimersByTimeAsync(400) // 800
     expect(fiber.state).to.equal(FiberState.LOADING)
     root.provide('foo', 2)
-    await clock.tickAsync(400) // 1200
+    await vi.advanceTimersByTimeAsync(400) // 1200
     expect(fiber.state).to.equal(FiberState.ACTIVE)
   }))
 
-  it('inertia lock 3', withTimers(async (root, clock) => {
+  it('inertia lock 3', withTimers(async (root) => {
     class Foo extends Service {
       constructor(ctx: Context) {
         super(ctx, 'foo')
@@ -51,13 +51,13 @@ describe('Fiber', () => {
       await sleep(1000)
       return () => sleep(1000)
     })
-    await clock.tickAsync(400) // 400
+    await vi.advanceTimersByTimeAsync(400) // 400
     expect(fiber.state).to.equal(FiberState.LOADING)
-    await clock.runAllAsync() // 1000
+    await vi.runAllTimersAsync() // 1000
     expect(fiber.state).to.equal(FiberState.ACTIVE)
     await Promise.all([
       provider.dispose(),
-      clock.runAllAsync(), // 2000
+      vi.runAllTimersAsync(), // 2000
     ])
     expect(fiber.state).to.equal(FiberState.PENDING)
   }))
@@ -97,7 +97,7 @@ describe('Fiber', () => {
 
     const fiber = await root.plugin(plugin)
     expect(dispose.mock.calls).to.have.length(0)
-    await expect(fiber.dispose()).to.be.fulfilled
+    await expect(fiber.dispose()).resolves.toBeUndefined()
     await sleep()
     expect(dispose.mock.calls).to.have.length(1)
     expect(error.mock.calls).to.have.length(1)

@@ -1,5 +1,5 @@
 import { Context, Events } from '../src'
-import { expect } from 'chai'
+import { expect, describe, it } from 'vitest'
 import { mock } from 'node:test'
 import { event, Filter, Session } from './utils'
 
@@ -57,7 +57,7 @@ describe('Events', () => {
     callback.mock.mockImplementation(() => {
       throw new Error('test')
     })
-    await expect(root.parallel(event)).to.be.rejectedWith('test')
+    await expect(root.parallel(event)).rejects.toThrow('test')
   })
 
   it('ctx.emit()', async () => {
@@ -95,7 +95,7 @@ describe('Events', () => {
     callback.mock.mockImplementation(() => {
       throw new Error('message')
     })
-    await expect(root.serial(event)).to.be.rejectedWith('message')
+    await expect(root.serial(event)).rejects.toThrow('message')
   })
 
   it('ctx.bail()', async () => {

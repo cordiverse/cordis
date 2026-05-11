@@ -1,5 +1,5 @@
 import { Mock, mock } from 'node:test'
-import { expect } from 'chai'
+import { expect, describe, it, beforeAll, beforeEach } from 'vitest'
 import { Context, FiberState, Service } from 'cordis'
 import MockLoader, { sleep } from './utils'
 
@@ -11,7 +11,7 @@ describe('Service Isolation: basic', () => {
   let foo!: Mock<Function>
   let bar!: Mock<Function>
 
-  before(async () => {
+  beforeAll(async () => {
     await root.plugin(MockLoader)
     loader = root.loader as any
 
@@ -147,7 +147,7 @@ describe('Service Isolation: realm', () => {
   let foo!: Mock<Function>
   let bar!: Mock<Function>
 
-  before(async () => {
+  beforeAll(async () => {
     await root.plugin(MockLoader)
     loader = root.loader as any
 
@@ -462,7 +462,7 @@ describe('Service Isolation: transfer', () => {
   let foo!: Mock<Function>
   let bar!: Mock<Function>
 
-  before(async () => {
+  beforeAll(async () => {
     await root.plugin(MockLoader)
     loader = root.loader as any
 

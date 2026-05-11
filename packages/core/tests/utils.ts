@@ -1,19 +1,15 @@
-import { use } from 'chai'
-import { FakeTimerInstallOpts, install, InstalledClock } from '@sinonjs/fake-timers'
+import { vi } from 'vitest'
 import { Context, Service } from '../src'
-import promised from 'chai-as-promised'
 import { Awaitable, Dict } from 'cosmokit'
 
-use(promised)
-
-export function withTimers(fn: (ctx: Context, clock: InstalledClock) => Awaitable<void>, config?: FakeTimerInstallOpts) {
+export function withTimers(fn: (ctx: Context) => Awaitable<void>, config?: { now?: number | Date }) {
   return async () => {
     const ctx = new Context()
-    const clock = install(config)
+    vi.useFakeTimers(config)
     try {
-      await fn(ctx, clock)
+      await fn(ctx)
     } finally {
-      clock.uninstall()
+      vi.useRealTimers()
     }
   }
 }
