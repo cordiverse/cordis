@@ -62,7 +62,7 @@ export class TimerService extends Service {
         return () => clearInterval(timer)
       }, 'ctx.interval()')
     } else {
-      let doneTask: Promise<IteratorResult<void>> | undefined
+      let done: { kind: 'return'; value: any } | { kind: 'throw'; reason: any } | undefined
       let nextTask: PromiseWithResolvers<IteratorResult<void>> | undefined
       const dispose = this.ctx.effect(() => {
         const timer = setInterval(() => {
@@ -70,27 +70,28 @@ export class TimerService extends Service {
         }, delay)
         return () => {
           clearInterval(timer)
-          if (doneTask) return
-          doneTask = Promise.reject(new Error('Context has been disposed'))
-          nextTask?.reject(doneTask)
+          if (done) return
+          done = { kind: 'throw', reason: new Error('Context has been disposed') }
+          nextTask?.reject(done.reason)
         }
       }, 'ctx.interval()')
       return {
         next: () => {
-          if (doneTask) return doneTask
-          return (nextTask = Promise.withResolvers()).promise
+          if (!done) return (nextTask = Promise.withResolvers()).promise
+          if (done.kind === 'return') return Promise.resolve({ done: true, value: done.value })
+          return Promise.reject(done.reason)
         },
         return: (value) => {
-          doneTask = Promise.resolve({ done: true, value })
-          nextTask?.resolve(doneTask)
+          if (!done) done = { kind: 'return', value }
+          nextTask?.resolve({ done: true, value })
           dispose()
-          return doneTask
+          return Promise.resolve({ done: true, value })
         },
         throw: (reason) => {
-          doneTask = Promise.reject(reason)
+          if (!done) done = { kind: 'throw', reason }
           nextTask?.reject(reason)
           dispose()
-          return doneTask
+          return Promise.resolve({ done: true, value: undefined })
         },
         [Symbol.asyncIterator]() {
           return this

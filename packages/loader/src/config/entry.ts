@@ -158,7 +158,7 @@ export class Entry {
   private async _init() {
     let exports: any
     try {
-      exports = await this.parent.tree.import(this.options.name, this.getOuterStack, true)
+      exports = await this.parent.tree.import(this.options.name, this.getOuterStack)
     } catch (error) {
       this.context.emit(this.ctx, 'internal/error', error)
       return
