@@ -8,23 +8,23 @@ function isApplicable(object: Plugin) {
   return object && typeof object === 'object' && typeof object.apply === 'function'
 }
 
-export type Inject<M = Dict> = (keyof M)[] | { [K in keyof M]: boolean | Inject.Meta<M[K]> }
+export type Inject<M = Dict> = (keyof M)[] | { [K in keyof M]?: M[K] }
 
 export type InjectKey = keyof {
   [K in keyof Context & string as Context[K] extends { [symbols.config]: any } ? K : never]: any
 }
 
-export function Inject<K extends InjectKey>(name: K, required = true, config?: Context[K] extends { [symbols.config]: infer T } ? T : never) {
+export function Inject<K extends InjectKey>(name: K, config?: Context[K] extends { [symbols.config]: infer T } ? T : never) {
   return function (value: any, decorator: ClassDecoratorContext<any> | ClassMethodDecoratorContext<any>) {
     if (decorator.kind === 'class') {
       if (!Object.hasOwn(value, 'inject')) {
         defineProperty(value, 'inject', Object.create(Object.getPrototypeOf(value).inject ?? null))
         defineProperty(value.inject, symbols.checkProto, true)
       }
-      value.inject[name] = { required, config }
+      value.inject[name] = config
     } else if (decorator.kind === 'method') {
       const inject = (value[symbols.metadata] ??= {}).inject ??= Object.create(null)
-      inject[name] = { required, config }
+      inject[name] = config
       decorator.addInitializer(function () {
         const property = this[symbols.tracker]?.property
         ;(this[symbols.initHooks] ??= []).push(() => {
@@ -40,22 +40,20 @@ export function Inject<K extends InjectKey>(name: K, required = true, config?: C
 }
 
 export namespace Inject {
-  export interface Meta<T = any> {
-    required: boolean
-    config?: T
-  }
-
-  export function resolve(inject: Inject | null | undefined, result: Dict<Meta | undefined> = Object.create(null)) {
+  export function resolve(inject: Inject | null | undefined, result: Dict = Object.create(null)) {
     if (!inject) return result
     if (Array.isArray(inject)) {
       for (const name of inject) {
-        result[name] = { required: true }
+        result[name] = null
       }
     } else if (Reflect.has(inject, symbols.checkProto)) {
-      Object.assign(result, resolve(Object.getPrototypeOf(inject)), inject)
+      Object.assign(result, resolve(Object.getPrototypeOf(inject)))
+      for (const name of Object.keys(inject)) {
+        result[name] = inject[name] ?? null
+      }
     } else {
-      for (const [name, value] of Object.entries(inject)) {
-        result[name] = typeof value === 'boolean' ? { required: value } : value
+      for (const name of Object.keys(inject)) {
+        result[name] = inject[name] ?? null
       }
     }
     return result

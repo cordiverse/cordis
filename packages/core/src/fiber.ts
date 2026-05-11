@@ -122,7 +122,7 @@ export class Fiber {
   constructor(
     public parent: Context,
     config: any,
-    public inject: Dict<Inject.Meta | undefined>,
+    public inject: Dict<any>,
     public runtime: Plugin.Runtime | null,
     getOuterStack: () => string[],
   ) {
@@ -137,9 +137,9 @@ export class Fiber {
       const injectEntries = Object.entries(this.inject)
       if (injectEntries.length) {
         this.ctx[Context.intercept] = Object.create(parent[Context.intercept])
-        for (const [name, inject] of injectEntries) {
-          if (isNullable(inject!.config)) continue
-          this.ctx[Context.intercept][name] = inject!.config
+        for (const [name, config] of injectEntries) {
+          if (isNullable(config)) continue
+          this.ctx[Context.intercept][name] = config
         }
       }
 
@@ -163,8 +163,7 @@ export class Fiber {
 
       this.context.emit('internal/plugin', this)
 
-      for (const [name, inject] of Object.entries(this.inject)) {
-        if (!inject!.required) continue
+      for (const name of Object.keys(this.inject)) {
         this._checkImpl(name)
       }
 
@@ -377,8 +376,7 @@ export class Fiber {
   _refresh() {
     let epoch: string | boolean = false
     epoch = ''
-    for (const [name, inject] of Object.entries(this.inject)) {
-      if (!inject!.required) continue
+    for (const name of Object.keys(this.inject)) {
       const impl = this._store[name]
       if (!impl) {
         epoch = INACTIVE

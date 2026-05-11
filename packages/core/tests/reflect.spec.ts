@@ -42,7 +42,7 @@ describe('Reflect', () => {
     // root is a property
     expect(root.get('root')).to.be.undefined
 
-    root.inject({ foo: { required: false } }, (ctx) => {
+    root.inject(['foo'], (ctx) => {
       warn.mock.resetCalls()
       expect(warn.mock.calls).to.have.length(0)
 
@@ -58,13 +58,9 @@ describe('Reflect', () => {
     const root = new Context()
     root.provide('foo')
     root.set('foo', { bar: 1 })
-    const fiber1 = await root.inject({ foo: true }, () => {})
-    const fiber2 = await root.inject({ foo: false }, () => {})
-    expect(fiber1.ctx.foo).to.be.ok
-    expect(fiber2.ctx.foo).to.be.ok
-    await fiber1.dispose()
-    await fiber2.dispose()
-    expect(() => fiber1.ctx.foo).to.throw('cannot get required service "foo" in inactive context')
-    expect(() => fiber2.ctx.foo).to.not.throw()
+    const fiber = await root.inject(['foo'], () => {})
+    expect(fiber.ctx.foo).to.be.ok
+    await fiber.dispose()
+    expect(() => fiber.ctx.foo).to.throw('cannot get required service "foo" in inactive context')
   })
 })

@@ -83,9 +83,7 @@ export class ReflectService {
           while (true) {
             const impl = fiber.store?.[prop]
             if (impl) return getTraceable(ctx, impl.value)
-            const inject = fiber.inject[prop]
-            if (inject) {
-              if (!inject.required) return ctx.reflect.get(prop, true)
+            if (prop in fiber.inject) {
               error.message = `cannot get required service "${prop}" in inactive context`
               throw error
             }
@@ -210,7 +208,7 @@ export class ReflectService {
       for (const fiber of runtime.fibers) {
         let hasUpdate = false
         for (const name of names) {
-          if (!fiber.inject[name]?.required) continue
+          if (!(name in fiber.inject)) continue
           if (!filter(fiber.ctx, name)) continue
           hasUpdate = true
           fiber._checkImpl(name)

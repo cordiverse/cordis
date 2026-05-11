@@ -74,9 +74,3 @@ jobs:
         run: yarn --no-immutable
       - name: Unit Test
         run: yarn test:json
-      - name: Report Coverage
-        uses: codecov/codecov-action@v6
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./coverage/coverage-final.json
-          name: codecov
