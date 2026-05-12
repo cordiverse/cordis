@@ -160,7 +160,7 @@ export class Entry {
     try {
       exports = await this.parent.tree.import(this.options.name, this.getOuterStack)
     } catch (error) {
-      this.context.emit(this.ctx, 'internal/error', error)
+      this.ctx.logger.error(error)
       return
     } finally {
       this._initTask = undefined

@@ -55,7 +55,7 @@ export class EntryGroup {
     await Promise.all(ids.map(async (id) => {
       if (newMap[id]) {
         await this.create(newMap[id]).catch((error) => {
-          this.context.emit(this.ctx, 'internal/error', error)
+          this.ctx.logger.error(error)
         })
       } else {
         this.remove(id)

@@ -66,7 +66,7 @@ describe('Fiber', () => {
     const root = new Context()
     const callback = mock.fn()
     const error = mock.fn()
-    root.on('internal/error', error)
+    ;(root.logger as any).error = error
     const apply = mock.fn((ctx: Context, config: { foo?: boolean } | undefined) => {
       ctx.on(event, callback)
       if (!config?.foo) throw new Error('plugin error')
@@ -87,7 +87,7 @@ describe('Fiber', () => {
   it('dispose error', async () => {
     const root = new Context()
     const error = mock.fn()
-    root.on('internal/error', error)
+    ;(root.logger as any).error = error
     const dispose = mock.fn(() => {
       throw new Error('test')
     })

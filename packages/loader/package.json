@@ -35,7 +35,7 @@
     "service"
   ],
   "devDependencies": {
-    "@cordisjs/plugin-logger": "^1.0.2",
+    "@cordisjs/plugin-logger-console": "^1.0.2",
     "@types/js-yaml": "^4.0.9",
     "cordis": "^4.0.0-rc.4"
   },

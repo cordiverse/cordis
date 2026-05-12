@@ -1,6 +1,6 @@
 import { Context, Fiber } from 'cordis'
 import Loader from '@cordisjs/plugin-loader'
-import Logger from '@cordisjs/plugin-logger'
+import Logger from '@cordisjs/plugin-logger-console'
 import { writeFileSync, readFileSync, unlinkSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { expect, describe, it, beforeAll, afterAll, afterEach } from 'vitest'

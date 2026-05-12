@@ -173,7 +173,7 @@ export class Fiber {
           this.config = resolveConfig(runtime, config)
           this._refresh()
         } catch (error) {
-          this.context.emit('internal/error', error)
+          this.ctx.logger.error(error)
           this._error = error
         }
         return async () => {
@@ -367,7 +367,7 @@ export class Fiber {
         return delete this._store[name]
       }
     } catch (error) {
-      this.context.emit(impl.fiber.ctx, 'internal/error', error)
+      impl.fiber.ctx.logger.error(error)
       return delete this._store[name]
     }
     this._store[name] = impl
@@ -411,7 +411,7 @@ export class Fiber {
       await this._execute(this._runner)
     } catch (reason) {
       // impl guarantees that the error is non-null (?)
-      this.context.emit(this.ctx, 'internal/error', reason)
+      this.ctx.logger.error(reason)
       this._error = reason
       this._runner.epoch = INACTIVE
     }
@@ -434,7 +434,7 @@ export class Fiber {
           await dispose()
         }, this._runner.getOuterStack)
       } catch (reason) {
-        this.context.emit(this.ctx, 'internal/error', reason)
+        this.ctx.logger.error(reason)
       }
     }))
     this.store = undefined

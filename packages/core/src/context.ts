@@ -1,5 +1,6 @@
 import { Dict } from 'cosmokit'
 import { EventsService } from './events'
+import { LoggerService } from './logger'
 import { ReflectService } from './reflect'
 import { InjectKey, RegistryService } from './registry'
 import { getTraceable, symbols } from './utils'
@@ -12,6 +13,7 @@ export interface Context {
   root: this
   baseUrl?: string
   events: EventsService
+  logger: LoggerService
   reflect: ReflectService
   registry: RegistryService
 }
@@ -41,6 +43,7 @@ export class Context {
     this.reflect = new ReflectService(self)
     this.registry = new RegistryService(self)
     this.events = new EventsService(self)
+    this.logger = new LoggerService(self)
     this.fiber._disposables.clear()
     return self
   }

@@ -1,6 +1,6 @@
 import { Context, Fiber } from 'cordis'
 import Loader from '@cordisjs/plugin-loader'
-import Logger from '@cordisjs/plugin-logger'
+import LoggerConsole from '@cordisjs/plugin-logger-console'
 import { expect, describe, it, afterEach } from 'vitest'
 
 function waitFor(condFn: () => any, timeout = 5000, interval = 100): Promise<void> {
@@ -23,7 +23,7 @@ describe('Include patches', () => {
 
   it('should load without patches', async () => {
     ctx = new Context()
-    await ctx.plugin(Logger)
+    await ctx.plugin(LoggerConsole)
     fiber = await ctx.plugin(Loader, {
       baseUrl: import.meta.url,
     })
@@ -39,7 +39,7 @@ describe('Include patches', () => {
 
   it('should disable an entry via patch', async () => {
     ctx = new Context()
-    await ctx.plugin(Logger)
+    await ctx.plugin(LoggerConsole)
     fiber = await ctx.plugin(Loader, {
       baseUrl: import.meta.url,
     })
@@ -59,7 +59,7 @@ describe('Include patches', () => {
 
   it('should override config via patch', async () => {
     ctx = new Context()
-    await ctx.plugin(Logger)
+    await ctx.plugin(LoggerConsole)
     fiber = await ctx.plugin(Loader, {
       baseUrl: import.meta.url,
     })
@@ -79,13 +79,13 @@ describe('Include patches', () => {
 
   it('should warn on name mismatch and skip patch', async () => {
     ctx = new Context()
-    await ctx.plugin(Logger)
+    await ctx.plugin(LoggerConsole)
     fiber = await ctx.plugin(Loader, {
       baseUrl: import.meta.url,
     })
 
     let warned = false
-    ctx.on('internal/warning' as any, () => { warned = true })
+    ;(ctx.logger as any).warn = () => { warned = true }
 
     await ctx.loader.create({
       name: '@cordisjs/plugin-include',
@@ -103,7 +103,7 @@ describe('Include patches', () => {
 
   it('should warn on non-existent id', async () => {
     ctx = new Context()
-    await ctx.plugin(Logger)
+    await ctx.plugin(LoggerConsole)
     fiber = await ctx.plugin(Loader, {
       baseUrl: import.meta.url,
     })
@@ -123,7 +123,7 @@ describe('Include patches', () => {
 
   it('should insert entries into root group', async () => {
     ctx = new Context()
-    await ctx.plugin(Logger)
+    await ctx.plugin(LoggerConsole)
     fiber = await ctx.plugin(Loader, {
       baseUrl: import.meta.url,
     })
@@ -148,7 +148,7 @@ describe('Include patches', () => {
 
   it('should insert entries into a specific group', async () => {
     ctx = new Context()
-    await ctx.plugin(Logger)
+    await ctx.plugin(LoggerConsole)
     fiber = await ctx.plugin(Loader, {
       baseUrl: import.meta.url,
     })
@@ -172,7 +172,7 @@ describe('Include patches', () => {
 
   it('should warn when inserting into a non-group entry', async () => {
     ctx = new Context()
-    await ctx.plugin(Logger)
+    await ctx.plugin(LoggerConsole)
     fiber = await ctx.plugin(Loader, {
       baseUrl: import.meta.url,
     })
@@ -197,7 +197,7 @@ describe('Include patches', () => {
 
   it('should apply multiple patches', async () => {
     ctx = new Context()
-    await ctx.plugin(Logger)
+    await ctx.plugin(LoggerConsole)
     fiber = await ctx.plugin(Loader, {
       baseUrl: import.meta.url,
     })
@@ -223,7 +223,7 @@ describe('Include patches', () => {
 
   it('should validate name consistency (matching name is ok)', async () => {
     ctx = new Context()
-    await ctx.plugin(Logger)
+    await ctx.plugin(LoggerConsole)
     fiber = await ctx.plugin(Loader, {
       baseUrl: import.meta.url,
     })

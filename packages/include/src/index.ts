@@ -1,5 +1,4 @@
 import { EntryOptions, EntryTree, isJsExpr } from '@cordisjs/plugin-loader'
-import type {} from '@cordisjs/plugin-logger'
 import { Context, Service } from 'cordis'
 import { extname } from 'node:path'
 import { access, constants, readFile, rename, writeFile } from 'node:fs/promises'

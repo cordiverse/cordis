@@ -1,6 +1,6 @@
 {
-  "name": "@cordisjs/plugin-logger",
-  "description": "Logger service for cordis",
+  "name": "@cordisjs/plugin-logger-console",
+  "description": "Console logger exporter for cordis",
   "version": "1.0.2",
   "type": "module",
   "main": "lib/index.js",
@@ -13,7 +13,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/cordiverse/cordis.git",
-    "directory": "packages/logger"
+    "directory": "packages/logger-console"
   },
   "bugs": {
     "url": "https://github.com/cordiverse/cordis/issues"
@@ -22,16 +22,9 @@
   "keywords": [
     "cordis",
     "logger",
-    "service",
+    "console",
     "plugin"
   ],
-  "cordis": {
-    "service": {
-      "implements": [
-        "logger"
-      ]
-    }
-  },
   "devDependencies": {
     "cordis": "^4.0.0-rc.4"
   },
@@ -40,7 +33,7 @@
   },
   "dependencies": {
     "cosmokit": "^1.8.1",
-    "reggol": "^2.1.0",
-    "schemastery": "^3.18.0"
+    "schemastery": "^3.18.0",
+    "supports-color": "^9.4.0"
   }
 }

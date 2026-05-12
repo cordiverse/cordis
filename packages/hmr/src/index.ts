@@ -6,7 +6,6 @@ import { ChokidarOptions, FSWatcher, watch } from 'chokidar'
 import { relative, resolve } from 'node:path'
 import { handleError } from './error.ts'
 import type {} from '@cordisjs/plugin-timer'
-import type {} from '@cordisjs/plugin-logger'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
 import picomatch from 'picomatch'
@@ -49,7 +48,6 @@ interface Reload {
 
 @Inject('loader')
 @Inject('timer')
-@Inject('logger')
 class Hmr extends Service {
   public baseDir: string
 

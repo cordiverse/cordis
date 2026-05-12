@@ -52,7 +52,7 @@ describe('Service', () => {
 
     const root = new Context()
     const warning = mock.fn()
-    root.on('internal/warn', warning)
+    ;(root.logger as any).warn = warning
     root.provide('counter')
     root.set('counter', new Counter(root))
 

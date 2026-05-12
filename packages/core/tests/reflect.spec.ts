@@ -30,7 +30,7 @@ describe('Reflect', () => {
   it('service injection', async () => {
     const root = new Context()
     const warn = mock.fn()
-    root.on('internal/warn', warn)
+    ;(root.logger as any).warn = warn
     root.mixin('foo', ['bar'])
     root.provide('foo')
     root.set('foo', { bar: 1 })
