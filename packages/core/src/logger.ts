@@ -9,17 +9,15 @@ declare module './context' {
   }
 }
 
-export type LoggerType = 'success' | 'error' | 'info' | 'warn' | 'debug'
+export type LoggerType = 'error' | 'info' | 'warn' | 'debug'
 
 export type LoggerMethod = (format: any, ...param: any[]) => void
 
-export type Formatter = (value: any, exporter: Exporter, logger: Logger) => any
+export type Formatter = (value: any, exporter: Exporter, message: Message) => any
 
 export const enum LoggerLevel {
-  SILENT = 0,
-  SUCCESS = 1,
-  ERROR = 1,
-  INFO = 2,
+  ERROR = 0,
+  INFO = 1,
   WARN = 2,
   DEBUG = 3,
 }
@@ -30,7 +28,7 @@ export interface Message {
   name: string
   type: LoggerType
   level: number
-  body: string
+  args: any[]
   fiber?: WeakRef<Fiber>
 }
 
@@ -38,7 +36,17 @@ export interface Exporter {
   colors?: number | false
   maxLength?: number
   levels?: Record<string, number>
+  formatters?: Record<string, Formatter>
   export(message: Message): void
+}
+
+export const defaultFormatters: Record<string, Formatter> = {
+  s: (value) => value,
+  j: (value) => JSON.stringify(value),
+  o: (value) => JSON.stringify(value),
+  c: (value, exporter, message) => {
+    return Logger.color(exporter, Logger.code(message.name, exporter.colors), value)
+  },
 }
 
 export interface LoggerOptions {
@@ -70,9 +78,42 @@ export class Logger {
     return colors[Math.abs(hash) % colors.length]
   }
 
-  constructor(options: LoggerOptions, private factory: LoggerFactory) {
+  static format(exporter: Exporter, message: Message): string {
+    const args = message.args.slice()
+    if (args[0] instanceof Error) {
+      args[0] = args[0].stack || args[0].message
+      args.unshift('%s')
+    } else if (typeof args[0] !== 'string') {
+      args.unshift('%o')
+    }
+
+    let format: string = args.shift()
+    format = format.replace(/%([a-zA-Z%])/g, (match, char) => {
+      if (match === '%%') return '%'
+      const formatter = exporter.formatters?.[char] ?? defaultFormatters[char]
+      if (typeof formatter === 'function') {
+        const value = args.shift()
+        return formatter(value, exporter, message)
+      }
+      return match
+    })
+
+    const oFormatter = exporter.formatters?.o ?? defaultFormatters.o
+    for (let arg of args) {
+      if (typeof arg === 'object' && arg) {
+        arg = oFormatter(arg, exporter, message)
+      }
+      format += ' ' + arg
+    }
+
+    const { maxLength = 10240 } = exporter
+    return format.split(/\r?\n/g).map(line => {
+      return line.slice(0, maxLength) + (line.length > maxLength ? '...' : '')
+    }).join('\n')
+  }
+
+  constructor(options: LoggerOptions, private service: LoggerService) {
     Object.assign(this, options)
-    this.success = this._method('success', LoggerLevel.SUCCESS)
     this.error = this._method('error', LoggerLevel.ERROR)
     this.info = this._method('info', LoggerLevel.INFO)
     this.warn = this._method('warn', LoggerLevel.WARN)
@@ -90,74 +131,15 @@ export class Logger {
         }
       }
 
-      const sn = ++this.factory._snMessage
+      const sn = ++this.service._snMessage
       const ts = Date.now()
-      for (const exporter of this.factory.exporters.values()) {
+      for (const exporter of this.service.exporters.values()) {
         const targetLevel = exporter.levels?.[this.name] ?? exporter.levels?.default ?? this.level ?? LoggerLevel.INFO
         if (targetLevel < level) continue
-        const body = this._format(exporter, args.slice())
-        const message: Message = { sn, ts, type, level, name: this.name, ...this.meta, body }
+        const message: Message = { sn, ts, type, level, name: this.name, ...this.meta, args }
         exporter.export(message)
       }
     }
-  }
-
-  private _format(exporter: Exporter, args: any[]) {
-    if (args[0] instanceof Error) {
-      args[0] = args[0].stack || args[0].message
-      args.unshift('%s')
-    } else if (typeof args[0] !== 'string') {
-      args.unshift('%o')
-    }
-
-    let format: string = args.shift()
-    format = format.replace(/%([a-zA-Z%])/g, (match, char) => {
-      if (match === '%%') return '%'
-      const formatter = this.factory.formatters[char]
-      if (typeof formatter === 'function') {
-        const value = args.shift()
-        return formatter(value, exporter, this)
-      }
-      return match
-    })
-
-    for (let arg of args) {
-      if (typeof arg === 'object' && arg) {
-        arg = this.factory.formatters['o'](arg, exporter, this)
-      }
-      format += ' ' + arg
-    }
-
-    const { maxLength = 10240 } = exporter
-    return format.split(/\r?\n/g).map(line => {
-      return line.slice(0, maxLength) + (line.length > maxLength ? '...' : '')
-    }).join('\n')
-  }
-}
-
-export class LoggerFactory {
-  static formatters: Record<string, Formatter> = {
-    s: (value) => value,
-    j: (value) => JSON.stringify(value),
-    o: (value) => JSON.stringify(value),
-    c: (value, exporter, logger) => {
-      return Logger.color(exporter, Logger.code(logger.name, exporter.colors), value)
-    },
-  }
-
-  _snMessage = 0
-  _snExporter = 0
-
-  exporters = new Map<number, Exporter>()
-  formatters: Record<string, Formatter> = Object.create(LoggerFactory.formatters)
-
-  createLogger(name: string, options: Omit<LoggerOptions, 'name'> = {}): Logger {
-    return new Logger({ name, ...options }, this)
-  }
-
-  addExporter(exporter: Exporter) {
-    this.exporters.set(++this._snExporter, exporter)
-    return () => this.exporters.delete(this._snExporter)
   }
 }
 
@@ -182,10 +164,13 @@ export interface LoggerService extends Record<LoggerType, LoggerMethod> {
 }
 
 export class LoggerService {
-  factory = new LoggerFactory()
   bufferSize = 1000
   buffer: Message[] = []
   ctx!: Context
+
+  _snMessage = 0
+  _snExporter = 0
+  exporters = new Map<number, Exporter>()
 
   constructor(ctx: Context) {
     const tracker: Tracker = {
@@ -197,7 +182,7 @@ export class LoggerService {
     self.ctx = ctx
     defineProperty(self, symbols.tracker, tracker)
 
-    self.factory.addExporter({
+    self.exporter({
       colors: 3,
       export: (message) => {
         self.buffer.push(message)
@@ -211,7 +196,10 @@ export class LoggerService {
   }
 
   exporter(exporter: Exporter) {
-    return this.ctx.effect(() => this.factory.addExporter(exporter), 'ctx.logger.exporter()')
+    return this.ctx.effect(() => {
+      this.exporters.set(++this._snExporter, exporter)
+      return () => this.exporters.delete(this._snExporter)
+    }, 'ctx.logger.exporter()')
   }
 
   private _resolveConfig(): LoggerService.Intercept {
@@ -230,14 +218,15 @@ export class LoggerService {
     const config = this._resolveConfig()
     name ??= config.name
     name ??= hyphenate(this.ctx.fiber.name)
-    return this.factory.createLogger(name, {
+    return new Logger({
+      name,
       level: config.level,
       meta: { fiber: new WeakRef(this.ctx.fiber) },
-    })
+    }, this)
   }
 
   static {
-    for (const type of ['success', 'error', 'info', 'warn', 'debug'] as const) {
+    for (const type of ['error', 'info', 'warn', 'debug'] as const) {
       ;(LoggerService.prototype as any)[type] = function (this: LoggerService, ...args: any[]) {
         return (this as any)()[type](...args)
       }

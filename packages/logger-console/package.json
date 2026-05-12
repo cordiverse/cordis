@@ -3,8 +3,16 @@
   "description": "Console logger exporter for cordis",
   "version": "1.0.2",
   "type": "module",
-  "main": "lib/index.js",
-  "types": "lib/index.d.ts",
+  "main": "lib/node.js",
+  "types": "lib/shared.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/shared.d.ts",
+      "node": "./lib/node.js",
+      "default": "./lib/browser.js"
+    },
+    "./package.json": "./package.json"
+  },
   "files": [
     "lib"
   ],

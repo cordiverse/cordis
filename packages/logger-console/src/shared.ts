@@ -1,7 +1,5 @@
-import { Context, Exporter, Logger, LoggerFactory, Message } from 'cordis'
+import { Context, Exporter, Formatter, Logger, Message } from 'cordis'
 import { Time } from 'cosmokit'
-import { inspect } from 'node:util'
-import supportsColor from 'supports-color'
 import z from 'schemastery'
 
 export type ColorSupportLevel = 0 | 1 | 2 | 3
@@ -12,32 +10,55 @@ export interface LabelStyle {
   align?: 'left' | 'right'
 }
 
-export interface ConsoleOptions {
-  colors?: false | ColorSupportLevel
-  maxLength?: number
-  levels?: Record<string, number>
-  showDiff?: boolean
-  showTime?: string
-  label?: LabelStyle
-  timestamp?: number
+export namespace ConsoleExporter {
+  export interface Config {
+    colors?: false | ColorSupportLevel
+    maxLength?: number
+    levels?: Record<string, number>
+    showDiff?: boolean
+    showTime?: string
+    label?: LabelStyle
+  }
 }
 
 export class ConsoleExporter implements Exporter {
+  static readonly name = 'logger-console'
+
+  static readonly Config: z<ConsoleExporter.Config> = z.object({
+    colors: z.union([z.const(false), z.number()]),
+    maxLength: z.number(),
+    levels: z.dict(z.number()),
+    showDiff: z.boolean().default(false),
+    showTime: z.string().default('yyyy-MM-dd hh:mm:ss '),
+    label: z.object({
+      width: z.number(),
+      margin: z.number(),
+      align: z.union(['left', 'right']),
+    }),
+  }) as z<ConsoleExporter.Config>
+
   colors!: false | ColorSupportLevel
   maxLength?: number
   levels?: Record<string, number>
   showDiff!: boolean
   showTime!: string
   label?: LabelStyle
-  timestamp?: number
+  timestamp: number
 
-  constructor(options: ConsoleOptions = {}) {
-    Object.assign(this, {
-      colors: supportsColor.stdout ? supportsColor.stdout.level : 0,
+  formatters: Record<string, Formatter> = {}
+
+  constructor(public ctx: Context, config: ConsoleExporter.Config = {}) {
+    Object.assign(this, this.getDefaults(), config)
+    this.timestamp = Date.now()
+    ctx.logger.exporter(this)
+  }
+
+  getDefaults() {
+    return {
+      colors: false as false | ColorSupportLevel,
       showTime: 'yyyy-MM-dd hh:mm:ss ',
       showDiff: false,
-      ...options,
-    })
+    }
   }
 
   export(message: Message) {
@@ -62,7 +83,7 @@ export class ConsoleExporter implements Exporter {
     } else {
       output += prefix + space + label.padEnd(padLength) + space
     }
-    output += message.body.replace(/\n/g, '\n' + ' '.repeat(indent))
+    output += Logger.format(this, message).replace(/\n/g, '\n' + ' '.repeat(indent))
     if (this.showDiff && this.timestamp) {
       const diff = message.ts - this.timestamp
       output += Logger.color(this, code, ' +' + Time.format(diff))
@@ -72,27 +93,4 @@ export class ConsoleExporter implements Exporter {
   }
 }
 
-export interface Config {
-  enabled?: boolean
-}
-
-export const Config: z<Config> = z.object({
-  enabled: z.boolean().default(true),
-})
-
-export const name = 'logger-console'
-
-export function apply(ctx: Context, config: Config) {
-  if (config.enabled === false) return
-
-  // Install the node-only `%o` formatter so Logger calls like
-  // `logger.debug('foo %o', obj)` produce inspect-style output.
-  LoggerFactory.formatters.o = (value, target) => {
-    return inspect(value, { colors: !!target.colors, depth: Infinity, compact: true, breakLength: Infinity })
-  }
-
-  const exporter = new ConsoleExporter({ timestamp: Date.now() })
-  return ctx.logger.exporter(exporter)
-}
-
-export default { name, Config, apply }
+export default ConsoleExporter
