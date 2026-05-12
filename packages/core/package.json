@@ -1,7 +1,7 @@
 {
   "name": "cordis",
   "description": "Meta-Framework for Modern Applications",
-  "version": "4.0.0-rc.4",
+  "version": "4.0.0-rc.5",
   "sideEffects": false,
   "type": "module",
   "main": "lib/index.js",
@@ -31,8 +31,8 @@
   "author": "Shigma <shigma10826@gmail.com>",
   "license": "MIT",
   "peerDependencies": {
-    "@cordisjs/plugin-include": "^1.0.3",
-    "@cordisjs/plugin-loader": "^1.0.0-rc.3"
+    "@cordisjs/plugin-include": "^1.0.4",
+    "@cordisjs/plugin-loader": "^1.0.0-rc.4"
   },
   "peerDependenciesMeta": {
     "@cordisjs/plugin-include": {
