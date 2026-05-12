@@ -1,6 +1,6 @@
 import { Awaitable, defineProperty, Dict, isNullable } from 'cosmokit'
 import { Context } from './context'
-import { Inject, Plugin } from './registry'
+import { Plugin } from './registry'
 import { buildOuterStack, composeError, DisposableList, getTraceable, isConstructor, isObject, symbols } from './utils'
 import { Impl } from './reflect'
 import { StandardSchemaV1 } from '@standard-schema/spec'
@@ -186,7 +186,15 @@ export class Fiber {
             }
           }
           this._setEpoch(INACTIVE)
-          await this.await()
+          // `this.inertia` itself should never reject — both `_reload` and
+          // `_unload` swallow their own work errors via `ctx.logger.error`.
+          // If it *does* reject, the only remaining cause is the logger
+          // itself failing, which we can't recover from in this exact spot
+          // (calling the logger again is what just failed). Let the
+          // rejection propagate; process-level crash is the honest outcome.
+          while (this.inertia) {
+            await this.inertia
+          }
         }
       }, 'ctx.plugin()')
     } else {
@@ -307,8 +315,9 @@ export class Fiber {
       throw reason
     }
 
-    // prevent unhandled rejection
-    task?.catch(dispose)
+    // prevent unhandled rejection — both from `task` itself and from the
+    // disposer chain if it fails to settle cleanly.
+    task?.catch(dispose).catch((error) => this.ctx.logger.error(error))
 
     const wrapper = defineProperty(() => {
       if (!runner.epoch) return
