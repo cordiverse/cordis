@@ -1,17 +1,18 @@
-import { Context, Formatter } from 'cordis'
+import { Formatter } from 'cordis'
 import { inspect } from 'node:util'
 import supportsColor from 'supports-color'
 import { ConsoleExporter as Base } from './shared.js'
 
 export * from './shared.js'
 
-export class ConsoleExporter extends Base {
-  static readonly name = 'logger-console'
+const inspectFormatter: Formatter = (value, target) => {
+  return inspect(value, { colors: !!target.colors, depth: Infinity, compact: true, breakLength: Infinity })
+}
 
+export class ConsoleExporter extends Base {
   formatters: Record<string, Formatter> = {
-    o: (value, target) => {
-      return inspect(value, { colors: !!target.colors, depth: Infinity, compact: true, breakLength: Infinity })
-    },
+    o: inspectFormatter,
+    O: inspectFormatter,
   }
 
   getDefaults() {

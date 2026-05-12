@@ -120,11 +120,11 @@ export class Include extends EntryTree {
         if (id) {
           const target = entryMap.get(id)
           if (!target) {
-            this.ctx.root.logger?.('loader').warn('patch insert: entry %c not found', id)
+            this.ctx.root.logger?.('loader').warn('patch insert: entry %C not found', id)
             continue
           }
           if (!target.group) {
-            this.ctx.root.logger?.('loader').warn('patch insert: entry %c is not a group', id)
+            this.ctx.root.logger?.('loader').warn('patch insert: entry %C is not a group', id)
             continue
           }
           if (!Array.isArray(target.config)) target.config = []
@@ -142,13 +142,13 @@ export class Include extends EntryTree {
 
       const target = entryMap.get(id)
       if (!target) {
-        this.ctx.root.logger?.('loader').warn('patch: entry %c not found', id)
+        this.ctx.root.logger?.('loader').warn('patch: entry %C not found', id)
         continue
       }
 
       if (name && name !== target.name) {
         this.ctx.root.logger?.('loader').warn(
-          'patch: name mismatch for %c (expected %c, got %c), skipping',
+          'patch: name mismatch for %C (expected %C, got %C), skipping',
           id, target.name, name,
         )
         continue

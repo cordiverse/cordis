@@ -48,11 +48,11 @@ describe('logger-console', () => {
 
   it('log levels', () => {
     const logger = ctx.logger('test')
-    logger.debug('%c', 'foo bar')
+    logger.debug('%C', 'foo bar')
     expect(data).toBe('')
 
     logger.level = 3
-    logger.debug('%c', 'foo bar')
+    logger.debug('%C', 'foo bar')
     expect(data).toBeTruthy()
   })
 

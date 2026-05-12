@@ -41,10 +41,14 @@ export interface Exporter {
 }
 
 export const defaultFormatters: Record<string, Formatter> = {
-  s: (value) => value,
-  j: (value) => JSON.stringify(value),
+  s: (value) => String(value),
+  d: (value) => Math.trunc(Number(value)),
+  i: (value) => Math.trunc(Number(value)),
+  f: (value) => Number(value),
   o: (value) => JSON.stringify(value),
-  c: (value, exporter, message) => {
+  O: (value) => JSON.stringify(value),
+  c: () => '',
+  C: (value, exporter, message) => {
     return Logger.color(exporter, Logger.code(message.name, exporter.colors), value)
   },
 }

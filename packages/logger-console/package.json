@@ -1,14 +1,14 @@
 {
   "name": "@cordisjs/plugin-logger-console",
   "description": "Console logger exporter for cordis",
-  "version": "1.0.2",
+  "version": "1.0.0",
   "type": "module",
-  "main": "lib/node.js",
+  "main": "lib/index.js",
   "types": "lib/shared.d.ts",
   "exports": {
     ".": {
       "types": "./lib/shared.d.ts",
-      "node": "./lib/node.js",
+      "node": "./lib/index.js",
       "default": "./lib/browser.js"
     },
     "./package.json": "./package.json"

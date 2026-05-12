@@ -125,7 +125,7 @@ class Hmr extends Service {
     const partialReload = this.ctx.debounce(() => this.partialReload(), this.config.debounce)
 
     this.watcher.on('change', async (path) => {
-      this.ctx.logger.debug('change detected at %c', path)
+      this.ctx.logger.debug('change detected at %C', path)
       const filename = resolve(this.baseDir, path)
       const url = pathToFileURL(filename).href
 
@@ -345,15 +345,15 @@ class Hmr extends Service {
         try {
           this.ctx.registry.delete(plugin)
         } catch (err) {
-          this.ctx.logger.warn('failed to dispose plugin at %c', path)
+          this.ctx.logger.warn('failed to dispose plugin at %C', path)
           this.ctx.logger.warn(err)
         }
 
         try {
           reload(attempts[filename], runtime)
-          this.ctx.logger.info('reload plugin at %c', path)
+          this.ctx.logger.info('reload plugin at %C', path)
         } catch (err) {
-          this.ctx.logger.warn('failed to reload plugin at %c', path)
+          this.ctx.logger.warn('failed to reload plugin at %C', path)
           this.ctx.logger.warn(err)
           throw err
         }

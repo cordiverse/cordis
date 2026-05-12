@@ -138,7 +138,7 @@ export class Loader extends EntryTree {
 
   showLog(entry: Entry, type: string) {
     if (entry.options.group || !entry.parent.tree.enableLogs) return
-    this.ctx.root.logger?.('loader').info('%s plugin %c', type, entry.options.name)
+    this.ctx.root.logger?.('loader').info('%s plugin %C', type, entry.options.name)
   }
 
   locate(fiber = this.ctx.fiber) {
