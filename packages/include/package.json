@@ -20,12 +20,12 @@
   "homepage": "https://cordis.io/",
   "peerDependencies": {
     "@cordisjs/plugin-loader": "^1.0.0-rc.4",
-    "cordis": "^4.0.0-rc.5"
+    "cordis": "^4.0.0-rc.6"
   },
   "devDependencies": {
     "@cordisjs/plugin-loader": "^1.0.0-rc.4",
     "@cordisjs/plugin-logger-console": "^1.0.0",
-    "cordis": "^4.0.0-rc.5"
+    "cordis": "^4.0.0-rc.6"
   },
   "dependencies": {
     "cosmokit": "^1.8.1",

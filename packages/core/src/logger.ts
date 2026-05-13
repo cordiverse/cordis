@@ -220,12 +220,13 @@ export class LoggerService {
 
   [symbols.invoke](name?: string): Logger {
     const config = this._resolveConfig()
+    const fiber = ((this.ctx as any)[symbols.shadow] ?? this.ctx).fiber
     name ??= config.name
-    name ??= hyphenate(this.ctx.fiber.name)
+    name ??= hyphenate(fiber.name)
     return new Logger({
       name,
       level: config.level,
-      meta: { fiber: new WeakRef(this.ctx.fiber) },
+      meta: { fiber: new WeakRef(fiber) },
     }, this)
   }
 
