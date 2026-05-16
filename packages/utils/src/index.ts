@@ -15,8 +15,9 @@ export class List<T> {
 
   push(value: T) {
     this.ctx.effect(() => {
-      this.inner.set(++this.sn, value)
-      return () => this.inner.delete(this.sn)
+      const sn = ++this.sn;
+      this.inner.set(sn, value)
+      return () => this.inner.delete(sn)
     }, `${this.trace}.push()`)
   }
 
