@@ -102,4 +102,24 @@ describe('Fiber', () => {
     expect(dispose.mock.calls).to.have.length(1)
     expect(error.mock.calls).to.have.length(1)
   })
+
+  it('update config on wrapped fiber', async () => {
+    const root = new Context()
+    const callback = mock.fn()
+
+    const fiber = root.plugin(callback, { msg: 'hello' })
+    await fiber
+    expect(callback.mock.calls).to.have.length(1)
+    expect(callback.mock.calls[0].arguments[1]).to.deep.equal({ msg: 'hello' })
+
+    fiber.update({ msg: 'world' })
+    await fiber
+    expect(callback.mock.calls).to.have.length(2)
+    expect(callback.mock.calls[1].arguments[1]).to.deep.equal({ msg: 'world' })
+
+    fiber.update({ msg: '!!!' })
+    await fiber
+    expect(callback.mock.calls).to.have.length(3)
+    expect(callback.mock.calls[2].arguments[1]).to.deep.equal({ msg: '!!!' })
+  })
 })
