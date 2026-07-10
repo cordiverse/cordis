@@ -44,5 +44,8 @@
   },
   "dependencies": {
     "cosmokit": "^1.8.1"
+  },
+  "optionalDependencies": {
+    "node-addon-internal-loader": "^0.0.11"
   }
 }
