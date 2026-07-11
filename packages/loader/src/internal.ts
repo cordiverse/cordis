@@ -98,13 +98,14 @@ export namespace ModuleLoader {
 
   function requireInternal(id: string): any {
     const require = createRequire(import.meta.url)
-    try {
-      const exports = require('node-addon-internal-loader').requireBuiltin(id)
-      if (exports) return exports
-    } catch {}
     if (process.execArgv.includes('--expose-internals')) {
-      return require(id)
+      try {
+        return require(id)
+      } catch {}
     }
+    try {
+      return require('node-addon-internal-loader').requireBuiltin(id)
+    } catch {}
   }
 
   export function fromInternal(): ModuleLoader | undefined {
