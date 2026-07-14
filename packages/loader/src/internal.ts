@@ -104,7 +104,7 @@ export namespace ModuleLoader {
       } catch {}
     }
     try {
-      return require('node-addon-internal-loader').requireBuiltin(id)
+      return require('node-addon-require-builtin').requireBuiltin(id)
     } catch {}
   }
 
