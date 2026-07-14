@@ -91,7 +91,7 @@ export class Include extends EntryTree {
     } else if (this.type === 'application/json') {
       this.data = JSON.parse(this.content) as any
     } else {
-      const module = await import(this.filename)
+      const module = await import(/* @vite-ignore */ this.filename)
       this.data = module.default || module
     }
     await this.checkAccess()

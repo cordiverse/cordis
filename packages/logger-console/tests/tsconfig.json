@@ -1,6 +1,3 @@
 {
   "extends": "../../../tsconfig.test",
-  "include": [
-    ".",
-  ],
 }
