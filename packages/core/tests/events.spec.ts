@@ -54,10 +54,21 @@ describe('Events', () => {
     await root.parallel(new Session(true), event)
     expect(callback.mock.calls).to.have.length(2)
 
+    // a rejecting listener must not short-circuit the others
+    let settled = false
+    const dispose = root.on(event, async () => {
+      await new Promise(resolve => setTimeout(resolve, 0))
+      settled = true
+      throw new Error('async')
+    })
     callback.mock.mockImplementation(() => {
       throw new Error('test')
     })
-    await expect(root.parallel(event)).rejects.toThrow('test')
+    const error = await root.parallel(event).catch(e => e)
+    expect(error).to.be.instanceof(AggregateError)
+    expect(error.errors.map((e: Error) => e.message)).to.have.members(['test', 'async'])
+    expect(settled).to.be.true
+    dispose()
   })
 
   it('ctx.emit()', async () => {
