@@ -40,7 +40,13 @@
     "cordis": "^4.0.0-rc.6"
   },
   "peerDependencies": {
-    "cordis": "^4.0.0-rc.6"
+    "cordis": "^4.0.0-rc.6",
+    "node-addon-require-builtin": "^0.1.0"
+  },
+  "peerDependenciesMeta": {
+    "node-addon-require-builtin": {
+      "optional": true
+    }
   },
   "dependencies": {
     "cosmokit": "^1.8.1"
