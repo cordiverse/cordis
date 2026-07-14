@@ -218,6 +218,11 @@ export class ReflectService {
         fibers.push(fiber)
       }
     }
+    for (const name of names) {
+      const self: Context = Object.create(this.ctx)
+      self[symbols.filter] = (target: Context) => filter(target, name)
+      this.ctx.events.emit(self, 'internal/service', name, this._getImpl(name, false)?.value)
+    }
     return fibers
   }
 
