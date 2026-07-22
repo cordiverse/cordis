@@ -17,8 +17,8 @@ export type Formatter = (value: any, exporter: Exporter, message: Message) => an
 
 export const enum LoggerLevel {
   ERROR = 0,
-  INFO = 1,
-  WARN = 2,
+  WARN = 1,
+  INFO = 2,
   DEBUG = 3,
 }
 
