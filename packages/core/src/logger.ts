@@ -220,7 +220,8 @@ export class LoggerService {
 
   [symbols.invoke](name?: string): Logger {
     const config = this._resolveConfig()
-    const fiber = ((this.ctx as any)[symbols.shadow] ?? this.ctx).fiber
+    const caller = (this as any)[symbols.caller] as Context | undefined
+    const fiber = (caller ?? this.ctx).fiber
     name ??= config.name
     name ??= hyphenate(fiber.name)
     return new Logger({
