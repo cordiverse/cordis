@@ -190,8 +190,11 @@ export class LoggerService {
       colors: 3,
       export: (message) => {
         self.buffer.push(message)
-        if (self.buffer.length > self.bufferSize) {
-          self.buffer = self.buffer.slice(-self.bufferSize)
+        const overflow = self.buffer.length - self.bufferSize
+        if (overflow === 1) {
+          self.buffer.shift()
+        } else if (overflow > 1) {
+          self.buffer.splice(0, overflow)
         }
       },
     })
@@ -201,8 +204,9 @@ export class LoggerService {
 
   exporter(exporter: Exporter) {
     return this.ctx.effect(() => {
-      this.exporters.set(++this._snExporter, exporter)
-      return () => this.exporters.delete(this._snExporter)
+      const id = ++this._snExporter
+      this.exporters.set(id, exporter)
+      return () => this.exporters.delete(id)
     }, 'ctx.logger.exporter()')
   }
 

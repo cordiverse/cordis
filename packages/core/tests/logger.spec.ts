@@ -15,6 +15,43 @@ function setup() {
 }
 
 describe('Logger', () => {
+  it('keeps the bounded buffer in place and chronological', () => {
+    const ctx = new Context()
+    const buffer = ctx.logger.buffer
+    ctx.logger.bufferSize = 2
+    ctx.logger.info('one')
+    ctx.logger.info('two')
+    ctx.logger.info('three')
+    expect(ctx.logger.buffer).toBe(buffer)
+    expect(buffer.map(message => message.args[0])).toEqual(['two', 'three'])
+
+    ctx.logger.bufferSize = 1
+    ctx.logger.info('four')
+    expect(buffer.map(message => message.args[0])).toEqual(['four'])
+
+    ctx.logger.bufferSize = 0
+    ctx.logger.info('five')
+    expect(buffer).toEqual([])
+  })
+
+  it('disposes the exporter that registered the disposer', () => {
+    const ctx = new Context()
+    ctx.logger.exporters.clear()
+    const first: Message[] = []
+    const second: Message[] = []
+    const disposeFirst = ctx.logger.exporter({ export: message => first.push(message) })
+    const disposeSecond = ctx.logger.exporter({ export: message => second.push(message) })
+
+    disposeFirst()
+    ctx.logger.info('test')
+    expect(first).toEqual([])
+    expect(second).toHaveLength(1)
+
+    disposeSecond()
+    ctx.logger.info('test')
+    expect(second).toHaveLength(1)
+  })
+
   it('uses fiber name when called from outside any service', () => {
     const { ctx, captured } = setup()
     ctx.logger.debug('hello')
