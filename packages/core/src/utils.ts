@@ -139,7 +139,7 @@ function withProp(target: any, prop: string | symbol, value: any) {
 
 function createShadow(ctx: Context, target: any, property: string | undefined, receiver: any) {
   if (!property) return receiver
-  const origin = Reflect.getOwnPropertyDescriptor(target, property)?.value
+  const origin = getPropertyDescriptor(target, property)?.value
   if (!origin) return receiver
   return withProp(receiver, property, ctx.extend({ [symbols.shadow]: origin }))
 }
@@ -202,7 +202,10 @@ function createTraceable(ctx: Context, value: any, tracker: Tracker) {
       return Reflect.set(target, prop, value, shadow)
     },
     apply: (target, thisArg, args) => {
-      return applyTraceable(proxy, target, thisArg, args)
+      const receiver = tracker.noShadow
+        ? proxy
+        : createShadow(ctx, target, tracker.property, proxy)
+      return applyTraceable(receiver, target, thisArg, args)
     },
   })
   return proxy
@@ -216,7 +219,7 @@ function applyTraceable(proxy: any, value: any, thisArg: any, args: any[]) {
 export function createCallable(name: string, proto: {}, tracker: Tracker) {
   const self = function (...args: any[]) {
     const proxy = createTraceable(self['ctx'], self, tracker)
-    return applyTraceable(proxy, self, this, args)
+    return Reflect.apply(proxy, this, args)
   }
   defineProperty(self, 'name', name)
   return Object.setPrototypeOf(self, proto)
