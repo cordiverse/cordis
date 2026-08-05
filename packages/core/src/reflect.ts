@@ -193,11 +193,19 @@ export class ReflectService {
         this.notify([name])
       }
       return async () => {
-        delete this.store[key]
+        // A stale provider cleanup must never remove a replacement Impl that
+        // was installed under the same isolated service key.
+        if (this.store[key] === impl) delete this.store[key]
         const fibers = this.notify([name])
-        await Promise.allSettled(fibers.map(fiber => fiber.await()))
-        // ensure self access before dependencies cleanup
-        delete this.ctx.fiber.store![name]
+        const outcomes = await Promise.allSettled(fibers.map(fiber => fiber.await()))
+        // Ensure self access before dependencies cleanup, with the same
+        // incarnation guard for the provider Fiber's captured store.
+        if (this.ctx.fiber.store![name] === impl) delete this.ctx.fiber.store![name]
+        const errors = outcomes
+          .filter((outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected')
+          .map(outcome => outcome.reason)
+        if (errors.length === 1) throw errors[0]
+        if (errors.length > 1) throw new AggregateError(errors, 'dependent fibers failed to settle')
       }
     }, `ctx.provide(${JSON.stringify(name)})`)
   }

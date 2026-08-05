@@ -1,4 +1,4 @@
-import { Context } from '../src'
+import { Context, CordisError, FiberState } from '../src'
 import { expect, describe, it, vi } from 'vitest'
 import { mock } from 'node:test'
 import { sleep, withTimers } from './utils'
@@ -14,7 +14,9 @@ describe('Effects', () => {
       { label: 'test', children: [] },
     ])
     expect(dispose.mock.calls).to.have.length(0)
-    await fiber.dispose()
+    const task = fiber.dispose()
+    expect(fiber.dispose()).to.equal(task)
+    await task
     expect(dispose.mock.calls).to.have.length(1)
     await fiber.dispose()
     expect(dispose.mock.calls).to.have.length(1)
@@ -67,9 +69,11 @@ describe('Effects', () => {
       { label: 'ctx.on("custom-event")', children: [] },
     ])
     expect(seq).to.deep.equal([])
-    dispose()
+    const task = dispose()
+    expect(dispose()).to.equal(task)
+    await task
     expect(seq).to.deep.equal([3, 2, 1])
-    dispose()
+    await dispose()
     expect(seq).to.deep.equal([3, 2, 1])
   })
 
@@ -236,5 +240,195 @@ describe('Effects', () => {
     }
     expect(caught).to.be.instanceOf(Error)
     expect(seq).to.deep.equal([1])
+  })
+
+  it('returns one disposal promise and joins cleanup already in progress', async () => {
+    const root = new Context()
+    const gate = Promise.withResolvers<void>()
+    let cleanupStarted = false
+    const dispose = root.effect(() => async () => {
+      cleanupStarted = true
+      await gate.promise
+    })
+
+    const first = dispose()
+    const second = dispose()
+    expect(first).to.equal(second)
+    expect(cleanupStarted).to.be.true
+
+    const restarting = root.fiber.restart()
+    let settled = false
+    void restarting.then(() => { settled = true })
+    await Promise.resolve()
+    expect(settled).to.be.false
+
+    gate.resolve()
+    await Promise.all([first, restarting])
+    expect(dispose()).to.equal(first)
+  })
+
+  it('attempts every cleanup in LIFO order and aggregates failures deterministically', async () => {
+    const root = new Context()
+    const sequence: number[] = []
+    const first = new Error('first')
+    const third = new Error('third')
+    const dispose = root.effect(function* () {
+      yield () => {
+        sequence.push(1)
+        throw first
+      }
+      yield async () => {
+        await Promise.resolve()
+        sequence.push(2)
+      }
+      yield () => {
+        sequence.push(3)
+        throw third
+      }
+    })
+
+    const error = await dispose().catch(error => error)
+    expect(sequence).to.deep.equal([3, 2, 1])
+    expect(error).to.be.instanceOf(AggregateError)
+    expect(error.errors).to.deep.equal([third, first])
+  })
+
+  it('preserves an AggregateError thrown by user cleanup as one failure', async () => {
+    const root = new Context()
+    const nested = new AggregateError([new Error('a'), new Error('b')], 'user aggregate')
+    const other = new Error('other')
+    const dispose = root.effect(function* () {
+      yield () => { throw nested }
+      yield () => { throw other }
+    })
+
+    const error = await dispose().catch(error => error)
+    expect(error).to.be.instanceOf(AggregateError)
+    expect(error.errors).to.deep.equal([other, nested])
+  })
+
+  it('keeps execution failure primary when rollback cleanup also fails', async () => {
+    const root = new Context()
+    const executionError = new Error('execution failed')
+    const cleanupError = new Error('cleanup failed')
+    let restarting!: Promise<void>
+
+    expect(() => root.effect(function* () {
+      yield () => { throw cleanupError }
+      restarting = root.fiber.restart()
+      throw executionError
+    })).to.throw(executionError)
+
+    const error = await restarting.catch(error => error)
+    expect(error).to.be.instanceOf(AggregateError)
+    expect(error.cause).to.equal(executionError)
+    expect(error.errors[0]).to.equal(executionError)
+    expect(error.errors).to.include(cleanupError)
+  })
+
+  it('removes a synchronously failed effect after rolling back collected cleanup', () => {
+    const root = new Context()
+    let cleanups = 0
+
+    expect(() => root.effect(function* () {
+      yield () => { cleanups += 1 }
+      throw new Error('execution failed')
+    })).to.throw('execution failed')
+
+    expect(cleanups).to.equal(1)
+    expect(root.fiber.getEffects()).to.deep.equal([])
+  })
+
+  it('makes reentrant restart await async rollback and reject the execution failure', async () => {
+    const root = new Context()
+    const cleanupGate = Promise.withResolvers<void>()
+    const cleanupStarted = Promise.withResolvers<void>()
+    const executionError = new Error('execution failed')
+    let restarting!: Promise<void>
+
+    expect(() => root.effect(function* () {
+      yield async () => {
+        cleanupStarted.resolve()
+        await cleanupGate.promise
+      }
+      restarting = root.fiber.restart()
+      throw executionError
+    })).to.throw(executionError)
+
+    await cleanupStarted.promise
+    let settled = false
+    void restarting.finally(() => { settled = true }).catch(() => {})
+    await Promise.resolve()
+    expect(settled).to.be.false
+
+    cleanupGate.resolve()
+    await expect(restarting).rejects.toBe(executionError)
+    expect(root.fiber.getEffects()).to.deep.equal([])
+  })
+
+  it('makes reentrant restart await async execution and cleanup', async () => {
+    const root = new Context()
+    const executionGate = Promise.withResolvers<void>()
+    const cleanupGate = Promise.withResolvers<void>()
+    const cleanupStarted = Promise.withResolvers<void>()
+    let restarting!: Promise<void>
+
+    root.effect(async () => {
+      restarting = root.fiber.restart()
+      await executionGate.promise
+      return async () => {
+        cleanupStarted.resolve()
+        await cleanupGate.promise
+      }
+    })
+
+    executionGate.resolve()
+    await cleanupStarted.promise
+    let settled = false
+    void restarting.then(() => { settled = true })
+    await Promise.resolve()
+    expect(settled).to.be.false
+
+    cleanupGate.resolve()
+    await restarting
+    expect(root.fiber.getEffects()).to.deep.equal([])
+  })
+
+  it('rejects effect registration during unload', async () => {
+    const root = new Context()
+    let registrationError: unknown
+    root.effect(() => () => {
+      try {
+        root.effect(() => () => {})
+      } catch (error) {
+        registrationError = error
+      }
+    })
+
+    await root.fiber.restart()
+    expect(registrationError).to.be.instanceOf(CordisError)
+    expect((registrationError as CordisError).code).to.equal('INACTIVE_EFFECT')
+    expect(root.fiber.state).to.equal(FiberState.ACTIVE)
+  })
+
+  it('accepts effects while a child is pending or loading', async () => {
+    const root = new Context()
+    const cleaned: string[] = []
+    root.on('internal/plugin', (fiber) => {
+      if (fiber.name !== 'state-probe' || fiber.uid === null) return
+      expect(fiber.state).to.equal(FiberState.PENDING)
+      fiber.ctx.effect(() => () => { cleaned.push('pending') })
+    })
+
+    const fiber = await root.plugin({
+      name: 'state-probe',
+      apply(ctx) {
+        expect(ctx.fiber.state).to.equal(FiberState.LOADING)
+        ctx.effect(() => () => { cleaned.push('loading') })
+      },
+    })
+    await fiber.dispose()
+
+    expect(cleaned).to.have.members(['pending', 'loading'])
   })
 })

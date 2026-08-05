@@ -97,6 +97,10 @@ export function isObject(value: any): value is {} {
   return value && (typeof value === 'object' || typeof value === 'function')
 }
 
+export function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+  return isObject(value) && 'then' in value
+}
+
 export function getPropertyDescriptor(target: any, prop: string | symbol) {
   let proto = target
   while (proto) {
@@ -259,7 +263,7 @@ export function composeError<T>(callback: (info: StackInfo) => T, getOuterStack 
 
   try {
     const result: any = callback(info)
-    if (isObject(result) && 'then' in result) {
+    if (isPromiseLike(result)) {
       return (result as any).then(undefined, (reason) => handleError(info, reason, getOuterStack)) as T
     } else {
       return result
