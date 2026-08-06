@@ -58,4 +58,59 @@ describe('Functional Service', () => {
     // context traceability
     expect(foo1.invoke()).to.deep.equal({ a: 1, b: 2 })
   })
+
+  it('uses the service shadow for callable extensions', async () => {
+    class Dependency extends Service {
+      constructor(ctx: Context) {
+        super(ctx, 'dependency')
+      }
+    }
+
+    interface Callable {
+      (): Dependency
+      extend(): Callable
+    }
+
+    class Callable extends Service {
+      static inject = ['dependency']
+
+      constructor(ctx: Context) {
+        super(ctx, 'callable')
+      }
+
+      protected [Service.invoke]() {
+        return this.ctx['dependency'] as Dependency
+      }
+
+      extend() {
+        return this[Service.extend]() as Callable
+      }
+    }
+
+    class Outer extends Service {
+      static inject = ['callable']
+
+      constructor(ctx: Context) {
+        super(ctx, 'outer')
+      }
+
+      call() {
+        const callable = this.ctx['callable'] as Callable
+        return [callable(), callable.extend()()]
+      }
+    }
+
+    const root = new Context()
+    await root.plugin(Dependency)
+    await root.plugin(Callable)
+    await root.plugin(Outer)
+
+    let result!: ReturnType<Outer['call']>
+    await root.inject(['outer'], (ctx) => {
+      result = ctx['outer'].call()
+    })
+
+    expect(result[0]).toBeInstanceOf(Dependency)
+    expect(result[1]).toBeInstanceOf(Dependency)
+  })
 })
