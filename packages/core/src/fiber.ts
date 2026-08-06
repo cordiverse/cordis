@@ -1,4 +1,4 @@
-import { Awaitable, defineProperty, Dict, isNullable } from 'cosmokit'
+import { Awaitable, defineProperty, Dict, isNullable, noop } from 'cosmokit'
 import { Context } from './context'
 import { Plugin } from './registry'
 import { buildOuterStack, composeError, DisposableList, getTraceable, isConstructor, isObject, isPromiseLike, symbols } from './utils'
@@ -85,45 +85,35 @@ interface DesiredSnapshot {
 // tracked separately so an A -> B -> A transition cannot revive work from A.
 type FiberEpoch = object | typeof INACTIVE
 
-function combineErrors(errors: unknown[], primary?: unknown) {
+function combineCleanupErrors(errors: unknown[]) {
   // Do not flatten user AggregateErrors: one cleanup callback owns one error.
-  // We only inspect nesting to avoid inserting the same primary error twice.
-  const contains = (error: unknown): boolean => {
-    if (error === primary) return true
-    return error instanceof AggregateError && error.errors.some(contains)
-  }
-  const combined = primary !== undefined && !errors.some(contains) ? [primary, ...errors] : errors
-  if (!combined.length) return
-  if (combined.length === 1) return combined[0]
-  return new AggregateError(combined, 'multiple lifecycle errors', primary === undefined ? undefined : { cause: primary })
+  if (!errors.length) return
+  if (errors.length === 1) return errors[0]
+  return new AggregateError(errors, 'multiple cleanup errors')
 }
 
 function dispatchFiberDisposal(context: Context, fiber: Fiber) {
-  // Fiber disposal notification is contained per observer. Structural
-  // cleanup must continue even if dispatch, a synchronous observer, or an
-  // async observer fails; the caller later combines these outcomes with
-  // cleanup failures.
+  // Disposal observers are diagnostic, not structural owners. Their failures
+  // are reported but never delay or reject the Fiber's own disposal.
   const args: any[] = ['internal/plugin', fiber]
   let callbacks: Function[]
   try {
     callbacks = context.events.dispatch('emit', args)
   } catch (error) {
-    return [Promise.resolve({ status: 'rejected' as const, reason: error })]
+    context.logger.error(error)
+    return
   }
 
-  const tasks: Promise<{ status: 'fulfilled' } | { status: 'rejected', reason: unknown }>[] = []
   for (const callback of callbacks) {
     try {
       const result = callback(...args)
-      tasks.push(Promise.resolve(result).then(
-        () => ({ status: 'fulfilled' as const }),
-        reason => ({ status: 'rejected' as const, reason }),
-      ))
+      if (isPromiseLike(result)) {
+        void Promise.resolve(result).catch(error => context.logger.error(error))
+      }
     } catch (error) {
-      tasks.push(Promise.resolve({ status: 'rejected' as const, reason: error }))
+      context.logger.error(error)
     }
   }
-  return tasks
 }
 
 export const enum FiberState {
@@ -159,6 +149,19 @@ interface ExecutionGate {
   reject: (reason: unknown) => void
 }
 
+const kEffectRecord = Symbol.for('cordis.effectRecord')
+
+type ManagedDisposable = Disposable & { [kEffectRecord]?: EffectRecord }
+
+function getEffectRecord(dispose: Disposable) {
+  return (dispose as ManagedDisposable)[kEffectRecord]
+}
+
+interface CleanupFailure {
+  error: unknown
+  source?: EffectRecord
+}
+
 class EffectRecord {
   readonly meta: EffectMeta
   readonly runner: EffectRunner<boolean>
@@ -166,6 +169,8 @@ class EffectRecord {
   readonly wrapper: AsyncDisposable<Promise<void>>
 
   private cleanups: Disposable[] = []
+  private cleanupFailures: CleanupFailure[] = []
+  private cleanupReported = false
   private executionState: EffectExecutionState = 'running'
   private executionError: unknown
   private executionTask?: Promise<void>
@@ -183,6 +188,7 @@ class EffectRecord {
     }
     this.dispose = () => this.startDisposal()
     this.wrapper = defineProperty(() => this.startDisposal(), symbols.effect, this.meta) as AsyncDisposable<Promise<void>>
+    defineProperty(this.wrapper, kEffectRecord, this)
     this.wrapper.then = (onFulfilled, onRejected) => {
       return this.waitForExecution().then(() => this.dispose).then(onFulfilled, onRejected)
     }
@@ -210,7 +216,7 @@ class EffectRecord {
         resolve = res
         reject = rej
       })
-      promise.catch(() => {})
+      promise.catch(noop)
       this.executionGate = { promise, resolve, reject }
     }
     return this.executionGate.promise
@@ -232,7 +238,7 @@ class EffectRecord {
       this.failExecution(reason, true)
       throw reason
     })
-    this.executionTask.catch(() => {})
+    this.executionTask.catch(noop)
   }
 
   failExecution(reason: unknown, report = false) {
@@ -240,15 +246,14 @@ class EffectRecord {
     this.executionError = reason
     this.executionGate?.reject(reason)
     if (report) this.owner.ctx.logger.error(reason)
-    // Execution failure is synchronous to the caller, while rollback remains
-    // owner-visible and may finish asynchronously.
-    this.startDisposal(reason).catch((error) => {
-      if (error !== reason) this.owner.ctx.logger.error(error)
-    })
+    // Execution and disposal are separate result channels. The execution
+    // error is delivered by throw/the thenable; structural owners only join
+    // cleanup and observe cleanup failures.
+    this.startDisposal().catch(error => this.reportCleanupFailures(error))
   }
 
   private runCleanups() {
-    const errors: unknown[] = []
+    const failures = this.cleanupFailures
     const pending = this.cleanups.splice(0).reverse()
     let index = 0
 
@@ -261,23 +266,25 @@ class EffectRecord {
             // Preserve strict LIFO ordering across async cleanup. Rejections
             // are recorded and do not veto the remaining cleanup callbacks.
             return Promise.resolve(result).then(next, (error) => {
-              errors.push(error)
+              const failure = { error, source: getEffectRecord(dispose) }
+              failures.push(failure)
               return next()
             })
           }
         } catch (error) {
-          errors.push(error)
+          const failure = { error, source: getEffectRecord(dispose) }
+          failures.push(failure)
         }
       }
     }
 
     const result = next()
-    return isPromiseLike(result) ? Promise.resolve(result).then(() => errors) : errors
+    return isPromiseLike(result) ? Promise.resolve(result).then(() => failures) : failures
   }
 
-  private finishDisposal(primary?: unknown) {
-    const finalize = (errors: unknown[]) => {
-      const error = combineErrors(errors, primary)
+  private finishDisposal() {
+    const finalize = (failures: CleanupFailure[]) => {
+      const error = combineCleanupErrors(failures.map(failure => failure.error))
       return error ? Promise.reject<void>(error) : Promise.resolve()
     }
     const result = this.runCleanups()
@@ -285,7 +292,7 @@ class EffectRecord {
     return { task: finalize(result), synchronous: true }
   }
 
-  private startDisposal(primary?: unknown) {
+  private startDisposal() {
     // Public callers and structural owners always join the first task; cleanup
     // itself is exactly-once.
     if (this.disposalTask) return this.disposalTask
@@ -293,14 +300,12 @@ class EffectRecord {
 
     let task: Promise<void>
     let synchronous = false
-    if (this.executionState === 'fulfilled') {
-      ;({ task, synchronous } = this.finishDisposal(primary))
-    } else if (this.executionState === 'rejected') {
-      ;({ task, synchronous } = this.finishDisposal(primary ?? this.executionError))
+    if (this.executionState === 'fulfilled' || this.executionState === 'rejected') {
+      ;({ task, synchronous } = this.finishDisposal())
     } else {
       task = this.waitForExecution().then(
-        () => this.finishDisposal(primary).task,
-        error => this.finishDisposal(primary ?? error).task,
+        () => this.finishDisposal().task,
+        () => this.finishDisposal().task,
       )
     }
 
@@ -318,8 +323,24 @@ class EffectRecord {
         },
       )
     }
-    this.disposalTask.catch(() => {})
+    this.disposalTask.catch(noop)
     return this.disposalTask
+  }
+
+  reportCleanupFailures(fallback?: unknown) {
+    if (this.cleanupReported) return
+    this.cleanupReported = true
+    if (!this.cleanupFailures.length) {
+      if (fallback !== undefined) this.owner.ctx.logger.error(fallback)
+      return
+    }
+    for (const failure of this.cleanupFailures) {
+      if (failure.source) {
+        failure.source.reportCleanupFailures(failure.error)
+      } else {
+        this.owner.ctx.logger.error(failure.error)
+      }
+    }
   }
 }
 
@@ -339,6 +360,7 @@ export class Fiber {
   protected context: Context
 
   private _error: any
+  private _configError: unknown
   private _runner: EffectRunner<FiberEpoch>
   private _store: Dict<Impl> = Object.create(null)
   private _desired?: DesiredSnapshot
@@ -395,13 +417,11 @@ export class Fiber {
           shouldRefresh = true
         } catch (error) {
           this.ctx.logger.error(error)
-          this._error = error
+          this._error = this._configError = error
         }
         return async () => {
           this.uid = null
-          // Start observers before structural cleanup, but await both together
-          // so neither can starve the other and all failures remain visible.
-          const notificationTasks = dispatchFiberDisposal(this.context, this)
+          dispatchFiberDisposal(this.context, this)
           if (this.ctx.registry.has(runtime.callback)) {
             remove()
             if (!runtime.fibers.length) {
@@ -415,19 +435,7 @@ export class Fiber {
               return FiberState.UNLOADING
             })
           }
-          const lifecycleTask = (async () => {
-            while (this.inertia) await this.inertia
-          })()
-          const [notifications, lifecycle] = await Promise.all([
-            Promise.all(notificationTasks),
-            lifecycleTask.then(() => ({ status: 'fulfilled' as const }), reason => ({ status: 'rejected' as const, reason })),
-          ])
-          const errors = notifications
-            .filter((result): result is { status: 'rejected', reason: unknown } => result.status === 'rejected')
-            .map(result => result.reason)
-          if (lifecycle.status === 'rejected') errors.push(lifecycle.reason)
-          const error = combineErrors(errors)
-          if (error) throw error
+          while (this.inertia) await this.inertia
         }
       }, 'ctx.plugin()')
 
@@ -592,7 +600,7 @@ export class Fiber {
     // Attach an observer so internally scheduled transitions never become
     // process-level unhandled rejections. Return the original task unchanged;
     // fiber.await() can still observe the same rejection.
-    task.catch(() => {})
+    task.catch(noop)
     return task
   }
 
@@ -606,7 +614,9 @@ export class Fiber {
   _refresh(force = false) {
     if (this.uid === null) return
     const implementations: Impl[] = []
-    let loadable = true
+    // Dependency availability cannot recover an invalid configuration. Only a
+    // successfully validated explicit update clears _configError.
+    let loadable = this._configError === undefined
     for (const name of Object.keys(this.inject)) {
       const impl = this._store[name]
       if (!impl) {
@@ -676,35 +686,32 @@ export class Fiber {
     })
   }
 
-  private async _unload(primary?: unknown) {
-    // Top-level effects may clean up concurrently. Promise.all preserves input
-    // order, giving deterministic error aggregation independent of settlement.
-    const outcomes = await Promise.all(this._disposables.clear().map(async (dispose) => {
-      try {
-        await composeError(async (info) => {
-          await Promise.resolve()
-          info.error = new Error()
-          await dispose()
-        }, this._runner.getOuterStack)
-        return { status: 'fulfilled' as const }
-      } catch (reason) {
-        return { status: 'rejected' as const, reason }
-      }
+  private async _unload(executionError?: unknown) {
+    // Top-level effects clean up concurrently. Each rejection is contained at
+    // the structural boundary, so Promise.all only waits for quiescence.
+    await Promise.all(this._disposables.clear().map((dispose) => {
+      return composeError(async (info) => {
+        await Promise.resolve()
+        info.error = new Error()
+        await dispose()
+      }, this._runner.getOuterStack).catch((reason) => {
+        const record = getEffectRecord(dispose)
+        if (record) {
+          record.reportCleanupFailures(reason)
+        } else {
+          this.ctx.logger.error(reason)
+        }
+      })
     }))
-    const errors = outcomes
-      .filter((outcome): outcome is { status: 'rejected', reason: unknown } => outcome.status === 'rejected')
-      .map(outcome => outcome.reason)
-    const error = combineErrors(errors, primary)
 
     this.store = undefined
     this._updateState(() => {
-      // Terminal disposal always reaches DISPOSED. For non-terminal failures,
-      // stop the pump in FAILED rather than activating a replacement on top of
-      // resources whose cleanup may have failed.
+      // Cleanup failures have already been contained above. Only an execution
+      // failure stops a non-terminal Fiber in FAILED.
       if (this.uid === null) {
         this.inertia = undefined
-      } else if (error) {
-        this._error = error
+      } else if (executionError !== undefined) {
+        this._error = executionError
         this._runner.epoch = INACTIVE
         this.inertia = undefined
       } else if (this._runner.epoch === INACTIVE) {
@@ -714,7 +721,7 @@ export class Fiber {
         return FiberState.LOADING
       }
     })
-    if (error) throw error
+    if (executionError !== undefined) throw executionError
   }
 
   async await() {
@@ -738,10 +745,15 @@ export class Fiber {
     const fiber = this.ctx.fiber
     fiber.assertActive()
     config = resolveConfig(fiber.runtime!, config)
-    const result = fiber.context.waterfall(fiber, 'internal/update', config, noSave, () => {
+    return fiber.context.waterfall(fiber, 'internal/update', config, noSave, () => {
+      const configError = fiber._configError
       fiber.config = config
+      fiber._configError = undefined
+      if (configError !== undefined && fiber._error === configError) {
+        fiber._error = undefined
+        fiber._updateState(() => {})
+      }
       return fiber.restart()
     })
-    if (isPromiseLike(result)) Promise.resolve(result).catch(() => {})
   }
 }

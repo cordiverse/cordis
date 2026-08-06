@@ -219,7 +219,7 @@ describe('Effects', () => {
       return () => seq.push(1)
     })
     expect(seq).to.deep.equal([])
-    await expect(dispose).rejects.toThrow()
+    await expect(Promise.resolve(dispose)).rejects.toThrow()
     expect(seq).to.deep.equal([])
   })
 
@@ -307,8 +307,33 @@ describe('Effects', () => {
     expect(error.errors).to.deep.equal([other, nested])
   })
 
-  it('keeps execution failure primary when rollback cleanup also fails', async () => {
+  it('keeps a direct cleanup failure observable through the shared promise', async () => {
     const root = new Context()
+    const error = new Error('cleanup failed')
+    const dispose = root.effect(() => () => { throw error })
+
+    const task = dispose()
+    expect(dispose()).to.equal(task)
+    await expect(task).rejects.toBe(error)
+    await expect(dispose()).rejects.toBe(error)
+  })
+
+  it('contains cleanup failure at structural restart', async () => {
+    const root = new Context()
+    const error = new Error('cleanup failed')
+    const logged: unknown[] = []
+    ;(root.logger as any).error = (value: unknown) => { logged.push(value) }
+    root.effect(() => () => { throw error })
+
+    await expect(root.fiber.restart()).resolves.toBeUndefined()
+    expect(root.fiber.state).to.equal(FiberState.ACTIVE)
+    expect(logged).to.deep.equal([error])
+  })
+
+  it('separates synchronous execution and rollback cleanup failures', async () => {
+    const root = new Context()
+    const logged: unknown[] = []
+    ;(root.logger as any).error = (error: unknown) => { logged.push(error) }
     const executionError = new Error('execution failed')
     const cleanupError = new Error('cleanup failed')
     let restarting!: Promise<void>
@@ -319,11 +344,9 @@ describe('Effects', () => {
       throw executionError
     })).to.throw(executionError)
 
-    const error = await restarting.catch(error => error)
-    expect(error).to.be.instanceOf(AggregateError)
-    expect(error.cause).to.equal(executionError)
-    expect(error.errors[0]).to.equal(executionError)
-    expect(error.errors).to.include(cleanupError)
+    await expect(restarting).resolves.toBeUndefined()
+    expect(root.fiber.state).to.equal(FiberState.ACTIVE)
+    expect(logged).to.deep.equal([cleanupError])
   })
 
   it('removes a synchronously failed effect after rolling back collected cleanup', () => {
@@ -339,7 +362,7 @@ describe('Effects', () => {
     expect(root.fiber.getEffects()).to.deep.equal([])
   })
 
-  it('makes reentrant restart await async rollback and reject the execution failure', async () => {
+  it('makes reentrant restart await async rollback without replaying the execution failure', async () => {
     const root = new Context()
     const cleanupGate = Promise.withResolvers<void>()
     const cleanupStarted = Promise.withResolvers<void>()
@@ -362,8 +385,42 @@ describe('Effects', () => {
     expect(settled).to.be.false
 
     cleanupGate.resolve()
-    await expect(restarting).rejects.toBe(executionError)
+    await expect(restarting).resolves.toBeUndefined()
     expect(root.fiber.getEffects()).to.deep.equal([])
+  })
+
+  it('separates asynchronous execution and disposal failures', async () => {
+    const root = new Context()
+    const executionError = new Error('execution failed')
+    const cleanupError = new Error('cleanup failed')
+    const effect = root.effect(async function* () {
+      yield () => { throw cleanupError }
+      throw executionError
+    })
+
+    await expect(Promise.resolve(effect)).rejects.toBe(executionError)
+    await expect(effect()).rejects.toBe(cleanupError)
+  })
+
+  it('logs auto-rollback cleanup failure once when a structural owner joins', async () => {
+    const root = new Context()
+    const logged: unknown[] = []
+    ;(root.logger as any).error = (error: unknown) => { logged.push(error) }
+    const restartStarted = Promise.withResolvers<void>()
+    const executionError = new Error('execution failed')
+    const cleanupError = new Error('cleanup failed')
+    let restarting!: Promise<void>
+    const effect = root.effect(async function* () {
+      yield () => { throw cleanupError }
+      restarting = root.fiber.restart()
+      restartStarted.resolve()
+      throw executionError
+    })
+
+    await restartStarted.promise
+    await expect(Promise.resolve(effect)).rejects.toBe(executionError)
+    await expect(restarting).resolves.toBeUndefined()
+    expect(logged).to.deep.equal([executionError, cleanupError])
   })
 
   it('makes reentrant restart await async execution and cleanup', async () => {

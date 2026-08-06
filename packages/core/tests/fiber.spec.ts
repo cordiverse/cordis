@@ -1,4 +1,4 @@
-import { Context, FiberState, Service, type Fiber } from '../src'
+import { Context, FiberState, Service, ValidationError, type Fiber } from '../src'
 import { expect, describe, it, vi } from 'vitest'
 import { mock } from 'node:test'
 import { event, sleep, withTimers } from './utils'
@@ -91,6 +91,23 @@ describe('Fiber', () => {
     expect(callback.mock.calls).to.have.length(1)
   })
 
+  it('keeps plugin execution failure separate from rollback cleanup failure', async () => {
+    const root = new Context()
+    const logged: unknown[] = []
+    ;(root.logger as any).error = (error: unknown) => { logged.push(error) }
+    const executionError = new Error('execution failed')
+    const cleanupError = new Error('cleanup failed')
+    const fiber = root.plugin((ctx) => {
+      ctx.effect(() => () => { throw cleanupError })
+      throw executionError
+    })
+
+    const error = await fiber.await().catch(error => error)
+    expect(error).to.equal(executionError)
+    expect(logged).to.deep.equal([executionError, cleanupError])
+    expect(fiber.state).to.equal(FiberState.FAILED)
+  })
+
   it('dispose error', async () => {
     const root = new Context()
     const error = mock.fn()
@@ -104,10 +121,11 @@ describe('Fiber', () => {
 
     const fiber = await root.plugin(plugin)
     expect(dispose.mock.calls).to.have.length(0)
-    await expect(fiber.dispose()).rejects.toThrow('test')
+    await expect(fiber.dispose()).resolves.toBeUndefined()
     await sleep()
     expect(dispose.mock.calls).to.have.length(1)
-    expect(error.mock.calls).to.have.length(0)
+    expect(error.mock.calls).to.have.length(1)
+    expect(error.mock.calls[0].arguments[0]).to.have.property('message', 'test')
   })
 
   it('update config on wrapped fiber', async () => {
@@ -119,15 +137,42 @@ describe('Fiber', () => {
     expect(callback.mock.calls).to.have.length(1)
     expect(callback.mock.calls[0].arguments[1]).to.deep.equal({ msg: 'hello' })
 
-    fiber.update({ msg: 'world' })
-    await fiber
+    await fiber.update({ msg: 'world' })
     expect(callback.mock.calls).to.have.length(2)
     expect(callback.mock.calls[1].arguments[1]).to.deep.equal({ msg: 'world' })
 
-    fiber.update({ msg: '!!!' })
-    await fiber
+    await fiber.update({ msg: '!!!' })
     expect(callback.mock.calls).to.have.length(3)
     expect(callback.mock.calls[2].arguments[1]).to.deep.equal({ msg: '!!!' })
+  })
+
+  it('returns the asynchronous internal/update waterfall result', async () => {
+    const root = new Context()
+    const gate = Promise.withResolvers<void>()
+    const started = Promise.withResolvers<void>()
+    const configs: string[] = []
+    const fiber = root.plugin((_ctx, config: { value: string }) => {
+      configs.push(config.value)
+    }, { value: 'old' })
+    await fiber
+
+    fiber.ctx.on('internal/update', async (_config, _noSave, next) => {
+      started.resolve()
+      await gate.promise
+      return next()
+    })
+    const update = fiber.update({ value: 'new' })
+    await started.promise
+
+    let settled = false
+    void Promise.resolve(update).then(() => { settled = true })
+    await fiber.await()
+    expect(settled).to.be.false
+    expect(configs).to.deep.equal(['old'])
+
+    gate.resolve()
+    await update
+    expect(configs).to.deep.equal(['old', 'new'])
   })
 
   it('keeps wrapped fiber state canonical across restart and update', async () => {
@@ -139,8 +184,7 @@ describe('Fiber', () => {
 
     await fiber
     await fiber.restart()
-    fiber.update({ value: 'second' })
-    await fiber
+    await fiber.update({ value: 'second' })
 
     const canonical = Object.getPrototypeOf(fiber)
     expect(configs).to.deep.equal(['first', 'first', 'second'])
@@ -158,35 +202,97 @@ describe('Fiber', () => {
       configs.push(config.value)
     }, { value: 'old' })
 
-    fiber.update({ value: 'new' })
-    await fiber
+    await fiber.update({ value: 'new' })
 
     expect(configs).to.deep.equal(['new'])
     expect(fiber.state).to.equal(FiberState.ACTIVE)
   })
 
-  it('fails a restart after cleanup errors and allows a later generation to recover', async () => {
+  it('does not clear config validation failure when dependencies become available', async () => {
+    const root = new Context()
+    const configs: any[] = []
+    const Config = {
+      '~standard': {
+        version: 1,
+        vendor: 'test',
+        validate(config: any) {
+          return typeof config?.value === 'string'
+            ? { value: config }
+            : { issues: [{ message: 'value is required' }] }
+        },
+      },
+    } as any
+    const fiber = root.plugin({
+      inject: ['ready'],
+      Config,
+      apply(_ctx, config) { configs.push(config) },
+    }, {})
+
+    root.provide('ready', true)
+    await expect(Promise.resolve(fiber)).rejects.toBeInstanceOf(ValidationError)
+    expect(fiber.state).to.equal(FiberState.FAILED)
+    expect(configs).to.deep.equal([])
+
+    await fiber.update({ value: 'valid' })
+    expect(fiber.state).to.equal(FiberState.ACTIVE)
+    expect(configs).to.deep.equal([{ value: 'valid' }])
+  })
+
+  it('clears config validation failure after a valid update while dependencies remain unavailable', async () => {
+    const root = new Context()
+    const configs: any[] = []
+    const Config = {
+      '~standard': {
+        version: 1,
+        vendor: 'test',
+        validate(config: any) {
+          return typeof config?.value === 'string'
+            ? { value: config }
+            : { issues: [{ message: 'value is required' }] }
+        },
+      },
+    } as any
+    const fiber = root.plugin({
+      inject: ['ready'],
+      Config,
+      apply(_ctx, config) { configs.push(config) },
+    }, {})
+
+    await expect(Promise.resolve(fiber)).rejects.toBeInstanceOf(ValidationError)
+    await fiber.update({ value: 'valid' })
+    expect(fiber.state).to.equal(FiberState.PENDING)
+    expect(configs).to.deep.equal([])
+
+    root.provide('ready', true)
+    await fiber
+    expect(fiber.state).to.equal(FiberState.ACTIVE)
+    expect(configs).to.deep.equal([{ value: 'valid' }])
+  })
+
+  it('continues the next generation after cleanup errors', async () => {
     const root = new Context()
     const configs: string[] = []
+    const logged: unknown[] = []
+    ;(root.logger as any).error = (error: unknown) => { logged.push(error) }
+    const cleanupError = new Error('cleanup failed')
     let failCleanup = true
     const fiber = root.plugin((_ctx, config: { value: string }) => {
       configs.push(config.value)
       return () => {
-        if (failCleanup) throw new Error('cleanup failed')
+        if (failCleanup) throw cleanupError
       }
     }, { value: 'old' })
     await fiber
 
-    fiber.update({ value: 'blocked' })
-    await expect(fiber.await()).rejects.toThrow('cleanup failed')
-    expect(fiber.state).to.equal(FiberState.FAILED)
-    expect(configs).to.deep.equal(['old'])
+    await fiber.update({ value: 'blocked' })
+    expect(fiber.state).to.equal(FiberState.ACTIVE)
+    expect(configs).to.deep.equal(['old', 'blocked'])
+    expect(logged).to.deep.equal([cleanupError])
 
     failCleanup = false
-    fiber.update({ value: 'recovered' })
-    await fiber
+    await fiber.update({ value: 'recovered' })
     expect(fiber.state).to.equal(FiberState.ACTIVE)
-    expect(configs).to.deep.equal(['old', 'recovered'])
+    expect(configs).to.deep.equal(['old', 'blocked', 'recovered'])
   })
 
   it('does not let a stale execution failure poison the current generation', async () => {
@@ -204,9 +310,9 @@ describe('Fiber', () => {
     }, { value: 'old' })
 
     while (!configs.length) await Promise.resolve()
-    fiber.update({ value: 'new' })
+    const update = fiber.update({ value: 'new' })
     gate.resolve()
-    await fiber
+    await update
 
     expect(configs).to.deep.equal(['old', 'new'])
     expect(fiber.state).to.equal(FiberState.ACTIVE)
@@ -303,8 +409,10 @@ describe('Fiber publication ownership', () => {
     expect(root.registry.has(plugin)).to.be.false
   })
 
-  it('contains disposal observers, finishes cleanup, and rejects disposal', async () => {
+  it('logs disposal observer failures without rejecting disposal', async () => {
     const root = new Context()
+    const errors = mock.fn()
+    ;(root.logger as any).error = errors
     const observed: string[] = []
     root.on('internal/plugin', (fiber) => {
       if (fiber.name === 'observed' && fiber.uid === null) throw new Error('observer failed')
@@ -314,17 +422,25 @@ describe('Fiber publication ownership', () => {
     })
     const fiber = await root.plugin({ name: 'observed', apply() {} })
 
-    await expect(fiber.dispose()).rejects.toThrow('observer failed')
+    await expect(fiber.dispose()).resolves.toBeUndefined()
     expect(observed).to.deep.equal(['disposed'])
+    expect(errors.mock.calls).to.have.length(1)
+    expect(errors.mock.calls[0].arguments[0]).to.have.property('message', 'observer failed')
     expect(fiber.state).to.equal(FiberState.DISPOSED)
   })
 
-  it('settles disposal observers and cleanup together with stable error order', async () => {
+  it('does not await async disposal observers but still observes rejections', async () => {
     const root = new Context()
     const observerGate = Promise.withResolvers<void>()
+    const observerLogged = Promise.withResolvers<void>()
     const cleanupGate = Promise.withResolvers<void>()
     const observerError = new Error('observer')
     const cleanupError = new Error('cleanup')
+    const logged: unknown[] = []
+    ;(root.logger as any).error = (error: unknown) => {
+      logged.push(error)
+      if (error === observerError) observerLogged.resolve()
+    }
     let observerStarted = false
     let cleanupStarted = false
     root.on('internal/plugin', async (fiber) => {
@@ -350,11 +466,13 @@ describe('Fiber publication ownership', () => {
     expect(cleanupStarted).to.be.true
 
     cleanupGate.resolve()
-    observerGate.resolve()
-    const error = await disposal.catch(error => error)
-    expect(error).to.be.instanceOf(AggregateError)
-    expect(error.errors).to.deep.equal([observerError, cleanupError])
+    await expect(disposal).resolves.toBeUndefined()
     expect(fiber.state).to.equal(FiberState.DISPOSED)
+    expect(logged).to.deep.equal([cleanupError])
+
+    observerGate.resolve()
+    await observerLogged.promise
+    expect(logged).to.deep.equal([cleanupError, observerError])
   })
 
   it('lets parent disposal during publication drain pending child effects', async () => {
