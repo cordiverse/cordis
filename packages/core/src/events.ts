@@ -69,48 +69,56 @@ export class EventsService {
     }, { global: true, prepend: true })
   }
 
-  dispatch(type: string, args: any[]) {
+  private _resolve(type: string, args: any[]) {
     const thisArg = typeof args[0] === 'object' || typeof args[0] === 'function' ? args.shift() : null
     const name: string = args.shift()
-    if (!name.startsWith('internal/')) {
+    if (!name.startsWith('internal/') && this._hooks['internal/dispatch']?.length) {
       this.emit('internal/dispatch', type, name, args, thisArg)
     }
     const filter = thisArg?.[Context.filter]
-    return (this._hooks[name] || [])
-      .filter(hook => hook.global || !filter || filter.call(thisArg, hook.ctx))
-      .map(hook => hook.callback.bind(thisArg))
+    return [thisArg, (this._hooks[name] || [])
+      .filter(hook => hook.global || !filter || filter.call(thisArg, hook.ctx)).map(hook => hook.callback)] as const
+  }
+
+  dispatch(type: string, args: any[]) {
+    const [thisArg, callbacks] = this._resolve(type, args)
+    return callbacks.map(callback => callback.bind(thisArg))
   }
 
   async parallel(...args: any[]) {
-    const results = await Promise.allSettled(this.dispatch('emit', args).map(async cb => cb(...args)))
+    const [thisArg, callbacks] = this._resolve('emit', args)
+    const results = await Promise.allSettled(callbacks.map(async callback => Reflect.apply(callback, thisArg, args)))
     const errors = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
     if (errors.length) throw new AggregateError(errors.map(error => error.reason))
   }
 
   emit(...args: any[]) {
-    this.dispatch('emit', args).map(cb => cb(...args))
+    const [thisArg, callbacks] = this._resolve('emit', args)
+    for (const callback of callbacks) Reflect.apply(callback, thisArg, args)
   }
 
   async serial(...args: any[]) {
-    for (const cb of this.dispatch('serial', args)) {
-      const result = await cb(...args)
+    const [thisArg, callbacks] = this._resolve('serial', args)
+    for (const callback of callbacks) {
+      const result = await Reflect.apply(callback, thisArg, args)
       if (isBailed(result)) return result
     }
   }
 
   bail(...args: any[]) {
-    for (const cb of this.dispatch('bail', args)) {
-      const result = cb(...args)
+    const [thisArg, callbacks] = this._resolve('bail', args)
+    for (const callback of callbacks) {
+      const result = Reflect.apply(callback, thisArg, args)
       if (isBailed(result)) return result
     }
   }
 
   waterfall(...args: any[]) {
-    const cbs = this.dispatch('waterfall', args)
+    const [thisArg, callbacks] = this._resolve('waterfall', args)
     const inner = args.pop()
     const next = () => {
-      const cb = cbs.shift() ?? inner
-      return cb(...args)
+      const callback = callbacks.shift()
+      return callback ? Reflect.apply(callback, thisArg, args) : inner(...args)
     }
     args.push(next)
     return next()
