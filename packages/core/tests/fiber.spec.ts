@@ -122,4 +122,62 @@ describe('Fiber', () => {
     expect(callback.mock.calls).to.have.length(3)
     expect(callback.mock.calls[2].arguments[1]).to.deep.equal({ msg: '!!!' })
   })
+
+  it('restart wrapped fiber', async () => {
+    const root = new Context()
+    const callback = mock.fn()
+    const fiber = root.plugin(callback)
+
+    await fiber
+    await fiber.restart()
+
+    expect(callback.mock.calls).to.have.length(2)
+    expect(fiber.state).to.equal(FiberState.ACTIVE)
+    expect(Object.hasOwn(fiber, 'state')).to.equal(false)
+    expect(Object.hasOwn(fiber, 'inertia')).to.equal(false)
+  })
+
+  it('update config while injected service reloads', async () => {
+    const applied: [number, string][] = []
+
+    class Provider extends Service {
+      value: number
+
+      constructor(ctx: Context, config: { value: number }) {
+        super(ctx, 'provider')
+        this.value = config.value
+      }
+    }
+
+    const Consumer = {
+      inject: ['provider'],
+      apply(ctx: Context, config: { mode: string }) {
+        applied.push([(ctx as any).provider.value, config.mode])
+      },
+    }
+
+    const root = new Context()
+    const provider = root.plugin(Provider, { value: 1 })
+    const consumer = root.plugin(Consumer, { mode: 'old' })
+
+    await provider
+    await consumer
+
+    provider.update({ value: 2 })
+    consumer.update({ mode: 'new' })
+
+    await Promise.all([provider.await(), consumer.await()])
+
+    const base = Object.getPrototypeOf(consumer)
+    expect(applied).to.deep.equal([
+      [1, 'old'],
+      [2, 'new'],
+    ])
+    expect(consumer.config).to.equal(base.config)
+    expect(consumer.state).to.equal(base.state)
+    expect(consumer.state).to.equal(FiberState.ACTIVE)
+    expect(Object.hasOwn(consumer, 'config')).to.equal(false)
+    expect(Object.hasOwn(consumer, 'state')).to.equal(false)
+    expect(Object.hasOwn(consumer, 'inertia')).to.equal(false)
+  })
 })

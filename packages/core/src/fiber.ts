@@ -466,19 +466,21 @@ export class Fiber {
   }
 
   async restart() {
-    this.assertActive()
-    this._setEpoch(INACTIVE)
-    this._refresh()
-    await this.await()
+    const fiber = this.ctx.fiber
+    fiber.assertActive()
+    fiber._setEpoch(INACTIVE)
+    fiber._refresh()
+    await fiber.await()
   }
 
   update(config: any, noSave = false) {
-    this.assertActive()
-    config = resolveConfig(this.runtime!, config)
-    this.context.waterfall(this, 'internal/update', config, noSave, () => {
-      this.config = config
-      this._error = undefined
-      return this.restart()
+    const fiber = this.ctx.fiber
+    fiber.assertActive()
+    config = resolveConfig(fiber.runtime!, config)
+    fiber.context.waterfall(fiber, 'internal/update', config, noSave, () => {
+      fiber.config = config
+      fiber._error = undefined
+      return fiber.restart()
     })
   }
 }
