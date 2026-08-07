@@ -47,6 +47,7 @@ export interface Tracker {
 export const symbols = {
   // internal symbols
   shadow: Symbol.for('cordis.shadow'),
+  caller: Symbol.for('cordis.caller'),
   receiver: Symbol.for('cordis.receiver'),
   original: Symbol.for('cordis.original'),
   metadata: Symbol.for('cordis.metadata'),
@@ -154,16 +155,14 @@ function createShadowMethod(ctx: Context, value: any, outer: any, shadow: {}) {
 }
 
 function createTraceable(ctx: Context, value: any, tracker: Tracker) {
-  // noShadow services are identity-aware (e.g. logger uses the origin fiber to
-  // derive its name): keep the shadow ctx so they can read [symbols.shadow]
-  // and resolve the origin. Non-noShadow services strip — their side effects
-  // bind to caller, not origin.
-  if (ctx[symbols.shadow] && !tracker.noShadow) {
+  const caller = (ctx[symbols.shadow] as Context | undefined) ?? ctx
+  if (ctx[symbols.shadow]) {
     ctx = Object.getPrototypeOf(ctx)
   }
   const proxy = new Proxy(value, {
     get: (target, prop, receiver) => {
       if (prop === symbols.original) return target
+      if (prop === symbols.caller) return caller
       if (prop === tracker.property) return ctx
       if (typeof prop === 'symbol') {
         return Reflect.get(target, prop, receiver)
@@ -191,6 +190,7 @@ function createTraceable(ctx: Context, value: any, tracker: Tracker) {
     },
     set: (target, prop, value, receiver) => {
       if (prop === symbols.original) return false
+      if (prop === symbols.caller) return false
       if (prop === tracker.property) return false
       if (typeof prop === 'symbol') {
         return Reflect.set(target, prop, value, receiver)

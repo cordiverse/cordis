@@ -106,6 +106,37 @@ describe('Logger', () => {
     expect(captured.map(m => m.name)).not.toContain('foo:driver')
   })
 
+  it('uses the innermost service name and restores the outer service', async () => {
+    const { ctx, captured } = setup()
+
+    class BarService extends Service {
+      static name = 'bar:driver'
+      constructor(ctx: Context) { super(ctx, 'bar') }
+      action() {
+        this.ctx.logger.debug('from bar')
+      }
+    }
+
+    class FooService extends Service {
+      static name = 'foo:driver'
+      static inject = ['bar']
+      constructor(ctx: Context) { super(ctx, 'foo') }
+      action() {
+        this.ctx.bar.action()
+        this.ctx.logger.debug('from foo')
+      }
+    }
+
+    await ctx.plugin(BarService)
+    await ctx.plugin(FooService)
+    await ctx.inject(['foo'], ctx => ctx.foo.action())
+
+    expect(captured.map(m => [m.name, m.args[0]])).toEqual([
+      ['bar:driver', 'from bar'],
+      ['foo:driver', 'from foo'],
+    ])
+  })
+
   it('uses service name when called from inside [Service.init] (unchanged behaviour)', async () => {
     const { ctx, captured } = setup()
 
