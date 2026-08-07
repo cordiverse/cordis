@@ -95,6 +95,46 @@ describe('Loader: basic support', () => {
   })
 })
 
+describe('Loader: lazy Entry config resolution', () => {
+  it('waits for Entry.inject and resolves again for replacement generations', async () => {
+    const root = new Context()
+    const values: string[] = []
+    await root.plugin(MockLoader)
+    const loader = root.loader as MockLoader
+    loader.mock('target', (_ctx: Context, config: { value: string }) => {
+      values.push(config.value)
+    })
+    const id = await loader.create({
+      name: 'target',
+      inject: ['foo'],
+      config: {
+        value: { __jsExpr: 'foo.value' },
+      },
+    })
+
+    await sleep()
+    expect(loader.expectFiber(id).state).to.equal(FiberState.PENDING)
+    expect(values).to.deep.equal([])
+
+    const provider = (value: string) => root.plugin((ctx) => {
+      ctx.provide('foo', { value })
+    })
+
+    const disposeFirst = await provider('first')
+    await loader.await()
+    expect(loader.expectFiber(id).state).to.equal(FiberState.ACTIVE)
+    expect(values).to.deep.equal(['first'])
+
+    await disposeFirst.dispose()
+    expect(loader.expectFiber(id).state).to.equal(FiberState.PENDING)
+
+    const disposeSecond = await provider('second')
+    await loader.await()
+    expect(values).to.deep.equal(['first', 'second'])
+    await disposeSecond.dispose()
+  })
+})
+
 describe('Loader: intercept config', () => {
   const root = new Context()
 
