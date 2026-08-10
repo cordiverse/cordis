@@ -80,6 +80,7 @@ export class EventsService {
       .filter(hook => hook.global || !filter || filter.call(thisArg, hook.ctx)).map(hook => hook.callback)] as const
   }
 
+  /** @deprecated */
   dispatch(type: string, args: any[]) {
     const [thisArg, callbacks] = this._resolve(type, args)
     return callbacks.map(callback => callback.bind(thisArg))

@@ -34,10 +34,10 @@
     "plugin"
   ],
   "devDependencies": {
-    "cordis": "^4.0.0-rc.7"
+    "cordis": "^4.0.0-rc.8"
   },
   "peerDependencies": {
-    "cordis": "^4.0.0-rc.7"
+    "cordis": "^4.0.0-rc.8"
   },
   "dependencies": {
     "cosmokit": "^1.8.1"

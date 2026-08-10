@@ -190,6 +190,7 @@ export class LoggerService {
       colors: 3,
       export: (message) => {
         self.buffer.push(message)
+        // for better performance
         const overflow = self.buffer.length - self.bufferSize
         if (overflow === 1) {
           self.buffer.shift()
