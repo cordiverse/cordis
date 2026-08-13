@@ -214,4 +214,37 @@ describe('Events', () => {
     cb3.mock.resetCalls()
     cb4.mock.resetCalls()
   })
+
+  it('ctx.waterfall() rejects duplicate next()', async () => {
+    const { root } = setup()
+    const terminal = mock.fn(() => 2)
+    const callback = mock.fn<Events['test/waterfall']>((value, next) => {
+      const result = next()
+      expect(() => next()).to.throw('next() called multiple times')
+      return value + result
+    })
+    root.on('test/waterfall', callback)
+
+    expect(root.waterfall('test/waterfall', 1, terminal)).to.equal(3)
+    expect(callback.mock.calls).to.have.length(1)
+    expect(terminal.mock.calls).to.have.length(1)
+  })
+
+  it('ctx.waterfall() supports nested async calls', async () => {
+    const { root } = setup()
+    const terminal = mock.fn(() => 2)
+    const callback = mock.fn(async (value: number, next: () => number) => {
+      await Promise.resolve()
+      const result = next()
+      if (value === 1) {
+        return result + await root.waterfall('test/waterfall', 2, terminal)
+      }
+      return result
+    })
+    root.on('test/waterfall', callback as any)
+
+    expect(await root.waterfall('test/waterfall', 1, terminal)).to.equal(4)
+    expect(callback.mock.calls).to.have.length(2)
+    expect(terminal.mock.calls).to.have.length(2)
+  })
 })
