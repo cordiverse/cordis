@@ -26,20 +26,8 @@ declare module './context' {
     bail<K extends keyof Events>(thisArg: NoInfer<ThisType<Events[K]>>, name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
     waterfall<K extends keyof Events>(name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
     waterfall<K extends keyof Events>(thisArg: NoInfer<ThisType<Events[K]>>, name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
-    parallel(name: symbol, ...args: any[]): Promise<void>
-    parallel(thisArg: object | Function, name: symbol, ...args: any[]): Promise<void>
-    emit(name: symbol, ...args: any[]): void
-    emit(thisArg: object | Function, name: symbol, ...args: any[]): void
-    serial(name: symbol, ...args: any[]): Promise<any>
-    serial(thisArg: object | Function, name: symbol, ...args: any[]): Promise<any>
-    bail(name: symbol, ...args: any[]): any
-    bail(thisArg: object | Function, name: symbol, ...args: any[]): any
-    waterfall(name: symbol, ...args: any[]): any
-    waterfall(thisArg: object | Function, name: symbol, ...args: any[]): any
     on<K extends keyof Events>(name: K, listener: Events[K], options?: boolean | EventOptions): () => boolean
     once<K extends keyof Events>(name: K, listener: Events[K], options?: boolean | EventOptions): () => boolean
-    on(name: symbol, listener: (...args: any[]) => any, options?: boolean | EventOptions): () => boolean
-    once(name: symbol, listener: (...args: any[]) => any, options?: boolean | EventOptions): () => boolean
     /* eslint-enable max-len */
   }
 }
@@ -185,6 +173,7 @@ export class EventsService {
 }
 
 export interface Events {
+  [key: symbol]: (...args: any[]) => any
   'internal/plugin'(fiber: Fiber): void
   'internal/status'(fiber: Fiber, oldValue: FiberState): void
   'internal/service'(this: Context, name: string, value: any): void
