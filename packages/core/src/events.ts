@@ -26,8 +26,20 @@ declare module './context' {
     bail<K extends keyof Events>(thisArg: NoInfer<ThisType<Events[K]>>, name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
     waterfall<K extends keyof Events>(name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
     waterfall<K extends keyof Events>(thisArg: NoInfer<ThisType<Events[K]>>, name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
+    parallel(name: symbol, ...args: any[]): Promise<void>
+    parallel(thisArg: object | Function, name: symbol, ...args: any[]): Promise<void>
+    emit(name: symbol, ...args: any[]): void
+    emit(thisArg: object | Function, name: symbol, ...args: any[]): void
+    serial(name: symbol, ...args: any[]): Promise<any>
+    serial(thisArg: object | Function, name: symbol, ...args: any[]): Promise<any>
+    bail(name: symbol, ...args: any[]): any
+    bail(thisArg: object | Function, name: symbol, ...args: any[]): any
+    waterfall(name: symbol, ...args: any[]): any
+    waterfall(thisArg: object | Function, name: symbol, ...args: any[]): any
     on<K extends keyof Events>(name: K, listener: Events[K], options?: boolean | EventOptions): () => boolean
     once<K extends keyof Events>(name: K, listener: Events[K], options?: boolean | EventOptions): () => boolean
+    on(name: symbol, listener: (...args: any[]) => any, options?: boolean | EventOptions): () => boolean
+    once(name: symbol, listener: (...args: any[]) => any, options?: boolean | EventOptions): () => boolean
     /* eslint-enable max-len */
   }
 }
@@ -43,7 +55,7 @@ export interface Hook extends EventOptions {
 }
 
 export class EventsService {
-  _hooks: Record<keyof any, Hook[]> = {}
+  _hooks: Record<keyof any, Hook[]> = Object.create(null)
 
   constructor(private ctx: Context) {
     defineProperty(this, symbols.tracker, {
@@ -71,8 +83,8 @@ export class EventsService {
 
   private _resolve(type: string, args: any[]) {
     const thisArg = typeof args[0] === 'object' || typeof args[0] === 'function' ? args.shift() : null
-    const name: string = args.shift()
-    if (!name.startsWith('internal/') && this._hooks['internal/dispatch']?.length) {
+    const name: string | symbol = args.shift()
+    if ((typeof name !== 'string' || !name.startsWith('internal/')) && this._hooks['internal/dispatch']?.length) {
       this.emit('internal/dispatch', type, name, args, thisArg)
     }
     const filter = thisArg?.[Context.filter]
@@ -125,11 +137,17 @@ export class EventsService {
     return next()
   }
 
-  register(label: string, hooks: Hook[], callback: any, options: EventOptions): () => void {
+  register(name: string | symbol, label: string, hooks: Hook[], callback: any, options: EventOptions): () => void {
     const method = options.prepend ? 'unshift' : 'push'
     return this.ctx.fiber.effect(() => {
       hooks[method]({ ctx: this.ctx, callback, ...options })
-      return () => this.unregister(hooks, callback)
+      return () => {
+        const result = this.unregister(hooks, callback)
+        if (!hooks.length && this._hooks[name] === hooks) {
+          delete this._hooks[name]
+        }
+        return result
+      }
     }, label)
   }
 
@@ -154,10 +172,10 @@ export class EventsService {
 
     const hooks = this._hooks[name] ||= []
     const label = `ctx.on(${typeof name === 'string' ? JSON.stringify(name) : name.toString()})`
-    return this.register(label, hooks, listener, options)
+    return this.register(name, label, hooks, listener, options)
   }
 
-  once(name: string, listener: (...args: any) => any, options?: boolean | EventOptions) {
+  once(name: string | symbol, listener: (...args: any) => any, options?: boolean | EventOptions) {
     const dispose = this.on(name, function (...args: any[]) {
       dispose()
       return listener.apply(this, args)
@@ -174,5 +192,5 @@ export interface Events {
   'internal/get'(ctx: Context, name: string, error: Error, next: () => any): any
   'internal/set'(ctx: Context, name: string, value: any, error: Error, next: () => boolean): boolean
   'internal/listener'(this: Context, name: string, listener: any, prepend: boolean): void
-  'internal/dispatch'(mode: DispatchMode, name: string, args: any[], thisArg: any): void
+  'internal/dispatch'(mode: DispatchMode, name: string | symbol, args: any[], thisArg: any): void
 }

@@ -15,6 +15,56 @@ function setup() {
 }
 
 describe('Events', () => {
+  it('supports symbol event names across dispatch modes', async () => {
+    const { root } = setup()
+    const event = Symbol('event')
+    const callback = mock.fn((value: number) => value)
+    const dispose = root.on(event, callback)
+
+    root.emit(event, 1)
+    expect(root.bail(event, 2)).to.equal(2)
+    expect(await root.serial(event, 3)).to.equal(3)
+    await root.parallel(event, 4)
+    expect(callback.mock.calls.map(call => call.arguments[0])).to.deep.equal([1, 2, 3, 4])
+
+    dispose()
+    root.emit(event, 5)
+    expect(callback.mock.calls).to.have.length(4)
+  })
+
+  it('supports symbol event names with ctx.once()', () => {
+    const { root } = setup()
+    const event = Symbol('once')
+    const callback = mock.fn()
+    root.once(event, callback)
+
+    root.emit(event)
+    root.emit(event)
+    expect(callback.mock.calls).to.have.length(1)
+  })
+
+  it('treats prototype property names as ordinary events', () => {
+    const { root } = setup()
+    const callback = mock.fn()
+    const dispose = root.on('__proto__', callback)
+
+    root.emit('__proto__')
+    expect(callback.mock.calls).to.have.length(1)
+    dispose()
+  })
+
+  it('removes empty event buckets after disposal', () => {
+    const { root } = setup()
+    const event = Symbol('temporary')
+    const first = root.on(event, () => {})
+    const second = root.on(event, () => {})
+
+    first()
+    expect(Reflect.has(root.events._hooks, event)).to.be.true
+    second()
+    expect(Reflect.has(root.events._hooks, event)).to.be.false
+  })
+
   it('ctx.on()', async () => {
     const { root } = setup()
     const callback = mock.fn()
