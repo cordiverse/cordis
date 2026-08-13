@@ -92,6 +92,51 @@ describe('ctx.timer', () => {
       assert.strictEqual(reject.mock.calls.length, 0)
     }))
 
+    it('async iterator (concurrent reads)', withContext(async (ctx) => {
+      const iterator = ctx.interval(1000)
+      const first = iterator.next()
+      const second = iterator.next()
+      const firstResolve = mock.fn()
+      const secondResolve = mock.fn()
+      first.then(firstResolve)
+      second.then(secondResolve)
+
+      await vi.advanceTimersByTimeAsync(1000)
+      assert.strictEqual(firstResolve.mock.calls.length, 1)
+      assert.strictEqual(secondResolve.mock.calls.length, 0)
+
+      await vi.advanceTimersByTimeAsync(1000)
+      assert.strictEqual(firstResolve.mock.calls.length, 1)
+      assert.strictEqual(secondResolve.mock.calls.length, 1)
+      assert.deepStrictEqual(await Promise.all([first, second]), [
+        { done: false, value: undefined },
+        { done: false, value: undefined },
+      ])
+    }))
+
+    it('async iterator (return with concurrent reads)', withContext(async (ctx) => {
+      const iterator = ctx.interval<number>(1000)
+      const reads = [iterator.next(), iterator.next(), iterator.next()]
+
+      assert.deepStrictEqual(await iterator.return!(42), { done: true, value: 42 })
+      assert.deepStrictEqual(await Promise.all(reads), [
+        { done: true, value: 42 },
+        { done: true, value: 42 },
+        { done: true, value: 42 },
+      ])
+      assert.deepStrictEqual(await iterator.next(), { done: true, value: 42 })
+    }))
+
+    it('async iterator (throw with concurrent reads)', withContext(async (ctx) => {
+      const iterator = ctx.interval(1000)
+      const reads = [iterator.next(), iterator.next(), iterator.next()]
+      const reason = new Error('test')
+
+      assert.deepStrictEqual(await iterator.throw!(reason), { done: true, value: undefined })
+      await Promise.all(reads.map(read => assert.rejects(read, reason)))
+      await assert.rejects(iterator.next(), reason)
+    }))
+
     it('async iterator (manual throw)', withContext(async (ctx) => {
       const callback = mock.fn()
       const iterator = ctx.interval(1000)
@@ -185,6 +230,18 @@ describe('ctx.timer', () => {
         assert.strictEqual(callback.mock.calls.length, 2)
         assert.strictEqual(resolve.mock.calls.length, 0)
         assert.strictEqual(reject.mock.calls.length, 1)
+      }
+    }))
+
+    it('async iterator (context dispose with concurrent reads)', withContext(async function* (ctx) {
+      const iterator = ctx.interval(1000)
+      const reads = [iterator.next(), iterator.next(), iterator.next()]
+      ctx.fiber.dispose()
+
+      yield async () => {
+        for (const read of reads) {
+          await assert.rejects(read, { message: 'Context has been disposed' })
+        }
       }
     }))
   })
