@@ -54,6 +54,8 @@ export class Include extends EntryTree {
   private content?: string
   private data?: EntryOptions[]
   private writeTask?: NodeJS.Timeout
+  private pendingWrite?: EntryOptions[]
+  private writeQueue: Promise<void> = Promise.resolve()
 
   constructor(ctx: Context, public config: Include.Config) {
     super(ctx)
@@ -180,8 +182,9 @@ export class Include extends EntryTree {
     await this.root.update(data)
   }
 
-  stop() {
+  async stop() {
     this.root.stop()
+    await this.flushWrite()
   }
 
   async refresh() {
@@ -204,10 +207,28 @@ export class Include extends EntryTree {
 
   private writeFile(config: EntryOptions[]) {
     clearTimeout(this.writeTask)
+    this.pendingWrite = config
     this.writeTask = setTimeout(() => {
-      this.writeTask = undefined
-      this._writeFile(config)
+      this.flushWrite().catch(() => {})
     }, 0)
+  }
+
+  private flushWrite(): Promise<void> {
+    clearTimeout(this.writeTask)
+    this.writeTask = undefined
+    const config = this.pendingWrite
+    this.pendingWrite = undefined
+    if (config === undefined) return this.writeQueue
+    const task = this.writeQueue.then(
+      () => this._writeFile(config),
+      () => this._writeFile(config),
+    )
+    this.writeQueue = task
+    task.catch((error) => {
+      this.ctx.root.logger?.('loader').warn('failed to write config file %C', this.filename)
+      this.ctx.root.logger?.('loader').warn(error)
+    })
+    return task
   }
 
   write() {
