@@ -26,7 +26,9 @@ describe('Fiber', () => {
 
   it('inertia lock 2', withTimers(async (root) => {
     const dispose = root.provide('foo', 1)
-    const fiber = root.inject(['foo'], async () => {
+    const values: number[] = []
+    const fiber = root.inject(['foo'], async (ctx) => {
+      values.push(ctx.foo)
       await sleep(1000)
       return () => sleep(1000)
     })
@@ -37,7 +39,12 @@ describe('Fiber', () => {
     expect(fiber.state).to.equal(FiberState.LOADING)
     root.provide('foo', 2)
     await vi.advanceTimersByTimeAsync(400) // 1200
+    expect(fiber.state).to.equal(FiberState.UNLOADING)
+    await vi.advanceTimersByTimeAsync(1000) // 2200
+    expect(fiber.state).to.equal(FiberState.LOADING)
+    await vi.advanceTimersByTimeAsync(1000) // 3200
     expect(fiber.state).to.equal(FiberState.ACTIVE)
+    expect(values).to.deep.equal([1, 2])
   }))
 
   it('inertia lock 3', withTimers(async (root) => {
@@ -179,5 +186,67 @@ describe('Fiber', () => {
     expect(Object.hasOwn(consumer, 'config')).to.equal(false)
     expect(Object.hasOwn(consumer, 'state')).to.equal(false)
     expect(Object.hasOwn(consumer, 'inertia')).to.equal(false)
+  })
+
+  it('does not commit a loading generation after an epoch ABA transition', async () => {
+    const root = new Context()
+    const started = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    const applied: number[] = []
+    const fiber = root.plugin(async (_ctx, config: { value: number }) => {
+      applied.push(config.value)
+      if (config.value === 1) {
+        started.resolve()
+        await release.promise
+      }
+    }, { value: 1 })
+
+    await started.promise
+    fiber.update({ value: 2 })
+    release.resolve()
+    await fiber
+
+    expect(applied).to.deep.equal([1, 2])
+    expect(fiber.config).to.deep.equal({ value: 2 })
+    expect(fiber.state).to.equal(FiberState.ACTIVE)
+  })
+
+  it('does not let a stale execution failure poison the current generation', async () => {
+    const root = new Context()
+    const started = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    const applied: number[] = []
+    const fiber = root.plugin(async (_ctx, config: { value: number }) => {
+      applied.push(config.value)
+      if (config.value === 1) {
+        started.resolve()
+        await release.promise
+        throw new Error('stale execution')
+      }
+    }, { value: 1 })
+
+    await started.promise
+    fiber.update({ value: 2 })
+    release.resolve()
+    await fiber
+
+    expect(applied).to.deep.equal([1, 2])
+    expect(fiber.state).to.equal(FiberState.ACTIVE)
+  })
+
+  it('clears a failed execution when restart begins a new generation', async () => {
+    const root = new Context()
+    let shouldFail = true
+    const fiber = root.plugin(() => {
+      if (shouldFail) throw new Error('plugin error')
+    })
+
+    await expect(Promise.resolve(fiber)).rejects.toThrow('plugin error')
+    expect(fiber.state).to.equal(FiberState.FAILED)
+
+    shouldFail = false
+    await fiber.restart()
+
+    expect(fiber.state).to.equal(FiberState.ACTIVE)
   })
 })

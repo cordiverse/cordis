@@ -70,6 +70,7 @@ export interface EffectMeta {
 
 interface EffectRunner<T> {
   epoch: T
+  generation?: number
   execute: () => any
   collect: (dispose: Disposable) => void
   getOuterStack: () => string[]
@@ -116,6 +117,7 @@ export class Fiber {
   protected context: Context
 
   private _error: any
+  private _generation = 0
   private _runner: EffectRunner<string>
   private _store: Dict<Impl> = Object.create(null)
 
@@ -228,6 +230,7 @@ export class Fiber {
 
   private _execute<T>(runner: EffectRunner<T>) {
     const oldEpoch = runner.epoch
+    const oldGeneration = runner.generation
     return composeError((info) => {
       const safeCollect = (dispose: void | Disposable) => {
         if (typeof dispose === 'function') {
@@ -260,7 +263,7 @@ export class Fiber {
           await Promise.resolve()
           info.error = new Error()
           while (true) {
-            if (runner.epoch !== oldEpoch) return
+            if (runner.epoch !== oldEpoch || runner.generation !== oldGeneration) return
             const result = await iter.next()
             safeCollect(result.value)
             if (result.done) return
@@ -400,6 +403,8 @@ export class Fiber {
     const oldEpoch = this._runner.epoch
     if (epoch === oldEpoch) return
     this._runner.epoch = epoch
+    this._runner.generation = ++this._generation
+    if (epoch !== INACTIVE) this._error = undefined
     if (this.inertia) return
     this._updateState(() => {
       if (epoch !== INACTIVE && oldEpoch === INACTIVE) {
@@ -415,17 +420,23 @@ export class Fiber {
   private async _reload() {
     this.store = { ...this._store }
     const oldEpoch = this._runner.epoch
+    const oldGeneration = this._runner.generation
     try {
       await Promise.resolve()
-      await this._execute(this._runner)
+      if (this._runner.generation === oldGeneration) {
+        await this._execute(this._runner)
+      }
     } catch (reason) {
-      // impl guarantees that the error is non-null (?)
       this.ctx.logger.error(reason)
-      this._error = reason
-      this._runner.epoch = INACTIVE
+      // Work from a superseded generation may finish and report its failure,
+      // but it must not overwrite the desired state of the current generation.
+      if (this._runner.generation === oldGeneration) {
+        this._error = reason
+        this._runner.epoch = INACTIVE
+      }
     }
     this._updateState(() => {
-      if (this._runner.epoch === oldEpoch) {
+      if (this._runner.epoch === oldEpoch && this._runner.generation === oldGeneration) {
         this.inertia = undefined
       } else {
         this.inertia = this._unload()
