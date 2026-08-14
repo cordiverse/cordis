@@ -117,6 +117,7 @@ export class Include extends EntryTree {
       const { id, insert, name, ...overrides } = patch
 
       if (insert) {
+        let list: EntryOptions[]
         if (id) {
           const target = entryMap.get(id)
           if (!target) {
@@ -128,9 +129,15 @@ export class Include extends EntryTree {
             continue
           }
           if (!Array.isArray(target.config)) target.config = []
-          target.config.push(...insert)
+          list = target.config
         } else {
-          data.push(...insert)
+          list = data
+        }
+        for (const item of insert) {
+          const entry = { ...item }
+          if (entry.id ? entryMap.has(entry.id) : list.some(existing => existing.name === entry.name)) continue
+          list.push(entry)
+          if (entry.id) entryMap.set(entry.id, entry)
         }
         continue
       }

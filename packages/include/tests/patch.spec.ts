@@ -273,4 +273,44 @@ describe('Include patches', () => {
       await unlink(runtime).catch(() => {})
     }
   }, 10000)
+
+  it('should not duplicate insert patches after a baked refresh', async () => {
+    const runtime = new URL('./fixtures/refresh-insert.yml', import.meta.url)
+    await writeFile(runtime, await readFile(new URL('./fixtures/base.yml', import.meta.url)))
+    try {
+      ctx = new Context()
+      await ctx.plugin(LoggerConsole)
+      fiber = await ctx.plugin(Loader, {
+        baseUrl: import.meta.url,
+      })
+      const id = await ctx.loader.create({
+        name: '@cordisjs/plugin-include',
+        config: {
+          path: './fixtures/refresh-insert.yml',
+          patches: [
+            { insert: [{ name: './extra-plugin' }] },
+          ],
+        },
+      })
+      await ctx.loader.await()
+      const include = ctx.loader.resolve(id).subtree as Include
+      const extras = () => include.root.data.filter(item => String(item.name).includes('extra-plugin'))
+      expect(extras()).to.have.length(1)
+      expect([...ctx.loader.entries()].filter(item => String(item.options.name).includes('extra-plugin'))).to.have.length(1)
+
+      include.write()
+      await new Promise(r => setTimeout(r, 100))
+      const baked = await readFile(runtime, 'utf8')
+      expect(baked).to.match(/extra-plugin/)
+
+      await writeFile(runtime, `${baked}\n# refreshed\n`)
+      await include.refresh()
+      await ctx.loader.await()
+      expect(extras()).to.have.length(1)
+      expect([...ctx.loader.entries()].filter(item => String(item.options.name).includes('extra-plugin'))).to.have.length(1)
+      expect(ctx.bail('test/get-extra')).to.equal('extra')
+    } finally {
+      await unlink(runtime).catch(() => {})
+    }
+  }, 10000)
 })
