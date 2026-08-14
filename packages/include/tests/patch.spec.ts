@@ -2,6 +2,7 @@ import { Context, Fiber } from 'cordis'
 import Loader from '@cordisjs/plugin-loader'
 import LoggerConsole from '@cordisjs/plugin-logger-console'
 import { expect, describe, it, afterEach } from 'vitest'
+import { readFile, unlink, writeFile } from 'node:fs/promises'
 
 function waitFor(condFn: () => any, timeout = 5000, interval = 100): Promise<void> {
   return new Promise<void>((resolve, reject) => {
@@ -239,5 +240,37 @@ describe('Include patches', () => {
     await new Promise(r => setTimeout(r, 1000))
     // Name matches, so patch should apply and inner should be disabled
     expect(ctx.bail('test/get-value')).to.be.undefined
+  }, 10000)
+
+  it('should keep patches after refresh', async () => {
+    const runtime = new URL('./fixtures/refresh-runtime.yml', import.meta.url)
+    await writeFile(runtime, await readFile(new URL('./fixtures/base.yml', import.meta.url)))
+    try {
+      ctx = new Context()
+      await ctx.plugin(LoggerConsole)
+      fiber = await ctx.plugin(Loader, {
+        baseUrl: import.meta.url,
+      })
+      await ctx.loader.create({
+        name: '@cordisjs/plugin-include',
+        config: {
+          path: './fixtures/refresh-runtime.yml',
+          patches: [
+            { id: 'inner', disabled: true },
+          ],
+        },
+      })
+      await new Promise(r => setTimeout(r, 1000))
+      expect(ctx.bail('test/get-value')).to.be.undefined
+
+      await writeFile(runtime, `${await readFile(runtime, 'utf8')}\n# refreshed\n`)
+      const entry = [...ctx.loader.entries()].find(item => item.options.name === '@cordisjs/plugin-include')
+      expect(entry?.subtree).to.be.ok
+      await (entry!.subtree as { refresh(): Promise<void> }).refresh()
+      await new Promise(r => setTimeout(r, 200))
+      expect(ctx.bail('test/get-value')).to.be.undefined
+    } finally {
+      await unlink(runtime).catch(() => {})
+    }
   }, 10000)
 })

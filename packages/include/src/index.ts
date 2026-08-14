@@ -69,7 +69,8 @@ export class Include extends EntryTree {
 
     ctx.on('internal/update', (config, _, next) => {
       if (config.path !== this.config.path) return next()
-      this.root.update(this.data!)
+      const data = this.applyPatches([...this.data!])
+      return this.root.update(data)
     })
   }
 
@@ -186,7 +187,8 @@ export class Include extends EntryTree {
 
   async refresh() {
     if (!await this.read()) return
-    this.root.update(this.data!)
+    const data = this.applyPatches([...this.data!])
+    await this.root.update(data)
   }
 
   private async _writeFile(config: EntryOptions[]) {
