@@ -3,6 +3,7 @@ import Loader from '@cordisjs/plugin-loader'
 import LoggerConsole from '@cordisjs/plugin-logger-console'
 import { expect, describe, it, afterEach } from 'vitest'
 import { readFile, unlink, writeFile } from 'node:fs/promises'
+import Include from '../src/index.ts'
 
 function waitFor(condFn: () => any, timeout = 5000, interval = 100): Promise<void> {
   return new Promise<void>((resolve, reject) => {
@@ -260,14 +261,13 @@ describe('Include patches', () => {
           ],
         },
       })
-      await new Promise(r => setTimeout(r, 1000))
+      await ctx.loader.await()
       expect(ctx.bail('test/get-value')).to.be.undefined
 
       await writeFile(runtime, `${await readFile(runtime, 'utf8')}\n# refreshed\n`)
       const entry = [...ctx.loader.entries()].find(item => item.options.name === '@cordisjs/plugin-include')
-      expect(entry?.subtree).to.be.ok
-      await (entry!.subtree as { refresh(): Promise<void> }).refresh()
-      await new Promise(r => setTimeout(r, 200))
+      await (entry!.subtree as Include).refresh()
+      await ctx.loader.await()
       expect(ctx.bail('test/get-value')).to.be.undefined
     } finally {
       await unlink(runtime).catch(() => {})
