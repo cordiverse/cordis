@@ -54,6 +54,8 @@ export class Include extends EntryTree {
   private content?: string
   private data?: EntryOptions[]
   private writeTask?: NodeJS.Timeout
+  private applying = false
+  private refreshTail: Promise<void> = Promise.resolve()
 
   constructor(ctx: Context, public config: Include.Config) {
     super(ctx)
@@ -134,10 +136,11 @@ export class Include extends EntryTree {
           list = data
         }
         for (const item of insert) {
+          this.ensureId(item)
           const entry = { ...item }
-          if (entry.id ? entryMap.has(entry.id) : list.some(existing => existing.name === entry.name)) continue
+          if (entryMap.has(entry.id) || list.some(existing => existing.name === entry.name)) continue
           list.push(entry)
-          if (entry.id) entryMap.set(entry.id, entry)
+          entryMap.set(entry.id, entry)
         }
         continue
       }
@@ -192,8 +195,21 @@ export class Include extends EntryTree {
   }
 
   async refresh() {
+    const run = this.refreshTail.then(() => this.applyRefresh())
+    this.refreshTail = run.catch(() => {})
+    return run
+  }
+
+  private async applyRefresh() {
     if (!await this.read()) return
-    await this.root.update(this.applyPatches([...this.data!]))
+    clearTimeout(this.writeTask)
+    this.writeTask = undefined
+    this.applying = true
+    try {
+      await this.root.update(this.applyPatches([...this.data!]))
+    } finally {
+      this.applying = false
+    }
   }
 
   private async _writeFile(config: EntryOptions[]) {
@@ -218,6 +234,7 @@ export class Include extends EntryTree {
   }
 
   write() {
+    if (this.applying) return
     this.context.emit('loader/config-update')
     return this.writeFile(this.root.data)
   }

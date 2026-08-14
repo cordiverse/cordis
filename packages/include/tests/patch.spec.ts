@@ -313,4 +313,45 @@ describe('Include patches', () => {
       await unlink(runtime).catch(() => {})
     }
   }, 10000)
+
+  it('should not bake insert patches on a comment-only refresh', async () => {
+    const runtime = new URL('./fixtures/refresh-comment.yml', import.meta.url)
+    const original = await readFile(new URL('./fixtures/base.yml', import.meta.url), 'utf8')
+    await writeFile(runtime, original)
+    try {
+      ctx = new Context()
+      await ctx.plugin(LoggerConsole)
+      fiber = await ctx.plugin(Loader, {
+        baseUrl: import.meta.url,
+      })
+      const id = await ctx.loader.create({
+        name: '@cordisjs/plugin-include',
+        config: {
+          path: './fixtures/refresh-comment.yml',
+          patches: [
+            { insert: [{ name: './extra-plugin' }] },
+          ],
+        },
+      })
+      await ctx.loader.await()
+      const include = ctx.loader.resolve(id).subtree as Include
+      const extras = () => include.root.data.filter(item => String(item.name).includes('extra-plugin'))
+      expect(await readFile(runtime, 'utf8')).to.equal(original)
+      expect(extras()).to.have.length(1)
+      const extraId = extras()[0].id
+
+      await writeFile(runtime, `${original}\n# refreshed\n`)
+      await include.refresh()
+      await ctx.loader.await()
+      await new Promise(r => setTimeout(r, 100))
+      const after = await readFile(runtime, 'utf8')
+      expect(after).to.equal(`${original}\n# refreshed\n`)
+      expect(after).to.not.match(/extra-plugin/)
+      expect(extras()).to.have.length(1)
+      expect(extras()[0].id).to.equal(extraId)
+      expect(ctx.bail('test/get-extra')).to.equal('extra')
+    } finally {
+      await unlink(runtime).catch(() => {})
+    }
+  }, 10000)
 })
