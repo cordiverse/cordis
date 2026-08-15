@@ -187,12 +187,14 @@ export class ReflectService {
       if (this.store[key]) {
         throw new Error(`service "${name}" has been registered at <${this.store[key].fiber.name}>`)
       }
+      const disposeGraph = this.ctx.registry._provide(this.ctx.fiber, name)
       this.store[key] = impl
       this.ctx.fiber.store![name] = impl
       if (this.ctx.fiber.state === FiberState.ACTIVE) {
         this.notify([name])
       }
       return async () => {
+        disposeGraph()
         delete this.store[key]
         const fibers = this.notify([name])
         await Promise.allSettled(fibers.map(fiber => fiber.await()))

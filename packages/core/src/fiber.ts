@@ -178,6 +178,7 @@ export class Fiber {
         }
         return async () => {
           this.uid = null
+          this.ctx.registry._release(this)
           this.context.emit('internal/plugin', this)
           if (this.ctx.registry.has(runtime.callback)) {
             remove()
@@ -418,6 +419,7 @@ export class Fiber {
     try {
       await Promise.resolve()
       await this._execute(this._runner)
+      this.ctx.registry.assertProvides(this)
     } catch (reason) {
       // impl guarantees that the error is non-null (?)
       this.ctx.logger.error(reason)

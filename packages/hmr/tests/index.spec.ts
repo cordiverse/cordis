@@ -447,10 +447,11 @@ declare module 'cordis' {
 }
 
 class MyService extends Service {
+  static provide = 'myService'
   public data = 'service-v1'
 
   constructor(ctx: Context) {
-    super(ctx, 'myService')
+    super(ctx)
   }
 
   getValue() {
@@ -504,6 +505,17 @@ export default MyService
 
       await waitFor(() => ctx.myService?.getValue() === 'service-v2')
       expect(ctx.myService.getValue()).to.equal('service-v2')
+    }, 10000)
+
+    it('should keep the old plugin when static dependency preflight fails', async () => {
+      const content = readFileSync(pluginPath, 'utf-8')
+      writeFileSync(pluginPath, content.replace(
+        "static provide = 'myService'",
+        "static provide = 'myService'\n  static inject = ['myService']",
+      ))
+
+      await new Promise(r => setTimeout(r, 1500))
+      expect(ctx.myService.getValue()).to.equal('service-v1')
     }, 10000)
   })
 
