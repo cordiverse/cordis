@@ -187,7 +187,12 @@ export class RegistryService {
   }
 
   inject(inject: Inject, callback: Plugin.Function<void>) {
-    return this.plugin({ inject, apply: callback, name: callback.name })
+    const name = callback.name
+    return this.plugin({
+      inject,
+      apply: callback,
+      ...(name === undefined ? {} : { name }),
+    })
   }
 
   plugin(plugin: Plugin, config?: any, getOuterStack = buildOuterStack()) {
@@ -200,7 +205,13 @@ export class RegistryService {
     if (!runtime) {
       let name = plugin.name
       if (name === 'apply') name = undefined
-      runtime = { name, callback, fibers: new DisposableList(), Config: plugin.Config }
+      const Config = plugin.Config
+      runtime = {
+        callback,
+        fibers: new DisposableList(),
+        ...(name === undefined ? {} : { name }),
+        ...(Config === undefined ? {} : { Config }),
+      }
       this._internal.set(callback, runtime)
     }
 

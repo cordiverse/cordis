@@ -183,7 +183,12 @@ export class ReflectService {
 
       this.ctx.root[symbols.isolate][name] ??= Symbol(name)
       const key = this.ctx[symbols.isolate][name]
-      const impl: Impl = { name, value, fiber: this.ctx.fiber, check }
+      const impl: Impl = {
+        name,
+        fiber: this.ctx.fiber,
+        ...(value === undefined ? {} : { value }),
+        ...(check === undefined ? {} : { check }),
+      }
       if (this.store[key]) {
         throw new Error(`service "${name}" has been registered at <${this.store[key].fiber.name}>`)
       }

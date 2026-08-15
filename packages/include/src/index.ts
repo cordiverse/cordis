@@ -205,7 +205,7 @@ export class Include extends EntryTree {
   private writeFile(config: EntryOptions[]) {
     clearTimeout(this.writeTask)
     this.writeTask = setTimeout(() => {
-      this.writeTask = undefined
+      delete this.writeTask
       this._writeFile(config)
     }, 0)
   }

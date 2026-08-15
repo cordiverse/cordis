@@ -143,7 +143,7 @@ export class EventsService {
 
   on(name: string | symbol, listener: (...args: any) => any, options?: boolean | EventOptions) {
     if (typeof options !== 'object') {
-      options = { prepend: options }
+      options = options === undefined ? {} : { prepend: options }
     }
 
     // handle special events

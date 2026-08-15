@@ -147,7 +147,7 @@ export class Entry {
     try {
       await (this._initTask ??= this._init())
     } finally {
-      this._initTask = undefined
+      delete this._initTask
     }
     this.fiber?.await().finally(() => {
       if (this.loader.getTasks().length) return
@@ -163,7 +163,7 @@ export class Entry {
       this.ctx.logger.error(error)
       return
     } finally {
-      this._initTask = undefined
+      delete this._initTask
     }
     const plugin = this.loader.unwrapExports(exports)
     this._patchContext([])

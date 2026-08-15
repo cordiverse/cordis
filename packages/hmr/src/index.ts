@@ -265,9 +265,10 @@ class Hmr extends Service {
       if (!dependencies.some(dep => this.accepted.has(dep))) continue
       dependencies.forEach(dep => this.accepted.add(dep))
 
+      const runtime = this.ctx.registry.get(plugin)
       reloads.set(plugin, {
         filename: job.url,
-        runtime: this.ctx.registry.get(plugin),
+        ...(runtime === undefined ? {} : { runtime }),
       })
     }
 
@@ -332,8 +333,13 @@ class Hmr extends Service {
       if (!runtime) return
       for (const oldFiber of runtime.fibers) {
         const fiber = oldFiber.parent.registry.plugin(plugin, oldFiber.config, this.getOuterStack)
-        fiber.entry = oldFiber.entry
-        if (fiber.entry) fiber.entry.fiber = fiber
+        const entry = oldFiber.entry
+        if (entry === undefined) {
+          delete fiber.entry
+        } else {
+          fiber.entry = entry
+          entry.fiber = fiber
+        }
       }
     }
 

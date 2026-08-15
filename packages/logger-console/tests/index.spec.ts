@@ -26,7 +26,7 @@ describe('logger-console', () => {
 
   it('format error', () => {
     const inner = new Error('message')
-    inner.stack = undefined
+    delete inner.stack
     const outer = new Error('outer')
     ;(outer as any).errors = [inner]
     ctx.logger('test').error(outer)

@@ -231,7 +231,7 @@ export class LoggerService {
     name ??= hyphenate(fiber.name)
     return new Logger({
       name,
-      level: config.level,
+      ...(config.level === undefined ? {} : { level: config.level }),
       meta: { fiber: new WeakRef(fiber) },
     }, this)
   }
