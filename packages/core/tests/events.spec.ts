@@ -1,7 +1,7 @@
 import { Context, Events } from '../src'
 import { expect, describe, it } from 'vitest'
 import { mock } from 'node:test'
-import { event, Filter, Session } from './utils'
+import { event, symbolEvent, Filter, Session } from './utils'
 
 export function createArray<T>(length: number, create: (index: number) => T) {
   return [...new Array(length).keys()].map(create)
@@ -39,6 +39,43 @@ describe('Events', () => {
     dispose()
     root.emit(event)
     expect(callback.mock.calls).to.have.length(1)
+  })
+
+  it('symbol events', async () => {
+    const { root } = setup()
+    const callback = mock.fn()
+    const dispose = root.on(symbolEvent, callback)
+    root.emit(symbolEvent)
+    expect(callback.mock.calls).to.have.length(1)
+    root.emit(symbolEvent)
+    expect(callback.mock.calls).to.have.length(2)
+    dispose()
+    root.emit(symbolEvent)
+    expect(callback.mock.calls).to.have.length(2)
+  })
+
+  it('symbol events dispatch across modes', async () => {
+    const { root } = setup()
+    const callback = mock.fn()
+    root.on(symbolEvent, callback)
+    root.emit(symbolEvent)
+    await root.parallel(symbolEvent)
+    await root.serial(symbolEvent)
+    root.bail(symbolEvent)
+    expect(callback.mock.calls).to.have.length(4)
+  })
+
+  it('prototype-named events', async () => {
+    const { root } = setup()
+    const callback = mock.fn()
+    const dispose = root.on('__proto__', callback)
+    root.emit('__proto__')
+    expect(callback.mock.calls).to.have.length(1)
+    dispose()
+    root.emit('__proto__')
+    expect(callback.mock.calls).to.have.length(1)
+    // the last listener disposal should release the event bucket
+    expect(root.events._hooks['__proto__']).to.have.length(0)
   })
 
   it('ctx.parallel()', async () => {

@@ -19,6 +19,7 @@ export function sleep(ms = 0) {
 }
 
 export const event = 'custom-event'
+export const symbolEvent = Symbol('symbol-event')
 
 export class Session {
   constructor(public flag: boolean) {}
@@ -41,6 +42,8 @@ export class Filter {
 declare module '../src/events' {
   interface Events {
     [event](): void
+    [symbolEvent](): void
+    '__proto__'(): void
     'test/waterfall'(value: number, next: () => number): number
   }
 }
