@@ -53,7 +53,7 @@ export class Include extends EntryTree {
   private readonly: boolean
   private content?: string
   private data?: EntryOptions[]
-  private writeTask?: NodeJS.Timeout
+  private writeTask?: NodeJS.Timeout | undefined
 
   constructor(ctx: Context, public config: Include.Config) {
     super(ctx)
