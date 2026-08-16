@@ -166,13 +166,13 @@ export class Include extends EntryTree {
   async* [Service.init]() {
     try {
       await this.read()
-    } catch {
-      if (this.config.initial) {
-        this.writeFile(this.config.initial as any)
-        await this.read()
-      } else {
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      if (!this.config.initial) {
         throw new Error(`config file not found: ${this.filename}`)
       }
+      await this._writeFile(this.config.initial as any)
+      await this.read(true)
     }
 
     yield () => this.stop()
