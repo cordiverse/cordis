@@ -15,6 +15,7 @@ declare module '../src' {
 
 export default class MockLoader extends Loader {
   public data: EntryOptions[] = []
+  public writes = 0
   public modules: Dict<Plugin.Object> = Object.create(null)
 
   constructor(ctx: Context) {
@@ -28,13 +29,14 @@ export default class MockLoader extends Loader {
   }
 
   write() {
-    this.data = this.root.data
+    this.writes++
+    this.data = structuredClone(this.root.data)
   }
 
   async read(data: any) {
-    this.data = data
     await this.root.update(data)
     await this.await()
+    this.write()
   }
 
   async import(name: string) {
