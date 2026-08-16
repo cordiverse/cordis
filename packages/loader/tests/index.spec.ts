@@ -15,9 +15,9 @@ describe('Loader: basic support', () => {
     await root.plugin(MockLoader)
     loader = root.loader as any
 
-    foo = loader.mock('foo', (ctx: Context) => ctx.on('internal/update', () => {}))
-    bar = loader.mock('bar', (ctx: Context) => ctx.on('internal/update', () => {}))
-    qux = loader.mock('qux', (ctx: Context) => ctx.on('internal/update', () => {}))
+    foo = loader.mock('foo', (ctx: Context) => ctx.on('internal/update', (_config, _noSave, next) => next()))
+    bar = loader.mock('bar', (ctx: Context) => ctx.on('internal/update', (_config, _noSave, next) => next()))
+    qux = loader.mock('qux', (ctx: Context) => ctx.on('internal/update', (_config, _noSave, next) => next()))
   })
 
   it('loader initiate', async () => {

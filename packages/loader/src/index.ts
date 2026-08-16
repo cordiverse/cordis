@@ -72,11 +72,22 @@ export class Loader extends EntryTree {
     ctx.reflect.provide('loader', this, this[Service.check])
 
     ctx.on('internal/update', function (config, noSave, next) {
-      if (!this.entry || noSave || this.parent.fiber?.entry === this.entry) return next()
-      const unparse = this.runtime?.Config?.['simplify']
-      this.entry.options.config = unparse ? unparse(config) : config
-      this.entry.parent.tree.write()
-      return next()
+      const entry = this.entry
+      if (!entry || noSave || this.parent.fiber?.entry === entry) return next()
+      const result: unknown = next()
+      const persist = () => {
+        // invariant: persist only after the chain commits — inner assigned
+        // fiber.config, or a group entry handled the update without next().
+        if (this.config !== config && !entry.options.group) return
+        const unparse = this.runtime?.Config?.['simplify']
+        entry.options.config = unparse ? unparse(config) : config
+        entry.parent.tree.write()
+      }
+      if (result && typeof result === 'object' && 'then' in result) {
+        return Promise.resolve(result).finally(persist)
+      }
+      persist()
+      return result
     }, { global: true, prepend: true })
 
     ctx.on('internal/update', function (config, _, next) {
