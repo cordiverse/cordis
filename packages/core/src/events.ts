@@ -43,7 +43,7 @@ export interface Hook extends EventOptions {
 }
 
 export class EventsService {
-  _hooks: Record<keyof any, Hook[]> = {}
+  _hooks: Record<keyof any, Hook[]> = Object.create(null) as Record<keyof any, Hook[]>
 
   constructor(private ctx: Context) {
     defineProperty(this, symbols.tracker, {
@@ -71,8 +71,8 @@ export class EventsService {
 
   private _resolve(type: string, args: any[]) {
     const thisArg = typeof args[0] === 'object' || typeof args[0] === 'function' ? args.shift() : null
-    const name: string = args.shift()
-    if (!name.startsWith('internal/') && this._hooks['internal/dispatch']?.length) {
+    const name: string | symbol = args.shift()
+    if ((typeof name !== 'string' || !name.startsWith('internal/')) && this._hooks['internal/dispatch']?.length) {
       this.emit('internal/dispatch', type, name, args, thisArg)
     }
     const filter = thisArg?.[Context.filter]
@@ -125,18 +125,19 @@ export class EventsService {
     return next()
   }
 
-  register(label: string, hooks: Hook[], callback: any, options: EventOptions): () => void {
+  register(label: string, name: keyof any, hooks: Hook[], callback: any, options: EventOptions): () => void {
     const method = options.prepend ? 'unshift' : 'push'
     return this.ctx.fiber.effect(() => {
       hooks[method]({ ctx: this.ctx, callback, ...options })
-      return () => this.unregister(hooks, callback)
+      return () => this.unregister(name, hooks, callback)
     }, label)
   }
 
-  unregister(hooks: Hook[], callback: any) {
+  unregister(name: keyof any, hooks: Hook[], callback: any) {
     const index = hooks.findIndex(hook => hook.callback === callback)
     if (index >= 0) {
       hooks.splice(index, 1)
+      if (!hooks.length) delete this._hooks[name]
       return true
     }
   }
@@ -154,7 +155,7 @@ export class EventsService {
 
     const hooks = this._hooks[name] ||= []
     const label = `ctx.on(${typeof name === 'string' ? JSON.stringify(name) : name.toString()})`
-    return this.register(label, hooks, listener, options)
+    return this.register(label, name, hooks, listener, options)
   }
 
   once(name: string, listener: (...args: any) => any, options?: boolean | EventOptions) {

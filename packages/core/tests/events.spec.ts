@@ -41,6 +41,48 @@ describe('Events', () => {
     expect(callback.mock.calls).to.have.length(1)
   })
 
+  it('ctx.on() (symbol name)', async () => {
+    const { root } = setup()
+    const callback = mock.fn()
+    const symbol = Symbol('example')
+    const dispose = root.on(symbol, callback)
+    root.emit(symbol)
+    expect(callback.mock.calls).to.have.length(1)
+    root.emit(symbol)
+    expect(callback.mock.calls).to.have.length(2)
+    dispose()
+    root.emit(symbol)
+    expect(callback.mock.calls).to.have.length(2)
+  })
+
+  it('ctx.on() (symbol name, parallel)', async () => {
+    const { root } = setup()
+    const callback = mock.fn()
+    const symbol = Symbol('example')
+    root.on(symbol, callback)
+    await root.parallel(symbol)
+    expect(callback.mock.calls).to.have.length(1)
+  })
+
+  it('ctx.on() (prototype-named event)', async () => {
+    const { root } = setup()
+    const callback = mock.fn()
+    const dispose = root.on('__proto__', callback)
+    root.emit('__proto__')
+    expect(callback.mock.calls).to.have.length(1)
+    dispose()
+    root.emit('__proto__')
+    expect(callback.mock.calls).to.have.length(1)
+  })
+
+  it('ctx.on() (dispose releases event bucket)', async () => {
+    const { root } = setup()
+    const callback = mock.fn()
+    const dispose = root.on(event, callback)
+    dispose()
+    expect((root as any).events._hooks[event]).to.be.undefined
+  })
+
   it('ctx.parallel()', async () => {
     const { root } = setup()
     await root.parallel(event)
