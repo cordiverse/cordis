@@ -63,33 +63,40 @@ export class TimerService extends Service {
       }, 'ctx.interval()')
     } else {
       let done: { kind: 'return'; value: any } | { kind: 'throw'; reason: any } | undefined
-      let nextTask: PromiseWithResolvers<IteratorResult<void>> | undefined
+      const pending: PromiseWithResolvers<IteratorResult<void>>[] = []
       const dispose = this.ctx.effect(() => {
         const timer = setInterval(() => {
-          nextTask?.resolve({ done: false, value: undefined })
+          pending.shift()?.resolve({ done: false, value: undefined })
         }, delay)
         return () => {
           clearInterval(timer)
           if (done) return
           done = { kind: 'throw', reason: new Error('Context has been disposed') }
-          nextTask?.reject(done.reason)
+          for (const task of pending) task.reject(done.reason)
+          pending.length = 0
         }
       }, 'ctx.interval()')
       return {
         next: () => {
-          if (!done) return (nextTask = Promise.withResolvers()).promise
-          if (done.kind === 'return') return Promise.resolve({ done: true, value: done.value })
-          return Promise.reject(done.reason)
+          if (done) {
+            if (done.kind === 'return') return Promise.resolve({ done: true, value: done.value })
+            return Promise.reject(done.reason)
+          }
+          const task = Promise.withResolvers<IteratorResult<void>>()
+          pending.push(task)
+          return task.promise
         },
         return: (value) => {
           if (!done) done = { kind: 'return', value }
-          nextTask?.resolve({ done: true, value })
+          for (const task of pending) task.resolve({ done: true, value })
+          pending.length = 0
           dispose()
           return Promise.resolve({ done: true, value })
         },
         throw: (reason) => {
           if (!done) done = { kind: 'throw', reason }
-          nextTask?.reject(reason)
+          for (const task of pending) task.reject(reason)
+          pending.length = 0
           dispose()
           return Promise.resolve({ done: true, value: undefined })
         },

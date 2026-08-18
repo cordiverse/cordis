@@ -187,6 +187,52 @@ describe('ctx.timer', () => {
         assert.strictEqual(reject.mock.calls.length, 1)
       }
     }))
+
+    it('async iterator (concurrent reads settle in order)', withContext(async (ctx) => {
+      const iterator = ctx.interval(1000)
+      const first = iterator.next()
+      const second = iterator.next()
+      const settled: boolean[] = []
+      first.then(() => settled.push(true), () => settled.push(true))
+      second.then(() => settled.push(true), () => settled.push(true))
+      await vi.advanceTimersByTimeAsync(1000)
+      assert.strictEqual(settled.length, 1)
+      assert.deepStrictEqual(await first, { done: false, value: undefined })
+      assert.strictEqual(settled.length, 1)
+      await vi.advanceTimersByTimeAsync(1000)
+      assert.strictEqual(settled.length, 2)
+      assert.deepStrictEqual(await second, { done: false, value: undefined })
+    }))
+
+    it('async iterator (return settles concurrent reads)', withContext(async (ctx) => {
+      const iterator = ctx.interval(1000)
+      const first = iterator.next()
+      const second = iterator.next()
+      await iterator.return!(42)
+      assert.deepStrictEqual(await first, { done: true, value: 42 })
+      assert.deepStrictEqual(await second, { done: true, value: 42 })
+    }))
+
+    it('async iterator (throw rejects concurrent reads)', withContext(async (ctx) => {
+      const iterator = ctx.interval(1000)
+      const first = iterator.next()
+      const second = iterator.next()
+      const reason = new Error('test')
+      await iterator.throw!(reason)
+      await assert.rejects(first, reason)
+      await assert.rejects(second, reason)
+    }))
+
+    it('async iterator (context dispose rejects concurrent reads)', withContext(async function* (ctx) {
+      const iterator = ctx.interval(1000)
+      const first = iterator.next()
+      const second = iterator.next()
+      ctx.fiber.dispose()
+      yield async () => {
+        await assert.rejects(first, /Context has been disposed/)
+        await assert.rejects(second, /Context has been disposed/)
+      }
+    }))
   })
 
   describe('ctx.throttle()', () => {
