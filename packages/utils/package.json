@@ -22,7 +22,7 @@
   "homepage": "https://github.com/cordiverse/cordis",
   "keywords": [
     "cordis",
-    "utilties"
+    "utilities"
   ],
   "devDependencies": {
     "cordis": "^4.0.0-rc.8"
