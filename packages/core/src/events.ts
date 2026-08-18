@@ -117,12 +117,20 @@ export class EventsService {
   waterfall(...args: any[]) {
     const [thisArg, callbacks] = this._resolve('waterfall', args)
     const inner = args.pop()
-    const next = () => {
+    const step = (next: () => any) => {
       const callback = callbacks.shift()
-      return callback ? Reflect.apply(callback, thisArg, args) : inner(...args)
+      return callback ? Reflect.apply(callback, thisArg, [...args, next]) : inner(...args, next)
     }
-    args.push(next)
-    return next()
+    const advance = (): any => {
+      let called = false
+      const next = () => {
+        if (called) throw new Error('next() should only be called once')
+        called = true
+        return advance()
+      }
+      return step(next)
+    }
+    return advance()
   }
 
   register(label: string, hooks: Hook[], callback: any, options: EventOptions): () => void {

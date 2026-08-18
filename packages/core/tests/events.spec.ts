@@ -3,6 +3,12 @@ import { expect, describe, it } from 'vitest'
 import { mock } from 'node:test'
 import { event, Filter, Session } from './utils'
 
+declare module '../src/events' {
+  interface Events {
+    'test/async-waterfall'(value: number, next: () => void): void
+  }
+}
+
 export function createArray<T>(length: number, create: (index: number) => T) {
   return [...new Array(length).keys()].map(create)
 }
@@ -154,5 +160,57 @@ describe('Events', () => {
     cb2.mock.resetCalls()
     cb3.mock.resetCalls()
     cb4.mock.resetCalls()
+  })
+
+  it('ctx.waterfall() (double next in one frame throws)', async () => {
+    const { root } = setup()
+    const terminal = mock.fn<() => number>(() => 2)
+    root.on('test/waterfall', (value, next) => {
+      next()
+      next()
+    })
+    expect(() => root.waterfall('test/waterfall', 1, terminal)).to.throw('next() should only be called once')
+    expect(terminal.mock.calls).to.have.length(1)
+  })
+
+  it('ctx.waterfall() (reused next from previous frame throws)', async () => {
+    const { root } = setup()
+    let oldNext: () => any
+    const order: string[] = []
+    root.on('test/waterfall', (value, next) => {
+      oldNext = next
+      order.push('first')
+      next()
+    })
+    root.on('test/waterfall', (value, next) => {
+      order.push('second')
+      next()
+    })
+    expect(() => root.waterfall('test/waterfall', 1, () => {
+      order.push('terminal')
+      oldNext!()
+    })).to.throw('next() should only be called once')
+    expect(order).to.deep.equal(['first', 'second', 'terminal'])
+  })
+
+  it('ctx.waterfall() (async next)', async () => {
+    const { root } = setup()
+    const order: string[] = []
+    root.on('test/async-waterfall', async (value, next) => {
+      order.push('first')
+      await Promise.resolve()
+      next()
+    })
+    root.on('test/async-waterfall', (value, next) => {
+      order.push('second')
+      next()
+    })
+    const promise = root.waterfall('test/async-waterfall', 1, () => {
+      order.push('terminal')
+    })
+    order.push('after')
+    expect(order).to.deep.equal(['first', 'after'])
+    await promise
+    expect(order).to.deep.equal(['first', 'after', 'second', 'terminal'])
   })
 })
