@@ -43,7 +43,7 @@ export interface Hook extends EventOptions {
 }
 
 export class EventsService {
-  _hooks: Record<keyof any, Hook[]> = {}
+  _hooks: Record<keyof any, Hook[]> = Object.create(null)
 
   constructor(private ctx: Context) {
     defineProperty(this, symbols.tracker, {
