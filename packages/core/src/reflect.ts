@@ -76,7 +76,7 @@ export class ReflectService {
           return def.get.call(ctx, ctx[symbols.receiver], error)
         }
 
-        if (!ctx.fiber.runtime) return ctx.reflect.get(prop, false)
+        if (!ctx.fiber.runtime && !ctx[symbols.shadow]) return ctx.reflect.get(prop, false)
         return ctx.events.waterfall('internal/get', ctx, prop, error, () => {
           const key = target[symbols.isolate][prop]
           let fiber = (ctx[symbols.shadow] as Context ?? ctx).fiber

@@ -41,6 +41,11 @@ describe('Traceable caller', () => {
     await root.plugin(Inner)
     await root.plugin(Outer)
 
+    const direct = root['outer'].inspect()
+    expect(direct.caller).toBe(outerOrigin!)
+    expect(direct.shadow).toBe(innerOrigin!)
+    expect(direct.outerShadow).toBe(outerOrigin!)
+
     let result!: ReturnType<Outer['inspect']>
     await root.inject(['outer'], (ctx) => {
       result = ctx['outer'].inspect()
