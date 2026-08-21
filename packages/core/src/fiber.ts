@@ -13,6 +13,11 @@ declare module './context' {
 
 const kValidationError = Symbol.for('ValidationError')
 
+// Each extra unload round means a disposer registered new effects during
+// teardown, so legitimate nesting depth is tiny; the bound only stops
+// runaway registration loops from hanging `_unload`.
+const MAX_UNLOAD_ROUNDS = 16
+
 export class ValidationError extends TypeError {
   name = 'ValidationError'
 
@@ -435,17 +440,26 @@ export class Fiber {
   }
 
   private async _unload() {
-    await Promise.all(this._disposables.clear().map(async (dispose) => {
-      try {
-        await composeError(async (info) => {
-          await Promise.resolve()
-          info.error = new Error()
-          await dispose()
-        }, this._runner.getOuterStack)
-      } catch (reason) {
-        this.ctx.logger.error(reason)
-      }
-    }))
+    // Disposers may register more effects before they settle. Preserve the
+    // initial async boundary and drain those effects before unload completes.
+    let rounds = MAX_UNLOAD_ROUNDS
+    do {
+      await Promise.all(this._disposables.clear().map(async (dispose) => {
+        try {
+          await composeError(async (info) => {
+            await Promise.resolve()
+            info.error = new Error()
+            await dispose()
+          }, this._runner.getOuterStack)
+        } catch (reason) {
+          this.ctx.logger.error(reason)
+        }
+      }))
+    } while (this._disposables.length && --rounds)
+    if (this._disposables.length) {
+      this._disposables.clear()
+      this.ctx.logger.error(new Error(`fiber did not settle within ${MAX_UNLOAD_ROUNDS} unload rounds (runaway effect registration?)`))
+    }
     this.store = undefined
     this._updateState(() => {
       if (this._runner.epoch === INACTIVE) {
