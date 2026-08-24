@@ -180,4 +180,41 @@ describe('Fiber', () => {
     expect(Object.hasOwn(consumer, 'state')).to.equal(false)
     expect(Object.hasOwn(consumer, 'inertia')).to.equal(false)
   })
+  it('refuses effect registration while UNLOADING (G5 residue)', withTimers(async (root) => {
+    // roadmap 74(a): an undo that registers a new effect during deactivation
+    // must be refused (INACTIVE_EFFECT), not accepted-and-leaked. The
+    // deactivation path: provider.dispose() withdraws 'svc' -> Rogue
+    // deactivates (passes through UNLOADING) -> its generator effect's undo
+    // runs -> ctx.effect() inside must throw.
+    let leaked = false
+    let leakDisposed = false
+    const Provider = {
+      name: 'Provider',
+      apply(ctx: any) {
+        ctx.provide('svc', {})
+      },
+    }
+    const Rogue = {
+      name: 'Rogue',
+      inject: ['svc'],
+      apply(ctx: any) {
+        ctx.effect(function* () {
+          yield () => {
+            ctx.effect(() => {
+              leaked = true
+              return () => { leakDisposed = true }
+            })
+          }
+        })
+      },
+    }
+    const provider = await root.plugin(Provider)
+    const rogue = await root.plugin(Rogue)
+    await provider.dispose() // withdraw svc -> Rogue deactivates -> undo runs
+    expect(leaked).to.equal(false)
+    expect(rogue.state).to.equal(FiberState.PENDING)
+    expect(rogue.getEffects().length).to.equal(0)
+    await rogue.dispose()
+    expect(leakDisposed).to.equal(false)
+  }))
 })

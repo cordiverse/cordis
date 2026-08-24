@@ -147,7 +147,7 @@ export class EventsService {
     }
 
     // handle special events
-    this.ctx.fiber.assertActive()
+    this.ctx.fiber.assertRegistrable()
     listener = this.ctx.reflect.bind(listener)
     const result = this.bail(this.ctx, 'internal/listener', name, listener, options)
     if (result) return result

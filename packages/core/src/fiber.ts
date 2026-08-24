@@ -222,7 +222,18 @@ export class Fiber {
   }
 
   assertActive() {
-    if (this.uid !== null) return
+    if (this.uid !== null && this.state !== FiberState.UNLOADING) return
+    throw new CordisError('INACTIVE_EFFECT')
+  }
+
+  /** Refuse effect/listener/plugin REGISTRATION while this fiber is UNLOADING
+   * (roadmap 74(a)): an undo that calls ctx.effect() during deactivation would
+   * be accepted by the disposed-only assertActive() check, and the resulting
+   * disposer leaks permanently — the unload snapshot was already taken. Unlike
+   * assertActive(), this is NOT used by update()/restart(), which must keep
+   * working through an inertial reload's UNLOADING pass. */
+  assertRegistrable() {
+    if (this.uid !== null && this.state !== FiberState.UNLOADING) return
     throw new CordisError('INACTIVE_EFFECT')
   }
 
@@ -275,7 +286,7 @@ export class Fiber {
   effect(execute: () => SyncEffect, label?: string): Disposable<Promise<void>>
   effect(execute: () => Effect, label?: string): AsyncDisposable<Promise<void>>
   effect(execute: () => Effect, label = 'anonymous'): any {
-    this.assertActive()
+    this.assertRegistrable()
 
     const disposables: Disposable[] = []
     const dispose = () => {
