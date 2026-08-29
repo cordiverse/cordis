@@ -125,24 +125,22 @@ export class EventsService {
     return next()
   }
 
-  register(name: string | symbol, label: string, hooks: Hook[], callback: any, options: EventOptions): () => void {
+  private register(label: string, name: string | symbol, callback: any, options: EventOptions): () => void {
     const method = options.prepend ? 'unshift' : 'push'
     return this.ctx.fiber.effect(() => {
+      const hooks = this._hooks[name] ??= []
       hooks[method]({ ctx: this.ctx, callback, ...options })
-      return () => {
-        const result = this.unregister(hooks, callback)
-        if (!hooks.length && this._hooks[name] === hooks) {
-          delete this._hooks[name]
-        }
-        return result
-      }
+      return () => this.unregister(name, callback)
     }, label)
   }
 
-  unregister(hooks: Hook[], callback: any) {
+  private unregister(name: string | symbol, callback: any) {
+    const hooks = this._hooks[name]
+    if (!hooks) return
     const index = hooks.findIndex(hook => hook.callback === callback)
     if (index >= 0) {
       hooks.splice(index, 1)
+      if (!hooks.length) delete this._hooks[name]
       return true
     }
   }
@@ -158,9 +156,8 @@ export class EventsService {
     const result = this.bail(this.ctx, 'internal/listener', name, listener, options)
     if (result) return result
 
-    const hooks = this._hooks[name] ||= []
     const label = `ctx.on(${typeof name === 'string' ? JSON.stringify(name) : name.toString()})`
-    return this.register(name, label, hooks, listener, options)
+    return this.register(label, name, listener, options)
   }
 
   once(name: string | symbol, listener: (...args: any) => any, options?: boolean | EventOptions) {

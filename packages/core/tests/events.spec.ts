@@ -45,12 +45,21 @@ describe('Events', () => {
 
   it('treats prototype property names as ordinary events', () => {
     const { root } = setup()
-    const callback = mock.fn()
-    const dispose = root.on('__proto__', callback)
 
-    root.emit('__proto__')
-    expect(callback.mock.calls).to.have.length(1)
-    dispose()
+    // dispatching an unregistered name must not reach `Object.prototype`
+    expect(() => root.emit('toString')).to.not.throw()
+
+    for (const name of ['__proto__', 'toString', 'constructor'] as const) {
+      const callback = mock.fn()
+      const dispose = root.on(name, callback)
+
+      root.emit(name)
+      expect(callback.mock.calls, name).to.have.length(1)
+      dispose()
+      root.emit(name)
+      expect(callback.mock.calls, name).to.have.length(1)
+      expect(Reflect.has(root.events._hooks, name), name).to.be.false
+    }
   })
 
   it('removes empty event buckets after disposal', () => {

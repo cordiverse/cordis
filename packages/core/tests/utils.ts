@@ -42,6 +42,9 @@ declare module '../src/events' {
   interface Events {
     [event](): void
     'test/waterfall'(value: number, next: () => number): number
+    '__proto__'(): void
+    'toString'(): void
+    'constructor'(): void
   }
 }
 
@@ -80,8 +83,10 @@ declare module '../src/context' {
 
 export function getHookSnapshot(ctx: Context) {
   const result: Dict<number> = {}
-  for (const [name, callbacks] of Object.entries(ctx.events._hooks)) {
-    if (callbacks.length) result[name] = callbacks.length
+  // `Reflect.ownKeys` rather than `Object.entries`, so that symbol-named events are visible to the leak checks
+  for (const name of Reflect.ownKeys(ctx.events._hooks)) {
+    const callbacks = ctx.events._hooks[name]
+    if (callbacks.length) result[name.toString()] = callbacks.length
   }
   return result
 }
