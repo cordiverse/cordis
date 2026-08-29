@@ -42,16 +42,16 @@
     }
   },
   "peerDependencies": {
-    "@cordisjs/plugin-timer": "^1.1.2",
-    "cordis": "^4.0.0-rc.8"
+    "@cordisjs/plugin-timer": "^1.1.3",
+    "cordis": "^4.0.0-rc.9"
   },
   "devDependencies": {
-    "@cordisjs/plugin-include": "^1.0.4",
-    "@cordisjs/plugin-loader": "^1.0.0-rc.5",
-    "@cordisjs/plugin-timer": "^1.1.2",
+    "@cordisjs/plugin-include": "^1.0.5",
+    "@cordisjs/plugin-loader": "^1.0.0-rc.6",
+    "@cordisjs/plugin-timer": "^1.1.3",
     "@types/babel__code-frame": "^7.27.0",
     "@types/picomatch": "^3.0.2",
-    "cordis": "^4.0.0-rc.8",
+    "cordis": "^4.0.0-rc.9",
     "esbuild": "^0.27.3"
   },
   "dependencies": {

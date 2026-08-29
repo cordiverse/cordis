@@ -1,7 +1,7 @@
 {
   "name": "@cordisjs/plugin-timer",
   "description": "Timer service for cordis",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -34,10 +34,10 @@
     "plugin"
   ],
   "devDependencies": {
-    "cordis": "^4.0.0-rc.8"
+    "cordis": "^4.0.0-rc.9"
   },
   "peerDependencies": {
-    "cordis": "^4.0.0-rc.8"
+    "cordis": "^4.0.0-rc.9"
   },
   "dependencies": {
     "cosmokit": "^1.8.1"
