@@ -214,4 +214,69 @@ describe('Events', () => {
     cb3.mock.resetCalls()
     cb4.mock.resetCalls()
   })
+
+  it('ctx.waterfall() rejects duplicate next()', () => {
+    const { root } = setup()
+    const terminal = mock.fn(() => 2)
+    const callback = mock.fn<Events['test/waterfall']>((value, next) => {
+      next()
+      return next()
+    })
+    root.on('test/waterfall', callback)
+
+    expect(() => root.waterfall('test/waterfall', 1, terminal)).to.throw('next() called multiple times')
+    expect(callback.mock.calls).to.have.length(1)
+    expect(terminal.mock.calls).to.have.length(1)
+  })
+
+  it('ctx.waterfall() rejects continuations from outer frames', () => {
+    const { root } = setup()
+    const calls: string[] = []
+    let outerNext!: () => number
+    root.on('test/waterfall', (value, next) => {
+      outerNext = next
+      calls.push('first')
+      return next()
+    })
+    root.on('test/waterfall', (value, next) => {
+      calls.push('second')
+      return next()
+    })
+
+    expect(() => root.waterfall('test/waterfall', 1, () => {
+      calls.push('terminal')
+      return outerNext()
+    })).to.throw('next() called multiple times')
+    expect(calls).to.deep.equal(['first', 'second', 'terminal'])
+  })
+
+  it('ctx.waterfall() rejects duplicate next() after awaiting', async () => {
+    const { root } = setup()
+    const terminal = mock.fn(() => 2)
+    root.on('test/async-waterfall', async (value, next) => {
+      const result = await next()
+      expect(() => next()).to.throw('next() called multiple times')
+      return value + result
+    })
+
+    expect(await root.waterfall('test/async-waterfall', 1, terminal)).to.equal(3)
+    expect(terminal.mock.calls).to.have.length(1)
+  })
+
+  it('ctx.waterfall() supports nested async calls', async () => {
+    const { root } = setup()
+    const terminal = mock.fn(() => 2)
+    const callback = mock.fn<Events['test/async-waterfall']>(async (value, next) => {
+      const result = await next()
+      if (value === 1) {
+        return result + await root.waterfall('test/async-waterfall', 2, terminal)
+      }
+      return result
+    })
+    root.on('test/async-waterfall', callback)
+
+    expect(await root.waterfall('test/async-waterfall', 1, terminal)).to.equal(4)
+    expect(callback.mock.calls).to.have.length(2)
+    expect(terminal.mock.calls).to.have.length(2)
+  })
 })
