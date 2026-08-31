@@ -71,6 +71,7 @@ declare module '../src/context' {
     foo: any
     bar: any
     baz: any
+    qux: any
     counter: Counter
     session: any
     filter(session: Session): boolean

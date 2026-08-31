@@ -173,6 +173,64 @@ describe('Association', () => {
     })
   })
 
+  it('associated access follows the service fiber', async () => {
+    class Foo extends Service {
+      constructor(ctx: Context) {
+        super(ctx, 'foo')
+      }
+    }
+
+    class FooBar extends Service {
+      constructor(ctx: Context) {
+        super(ctx, 'foo.bar')
+      }
+
+      hello() {
+        return 'bar'
+      }
+    }
+
+    class Baz extends Service {
+      static inject = ['foo', 'foo.bar']
+
+      constructor(ctx: Context) {
+        super(ctx, 'baz')
+      }
+
+      probe() {
+        return this.ctx.foo.bar.hello()
+      }
+    }
+
+    class Qux extends Service {
+      // injects `foo` but not `foo.bar`
+      static inject = ['foo']
+
+      constructor(ctx: Context) {
+        super(ctx, 'qux')
+      }
+
+      probe() {
+        return this.ctx.foo.bar.hello()
+      }
+    }
+
+    const root = new Context()
+    await root.plugin(Foo)
+    await root.plugin(FooBar)
+    await root.plugin(Baz)
+    await root.plugin(Qux)
+
+    // `ctx.foo.bar` must be governed by the same fiber as `ctx['foo.bar']`,
+    // i.e. the service that runs the access, not whoever called it
+    expect(root.baz.probe()).to.equal('bar')
+    expect(() => root.qux.probe()).to.throw('cannot get property "foo.bar" without inject')
+    await root.inject(['baz', 'qux'], (ctx) => {
+      expect(ctx.baz.probe()).to.equal('bar')
+      expect(() => ctx.qux.probe()).to.throw('cannot get property "foo.bar" without inject')
+    })
+  })
+
   // https://github.com/cordiverse/cordis/issues/14
   it('inspect', async () => {
     class Foo extends Service {
