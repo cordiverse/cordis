@@ -42,6 +42,7 @@ declare module '../src/events' {
   interface Events {
     [event](): void
     'test/waterfall'(value: number, next: () => number): number
+    'test/async-waterfall'(value: number, next: () => number): Promise<number>
     '__proto__'(): void
     'toString'(): void
     'constructor'(): void
