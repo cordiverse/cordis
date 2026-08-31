@@ -330,18 +330,21 @@ class Hmr extends Service {
 
     const reload = (plugin: any, runtime: Plugin.Runtime) => {
       if (!runtime) return
-      for (const oldFiber of runtime.fibers) {
+      for (const oldFiber of [...runtime.fibers]) {
+        if (oldFiber.parent.fiber.uid === null) continue
         const fiber = oldFiber.parent.registry.plugin(plugin, oldFiber.config, this.getOuterStack)
         fiber.entry = oldFiber.entry
         if (fiber.entry) fiber.entry.fiber = fiber
       }
     }
 
+    const touched = new Set<Plugin>()
     try {
       for (const [plugin, { filename, runtime }] of reloads) {
         if (!runtime) continue
         const path = relative(this.baseDir, fileURLToPath(filename))
 
+        touched.add(plugin)
         try {
           this.ctx.registry.delete(plugin)
         } catch (err) {
@@ -362,7 +365,7 @@ class Hmr extends Service {
       // Rollback: restore caches and re-register old plugins
       rollback()
       for (const [plugin, { filename, runtime }] of reloads) {
-        if (!runtime) continue
+        if (!runtime || !touched.has(plugin)) continue
         try {
           this.ctx.registry.delete(attempts[filename])
           reload(plugin, runtime)
