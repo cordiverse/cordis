@@ -3,7 +3,7 @@ import { deepEqual, isNullable } from 'cosmokit'
 import { Loader } from '../index.ts'
 import { EntryGroup } from './group.ts'
 import { EntryTree } from './tree.ts'
-import { evaluate, interpolate } from './utils.ts'
+import { evaluate } from './utils.ts'
 
 export interface EntryOptions {
   id: string
@@ -76,17 +76,12 @@ export class Entry {
     return evaluate(this.ctx, expr)
   }
 
-  _resolveConfig(plugin: any): [any, any?] {
-    if (plugin[EntryGroup.key]) return this.options.config
-    return interpolate(this.ctx, this.options.config)
-  }
-
   private _patchContext(diff: string[]) {
     this.context.waterfall('loader/patch-context', this, () => {
       Object.setPrototypeOf(this.ctx, this.parent.ctx)
 
       if (this.fiber?.uid && (diff.includes('config') || this.options.group)) {
-        this.fiber.update(this._resolveConfig(this.fiber.runtime!.callback), true)
+        this.fiber.update(this.options.config, true)
       }
     })
   }
@@ -168,6 +163,6 @@ export class Entry {
     const plugin = this.loader.unwrapExports(exports)
     this._patchContext([])
     this.loader.showLog(this, 'apply')
-    this.fiber = this.ctx.registry.plugin(plugin, this._resolveConfig(plugin), this.getOuterStack)
+    this.fiber = this.ctx.registry.plugin(plugin, this.options.config, this.getOuterStack)
   }
 }

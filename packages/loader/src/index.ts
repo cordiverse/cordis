@@ -2,8 +2,10 @@ import { Context, Inject, Service } from 'cordis'
 import { defineProperty, Dict, isNullable } from 'cosmokit'
 import { ModuleLoader } from './internal.ts'
 import { Entry, EntryOptions } from './config/entry.ts'
+import { EntryGroup } from './config/group.ts'
 import isolate from './config/isolate.ts'
 import { EntryTree } from './config/tree.ts'
+import { interpolate } from './config/utils.ts'
 
 export * from './config/entry.ts'
 export * from './config/group.ts'
@@ -70,6 +72,12 @@ export class Loader extends EntryTree {
     })
 
     ctx.reflect.provide('loader', this, this[Service.check])
+
+    ctx.on('internal/config', function (next) {
+      const config = next()
+      if (!this.entry || this.runtime?.callback[EntryGroup.key]) return config
+      return interpolate(this.ctx, config)
+    }, { global: true, prepend: false })
 
     ctx.on('internal/update', function (config, noSave, next) {
       if (!this.entry || noSave || this.parent.fiber?.entry === this.entry) return next()

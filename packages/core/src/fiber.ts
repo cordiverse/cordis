@@ -121,7 +121,7 @@ export class Fiber {
 
   constructor(
     public parent: Context,
-    config: any,
+    public _config: any,
     public inject: Dict<any>,
     public runtime: Plugin.Runtime | null,
     getOuterStack: () => string[],
@@ -170,7 +170,6 @@ export class Fiber {
       this.dispose = parent.fiber.effect(() => {
         const remove = runtime.fibers.push(this)
         try {
-          this.config = resolveConfig(runtime, config)
           this._refresh()
         } catch (error) {
           this.ctx.logger.error(error)
@@ -414,12 +413,19 @@ export class Fiber {
     })
   }
 
+  private _resolveConfig() {
+    const config = this.context.waterfall(this, 'internal/config', () => this._config)
+    return this.runtime ? resolveConfig(this.runtime, config) : config
+  }
+
   private async _reload() {
     this.store = { ...this._store }
     const oldEpoch = this._runner.epoch
     try {
       await Promise.resolve()
+      this.config = this._resolveConfig()
       await this._execute(this._runner)
+      this._error = undefined
     } catch (reason) {
       // impl guarantees that the error is non-null (?)
       this.ctx.logger.error(reason)
@@ -478,7 +484,15 @@ export class Fiber {
   update(config: any, noSave = false) {
     const fiber = this.ctx.fiber
     fiber.assertActive()
-    config = resolveConfig(fiber.runtime!, config)
+    fiber._config = config
+    if (fiber.state !== FiberState.ACTIVE) {
+      // Config resolution may access injected services, so defer until reload.
+      fiber._error = undefined
+      fiber._setEpoch(INACTIVE)
+      fiber._refresh()
+      return
+    }
+    config = fiber._resolveConfig()
     fiber.context.waterfall(fiber, 'internal/update', config, noSave, () => {
       fiber.config = config
       fiber._error = undefined

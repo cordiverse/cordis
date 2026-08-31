@@ -173,6 +173,7 @@ export interface Events {
   [key: symbol]: (...args: any[]) => any
   'internal/plugin'(fiber: Fiber): void
   'internal/status'(fiber: Fiber, oldValue: FiberState): void
+  'internal/config'(this: Fiber, next: () => any): any
   'internal/service'(this: Context, name: string, value: any): void
   'internal/update'(this: Fiber, config: any, noSave: boolean, next: () => void): void
   'internal/get'(ctx: Context, name: string, error: Error, next: () => any): any
