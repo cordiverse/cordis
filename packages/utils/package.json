@@ -22,13 +22,13 @@
   "homepage": "https://github.com/cordiverse/cordis",
   "keywords": [
     "cordis",
-    "utilties"
+    "utilities"
   ],
   "devDependencies": {
-    "cordis": "^4.0.0-rc.7"
+    "cordis": "^4.0.0-rc.9"
   },
   "peerDependencies": {
-    "cordis": "^4.0.0-rc.7"
+    "cordis": "^4.0.0-rc.9"
   },
   "dependencies": {
     "cosmokit": "^1.8.1"

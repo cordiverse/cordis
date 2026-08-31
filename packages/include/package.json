@@ -1,6 +1,6 @@
 {
   "name": "@cordisjs/plugin-include",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "type": "module",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
@@ -19,13 +19,13 @@
   },
   "homepage": "https://cordis.io/",
   "peerDependencies": {
-    "@cordisjs/plugin-loader": "^1.0.0-rc.5",
-    "cordis": "^4.0.0-rc.7"
+    "@cordisjs/plugin-loader": "^1.0.0-rc.6",
+    "cordis": "^4.0.0-rc.9"
   },
   "devDependencies": {
-    "@cordisjs/plugin-loader": "^1.0.0-rc.5",
+    "@cordisjs/plugin-loader": "^1.0.0-rc.6",
     "@cordisjs/plugin-logger-console": "^1.0.0",
-    "cordis": "^4.0.0-rc.7"
+    "cordis": "^4.0.0-rc.9"
   },
   "dependencies": {
     "cosmokit": "^1.8.1",

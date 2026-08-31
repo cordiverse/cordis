@@ -84,6 +84,36 @@ describe('Fiber', () => {
     expect(callback.mock.calls).to.have.length(1)
   })
 
+  it('failed fiber does not re-enter on dependency refresh', async () => {
+    const root = new Context()
+    ;(root.logger as any).error = mock.fn()
+    const apply = mock.fn(() => { throw new Error('boom') })
+    const dispose = root.provide('foo', 1)
+    const fiber = root.inject(['foo'], apply)
+    await sleep()
+    expect(fiber.state).to.equal(FiberState.FAILED)
+    await dispose()
+    root.provide('foo', 2)
+    await sleep()
+    expect(apply.mock.calls).to.have.length(1)
+    expect(fiber.state).to.equal(FiberState.FAILED)
+  })
+
+  it('update recovers a failed fiber', async () => {
+    const root = new Context()
+    ;(root.logger as any).error = mock.fn()
+    const apply = mock.fn(() => { throw new Error('boom') })
+    root.provide('foo', 1)
+    const fiber = root.inject(['foo'], apply)
+    await sleep()
+    expect(fiber.state).to.equal(FiberState.FAILED)
+    apply.mock.mockImplementationOnce(() => {})
+    fiber.update()
+    await fiber
+    expect(apply.mock.calls).to.have.length(2)
+    expect(fiber.state).to.equal(FiberState.ACTIVE)
+  })
+
   it('dispose error', async () => {
     const root = new Context()
     const error = mock.fn()

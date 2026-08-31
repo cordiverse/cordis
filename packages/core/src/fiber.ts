@@ -398,6 +398,8 @@ export class Fiber {
   private _setEpoch(epoch: string) {
     const oldEpoch = this._runner.epoch
     if (epoch === oldEpoch) return
+    // a failed fiber only recovers through update(), which clears _error
+    if (this._error) return
     this._runner.epoch = epoch
     if (this.inertia) return
     this._updateState(() => {
