@@ -2,11 +2,11 @@ import { Context, Fiber } from 'cordis'
 import Loader from '@cordisjs/plugin-loader'
 import Logger from '@cordisjs/plugin-logger-console'
 import { writeFileSync, readFileSync, unlinkSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import { expect, describe, it, beforeAll, afterAll, afterEach } from 'vitest'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
-const testDir = new URL('.', import.meta.url).pathname
+const testDir = dirname(fileURLToPath(import.meta.url))
 
 // Helper: read and backup a file, returning restore function
 function backupFile(filename: string) {
