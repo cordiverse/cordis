@@ -411,8 +411,8 @@ export class Fiber {
     })
   }
 
-  private _resolveConfig(config: any) {
-    config = this.context.waterfall(this, 'internal/config', config, () => config)
+  private _resolveConfig() {
+    const config = this.context.waterfall(this, 'internal/config', () => this._config)
     return this.runtime ? resolveConfig(this.runtime, config) : config
   }
 
@@ -421,7 +421,7 @@ export class Fiber {
     const oldEpoch = this._runner.epoch
     try {
       await Promise.resolve()
-      this.config = this._resolveConfig(this._config)
+      this.config = this._resolveConfig()
       await this._execute(this._runner)
       this._error = undefined
     } catch (reason) {
@@ -490,7 +490,7 @@ export class Fiber {
       fiber._refresh()
       return
     }
-    config = fiber._resolveConfig(config)
+    config = fiber._resolveConfig()
     fiber.context.waterfall(fiber, 'internal/update', config, noSave, () => {
       fiber.config = config
       fiber._error = undefined

@@ -73,7 +73,7 @@ export class Loader extends EntryTree {
 
     ctx.reflect.provide('loader', this, this[Service.check])
 
-    ctx.on('internal/config', function (_config, next) {
+    ctx.on('internal/config', function (next) {
       const config = next()
       if (!this.entry || this.runtime?.callback[EntryGroup.key]) return config
       return interpolate(this.ctx, config)
