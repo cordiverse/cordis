@@ -33,8 +33,12 @@ Object.defineProperty(ValidationError.prototype, kValidationError, {
 
 export function resolveConfig(runtime: Plugin.Runtime, config: any) {
   if (!runtime.Config) return config
+  const standard = runtime.Config['~standard']
+  if (!standard || typeof standard.validate !== 'function') {
+    throw new TypeError('plugin Config must implement Standard Schema V1')
+  }
   // TODO: async validation
-  const result = runtime.Config['~standard'].validate(config)
+  const result = standard.validate(config)
   if ('then' in result) {
     throw new TypeError('Async config validation is not supported')
   }
