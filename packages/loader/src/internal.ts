@@ -111,13 +111,14 @@ export namespace ModuleLoader {
   export function fromInternal(): ModuleLoader | undefined {
     if (_cachedLoader) return _cachedLoader
     const [major] = process.versions.node.split('.').map(Number)
+    if (major < 22) return
 
-    if (major >= 24) {
-      const raw = requireInternal('internal/modules/esm/loader')?.getOrInitializeCascadedLoader()
-      if (raw) return _cachedLoader = Object.assign(raw, { version: 'v2' })
-    } else if (major >= 22) {
-      const raw = requireInternal('internal/modules/esm/loader')?.getOrInitializeCascadedLoader()
-      if (raw) return _cachedLoader = Object.assign(raw, { version: 'v1' })
-    }
+    const raw = requireInternal('internal/modules/esm/loader')?.getOrInitializeCascadedLoader()
+    if (!raw) return
+    const version = typeof raw.getOrCreateModuleJob === 'function'
+      ? 'v2'
+      : typeof raw.getModuleJobForImport === 'function' ? 'v1' : undefined
+    if (!version) return
+    return _cachedLoader = Object.assign(raw, { version })
   }
 }
