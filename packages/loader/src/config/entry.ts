@@ -86,7 +86,9 @@ export class Entry {
       Object.setPrototypeOf(this.ctx, this.parent.ctx)
 
       if (this.fiber?.uid && (diff.includes('config') || this.options.group)) {
-        this.fiber.update(this._resolveConfig(this.fiber.runtime!.callback), true)
+        const config = this._resolveConfig(this.fiber.runtime!.callback)
+        // failures are already reported by the fiber; do not let them float
+        Promise.resolve(this.fiber.update(config, true)).catch(() => {})
       }
     })
   }
@@ -149,7 +151,8 @@ export class Entry {
     } finally {
       this._initTask = undefined
     }
-    this.fiber?.await().finally(() => {
+    // failures are already reported by the fiber; we only need it to settle
+    this.fiber?.await().catch(() => {}).finally(() => {
       if (this.loader.getTasks().length) return
       this.ctx.reflect.notify(['loader'])
     })

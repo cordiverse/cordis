@@ -149,3 +149,48 @@ describe('Loader: intercept config', () => {
     expect(loader.expectFiber(qux).state).to.equal(FiberState.ACTIVE)
   })
 })
+
+// a failing entry is reported by the fiber itself; it must not escape as an
+// unhandled rejection, which would take the whole process down with it
+describe('Loader: entry failure', () => {
+  const root = new Context()
+
+  let loader!: MockLoader
+
+  beforeAll(async () => {
+    await root.plugin(MockLoader)
+    loader = root.loader as any
+
+    loader.mock('bad', () => {
+      throw new Error('boom')
+    })
+    loader.mock('good', () => {})
+  })
+
+  it('on load', async () => {
+    await loader.read([{
+      id: '1',
+      name: 'bad',
+    }, {
+      id: '2',
+      name: 'good',
+    }])
+
+    expect(loader.expectFiber('1').state).to.equal(FiberState.FAILED)
+    expect(loader.expectFiber('2').state).to.equal(FiberState.ACTIVE)
+  })
+
+  it('on config update', async () => {
+    await loader.read([{
+      id: '1',
+      name: 'bad',
+      config: { a: 1 },
+    }, {
+      id: '2',
+      name: 'good',
+    }])
+
+    expect(loader.expectFiber('1').state).to.equal(FiberState.FAILED)
+    expect(loader.expectFiber('2').state).to.equal(FiberState.ACTIVE)
+  })
+})

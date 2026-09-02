@@ -114,6 +114,19 @@ describe('Fiber', () => {
     expect(fiber.state).to.equal(FiberState.ACTIVE)
   })
 
+  it('update surfaces a failed reload to its caller', async () => {
+    const root = new Context()
+    ;(root.logger as any).error = mock.fn()
+    const apply = mock.fn(() => {})
+    const fiber = root.plugin(apply)
+    await fiber
+    apply.mock.mockImplementationOnce(() => {
+      throw new Error('boom')
+    })
+    await expect(fiber.update({})).rejects.toThrow('boom')
+    expect(fiber.state).to.equal(FiberState.FAILED)
+  })
+
   it('dispose error', async () => {
     const root = new Context()
     const error = mock.fn()

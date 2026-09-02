@@ -475,11 +475,11 @@ export class Fiber {
     await fiber.await()
   }
 
-  update(config: any, noSave = false) {
+  update(config: any, noSave = false): Awaitable<void> {
     const fiber = this.ctx.fiber
     fiber.assertActive()
     config = resolveConfig(fiber.runtime!, config)
-    fiber.context.waterfall(fiber, 'internal/update', config, noSave, () => {
+    return fiber.context.waterfall(fiber, 'internal/update', config, noSave, () => {
       fiber.config = config
       fiber._error = undefined
       return fiber.restart()
