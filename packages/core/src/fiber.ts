@@ -109,6 +109,7 @@ export class Fiber {
   public store: Dict<Impl> | undefined
   public inertia: Promise<void> | undefined
 
+  public _releasing = false
   public readonly _hooks: Dict<DisposableList<Function>> = Object.create(null)
   public readonly _disposables = new DisposableList<Disposable>()
 
@@ -167,7 +168,7 @@ export class Fiber {
         this._checkImpl(name)
       }
 
-      this.dispose = parent.fiber.effect(() => {
+      this.dispose = defineProperty(parent.fiber.effect(() => {
         const remove = runtime.fibers.push(this)
         try {
           this.config = resolveConfig(runtime, config)
@@ -195,8 +196,11 @@ export class Fiber {
           while (this.inertia) {
             await this.inertia
           }
+          for (const name of Object.keys(this._store)) {
+            this._setImpl(name)
+          }
         }
-      }, 'ctx.plugin()')
+      }, 'ctx.plugin()'), symbols.plugin, true)
     } else {
       this.uid = 0
       this.ctx = this.context = parent
@@ -368,18 +372,30 @@ export class Fiber {
     }
   }
 
+  private _setImpl(name: string, impl?: Impl) {
+    const oldImpl = this._store[name]
+    if (oldImpl === impl) return
+    oldImpl?.consumers.delete(this)
+    if (impl) {
+      this._store[name] = impl
+      impl.consumers.add(this)
+    } else {
+      delete this._store[name]
+    }
+  }
+
   _checkImpl(name: string) {
     const impl = this.ctx.reflect._getImpl(name, true)
-    if (!impl) return delete this._store[name]
+    if (!impl) return this._setImpl(name)
     try {
       if (impl.check && !impl.check.call(getTraceable(this.ctx, impl.value))) {
-        return delete this._store[name]
+        return this._setImpl(name)
       }
     } catch (error) {
       impl.fiber.ctx.logger.error(error)
-      return delete this._store[name]
+      return this._setImpl(name)
     }
-    this._store[name] = impl
+    this._setImpl(name, impl)
   }
 
   _refresh() {
@@ -437,7 +453,7 @@ export class Fiber {
   }
 
   private async _unload() {
-    await Promise.all(this._disposables.clear().map(async (dispose) => {
+    const run = async (dispose: Disposable) => {
       try {
         await composeError(async (info) => {
           await Promise.resolve()
@@ -447,7 +463,20 @@ export class Fiber {
       } catch (reason) {
         this.ctx.logger.error(reason)
       }
-    }))
+    }
+    // a provider must relinquish its services, and let consumers finish, before
+    // tearing down the resources those consumers are still using
+    // 1. child fibers, which may consume services this fiber provides
+    // 2. our own services, waiting for any consumer left outside this subtree
+    // 3. everything else, i.e. the resources those consumers were still using
+    const disposables = this._disposables.clear()
+    await Promise.all(disposables.filter(dispose => dispose[symbols.plugin]).map(run))
+    this._releasing = true
+    await Promise.all(disposables.filter(dispose => dispose[symbols.provide]).map(run))
+    this._releasing = false
+    await Promise.all(disposables
+      .filter(dispose => !dispose[symbols.plugin] && !dispose[symbols.provide])
+      .map(run))
     this.store = undefined
     this._updateState(() => {
       if (this._runner.epoch === INACTIVE) {

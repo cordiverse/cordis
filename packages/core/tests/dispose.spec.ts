@@ -1,4 +1,4 @@
-import { Context } from '../src'
+import { Context, Service } from '../src'
 import { expect, describe, it, vi } from 'vitest'
 import { mock } from 'node:test'
 import { sleep, withTimers } from './utils'
@@ -217,6 +217,35 @@ describe('Effects', () => {
     expect(seq).to.deep.equal([])
     await expect(dispose).rejects.toThrow()
     expect(seq).to.deep.equal([])
+  })
+
+  it('provider is torn down after its consumers', async () => {
+    const root = new Context()
+    const order: string[] = []
+
+    class Provider extends Service {
+      constructor(ctx: Context) {
+        super(ctx, 'foo')
+      }
+
+      * [Service.init]() {
+        yield () => order.push('provider')
+      }
+    }
+
+    const fiber = await root.plugin((ctx) => {
+      ctx.plugin(Provider)
+      ctx.inject(['foo'], (ctx) => {
+        ctx.effect(() => async () => {
+          await sleep(10)
+          order.push('consumer')
+        })
+      })
+    })
+    await sleep()
+
+    await fiber.dispose()
+    expect(order).to.deep.equal(['consumer', 'provider'])
   })
 
   it('async yield with error', async () => {
