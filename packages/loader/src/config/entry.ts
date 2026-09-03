@@ -81,12 +81,12 @@ export class Entry {
     return interpolate(this.ctx, this.options.config)
   }
 
-  private _patchContext(diff: string[]) {
-    this.context.waterfall('loader/patch-context', this, () => {
+  private async _patchContext(diff: string[]) {
+    await this.context.waterfall('loader/patch-context', this, async () => {
       Object.setPrototypeOf(this.ctx, this.parent.ctx)
 
       if (this.fiber?.uid && (diff.includes('config') || this.options.group)) {
-        this.fiber.update(this._resolveConfig(this.fiber.runtime!.callback), true)
+        await this.fiber.update(this._resolveConfig(this.fiber.runtime!.callback), true)
       }
     })
   }
@@ -127,7 +127,7 @@ export class Entry {
         .filter(key => !deepEqual(this.options[key], legacy[key]))
       if (!diff.length && !force) return
       this.context.emit('loader/partial-dispose', this, legacy, true)
-      this._patchContext(diff)
+      await this._patchContext(diff)
     } else {
       await this.init()
     }
@@ -167,7 +167,7 @@ export class Entry {
       this._initTask = undefined
     }
     const plugin = this.loader.unwrapExports(exports)
-    this._patchContext([])
+    await this._patchContext([])
     this.loader.showLog(this, 'apply')
     this.fiber = this.ctx.registry.plugin(plugin, this._resolveConfig(plugin), this.getOuterStack)
   }

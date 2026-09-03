@@ -1,5 +1,5 @@
 import { Context, Inject, Service } from 'cordis'
-import { defineProperty, Dict, isNullable } from 'cosmokit'
+import { Awaitable, defineProperty, Dict, isNullable } from 'cosmokit'
 import { ModuleLoader } from './internal.ts'
 import { Entry, EntryOptions } from './config/entry.ts'
 import isolate from './config/isolate.ts'
@@ -18,7 +18,7 @@ declare module 'cordis' {
     'loader/config-update'(): void
     'loader/entry-init'(entry: Entry): void
     'loader/partial-dispose'(entry: Entry, legacy: Partial<EntryOptions>, active: boolean): void
-    'loader/patch-context'(entry: Entry, next: () => void): void
+    'loader/patch-context'(entry: Entry, next: () => Awaitable<void>): Awaitable<void>
   }
 
   interface Context {

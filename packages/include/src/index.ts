@@ -67,9 +67,9 @@ export class Include extends EntryTree {
     this.readonly = !this.type
     this.ctx.baseUrl = new URL('.', pathToFileURL(this.filename)).href
 
-    ctx.on('internal/update', (config, _, next) => {
+    ctx.on('internal/update', async (config, _, next) => {
       if (config.path !== this.config.path) return next()
-      this.root.update(this.data!)
+      await this.root.update(this.data!)
     })
   }
 

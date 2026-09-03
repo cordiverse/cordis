@@ -168,6 +168,66 @@ describe('Group: transfer', () => {
   })
 })
 
+describe('Group: awaited reconciliation', () => {
+  const root = new Context()
+
+  let loader!: MockLoader
+  let foo!: Mock<Function>
+  let bar!: Mock<Function>
+
+  beforeAll(async () => {
+    await root.plugin(MockLoader)
+    loader = root.loader as any
+    foo = loader.mock('foo', () => {})
+    bar = loader.mock('bar', () => {})
+  })
+
+  let group!: string
+
+  it('initialize', async () => {
+    group = await loader.create({
+      name: '@cordisjs/plugin-group',
+      group: true,
+      config: [{
+        id: '1',
+        name: 'foo',
+      }],
+    })
+
+    await sleep()
+    loader.expectEnable(foo)
+    loader.expectDisable(bar)
+  })
+
+  it('config update settles children', async () => {
+    // The group vetoes its own restart and reconciles children instead, so
+    // that reconciliation is what the caller is really waiting for. A slow
+    // import makes the difference observable: without the awaited chain the
+    // update resolves while the new child is still being imported.
+    const load = loader.import
+    loader.import = async (name: string) => {
+      await sleep(20)
+      return load.call(loader, name)
+    }
+    try {
+      await loader.update(group, {
+        config: [{
+          id: '1',
+          name: 'foo',
+        }, {
+          id: '2',
+          name: 'bar',
+        }],
+      })
+    } finally {
+      loader.import = load
+    }
+
+    loader.expectEnable(bar)
+    loader.expectFiber('2')
+  })
+})
+
 describe('Group: intercept', () => {
   const root = new Context()
   const callback = mock.fn()
