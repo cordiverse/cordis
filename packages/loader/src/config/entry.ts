@@ -149,7 +149,8 @@ export class Entry {
     } finally {
       this._initTask = undefined
     }
-    this.fiber?.await().finally(() => {
+    // failures are already reported by the fiber; we only need it to settle
+    this.fiber?.await().catch(() => {}).finally(() => {
       if (this.loader.getTasks().length) return
       this.ctx.reflect.notify(['loader'])
     })
