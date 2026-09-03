@@ -1,4 +1,4 @@
-import { Context, Inject, Service } from 'cordis'
+import { Context, FiberState, Inject, Service } from 'cordis'
 import { defineProperty, Dict, isNullable } from 'cosmokit'
 import { ModuleLoader } from './internal.ts'
 import { Entry, EntryOptions } from './config/entry.ts'
@@ -72,11 +72,33 @@ export class Loader extends EntryTree {
     ctx.reflect.provide('loader', this, this[Service.check])
 
     ctx.on('internal/update', function (config, noSave, next) {
-      if (!this.entry || noSave || this.parent.fiber?.entry === this.entry) return next()
-      const unparse = this.runtime?.Config?.['simplify']
-      this.entry.options.config = unparse ? unparse(config) : config
-      this.entry.parent.tree.write()
-      return next()
+      const entry = this.entry
+      if (!entry || noSave || this.parent.fiber?.entry === entry) return next()
+      const previous = this.config
+      const persist = () => {
+        // invariant: persist only when this payload was accepted — inner
+        // replaced fiber.config, or Group assigned subgroup.data.
+        if (this.state === FiberState.FAILED) return
+        const innerCommitted = this.config !== previous
+        const groupCommitted = entry.subgroup?.data === config
+        if (!innerCommitted && !groupCommitted) return
+        const unparse = this.runtime?.Config?.['simplify']
+        entry.options.config = unparse ? unparse(config) : config
+        entry.parent.tree.write()
+      }
+      try {
+        const result: unknown = next()
+        if (result && typeof result === 'object' && 'then' in result) {
+          // Fiber.update ignores the waterfall return; catch so a failed
+          // restart does not surface as an unhandled rejection from this hook.
+          return Promise.resolve(result).finally(persist).catch(() => {})
+        }
+        persist()
+        return result
+      } catch (error) {
+        persist()
+        throw error
+      }
     }, { global: true, prepend: true })
 
     ctx.on('internal/update', function (config, _, next) {
