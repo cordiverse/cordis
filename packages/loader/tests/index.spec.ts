@@ -1,5 +1,5 @@
 import { expect, describe, it, beforeAll } from 'vitest'
-import { Context, FiberState } from 'cordis'
+import { CircularDependencyError, Context, FiberState } from 'cordis'
 import MockLoader, { sleep } from './utils'
 import { Mock } from 'node:test'
 
@@ -147,5 +147,52 @@ describe('Loader: intercept config', () => {
     expect(loader.expectFiber(foo).state).to.equal(FiberState.ACTIVE)
     expect(loader.expectFiber(bar).state).to.equal(FiberState.PENDING)
     expect(loader.expectFiber(qux).state).to.equal(FiberState.ACTIVE)
+  })
+})
+
+describe('Loader: dependency preflight', () => {
+  it('includes entry injects before creating the fiber', async () => {
+    const root = new Context()
+    await root.plugin(MockLoader)
+    const loader = root.loader as MockLoader
+    Object.assign(loader.mock('provider-a', () => {}), { provide: 'a' })
+    Object.assign(loader.mock('provider-b', () => {}), { provide: 'b' })
+
+    const id = await loader.create({
+      name: 'provider-a',
+      inject: ['b'],
+    })
+    expect(loader.expectFiber(id).state).to.equal(FiberState.PENDING)
+
+    await expect(loader.create({
+      name: 'provider-b',
+      inject: ['a'],
+    })).rejects.toBeInstanceOf(CircularDependencyError)
+  })
+
+  it('uses the current isolate mapping after an entry update', async () => {
+    const root = new Context()
+    await root.plugin(MockLoader)
+    const loader = root.loader as MockLoader
+    Object.assign(loader.mock('isolated-a', () => {}), {
+      provide: 'a',
+      inject: ['b'],
+    })
+    Object.assign(loader.mock('root-b', () => {}), {
+      provide: 'b',
+      inject: ['a'],
+    })
+
+    const idA = await loader.create({ name: 'isolated-a' })
+    await loader.update(idA, {
+      isolate: {
+        a: true,
+        b: true,
+      },
+    })
+
+    const idB = await loader.create({ name: 'root-b' })
+    expect(loader.expectFiber(idA).state).to.equal(FiberState.PENDING)
+    expect(loader.expectFiber(idB).state).to.equal(FiberState.PENDING)
   })
 })

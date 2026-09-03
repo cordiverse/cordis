@@ -1,9 +1,45 @@
-import { Context, Service } from '../src'
+import { CircularDependencyError, Context, FiberState, Service } from '../src'
 import { expect, describe, it } from 'vitest'
 import { mock } from 'node:test'
 import { Counter, getHookSnapshot, sleep } from './utils'
 
 describe('Service', () => {
+  it('rejects a statically declared circular dependency', async () => {
+    const startA = mock.fn()
+    const startB = mock.fn()
+
+    class A extends Service {
+      static provide = 'a'
+      static inject = ['b']
+
+      constructor(ctx: Context) {
+        super(ctx)
+        startA()
+      }
+    }
+
+    class B extends Service {
+      static provide = 'b'
+      static inject = ['a']
+
+      constructor(ctx: Context) {
+        super(ctx)
+        startB()
+      }
+    }
+
+    const root = new Context()
+
+    const fiberA = await root.plugin(A)
+    expect(() => root.plugin(B)).to.throw(CircularDependencyError)
+
+    expect(fiberA.state).to.equal(FiberState.PENDING)
+    expect(startA.mock.calls).to.have.length(0)
+    expect(startB.mock.calls).to.have.length(0)
+    expect(root.get('a')).to.be.undefined
+    expect(root.get('b')).to.be.undefined
+  })
+
   it('pending inject', async () => {
     class Foo extends Service {
       constructor(ctx: Context) {

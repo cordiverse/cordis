@@ -328,6 +328,23 @@ class Hmr extends Service {
       return rollback()
     }
 
+    // Validate the whole replacement batch before touching the running fibers.
+    // This keeps the old plugin graph intact when a new static declaration is invalid.
+    try {
+      const candidates: Plugin.Candidate[] = []
+      for (const [, { filename, runtime }] of reloads) {
+        if (!runtime) continue
+        for (const oldFiber of runtime.fibers) {
+          candidates.push(oldFiber.parent.registry.prepare(attempts[filename], oldFiber))
+        }
+      }
+      this.ctx.registry.validate(candidates)
+    } catch (error) {
+      this.ctx.logger.warn('rejected plugin reload during dependency preflight')
+      this.ctx.logger.warn(error)
+      return rollback()
+    }
+
     const reload = (plugin: any, runtime: Plugin.Runtime) => {
       if (!runtime) return
       for (const oldFiber of [...runtime.fibers]) {
