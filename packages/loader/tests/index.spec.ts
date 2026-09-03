@@ -110,7 +110,7 @@ describe('Loader: intercept config', () => {
     loader = root.loader as any
 
     loader.mock('foo', () => promise)
-    Object.assign(loader.mock('bar', (ctx: Context) => ctx.on('internal/update', () => true)), {
+    Object.assign(loader.mock('bar', (ctx: Context) => ctx.on('internal/update', () => {})), {
       inject: ['never'],
     })
     loader.mock('qux', () => {})

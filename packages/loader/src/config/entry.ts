@@ -86,9 +86,7 @@ export class Entry {
       Object.setPrototypeOf(this.ctx, this.parent.ctx)
 
       if (this.fiber?.uid && (diff.includes('config') || this.options.group)) {
-        const config = this._resolveConfig(this.fiber.runtime!.callback)
-        // failures are already reported by the fiber; do not let them float
-        Promise.resolve(this.fiber.update(config, true)).catch(() => {})
+        this.fiber.update(this._resolveConfig(this.fiber.runtime!.callback), true)
       }
     })
   }

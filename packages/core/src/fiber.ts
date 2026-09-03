@@ -479,10 +479,18 @@ export class Fiber {
     const fiber = this.ctx.fiber
     fiber.assertActive()
     config = resolveConfig(fiber.runtime!, config)
-    return fiber.context.waterfall(fiber, 'internal/update', config, noSave, () => {
+    const result = fiber.context.waterfall(fiber, 'internal/update', config, noSave, () => {
       fiber.config = config
       fiber._error = undefined
       return fiber.restart()
     })
+    // a listener may veto the restart, in which case there is nothing to await
+    if (result === undefined) return
+    const task = Promise.resolve(result)
+    // the failure is already reported by the fiber, so mark it handled here:
+    // a caller that drops the result cannot turn it into an unhandled
+    // rejection, while `await update()` still observes it
+    task.catch(() => {})
+    return task
   }
 }

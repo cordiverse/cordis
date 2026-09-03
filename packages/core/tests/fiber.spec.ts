@@ -127,6 +127,22 @@ describe('Fiber', () => {
     expect(fiber.state).to.equal(FiberState.FAILED)
   })
 
+  // the fiber reports the failure itself, so a caller that never asks for the
+  // result must not be punished with an unhandled rejection
+  it('update does not leak a dropped failure', async () => {
+    const root = new Context()
+    ;(root.logger as any).error = mock.fn()
+    const apply = mock.fn(() => {})
+    const fiber = root.plugin(apply)
+    await fiber
+    apply.mock.mockImplementationOnce(() => {
+      throw new Error('boom')
+    })
+    fiber.update({})
+    await sleep()
+    expect(fiber.state).to.equal(FiberState.FAILED)
+  })
+
   it('dispose error', async () => {
     const root = new Context()
     const error = mock.fn()
