@@ -221,6 +221,33 @@ describe('Include patches', () => {
     expect(ctx.bail('test/get-extra')).to.equal('extra')
   }, 10000)
 
+  it('should let a later patch address a row inserted by an earlier patch', async () => {
+    ctx = new Context()
+    await ctx.plugin(LoggerConsole)
+    fiber = await ctx.plugin(Loader, {
+      baseUrl: import.meta.url,
+    })
+    await ctx.loader.create({
+      name: '@cordisjs/plugin-include',
+      config: {
+        path: './fixtures/base.yml',
+        patches: [
+          {
+            insert: [
+              { id: 'added', name: './extra-plugin' },
+            ],
+          },
+          { id: 'added', disabled: true },
+        ],
+      },
+    })
+    await new Promise(r => setTimeout(r, 1000))
+    // The row inserted by the first patch is disabled by the second patch,
+    // so the extra plugin must NOT be loaded.
+    expect(ctx.bail('test/get-extra')).to.be.undefined
+    expect(ctx.bail('test/get-value')).to.equal('default')
+  }, 10000)
+
   it('should validate name consistency (matching name is ok)', async () => {
     ctx = new Context()
     await ctx.plugin(LoggerConsole)
