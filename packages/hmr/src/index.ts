@@ -260,6 +260,7 @@ class Hmr extends Service {
     await this.analyzeChanges()
 
     const candidates = new Map<ModuleJob, Plugin>()
+    const invalidatedModules = new Set(this.accepted)
     const stalePlugins = new Map<Plugin, StalePlugin>()
 
     // Build a map of plugin names per config tree URL.
@@ -293,7 +294,7 @@ class Hmr extends Service {
       this.declined.add(job.url)
 
       if (!dependencies.some(dep => this.accepted.has(dep))) continue
-      dependencies.forEach(dep => this.accepted.add(dep))
+      dependencies.forEach(dep => invalidatedModules.add(dep))
 
       stalePlugins.set(plugin, {
         filename: job.url,
@@ -302,7 +303,8 @@ class Hmr extends Service {
     }
 
     /**
-     * Clear module caches for all accepted files before re-importing.
+     * Clear module caches for affected modules and complete dependency trees
+     * of selected plugins before re-importing.
      *
      * We need to clear both:
      * 1. ESM loadCache — managed by Node's internal ModuleLoader
@@ -320,7 +322,7 @@ class Hmr extends Service {
     const esmBackup: Dict = Object.create(null)
     const cjsBackup: Dict = Object.create(null)
     const require = createRequire(import.meta.url)
-    for (const filename of this.accepted) {
+    for (const filename of invalidatedModules) {
       // Backup and clear ESM loadCache
       const job = Map.prototype.get.call(this.internal.loadCache, filename)
       esmBackup[filename] = job

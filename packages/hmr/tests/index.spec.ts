@@ -277,6 +277,30 @@ describe('HMR', () => {
 
       expect(ctx.bail('hmr-test/get-dep')).to.equal('prefix:original-shared')
     }, 10000)
+
+    it('should not reload a sibling that only shares an unchanged module', async () => {
+      const stats = (globalThis as any).__hmrTest
+      expect(ctx.bail('hmr-test/get-dep-common')).to.equal('common')
+      expect(ctx.bail('hmr-test/get-dep-sibling')).to.equal('common')
+      const applied = stats.depSiblingApplied
+
+      const reloaded: string[] = []
+      const disposeExporter = ctx.logger.exporter({
+        export(message) {
+          if (message.args[0] === 'reload plugin at %C') reloaded.push(message.args[1])
+        },
+      })
+
+      // dep.ts is imported by plugin-dep only; plugin-dep-sibling is listed
+      // after it in the config and shares dep-common.ts with it
+      dep.modify(c => c.replace("sharedValue = 'original-shared'", "sharedValue = 'updated-shared'"))
+      await waitFor(() => ctx.bail('hmr-test/get-dep') === 'updated-shared')
+      await new Promise(r => setTimeout(r, 500))
+      disposeExporter()
+
+      expect(reloaded).to.deep.equal(['plugin-dep.ts'])
+      expect(stats.depSiblingApplied).to.equal(applied)
+    }, 10000)
   })
 
   // ===== Import error rollback =====
