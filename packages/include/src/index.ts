@@ -132,6 +132,8 @@ export class Include extends EntryTree {
         } else {
           data.push(...insert)
         }
+        // Index inserted rows so later patches in the same list can address them.
+        buildMap(insert)
         continue
       }
 
