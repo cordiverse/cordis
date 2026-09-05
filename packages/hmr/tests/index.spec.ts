@@ -1,6 +1,8 @@
 import { Context, Fiber } from 'cordis'
 import Loader from '@cordisjs/plugin-loader'
 import Logger from '@cordisjs/plugin-logger-console'
+import Timer from '@cordisjs/plugin-timer'
+import Hmr from '@cordisjs/plugin-hmr'
 import { writeFileSync, readFileSync, unlinkSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { expect, describe, it, beforeAll, afterAll, afterEach } from 'vitest'
@@ -75,7 +77,67 @@ async function createContext(configFile: string): Promise<{ ctx: Context; fiber:
 // Settle time after file restore, to let any triggered HMR finish
 const SETTLE_MS = 500
 
+// Standalone context (Logger + Timer + Loader) for the watch-only cases.
+async function createStandaloneContext(): Promise<{ ctx: Context; fiber: Fiber<Context> }> {
+  const ctx = new Context()
+  ctx.baseUrl = pathToFileURL(resolve(testDir) + '/').href
+  await ctx.plugin(Logger)
+  await ctx.plugin(Timer)
+  const fiber = await ctx.plugin(Loader)
+  return { ctx, fiber }
+}
+
 describe('HMR', () => {
+  // ===== Watch-only without loader internals =====
+  // Regression: watch-only mode (root: []) must boot without the native helper binding.
+  describe('watch-only without loader internals', () => {
+    it('should start in watch-only mode without loader internals', async () => {
+      const { ctx, fiber } = await createStandaloneContext()
+      // Simulate a missing native helper binding: fromInternal() returns
+      // undefined in production when the addon cannot resolve.
+      ctx.loader.internal = undefined
+
+      await ctx.plugin(Hmr, { root: [], debounce: 100, ignored: [] })
+
+      expect(ctx.hmr).to.be.ok
+      // watch-only mode must not wire up the reload path
+      expect((ctx.hmr as any).watcher).to.be.undefined
+
+      fiber?.dispose()
+      await new Promise(r => setTimeout(r, SETTLE_MS))
+    }, 10000)
+
+    it('should start in watch-only mode when loader internals are available', async (t) => {
+      const { ctx, fiber } = await createStandaloneContext()
+      // Skips when the runner lacks --expose-internals (the missing-binding cell is covered above).
+      if (!ctx.loader.internal) {
+        fiber?.dispose()
+        t.skip()
+        return
+      }
+      expect(ctx.loader.internal).to.be.ok
+      await ctx.plugin(Hmr, { root: [], debounce: 100, ignored: [] })
+
+      expect(ctx.hmr).to.be.ok
+      // watch-only mode must not wire up the reload path
+      expect((ctx.hmr as any).watcher).to.be.undefined
+
+      fiber?.dispose()
+      await new Promise(r => setTimeout(r, SETTLE_MS))
+    }, 10000)
+
+    it('should still require loader internals for module reload', async () => {
+      const { ctx, fiber } = await createStandaloneContext()
+      ctx.loader.internal = undefined
+
+      await expect(ctx.plugin(Hmr, { root: ['.'], debounce: 100, ignored: [] }))
+        .rejects.toThrow(/loader internals/)
+
+      fiber?.dispose()
+      await new Promise(r => setTimeout(r, SETTLE_MS))
+    }, 10000)
+  })
+
   // ===== Basic single plugin tests =====
   describe('basic single plugin', () => {
     let ctx: Context
