@@ -32,13 +32,20 @@ async function loadDependencies(job: ModuleJob, ignored = new Set<string>()) {
   const dependencies = new Set<string>()
   async function traverse(job: ModuleJob) {
     if (ignored.has(job.url) || dependencies.has(job.url)) return
-    if (job.url.startsWith('node:') || job.url.includes('/node_modules/')) return
+    if (isBuiltinOrExternal(job.url)) return
     dependencies.add(job.url)
     const children = await job.linked
     await Promise.all(Array.prototype.map.call(children, traverse))
   }
   await traverse(job)
   return dependencies
+}
+
+const LOADER_INTERNALS_ERROR = 'HMR module reload requires loader internals: run with --expose-internals (Node process flag) or use watch-only mode (root: [])'
+
+/** True for Node builtins (`node:` scheme) and node_modules dependencies — not user code for HMR. */
+function isBuiltinOrExternal(url: string): boolean {
+  return url.startsWith('node:') || url.includes('/node_modules/')
 }
 
 interface Reload {
@@ -51,8 +58,13 @@ interface Reload {
 class Hmr extends Service {
   public baseDir: string
 
-  private internal: ModuleLoader
-  private watcher!: FSWatcher
+  private internal: ModuleLoader | undefined
+  private watcher: FSWatcher | undefined
+
+  /** Non-null accessor: the constructor guarantees `internal` when `root.length > 0`. */
+  private get requiredInternal(): ModuleLoader {
+    return this.internal!
+  }
 
   /**
    * Changes from externals will always trigger a full reload.
@@ -77,8 +89,8 @@ class Hmr extends Service {
 
   constructor(ctx: Context, public config: Hmr.Config) {
     super(ctx, 'hmr')
-    if (!this.ctx.loader.internal) {
-      throw new Error('--expose-internals is required for HMR service')
+    if (this.config.root.length && !this.ctx.loader.internal) {
+      throw new Error(LOADER_INTERNALS_ERROR)
     }
     this.internal = this.ctx.loader.internal
     this.baseDir = fileURLToPath(new URL(config.base || '.', ctx.baseUrl))
@@ -88,9 +100,11 @@ class Hmr extends Service {
    * Resolve a module specifier to a URL, compatible with Node 22-24.
    */
   private async _resolve(specifier: string, parentURL: string, attrs: ImportAttributes): Promise<ResolveResult> {
-    switch (this.internal.version) {
-      case 'v1': return await this.internal.resolve(specifier, parentURL, attrs)
-      case 'v2': return this.internal.resolveSync(parentURL, { specifier, attributes: attrs })
+    const version = this.requiredInternal.version
+    switch (version) {
+      case 'v1': return await this.requiredInternal.resolve(specifier, parentURL, attrs)
+      case 'v2': return this.requiredInternal.resolveSync(parentURL, { specifier, attributes: attrs })
+      default: throw new Error(`unsupported loader internal version: ${String(version)}`)
     }
   }
 
@@ -105,51 +119,50 @@ class Hmr extends Service {
       this.ctx.logger.info('watching %o in %s', root, this.baseDir)
     }
 
-    const match = picomatch(ignored)
-    this.watcher = watch(root, {
-      ...this.config,
-      cwd: this.baseDir,
-      ignored: path => match(relative(this.baseDir, path)),
-    })
+    this.externals = new Set()
 
-    // Collect externals: framework modules reachable from the main entry.
-    // Changes to these files require a full process restart, not HMR.
-    const mainUrl = pathToFileURL(resolve(process.argv[1])).href
-    const mainJob = this.internal.loadCache.get(mainUrl)
-    if (mainJob) {
-      this.externals = await loadDependencies(mainJob)
-    } else {
-      this.externals = new Set()
+    // In watch-only mode (root: []) there is nothing to watch or track.
+    if (this.config.root.length) {
+      const mainUrl = pathToFileURL(resolve(process.argv[1])).href
+      const mainJob = this.requiredInternal.loadCache.get(mainUrl)
+      if (mainJob) this.externals = await loadDependencies(mainJob)
+
+      const match = picomatch(ignored)
+      this.watcher = watch(root, {
+        ...this.config,
+        cwd: this.baseDir,
+        ignored: path => match(relative(this.baseDir, path)),
+      })
+
+      const partialReload = this.ctx.debounce(() => this.partialReload(), this.config.debounce)
+
+      this.watcher.on('change', async (path) => {
+        this.ctx.logger.debug('change detected at %C', path)
+        const filename = resolve(this.baseDir, path)
+        const url = pathToFileURL(filename).href
+
+        // Full reload: the changed file is part of the framework
+        if (this.externals.has(url)) return loader.exit()
+
+        // Partial reload: the file is in the ESM loadCache
+        // In Node 24, both CJS and ESM modules imported via import() end up
+        // in loadCache, so this check covers all module formats.
+        if (this.requiredInternal.loadCache.has(url)) {
+          this.stashed.add(url)
+          return partialReload()
+        }
+
+        // Config reload: the file is a loader config file (e.g. cordis.yml)
+        for (const entry of this.ctx.loader.entries()) {
+          const include = entry.subtree as Include | undefined
+          if (include?.filename !== filename) continue
+          await include.refresh()
+          return
+        }
+
+        this.ctx.emit('hmr/change', url)
+      })
     }
-
-    const partialReload = this.ctx.debounce(() => this.partialReload(), this.config.debounce)
-
-    this.watcher.on('change', async (path) => {
-      this.ctx.logger.debug('change detected at %C', path)
-      const filename = resolve(this.baseDir, path)
-      const url = pathToFileURL(filename).href
-
-      // Full reload: the changed file is part of the framework
-      if (this.externals.has(url)) return loader.exit()
-
-      // Partial reload: the file is in the ESM loadCache
-      // In Node 24, both CJS and ESM modules imported via import() end up
-      // in loadCache, so this check covers all module formats.
-      if (loader.internal!.loadCache.has(url)) {
-        this.stashed.add(url)
-        return partialReload()
-      }
-
-      // Config reload: the file is a loader config file (e.g. cordis.yml)
-      for (const entry of this.ctx.loader.entries()) {
-        const include = entry.subtree as Include | undefined
-        if (include?.filename !== filename) continue
-        await include.refresh()
-        return
-      }
-
-      this.ctx.emit('hmr/change', url)
-    })
   }
 
   // hide stack trace from HMR
@@ -158,7 +171,7 @@ class Hmr extends Service {
   ]
 
   async getLinked(url: string) {
-    const job = this.internal.loadCache.get(url)
+    const job = this.internal?.loadCache.get(url)
     if (!job) return []
     const linked = await job.linked
     return Array.prototype.map.call(linked, (job: ModuleJob) => job.url) as string[]
@@ -177,12 +190,10 @@ class Hmr extends Service {
     this.accepted = new Set(this.stashed)
     this.declined = new Set(this.externals)
 
-    const isExcluded = (url: string) => url.startsWith('node:') || url.includes('/node_modules/')
-
     await Promise.all([...this.stashed].map(async (url) => {
       const children = await this.getLinked(url)
       for (const child of children) {
-        if (this.accepted.has(child) || this.declined.has(child) || isExcluded(child)) continue
+        if (this.accepted.has(child) || this.declined.has(child) || isBuiltinOrExternal(child)) continue
         pending.push(child)
       }
     }))
@@ -194,7 +205,7 @@ class Hmr extends Service {
         const children = await this.getLinked(url)
         let isDeclined = true, isAccepted = false
         for (const child of children) {
-          if (this.declined.has(child) || isExcluded(child)) continue
+          if (this.declined.has(child) || isBuiltinOrExternal(child)) continue
           if (this.accepted.has(child)) {
             isAccepted = true
             break
@@ -245,7 +256,7 @@ class Hmr extends Service {
         try {
           const { url } = await this._resolve(name, baseUrl, {})
           if (this.declined.has(url)) continue
-          const job = this.internal.loadCache.get(url)
+          const job = this.requiredInternal.loadCache.get(url)
           const plugin = this.ctx.loader.unwrapExports(job?.module?.getNamespace())
           if (!job || !plugin) continue
           pending.set(job, plugin)
@@ -290,11 +301,12 @@ class Hmr extends Service {
     const esmBackup: Dict = Object.create(null)
     const cjsBackup: Dict = Object.create(null)
     const require = createRequire(import.meta.url)
+    const internal = this.requiredInternal
     for (const filename of this.accepted) {
       // Backup and clear ESM loadCache
-      const job = Map.prototype.get.call(this.internal.loadCache, filename)
+      const job = Map.prototype.get.call(internal.loadCache, filename)
       esmBackup[filename] = job
-      Map.prototype.delete.call(this.internal.loadCache, filename)
+      Map.prototype.delete.call(internal.loadCache, filename)
 
       // Backup and clear CJS Module._cache
       try {
@@ -310,7 +322,7 @@ class Hmr extends Service {
 
     const rollback = () => {
       for (const filename in esmBackup) {
-        Map.prototype.set.call(this.internal.loadCache, filename, esmBackup[filename])
+        Map.prototype.set.call(internal.loadCache, filename, esmBackup[filename])
       }
       for (const filepath in cjsBackup) {
         require.cache[filepath] = cjsBackup[filepath]
