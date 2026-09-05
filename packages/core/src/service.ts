@@ -49,14 +49,18 @@ export abstract class Service<out T = never> {
   }
 
   [symbols.resolveConfig](base?: T, head?: T): T {
-    let intercept = this.ctx[Context.intercept]
     const configs: any[] = []
-    while (this.name in intercept) {
-      if (Object.hasOwn(intercept, this.name)) {
-        configs.unshift(intercept[this.name])
+    const caller = this[symbols.caller] as Context | undefined
+    if (caller && Object.hasOwn(caller.fiber.inject, this.name)) {
+      let intercept = caller[Context.intercept]
+      while (this.name in intercept) {
+        if (Object.hasOwn(intercept, this.name)) {
+          configs.unshift(intercept[this.name])
+        }
+        intercept = Object.getPrototypeOf(intercept)
       }
-      intercept = Object.getPrototypeOf(intercept)
     }
+
     if (base) configs.unshift(base)
     if (head) configs.push(head)
     if (this['Config']?.merge) {
