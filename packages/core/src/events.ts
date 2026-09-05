@@ -55,7 +55,7 @@ export class EventsService {
       if (name === 'internal/update' && !options.global) {
         const hooks = this.fiber._hooks['internal/update'] ??= new DisposableList()
         const method = options.prepend ? 'unshift' : 'push'
-        return hooks[method](listener)
+        return this.fiber.effect(() => hooks[method](listener), 'ctx.on("internal/update")')
       }
     })
 
