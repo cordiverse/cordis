@@ -111,10 +111,14 @@ export abstract class EntryTree {
       info.offset += 3
       if (this.ctx.loader.internal) {
         return await this.ctx.loader.internal.import(name, this.ctx.baseUrl!, {})
-      } else if (name.startsWith('.')) {
-        return await import(/* @vite-ignore */new URL(name, this.ctx.baseUrl).href)
       } else {
-        return await import(/* @vite-ignore */name)
+        // Internal loader unavailable (e.g. Node < 22 or no --expose-internals): fall back to native import().
+        console.debug('cordis:loader: internal loader unavailable for %s, falling back to native import()', name)
+        if (name.startsWith('.')) {
+          return await import(/* @vite-ignore */new URL(name, this.ctx.baseUrl).href)
+        } else {
+          return await import(/* @vite-ignore */name)
+        }
       }
     }, getOuterStack)
   }
