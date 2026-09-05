@@ -1085,4 +1085,73 @@ export function apply(ctx: Context) {
       expect(reloadLogs).to.equal(1)
     }, 15000)
   })
+
+  // ===== Without loader internals =====
+  describe('without loader internals', () => {
+    let ctx: Context
+    let fiber: Fiber<Context>
+    const warnings: string[] = []
+    const configPath = resolve(testDir, 'cordis-no-internal.yml')
+    const configBackup = readFileSync(configPath, 'utf-8')
+    const plugin = backupFile('plugin.ts')
+
+    beforeAll(async () => {
+      plugin.restore()
+      writeFileSync(configPath, configBackup)
+      ctx = new Context()
+      await ctx.plugin(Logger)
+      fiber = await ctx.plugin(Loader)
+      // the loader only exposes the internals; nothing else reads them
+      ctx.loader.internal = undefined
+      ctx.logger.exporter({
+        export(message) {
+          if (message.type === 'warn') warnings.push(message.args[0])
+        },
+      })
+      await ctx.loader.create({
+        name: '@cordisjs/plugin-include',
+        config: {
+          path: pathToFileURL(configPath).href,
+        },
+      })
+      await waitFor(() => ctx.hmr, 5000)
+      await waitFor(() => ctx.bail('hmr-test/get-value') === 'initial', 5000)
+    }, 10000)
+
+    afterEach(async () => {
+      plugin.restore()
+      writeFileSync(configPath, configBackup)
+      await new Promise(r => setTimeout(r, SETTLE_MS))
+    })
+
+    afterAll(async () => {
+      fiber?.dispose()
+      await new Promise(r => setTimeout(r, 200))
+    })
+
+    it('should start and warn once', () => {
+      expect(warnings.filter(w => w.includes('module reloading is disabled'))).to.have.length(1)
+    })
+
+    it('should emit hmr/change for a source file instead of reloading it', async () => {
+      const changePromise = waitForEvent(ctx, 'hmr/change')
+      plugin.modify(c => c.replace("value = 'initial'", "value = 'no-internal'"))
+
+      const [url] = await changePromise
+      expect(url).to.equal(pathToFileURL(plugin.path).href)
+      await new Promise(r => setTimeout(r, SETTLE_MS))
+      expect(ctx.bail('hmr-test/get-value')).to.equal('initial')
+    }, 10000)
+
+    it('should still reload config files', async () => {
+      writeFileSync(configPath, configBackup.replace(
+        '- id: test\n  name: ./plugin',
+        '- id: test\n  name: ./plugin\n  disabled: true',
+      ))
+      await waitFor(() => ctx.bail('hmr-test/get-value') === undefined)
+
+      writeFileSync(configPath, configBackup)
+      await waitFor(() => ctx.bail('hmr-test/get-value') === 'initial')
+    }, 10000)
+  })
 })
