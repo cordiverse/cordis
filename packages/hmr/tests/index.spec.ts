@@ -1,9 +1,10 @@
-import { Context, Fiber } from 'cordis'
+import { Context, Fiber, Message } from 'cordis'
 import Loader from '@cordisjs/plugin-loader'
 import Logger from '@cordisjs/plugin-logger-console'
+import type { Include } from '@cordisjs/plugin-include'
 import { writeFileSync, readFileSync, unlinkSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
-import { expect, describe, it, beforeAll, afterAll, afterEach } from 'vitest'
+import { expect, describe, it, beforeAll, afterAll, afterEach, vi } from 'vitest'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const testDir = dirname(fileURLToPath(import.meta.url))
@@ -451,6 +452,86 @@ export function apply(ctx: Context) {
       const value = ctx.bail('hmr-test/get-value')
       expect(value).to.not.equal('initial')
     }, 10000)
+  })
+
+  // ===== Config file atomic writes =====
+  describe('config file atomic writes', () => {
+    let ctx: Context
+    let fiber: Fiber<Context>
+    const configPath = resolve(testDir, 'cordis-atomic.yml')
+    const messages: Message[] = []
+
+    const configWith = (value: string) => `- id: timer
+  name: '@cordisjs/plugin-timer'
+- id: hmr
+  name: '@cordisjs/plugin-hmr'
+  config:
+    root:
+      - .
+    debounce: 50
+- id: cfg
+  name: ./plugin-config
+  config:
+    value: ${value}
+`
+
+    beforeAll(async () => {
+      writeFileSync(configPath, configWith('v0'))
+      const result = await createContext('cordis-atomic.yml')
+      ctx = result.ctx
+      fiber = result.fiber
+      ctx.logger.exporter({ export: message => messages.push(message) })
+    }, 10000)
+
+    afterAll(async () => {
+      await fiber?.dispose()
+      try { unlinkSync(configPath) } catch {}
+    })
+
+    function include() {
+      for (const entry of ctx.loader.entries()) {
+        if ((entry.subtree as Include | undefined)?.filename === configPath) return entry.subtree as Include
+      }
+      throw new Error('include not found')
+    }
+
+    it('keeps watching the file across its own rename-based writes', async () => {
+      const inc = include()
+      const id = ctx.loader.store[inc.ctx.fiber.entry!.options.id]!.id
+      const refresh = vi.spyOn(inc, 'refresh')
+
+      // two runtime writes → two temp-file-plus-rename cycles on the config
+      for (const value of ['v1', 'v2']) {
+        await ctx.loader.update(`${id}:cfg`, { config: { value } })
+        await inc.refresh()
+      }
+      await waitFor(() => readFileSync(configPath, 'utf8').includes('value: v2'))
+      await new Promise(r => setTimeout(r, 500))
+      const settled = refresh.mock.calls.length
+
+      // an external edit must still reach the tree through the watcher
+      const external = configWith('v3')
+      writeFileSync(configPath, external)
+      await waitFor(() => ctx.bail('hmr-test/get-config')?.value === 'v3')
+
+      // and our own writes must not have spawned a feedback loop
+      await new Promise(r => setTimeout(r, 500))
+      expect(refresh.mock.calls.length - settled).toBeLessThanOrEqual(3)
+      expect(readFileSync(configPath, 'utf8')).toBe(external)
+    }, 15000)
+
+    it('logs instead of rejecting when the config file is unparsable', async () => {
+      const before = messages.length
+      writeFileSync(configPath, '- {\n')
+      await waitFor(() => messages.slice(before).some(m => m.type === 'warn' && String(m.args[0]).includes('failed to parse')))
+
+      // hmr is still alive and the tree kept its last good state
+      expect(ctx.hmr).to.be.ok
+      expect(ctx.bail('hmr-test/get-config')?.value).toBe('v3')
+
+      writeFileSync(configPath, configWith('v4'))
+      await waitFor(() => ctx.bail('hmr-test/get-config')?.value === 'v4')
+    }, 15000)
   })
 
   // ===== Service plugin HMR =====
