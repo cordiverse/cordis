@@ -1,7 +1,45 @@
 import { Mock, mock } from 'node:test'
 import { expect, describe, it, beforeAll, beforeEach } from 'vitest'
 import { Context } from 'cordis'
+import { EntryTree } from '../src'
 import MockLoader, { sleep } from './utils'
+
+describe('Tree: nested removal', () => {
+  it('removes an entry addressed by its composite id', async () => {
+    const root = new Context()
+    await root.plugin(MockLoader)
+    const loader = root.loader as MockLoader
+    const dispose = mock.fn()
+    loader.mock('foo', () => dispose)
+
+    class NestedTree extends EntryTree {
+      write() {}
+
+      import(name: string) {
+        return loader.import(name)
+      }
+    }
+
+    let tree!: NestedTree
+    loader.mock('tree', async (ctx) => {
+      tree = new NestedTree(ctx)
+      await tree.root.update([{ id: 'child', name: 'foo' }])
+      return () => tree.root.stop()
+    })
+
+    const outer = await loader.create({ name: 'tree' })
+    await loader.await()
+    const child = `${outer}${EntryTree.sep}child`
+    expect(loader.resolve(child).fiber).to.be.ok
+
+    loader.remove(child)
+    await sleep()
+
+    expect(() => loader.resolve(child)).to.throw(`cannot resolve entry ${child}`)
+    expect(dispose.mock.calls).to.have.length(1)
+    expect(tree.root.data).to.deep.equal([])
+  })
+})
 
 describe('Group: basic support', () => {
   const root = new Context()
