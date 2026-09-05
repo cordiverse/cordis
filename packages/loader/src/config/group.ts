@@ -35,12 +35,17 @@ export class EntryGroup {
 
   remove(id: string, isDispose = false) {
     const entry = this.tree.store[id]
-    if (!entry) return
+    // An entry that another group already adopted (a file-driven move) is not
+    // ours to dispose anymore.
+    if (!entry || entry.parent !== this) return
+    // Unregister before disposing: the loader's `internal/plugin` handler
+    // distinguishes "removed by the loader" from "disposed itself" by checking
+    // whether the entry is still in the store.
+    delete this.tree.store[id]
     entry.fiber?.dispose()
     if (!isDispose) {
       this.unlink(entry.options)
     }
-    delete this.tree.store[id]
     this.context.emit('loader/partial-dispose', entry, entry.options, false)
   }
 
