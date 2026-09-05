@@ -100,6 +100,29 @@ export namespace CordisError {
 
 const INACTIVE = '__INACTIVE__'
 
+// invariant: internal/status observers must not own Fiber state or _error
+function dispatchFiberStatus(context: Context, fiber: Fiber, oldState: FiberState) {
+  const args: any[] = ['internal/status', fiber, oldState]
+  let callbacks: Function[]
+  try {
+    callbacks = context.events.dispatch('emit', args)
+  } catch (error) {
+    context.logger.error(error)
+    return
+  }
+
+  for (const callback of callbacks) {
+    try {
+      const result = callback(...args)
+      if (isObject(result) && 'then' in result) {
+        void Promise.resolve(result).catch(error => context.logger.error(error))
+      }
+    } catch (error) {
+      context.logger.error(error)
+    }
+  }
+}
+
 export class Fiber {
   public uid: number | null
   public readonly ctx: Context
@@ -357,7 +380,7 @@ export class Fiber {
     this.state = callback() ?? this._getState()
     if (oldState === this.state) return
     // FIXME internal/fiber-info
-    this.context.emit('internal/status', this, oldState)
+    dispatchFiberStatus(this.context, this, oldState)
 
     // only notify changes between ACTIVE and NON-ACTIVE states
     if (oldState !== FiberState.ACTIVE && this.state !== FiberState.ACTIVE) return
