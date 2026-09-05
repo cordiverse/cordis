@@ -101,11 +101,17 @@ export namespace ModuleLoader {
     if (process.execArgv.includes('--expose-internals')) {
       try {
         return require(id)
-      } catch {}
+      } catch (e) {
+        console.debug('cordis:loader: --expose-internals path failed for %s: %o', id, e)
+      }
     }
     try {
       return require('node-addon-require-builtin').requireBuiltin(id)
-    } catch {}
+    } catch (e) {
+      // Keep returning undefined (HMR relies on graceful degradation); log why.
+      console.debug('cordis:loader: node-addon-require-builtin path failed for %s: %o', id, e)
+      console.debug('cordis:loader: this is often caused by pnpm 10+ isolated layout, missing platform binding, or Node version drift; see https://github.com/cordiverse/cordis/issues?q=is%3Aissue+loader.internal')
+    }
   }
 
   /**
