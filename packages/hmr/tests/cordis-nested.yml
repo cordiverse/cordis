@@ -6,7 +6,5 @@
     root:
       - .
     debounce: 50
-- id: test-dep
-  name: ./plugin-dep
-- id: test-dep-sibling
-  name: ./plugin-dep-sibling
+- id: tree
+  name: ./plugin-tree

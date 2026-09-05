@@ -6,7 +6,11 @@
     root:
       - .
     debounce: 50
-- id: test-dep
-  name: ./plugin-dep
-- id: test-dep-sibling
-  name: ./plugin-dep-sibling
+- id: multi-a
+  name: ./plugin-multi
+  config:
+    label: a
+- id: multi-b
+  name: ./plugin-multi
+  config:
+    label: b
