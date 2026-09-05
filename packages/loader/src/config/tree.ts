@@ -111,10 +111,19 @@ export abstract class EntryTree {
       info.offset += 3
       if (this.ctx.loader.internal) {
         return await this.ctx.loader.internal.import(name, this.ctx.baseUrl!, {})
-      } else if (name.startsWith('.')) {
-        return await import(/* @vite-ignore */new URL(name, this.ctx.baseUrl).href)
       } else {
-        return await import(/* @vite-ignore */name)
+        // Internal loader is unavailable (Node < 22, missing
+        // --expose-internals, or `node-addon-require-builtin` failed to resolve).
+        // We fall back to the native `import()` rather than failing, so existing
+        // apps keep working — but log it so the cause is observable instead of
+        // silent. Module resolution for relative specifiers still needs an
+        // explicit URL relative to the loader's baseUrl.
+        console.debug('cordis:loader: internal loader unavailable for %s, falling back to native import()', name)
+        if (name.startsWith('.')) {
+          return await import(/* @vite-ignore */new URL(name, this.ctx.baseUrl).href)
+        } else {
+          return await import(/* @vite-ignore */name)
+        }
       }
     }, getOuterStack)
   }
