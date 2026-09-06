@@ -2,6 +2,7 @@ import { composeError, Context } from 'cordis'
 import { Dict, isNonNullable } from 'cosmokit'
 import { Entry, EntryOptions } from './entry.ts'
 import { EntryGroup } from './group.ts'
+import { createResolve } from '../resolve.ts'
 
 export abstract class EntryTree {
   static readonly sep = ':'
@@ -112,9 +113,15 @@ export abstract class EntryTree {
       if (this.ctx.loader.internal) {
         return await this.ctx.loader.internal.import(name, this.ctx.baseUrl!, {})
       } else if (name.startsWith('.')) {
-        return await import(/* @vite-ignore */new URL(name, this.ctx.baseUrl).href)
+        return await import(/* @vite-ignore */ new URL(name, this.ctx.baseUrl).href)
       } else {
-        return await import(/* @vite-ignore */name)
+        // An `import()` written here anchors on this file, reaching the loader's
+        // own dependencies. A helper inside the config file's project supplies
+        // that project as the anchor; the plain import applies when no project
+        // can be located.
+        const resolve = await createResolve(this.ctx.baseUrl)
+        const url = resolve ? resolve(name) : name
+        return await import(/* @vite-ignore */ url)
       }
     }, getOuterStack)
   }
