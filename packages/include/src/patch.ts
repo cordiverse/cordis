@@ -33,10 +33,7 @@ export function ensureIds(entries: EntryOptions[], used: (id: string) => boolean
   }
 }
 
-/**
- * Inserted entries are addressed by id when runtime changes are routed back
- * to their patch, so anonymous inserts would be unreachable otherwise.
- */
+/** Runtime changes are routed back to an inserted entry by its id, so every insert needs one. */
 export function ensureInsertIds(patches: PatchOptions[] | undefined, used: (id: string) => boolean) {
   for (const patch of patches ?? []) {
     if (patch.insert) ensureIds(patch.insert, used)
@@ -45,7 +42,7 @@ export function ensureInsertIds(patches: PatchOptions[] | undefined, used: (id: 
 
 /**
  * Overlay `patches` onto a fresh clone of `data`. Inserted entries are cloned
- * too, so the tree never shares objects with the patch configuration.
+ * too, so the tree owns every object it mounts.
  */
 export function applyPatches(data: EntryOptions[], patches: PatchOptions[] | undefined, warn: Warn): EntryOptions[] {
   data = structuredClone(data)

@@ -47,7 +47,7 @@ describe('EntryTree.commit: change reports', () => {
     expect(change.id).to.equal(id)
     expect(change.legacy).to.deep.equal({ id, name: 'foo', config: { a: 1 } })
     expect(change.options).to.deep.equal({ id, name: 'foo', config: { a: 2 } })
-    // reported after the mutation, not before
+    // reported after the mutation
     expect(change.options).to.equal(loader.store[id]!.options)
   })
 
@@ -111,8 +111,7 @@ describe('EntryTree.commit: change reports', () => {
     ])
     loader.changes = []
 
-    // a removal driven by the config file must not be mistaken for a
-    // self-dispose and written back as `disabled: true`
+    // a removal driven by the config file is a read, so nothing is reported
     await loader.read([
       { id: group, name: '@cordisjs/plugin-group', group: true, config: [] },
     ])

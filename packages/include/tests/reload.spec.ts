@@ -75,8 +75,7 @@ describe('Include reload', () => {
     await writeFile(app.filename, INNER_EXTRA)
     await app.include().refresh()
 
-    // the new entry loads, and the overlay is applied to the new parse too:
-    // a reload must not silently drop the patch list
+    // the new entry loads, and the overlay is applied to the new parse too
     await waitFor(() => app.ctx.bail('test/get-extra'))
     expect(app.ctx.bail('test/get-value')).to.be.undefined
   }, 10000)
@@ -90,8 +89,7 @@ describe('Include reload', () => {
     await new Promise(r => setTimeout(r, 500))
     expect(app.ctx.bail('test/get-value')).to.be.undefined
 
-    // patches apply to a clone: had the overlay been written into the cached
-    // parse, dropping it here could never bring the entry back
+    // patches apply to a clone of the cached parse, so dropping one reverts the entry
     await app.ctx.loader.update(app.include().ctx.fiber.entry!.id, {
       config: {
         path: './fixtures/tmp-reload-revert.yml',
@@ -107,13 +105,12 @@ describe('Include reload', () => {
     await waitFor(() => app.ctx.bail('test/get-value'))
 
     await writeFile(app.filename, NOT_AN_ARRAY)
-    // refresh never rejects: the include reports the bad file itself so that
-    // hmr needs no error handling
+    // refresh resolves on a bad file; the include reports it itself
     await app.include().refresh()
     expect(app.warnings().some(line => line.includes('failed to validate config file'))).to.be.true
     expect(app.ctx.bail('test/get-value')).to.equal('default')
 
-    // the failed candidate never committed, so the next good file still reads
+    // the cache still holds the last good file, so the next good file reads
     // as a change and reconciles against an intact tree
     await writeFile(app.filename, INNER_EXTRA)
     await app.include().refresh()

@@ -22,9 +22,8 @@ export namespace JournalRecord {
     position: number
     /**
      * Per-key delta relative to the options the entry had when the change
-     * was reported; `undefined` deletes a key. Collected at report time and
-     * never derived from the live tree later, because the tree is reconciled
-     * asynchronously and may lag behind the file.
+     * was reported; `undefined` deletes a key. Collected at report time: the
+     * live tree is reconciled asynchronously and may lag behind the file.
      */
     changes: Dict
   }

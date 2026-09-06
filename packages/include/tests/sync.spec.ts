@@ -1,79 +1,12 @@
-import { Context, Fiber, Message } from 'cordis'
-import Loader from '@cordisjs/plugin-loader'
-import { expect, describe, it, afterEach } from 'vitest'
-import { chmod, readFile, rm, writeFile } from 'node:fs/promises'
-import { fileURLToPath } from 'node:url'
+import { expect, describe, it } from 'vitest'
+import { readFile, chmod, writeFile } from 'node:fs/promises'
 import * as yaml from 'js-yaml'
 import Include from '../src'
 import { applied } from './fixtures/config-plugin'
-
-const fixture = (name: string) => fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url))
-
-const plugin = (id: string, value: number, extra: any = {}) => ({
-  id,
-  name: './config-plugin',
-  config: { tag: id, value },
-  ...extra,
-})
-
-const group = (id: string, config: any[]) => ({
-  id,
-  name: '@cordisjs/plugin-group',
-  group: true,
-  config,
-})
+import { fixture, group, harness, plugin } from './utils'
 
 describe('Include sync', () => {
-  let ctx: Context | undefined
-  let fiber: Fiber<Context> | undefined
-  const files: string[] = []
-
-  afterEach(async () => {
-    await fiber?.dispose()
-    ctx = fiber = undefined
-    for (const file of files.splice(0)) {
-      await chmod(file, 0o644).catch(() => {})
-      await rm(file, { force: true })
-    }
-  })
-
-  async function setup(name: string, data: any[] | string, config: any = {}) {
-    const filename = fixture(name)
-    files.push(filename)
-    await writeFile(filename, typeof data === 'string' ? data : yaml.dump(data))
-
-    ctx = new Context()
-    const messages: Message[] = []
-    ctx.logger.exporter({ export: message => messages.push(message) })
-    fiber = await ctx.plugin(Loader, { baseUrl: import.meta.url })
-    const id = await ctx.loader.create({
-      name: '@cordisjs/plugin-include',
-      config: { path: `./fixtures/${name}`, ...config },
-    })
-    await ctx.loader.store[id]!.fiber!.await()
-
-    const include = () => ctx!.loader.store[id]!.subtree as Include
-    // what hmr does on a change event; `refresh` also waits for any write
-    const settle = async () => {
-      await include().refresh()
-      await ctx!.loader.await()
-    }
-    await settle()
-
-    return {
-      ctx: ctx!,
-      id,
-      filename,
-      include,
-      settle,
-      messages,
-      text: () => readFile(filename, 'utf8'),
-      read: async () => yaml.load(await readFile(filename, 'utf8')) as any[],
-      config: (tag: string) => ctx!.bail('test/config', tag),
-      logs: (type: Message['type']) => messages.filter(m => m.type === type).map(m => m.args.join(' ')),
-      update: (local: string, options: any) => ctx!.loader.update(`${id}:${local}`, options),
-    }
-  }
+  const { setup } = harness()
 
   it('coalesces consecutive writes into the latest state', async () => {
     const app = await setup('tmp-sync-coalesce.yml', [plugin('a', 1)])
@@ -216,7 +149,6 @@ describe('Include sync', () => {
 
   it('routes changes to patch-owned keys into the parent config', async () => {
     const inner = fixture('tmp-sync-inner-patch.yml')
-    files.push(inner)
     const innerText = yaml.dump([plugin('a', 1)])
     await writeFile(inner, innerText)
     const app = await setup('tmp-sync-outer-patch.yml', [{
@@ -227,6 +159,7 @@ describe('Include sync', () => {
         patches: [{ id: 'a', disabled: true }],
       },
     }])
+    app.files.push(inner)
     const innerInclude = () => app.include().store['inc']!.subtree as Include
     await innerInclude().refresh()
     expect(app.config('a')).toBeUndefined()
@@ -244,7 +177,6 @@ describe('Include sync', () => {
 
   it('routes changes to inserted entries into their patch', async () => {
     const inner = fixture('tmp-sync-inner-insert.yml')
-    files.push(inner)
     const innerText = yaml.dump([plugin('a', 1)])
     await writeFile(inner, innerText)
     const app = await setup('tmp-sync-outer-insert.yml', [{
@@ -255,6 +187,7 @@ describe('Include sync', () => {
         patches: [{ insert: [plugin('x', 1)] }],
       },
     }])
+    app.files.push(inner)
     const innerInclude = () => app.include().store['inc']!.subtree as Include
     await innerInclude().refresh()
     await app.ctx.loader.await()
@@ -330,11 +263,27 @@ describe('Include sync', () => {
     expect((await app.read()).map(entry => entry.id)).toEqual(['b'])
   }, 10000)
 
+  it('retries a write that failed earlier when disposing', async () => {
+    const app = await setup('tmp-sync-dispose-retry.yml', [plugin('a', 1)])
+    const text = await app.text()
+    await chmod(app.filename, 0o444)
+
+    await app.update('a', { config: { tag: 'a', value: 2 } })
+    await app.settle()
+    expect(await app.text()).toBe(text)
+
+    // the file becomes writable again, but nothing else touches the tree
+    await chmod(app.filename, 0o644)
+    await app.dispose()
+
+    expect((await app.read())[0].config.value).toBe(2)
+  }, 10000)
+
   it('flushes pending changes on dispose', async () => {
     const app = await setup('tmp-sync-dispose.yml', [plugin('a', 1)])
 
     const task = app.update('a', { config: { tag: 'a', value: 2 } })
-    await fiber!.dispose()
+    await app.dispose()
     await task.catch(() => {})
 
     expect((await app.read())[0].config.value).toBe(2)

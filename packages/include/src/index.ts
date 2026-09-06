@@ -3,6 +3,7 @@ import { Context, Service } from 'cordis'
 import { deepEqual } from 'cosmokit'
 import { basename, dirname, extname, join } from 'node:path'
 import { access, constants, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import * as yaml from 'js-yaml'
 import { applyJournal, flatten, Journal, merge, reconcile, record } from './journal.ts'
@@ -51,6 +52,20 @@ interface Anonymous {
 
 function isENOENT(error: unknown) {
   return (error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT'
+}
+
+const RENAME_RETRIES = 10
+const RENAME_BACKOFF = 20
+
+/**
+ * On Windows a rename over a file that another process holds open (typically
+ * an antivirus scanning what we just wrote) fails with one of these; the lock
+ * is normally gone within milliseconds. A bounded retry is cheap enough to
+ * apply on every platform.
+ */
+function isTransientRenameError(error: unknown) {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code
+  return code === 'EACCES' || code === 'EPERM' || code === 'EBUSY'
 }
 
 export namespace Include {
@@ -115,9 +130,7 @@ export class Include extends EntryTree {
     try {
       await this._read()
     } catch (error) {
-      // Only a missing file falls back to `initial`: an existing but invalid
-      // file must fail loud with its real parse error, never be mislabeled as
-      // absent and then silently overwritten.
+      // only a missing file falls back to `initial`
       const cause = error instanceof ConfigFileError && error.stage === 'read' ? error.cause : undefined
       if (!isENOENT(cause)) throw error
       if (!this.config.initial) {
@@ -136,7 +149,12 @@ export class Include extends EntryTree {
   async stop() {
     this._disposed = true
     this._pendingTree = undefined
-    // flush what the user last did before the tree goes away
+    // Flush what the user last did before the tree goes away; this is also the
+    // last attempt for changes a failed write left in the journal.
+    if (this.journal.size) {
+      this.dirtyWrite = true
+      this._drain()
+    }
     await this.flush()
     this.root.stop()
   }
@@ -219,8 +237,7 @@ export class Include extends EntryTree {
     } catch (error) {
       throw new ConfigFileError('parse', this.filename, error)
     }
-    // An empty or truncated file (common mid-edit: editors and `sed -i` write
-    // through temp states) parses to `undefined` rather than throwing, so
+    // An empty or truncated file (routine mid-edit) parses to `undefined`, so
     // every non-array shape is rejected here as one "invalid file" signal.
     if (!Array.isArray(data)) {
       throw new ConfigFileError('validate', this.filename, new TypeError('config file must be a top-level array'))
@@ -259,8 +276,8 @@ export class Include extends EntryTree {
       return
     }
 
-    // Snapshot and swap: changes reported while we are writing must survive
-    // into the next round instead of being cleared along with this batch.
+    // Snapshot and swap: changes reported while we are writing belong to the
+    // next round.
     const batch = this.journal
     this.journal = new Map()
     const restore = () => {
@@ -323,18 +340,26 @@ export class Include extends EntryTree {
 
   /**
    * Write through a temp file and a rename, so that no reader ever sees a
-   * truncated file. When `expected` is given, the rename is skipped if the
-   * file no longer holds that content.
+   * truncated file. When `expected` is given, the rename (and every retry of
+   * it) only goes ahead while the file still holds that content.
    */
   private async _writeText(text: string, expected?: string) {
     const tmp = join(dirname(this.filename), `.${basename(this.filename)}.${process.pid}.${this._seq++}.tmp`)
     try {
       await writeFile(tmp, text)
-      if (expected !== undefined) {
-        const current = await readFile(this.filename, 'utf8').catch(() => undefined)
-        if (current !== expected) throw new StaleWriteError()
+      for (let attempt = 0; ; attempt++) {
+        if (expected !== undefined) {
+          const current = await readFile(this.filename, 'utf8').catch(() => undefined)
+          if (current !== expected) throw new StaleWriteError()
+        }
+        try {
+          await rename(tmp, this.filename)
+          return
+        } catch (error) {
+          if (attempt >= RENAME_RETRIES || !isTransientRenameError(error)) throw error
+        }
+        await sleep(RENAME_BACKOFF * (attempt + 1))
       }
-      await rename(tmp, this.filename)
     } catch (error) {
       await rm(tmp, { force: true }).catch(() => {})
       throw error
