@@ -56,6 +56,8 @@ export interface Impl {
   fiber: Fiber
   value?: any
   check?: () => boolean
+  /** fibers currently injecting this implementation */
+  consumers: Set<Fiber>
 }
 
 export class ReflectService {
@@ -175,7 +177,7 @@ export class ReflectService {
   }
 
   provide(name: string, value?: any, check?: () => boolean) {
-    return this.ctx.fiber.effect(() => {
+    return defineProperty(this.ctx.fiber.effect(() => {
       if (!this.props[name]) {
         this.props[name] ??= { type: 'service' }
       } else if (this.props[name].type !== 'service') {
@@ -185,7 +187,7 @@ export class ReflectService {
 
       this.ctx.root[symbols.isolate][name] ??= Symbol(name)
       const key = this.ctx[symbols.isolate][name]
-      const impl: Impl = { name, value, fiber: this.ctx.fiber, check }
+      const impl: Impl = { name, value, fiber: this.ctx.fiber, check, consumers: new Set() }
       if (this.store[key]) {
         throw new Error(`service "${name}" has been registered at <${this.store[key].fiber.name}>`)
       }
@@ -196,12 +198,18 @@ export class ReflectService {
       }
       return async () => {
         delete this.store[key]
-        const fibers = this.notify([name])
-        await Promise.allSettled(fibers.map(fiber => fiber.await()))
+        // `notify()` only sees fibers still attached to the registry, so a consumer
+        // that is already unloading is invisible to it — track them on the impl
+        const consumers = new Set(impl.consumers)
+        for (const fiber of this.notify([name])) consumers.add(fiber)
+        consumers.delete(impl.fiber)
+        // a consumer that is itself releasing services would deadlock on us
+        const pending = [...consumers].filter(fiber => !fiber._releasing)
+        await Promise.allSettled(pending.map(fiber => fiber.await()))
         // ensure self access before dependencies cleanup
         delete this.ctx.fiber.store![name]
       }
-    }, `ctx.provide(${JSON.stringify(name)})`)
+    }, `ctx.provide(${JSON.stringify(name)})`), symbols.provide, true)
   }
 
   notify(names: string[], filter = (ctx: Context, name: string) => ctx[symbols.isolate][name] === this.ctx[symbols.isolate][name]) {

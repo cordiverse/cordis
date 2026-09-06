@@ -36,6 +36,9 @@ export class EntryGroup {
   remove(id: string, isDispose = false) {
     const entry = this.tree.store[id]
     if (!entry) return
+    // the entry may have been moved to another group, in which case it is no
+    // longer ours to dispose
+    if (entry.parent !== this) return
     entry.fiber?.dispose()
     if (!isDispose) {
       this.unlink(entry.options)
