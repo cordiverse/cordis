@@ -74,8 +74,10 @@ export class Loader extends EntryTree {
     ctx.on('internal/update', function (config, noSave, next) {
       if (!this.entry || noSave || this.parent.fiber?.entry === this.entry) return next()
       const unparse = this.runtime?.Config?.['simplify']
-      this.entry.options.config = unparse ? unparse(config) : config
-      this.entry.parent.tree.write()
+      const { entry } = this
+      const legacy = { ...entry.options }
+      entry.options.config = unparse ? unparse(config) : config
+      entry.parent.tree.commit({ id: entry.options.id, group: entry.parent, options: entry.options, legacy })
       return next()
     }, { global: true, prepend: true })
 
@@ -113,21 +115,27 @@ export class Loader extends EntryTree {
       // case 5: the entry's tree is being disposed
       if (!fiber.entry.parent.tree.ctx.fiber.uid) return
 
-      this.showLog(fiber.entry, 'unload')
+      const { entry } = fiber
+      this.showLog(entry, 'unload')
 
-      // case 6: fiber is disposed by loader behavior
+      // case 6: the entry is being removed by the loader (`EntryGroup.remove`
+      // unregisters it before disposing the fiber)
+      if (entry.parent.tree.store[entry.options.id] !== entry) return
+
+      // case 7: fiber is disposed by loader behavior
       // such as inject checker, config file update, ancestor group disable
-      if (fiber.entry.disabled) return
+      if (entry.disabled) return
 
-      fiber.entry.options.disabled = true
-      fiber.entry.parent.tree.write()
+      const legacy = { ...entry.options }
+      entry.options.disabled = true
+      entry.parent.tree.commit({ id: entry.options.id, group: entry.parent, options: entry.options, legacy })
     })
 
     ctx.plugin(isolate)
   }
 
-  write() {
-    // Loader's root tree is in-memory; writes are no-ops.
+  commit() {
+    // the root tree lives in memory only; there is nothing to persist to
   }
 
   [Service.check]() {
