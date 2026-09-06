@@ -54,12 +54,16 @@ jobs:
           yarn yakumo publish
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
 
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest]
         node-version: [24, 26]
+        exclude:
+          - os: windows-latest
+            node-version: 26
 
     steps:
       - name: Check out
