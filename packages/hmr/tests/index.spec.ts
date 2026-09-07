@@ -1167,6 +1167,62 @@ export function apply(ctx: Context) {
     }, 15000)
   })
 
+  describe('hmr.watch', () => {
+    let ctx: Context
+    let fiber: Fiber<Context>
+    const plugin = backupFile('plugin.ts')
+    // matches the default `ignored` patterns, so only an explicit claim can
+    // bring it into the watch set
+    const dotPath = resolve(testDir, '.claimed.yml')
+    // released in `afterEach`, so that a failing test cannot leave a watcher
+    // behind for the next one
+    const disposables: (() => any)[] = []
+
+    beforeAll(async () => {
+      plugin.restore()
+      writeFileSync(dotPath, 'v0')
+      const result = await createContext('cordis.yml')
+      ctx = result.ctx
+      fiber = result.fiber
+    }, 10000)
+
+    afterEach(async () => {
+      disposables.splice(0).forEach(dispose => dispose())
+      await new Promise(r => setTimeout(r, SETTLE_MS))
+    })
+
+    afterAll(async () => {
+      fiber?.dispose()
+      try { unlinkSync(dotPath) } catch {}
+      await new Promise(r => setTimeout(r, 200))
+    })
+
+    // What happens to a watched file that is *also* part of the module graph
+    // is deliberately left unpinned: both of these use a file no module
+    // imports. The config-file suites above cover a watched file in `root`
+    // end to end, through include.
+
+    it('watches a path that `ignored` would skip', async () => {
+      let calls = 0
+      disposables.push(ctx.hmr.watch(dotPath, () => { calls++ }))
+      await new Promise(r => setTimeout(r, SETTLE_MS))
+
+      writeFileSync(dotPath, 'v1')
+      await waitFor(() => calls > 0)
+    }, 15000)
+
+    it('runs every callback registered for the same path', async () => {
+      const seen: string[] = []
+      disposables.push(ctx.hmr.watch(dotPath, () => { seen.push('a') }))
+      disposables.push(ctx.hmr.watch(dotPath, () => { seen.push('b') }))
+      await new Promise(r => setTimeout(r, SETTLE_MS))
+
+      writeFileSync(dotPath, 'v2')
+      await waitFor(() => seen.length >= 2)
+      expect([...seen].sort()).to.deep.equal(['a', 'b'])
+    }, 15000)
+  })
+
   // ===== Without loader internals =====
   describe('without loader internals', () => {
     let ctx: Context
@@ -1211,7 +1267,7 @@ export function apply(ctx: Context) {
     })
 
     it('should start and warn once', () => {
-      expect(warnings.filter(w => w.includes('module reloading is disabled'))).to.have.length(1)
+      expect(warnings.filter(w => w.includes('source code HMR is disabled'))).to.have.length(1)
     })
 
     it('should emit hmr/change for a source file instead of reloading it', async () => {

@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import * as yaml from 'js-yaml'
 import { applyJournal, flatten, Journal, merge, reconcile, record } from './journal.ts'
 import { applyPatches, ensureIds, ensureInsertIds, PatchIndex, PatchOptions, routeJournal } from './patch.ts'
+import type {} from '@cordisjs/plugin-hmr'
 
 const JsExpr = new yaml.Type('tag:yaml.org,2002:js', {
   kind: 'scalar',
@@ -119,6 +120,10 @@ export class Include extends EntryTree {
       ensureInsertIds(config.patches, id => !!this.store[id])
       this._scheduleApply()
       return this._applyTask
+    })
+
+    ctx.inject(['hmr'], (ctx) => {
+      ctx.hmr.watch(this.filename, () => this.refresh())
     })
   }
 

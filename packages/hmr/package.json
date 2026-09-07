@@ -30,6 +30,13 @@
     "watch",
     "development"
   ],
+  "yakumo": {
+    "tsc": {
+      "ignore": [
+        "@cordisjs/plugin-include"
+      ]
+    }
+  },
   "cordis": {
     "services": {
       "required": [
