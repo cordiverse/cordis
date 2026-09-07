@@ -1,5 +1,6 @@
 import { defineProperty } from 'cosmokit'
-import type { Context, Service } from '.'
+import type { Context } from './context.ts'
+import type { Service } from './service.ts'
 
 export class DisposableList<T extends WeakKey> {
   private sn = 0
