@@ -23,6 +23,7 @@
     "cordis": "^4.0.0-rc.9"
   },
   "devDependencies": {
+    "@cordisjs/plugin-hmr": "^1.0.15",
     "@cordisjs/plugin-loader": "^1.0.0-rc.6",
     "@cordisjs/plugin-logger-console": "^1.0.0",
     "cordis": "^4.0.0-rc.9"

@@ -1,7 +1,6 @@
 import { Context, Fiber, Inject, Plugin, Service } from 'cordis'
-import { Dict } from 'cosmokit'
+import { Awaitable, Dict } from 'cosmokit'
 import { ModuleJob, ModuleLoader, ResolveResult } from '@cordisjs/plugin-loader'
-import type { Include } from '@cordisjs/plugin-include'
 import { ChokidarOptions, FSWatcher, watch } from 'chokidar'
 import { relative, resolve } from 'node:path'
 import { handleError } from './error.ts'
@@ -23,6 +22,8 @@ declare module 'cordis' {
     'hmr/reload'(stalePlugins: Map<Plugin, StalePlugin>): void
   }
 }
+
+export type WatchCallback = () => Awaitable<void>
 
 /**
  * Recursively collect all module dependencies from a ModuleJob.
@@ -105,6 +106,9 @@ class Hmr extends Service {
   /** Stashed file changes waiting to be processed */
   private stashed = new Set<string>()
 
+  /** Callbacks registered through `watch()`, keyed by absolute path. */
+  private watchers = new Map<string, Set<WatchCallback>>()
+
   constructor(ctx: Context, public config: Hmr.Config) {
     super(ctx, 'hmr')
     this.internal = this.ctx.loader.internal
@@ -133,16 +137,9 @@ class Hmr extends Service {
       this.ctx.logger.info('watching %o in %s', root, this.baseDir)
     }
     if (!this.internal) {
-      this.ctx.logger.warn('loader internals are unavailable, module reloading is disabled '
-        + '(config files are still reloaded); pass --expose-internals or install node-addon-require-builtin to enable it')
+      // eslint-disable-next-line max-len
+      this.ctx.logger.warn('loader internals are unavailable, source code HMR is disabled; pass --expose-internals or install node-addon-require-builtin to enable it')
     }
-
-    const match = picomatch(ignored)
-    this.watcher = watch(root, {
-      ...this.config,
-      cwd: this.baseDir,
-      ignored: path => match(relative(this.baseDir, path)),
-    })
 
     // Collect externals: framework modules reachable from the main entry.
     // Changes to these files require a full process restart, not HMR.
@@ -153,6 +150,13 @@ class Hmr extends Service {
       this.externals = await loadDependencies(mainJob)
     }
 
+    const match = picomatch(ignored)
+    this.watcher = watch(root, {
+      ...this.config,
+      cwd: this.baseDir,
+      ignored: path => !this.watchers.has(resolve(this.baseDir, path)) && match(relative(this.baseDir, path)),
+    })
+
     const partialReload = this.ctx.debounce(() => this.partialReload(), this.config.debounce)
 
     this.watcher.on('change', async (path) => {
@@ -160,29 +164,58 @@ class Hmr extends Service {
       const filename = resolve(this.baseDir, path)
       const url = pathToFileURL(filename).href
 
-      if (this.internal) {
-        // Full reload: the changed file is part of the framework
-        if (this.externals.has(url)) return loader.exit()
+      // Full reload: the changed file is part of the framework
+      if (this.externals.has(url)) return loader.exit()
 
-        // Partial reload: the file is in the ESM loadCache
-        // In Node 24, both CJS and ESM modules imported via import() end up
-        // in loadCache, so this check covers all module formats.
-        if (this.internal.loadCache.has(url)) {
-          this.stashed.add(url)
-          return partialReload()
-        }
+      // Awaited before the steps below, so that within one change a watcher
+      // is settled by the time the file reaches module reloading.
+      const callbacks = this.watchers.get(filename)
+      if (callbacks?.size) {
+        await Promise.all([...callbacks].map(async (callback) => {
+          try {
+            await callback()
+          } catch (error) {
+            this.ctx.logger.warn(error)
+          }
+        }))
       }
 
-      // Config reload: the file is a loader config file (e.g. cordis.yml)
-      for (const entry of this.ctx.loader.entries()) {
-        const include = entry.subtree as Include | undefined
-        if (include?.filename !== filename) continue
-        await include.refresh()
-        return
+      // Partial reload: the file is in the ESM loadCache
+      // In Node 24, both CJS and ESM modules imported via import() end up
+      // in loadCache, so this check covers all module formats.
+      if (this.internal?.loadCache.has(url)) {
+        this.stashed.add(url)
+        return partialReload()
       }
 
       this.ctx.emit('hmr/change', url)
     })
+  }
+
+  /**
+   * Watch a single file. `callback` runs on every change to it.
+   *
+   * The path is watched even when it lies outside `root` or matches
+   * `ignored`. Registrations are not exclusive: every callback registered for
+   * a path runs on each change.
+   */
+  watch(path: string | URL, callback: WatchCallback) {
+    const filename = path instanceof URL || path.startsWith('file:')
+      ? fileURLToPath(path)
+      : resolve(this.baseDir, path)
+    return this.ctx.effect(() => {
+      let callbacks = this.watchers.get(filename)
+      if (!callbacks) this.watchers.set(filename, callbacks = new Set())
+      callbacks.add(callback)
+      // The watch set only ever grows: a path handed to `add()` may well have
+      // been covered by `root` already, and `unwatch()` would take it out of
+      // the normal watch too. Dropping the callback is what ends the watch.
+      this.watcher.add(filename)
+      return () => {
+        callbacks.delete(callback)
+        if (!callbacks.size) this.watchers.delete(filename)
+      }
+    }, 'ctx.hmr.watch()')
   }
 
   // hide stack trace from HMR
