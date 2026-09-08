@@ -90,7 +90,11 @@ export class EventsService {
     const [thisArg, callbacks] = this._resolve('emit', args)
     const results = await Promise.allSettled(callbacks.map(async callback => Reflect.apply(callback, thisArg, args)))
     const errors = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
-    if (errors.length) throw new AggregateError(errors.map(error => error.reason))
+    if (errors.length) {
+      // surface the first cause so that a dropped rejection is readable on
+      // its own, without digging into the `errors` array
+      throw new AggregateError(errors.map(error => error.reason), errors[0].reason?.message ?? String(errors[0].reason))
+    }
   }
 
   emit(...args: any[]) {
