@@ -87,7 +87,7 @@ export class EventsService {
   }
 
   async parallel(...args: any[]) {
-    const [thisArg, callbacks] = this._resolve('emit', args)
+    const [thisArg, callbacks] = this._resolve('parallel', args)
     const results = await Promise.allSettled(callbacks.map(async callback => Reflect.apply(callback, thisArg, args)))
     const errors = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
     if (errors.length) throw new AggregateError(errors.map(error => error.reason))
