@@ -480,7 +480,14 @@ export class Fiber {
 
   update(config: any, noSave = false): Awaitable<void> {
     const fiber = this.ctx.fiber
-    fiber.assertActive()
+    try {
+      fiber.assertActive()
+    } catch (cause) {
+      // a synchronous throw escapes `.catch()`; return a handled rejection instead
+      const rejected = Promise.reject(cause)
+      rejected.catch(() => {})
+      return rejected
+    }
     const loaded = fiber._runner.epoch !== INACTIVE
     const resolved = loaded ? fiber._resolve(config) : undefined
     if (!noSave) fiber.context.emit('internal/commit', fiber, config)
