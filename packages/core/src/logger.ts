@@ -1,9 +1,9 @@
 import { defineProperty, hyphenate } from 'cosmokit'
-import { Context } from './context'
-import { Fiber } from './fiber'
-import { createCallable, joinPrototype, symbols, Tracker } from './utils'
+import { Context } from './context.ts'
+import { Fiber } from './fiber.ts'
+import { createCallable, joinPrototype, symbols, Tracker } from './utils.ts'
 
-declare module './context' {
+declare module './context.ts' {
   interface Intercept {
     logger: LoggerService.Intercept
   }
