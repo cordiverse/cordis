@@ -103,7 +103,6 @@ const INACTIVE = '__INACTIVE__'
 export class Fiber {
   public uid: number | null
   public readonly ctx: Context
-  public config: any
   public state = FiberState.PENDING
   public readonly dispose: () => Promise<void>
   public store: Dict<Impl> | undefined
@@ -121,7 +120,7 @@ export class Fiber {
 
   constructor(
     public parent: Context,
-    config: any,
+    public config: any,
     public inject: Dict<any>,
     public runtime: Plugin.Runtime | null,
     getOuterStack: () => string[],
@@ -146,16 +145,17 @@ export class Fiber {
       this._runner = {
         epoch: INACTIVE,
         getOuterStack,
-        execute: function () {
+        execute: function (this: Fiber) {
+          const config = this._resolve(this.config)
           if (isConstructor(runtime.callback)) {
             // eslint-disable-next-line new-cap
-            const instance = new runtime.callback(this.ctx, this.config)
+            const instance = new runtime.callback(this.ctx, config)
             for (const hook of instance?.[symbols.initHooks] ?? []) {
               hook()
             }
             return instance?.[symbols.init]?.()
           } else {
-            return runtime.callback(this.ctx, this.config)
+            return runtime.callback(this.ctx, config)
           }
         },
         collect,
@@ -170,7 +170,6 @@ export class Fiber {
       this.dispose = parent.fiber.effect(() => {
         const remove = runtime.fibers.push(this)
         try {
-          this.config = resolveConfig(runtime, config)
           this._refresh()
         } catch (error) {
           this.ctx.logger.error(error)
@@ -224,6 +223,10 @@ export class Fiber {
   assertActive() {
     if (this.uid !== null) return
     throw new CordisError('INACTIVE_EFFECT')
+  }
+
+  private _resolve(config: any) {
+    return this.context.waterfall('internal/config', this, () => config)
   }
 
   private _execute<T>(runner: EffectRunner<T>) {
@@ -478,7 +481,13 @@ export class Fiber {
   update(config: any, noSave = false): Awaitable<void> {
     const fiber = this.ctx.fiber
     fiber.assertActive()
-    config = resolveConfig(fiber.runtime!, config)
+    // Resolve ahead of time so that an invalid config cannot tear down a
+    // plugin that is running fine: this throws before the config is written
+    // back or the fiber is restarted. Only dependencies that are already
+    // satisfied can be resolved, so a fiber that is not running takes the
+    // same path as a first load and surfaces the failure as `_error`.
+    // The config is therefore resolved twice along this path.
+    if (fiber._runner.epoch !== INACTIVE) fiber._resolve(config)
     const result = fiber.context.waterfall(fiber, 'internal/update', config, noSave, () => {
       fiber.config = config
       fiber._error = undefined

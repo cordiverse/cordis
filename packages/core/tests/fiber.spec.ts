@@ -240,3 +240,44 @@ describe('Fiber', () => {
     expect(Object.hasOwn(consumer, 'inertia')).to.equal(false)
   })
 })
+
+// config is resolved on every reload, so an invalid config can only be
+// detected up front while the dependencies are satisfied
+describe('Fiber: config validation', () => {
+  const Config: any = {
+    '~standard': {
+      version: 1,
+      vendor: 'test',
+      validate: (value: any) => value?.ok ? { value } : { issues: [{ message: 'not ok' }] },
+    },
+  }
+
+  it('fail on first load', async () => {
+    const root = new Context()
+    ;(root.logger as any).error = mock.fn()
+    const apply = mock.fn(() => {})
+
+    const fiber = root.plugin({ apply, Config }, { ok: false })
+    await sleep()
+
+    expect(apply.mock.calls).to.have.length(0)
+    expect(fiber.state).to.equal(FiberState.FAILED)
+  })
+
+  it('keep a running plugin on update', async () => {
+    const root = new Context()
+    ;(root.logger as any).error = mock.fn()
+    const apply = mock.fn(() => {})
+
+    const fiber = root.plugin({ apply, Config }, { ok: true })
+    await fiber
+    expect(apply.mock.calls).to.have.length(1)
+
+    expect(() => fiber.update({ ok: false })).toThrow('invalid config')
+    await sleep()
+
+    expect(apply.mock.calls).to.have.length(1)
+    expect(fiber.state).to.equal(FiberState.ACTIVE)
+    expect(fiber.config).to.deep.equal({ ok: true })
+  })
+})
