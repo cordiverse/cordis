@@ -17,7 +17,8 @@
   },
   "files": [
     "lib",
-    "bin.js"
+    "bin.js",
+    "src"
   ],
   "repository": {
     "type": "git",
