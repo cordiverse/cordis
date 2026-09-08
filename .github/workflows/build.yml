@@ -46,6 +46,8 @@ jobs:
         run: yarn --no-immutable
       - name: Build (1)
         run: yarn build core
+      - name: Type Test
+        run: yarn test:types:core
       - name: Build (2)
         run: yarn build
       - name: Publish

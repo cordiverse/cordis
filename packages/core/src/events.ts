@@ -183,6 +183,6 @@ export interface Events {
   'internal/update'(this: Fiber, config: any, noSave: boolean, next: () => Awaitable<void>): Awaitable<void>
   'internal/get'(ctx: Context, name: string, error: Error, next: () => any): any
   'internal/set'(ctx: Context, name: string, value: any, error: Error, next: () => boolean): boolean
-  'internal/listener'(this: Context, name: string, listener: any, prepend: boolean): void
+  'internal/listener'(this: Context, name: string | symbol, listener: any, options: EventOptions): void
   'internal/dispatch'(mode: DispatchMode, name: string | symbol, args: any[], thisArg: any): void
 }
