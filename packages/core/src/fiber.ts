@@ -195,6 +195,7 @@ export class Fiber {
           while (this.inertia) {
             await this.inertia
           }
+          this._updateState(() => {})
         }
       }, 'ctx.plugin()')
     } else {

@@ -162,6 +162,94 @@ describe('Fiber', () => {
     expect(error.mock.calls).to.have.length(1)
   })
 
+  it('settles a pending fiber to DISPOSED on dispose', async () => {
+    const root = new Context()
+    const fiber = root.inject(['never-provided'], () => {})
+    const target = Object.getPrototypeOf(fiber)
+    const transitions: [FiberState, FiberState][] = []
+    const off = root.on('internal/status', (current, oldState) => {
+      if (current === target) {
+        transitions.push([oldState, current.state])
+      }
+    })
+
+    try {
+      expect(fiber.state).to.equal(FiberState.PENDING)
+
+      await fiber.dispose()
+
+      expect(fiber.uid).to.equal(null)
+      expect(fiber.inertia).to.equal(undefined)
+      expect(fiber.state).to.equal(FiberState.DISPOSED)
+      expect(transitions).to.deep.equal([
+        [FiberState.PENDING, FiberState.DISPOSED],
+      ])
+    } finally {
+      off()
+    }
+  })
+
+  it('settles a failed fiber to DISPOSED on dispose', async () => {
+    const root = new Context()
+    ;(root.logger as any).error = mock.fn()
+
+    const fiber = root.plugin(() => {
+      throw new Error('boom')
+    })
+    const target = Object.getPrototypeOf(fiber)
+    const transitions: [FiberState, FiberState][] = []
+
+    await expect(fiber.await()).rejects.toThrow('boom')
+    expect(fiber.state).to.equal(FiberState.FAILED)
+
+    const off = root.on('internal/status', (current, oldState) => {
+      if (current === target) {
+        transitions.push([oldState, current.state])
+      }
+    })
+
+    try {
+      await fiber.dispose()
+
+      expect(fiber.uid).to.equal(null)
+      expect(fiber.inertia).to.equal(undefined)
+      expect(fiber.state).to.equal(FiberState.DISPOSED)
+      expect(transitions).to.deep.equal([
+        [FiberState.FAILED, FiberState.DISPOSED],
+      ])
+    } finally {
+      off()
+    }
+  })
+
+  it('keeps the active dispose sequence stable', async () => {
+    const root = new Context()
+    const fiber = root.plugin(() => {})
+    await fiber.await()
+
+    const target = Object.getPrototypeOf(fiber)
+    const transitions: [FiberState, FiberState][] = []
+    const off = root.on('internal/status', (current, oldState) => {
+      if (current === target) {
+        transitions.push([oldState, current.state])
+      }
+    })
+
+    try {
+      await fiber.dispose()
+
+      expect(fiber.uid).to.equal(null)
+      expect(fiber.inertia).to.equal(undefined)
+      expect(fiber.state).to.equal(FiberState.DISPOSED)
+      expect(transitions).to.deep.equal([
+        [FiberState.ACTIVE, FiberState.UNLOADING],
+        [FiberState.UNLOADING, FiberState.DISPOSED],
+      ])
+    } finally {
+      off()
+    }
+  })
+
   it('update config on wrapped fiber', async () => {
     const root = new Context()
     const callback = mock.fn()
