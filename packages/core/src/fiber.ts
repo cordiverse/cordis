@@ -477,7 +477,16 @@ export class Fiber {
 
   update(config: any, noSave = false): Awaitable<void> {
     const fiber = this.ctx.fiber
-    fiber.assertActive()
+    try {
+      fiber.assertActive()
+    } catch (cause) {
+      // the failure must stay observable through `.catch()`, so mark it
+      // handled here the same way the async path below does: a caller that
+      // drops the result cannot turn it into an unhandled rejection
+      const rejected = Promise.reject(cause)
+      rejected.catch(() => {})
+      return rejected
+    }
     config = resolveConfig(fiber.runtime!, config)
     const result = fiber.context.waterfall(fiber, 'internal/update', config, noSave, () => {
       fiber.config = config
