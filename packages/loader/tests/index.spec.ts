@@ -194,3 +194,65 @@ describe('Loader: entry failure', () => {
     expect(loader.expectFiber('2').state).to.equal(FiberState.ACTIVE)
   })
 })
+
+// interpolated expressions read from the context, so they can only be
+// evaluated once the entry's dependencies are ready
+describe('Loader: config interpolation', () => {
+  const root = new Context()
+
+  let loader!: MockLoader
+  let consumer!: Mock<Function>
+
+  beforeAll(async () => {
+    await root.plugin(MockLoader)
+    loader = root.loader as any
+
+    loader.mock('provider', (ctx: Context, config: { value: number }) => {
+      ctx.provide('foo', { value: config.value })
+    })
+    consumer = loader.mock('consumer', () => {})
+  })
+
+  it('wait for dependencies', async () => {
+    await loader.read([{
+      id: '1',
+      name: 'consumer',
+      inject: ['foo'],
+      config: { value: { __jsExpr: 'foo.value' } },
+    }])
+    await sleep()
+
+    expect(loader.expectFiber('1').state).to.equal(FiberState.PENDING)
+    expect(consumer.mock.calls).to.have.length(0)
+  })
+
+  it('evaluate after dependencies are ready', async () => {
+    await loader.read([{
+      id: '1',
+      name: 'consumer',
+      inject: ['foo'],
+      config: { value: { __jsExpr: 'foo.value' } },
+    }, {
+      id: '2',
+      name: 'provider',
+      config: { value: 1 },
+    }])
+    await sleep()
+
+    expect(loader.expectFiber('1').state).to.equal(FiberState.ACTIVE)
+    expect(consumer.mock.calls).to.have.length(1)
+    expect(consumer.mock.calls[0].arguments[1]).to.deep.equal({ value: 1 })
+  })
+
+  it('re-evaluate when dependencies reload', async () => {
+    await loader.update('2', { config: { value: 2 } })
+    await sleep()
+
+    expect(consumer.mock.calls).to.have.length(2)
+    expect(consumer.mock.calls[1].arguments[1]).to.deep.equal({ value: 2 })
+  })
+
+  it('keep the source config unevaluated', () => {
+    expect(loader.expectFiber('1').config).to.deep.equal({ value: { __jsExpr: 'foo.value' } })
+  })
+})

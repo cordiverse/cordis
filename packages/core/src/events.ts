@@ -1,6 +1,6 @@
 import { Awaitable, defineProperty, Promisify } from 'cosmokit'
 import { Context } from './context'
-import { Fiber, FiberState } from './fiber'
+import { Fiber, FiberState, resolveConfig } from './fiber'
 import { DisposableList, symbols } from './utils'
 
 export function isBailed(value: any) {
@@ -67,6 +67,10 @@ export class EventsService {
       }
       return _next()
     }, { global: true, prepend: true })
+
+    this.on('internal/config', (fiber, next) => {
+      return resolveConfig(fiber.runtime!, next())
+    })
   }
 
   private _resolve(type: string, args: any[]) {
@@ -181,6 +185,7 @@ export interface Events {
   'internal/status'(fiber: Fiber, oldValue: FiberState): void
   'internal/service'(this: Context, name: string, value: any): void
   'internal/update'(this: Fiber, config: any, noSave: boolean, next: () => Awaitable<void>): Awaitable<void>
+  'internal/config'(fiber: Fiber, next: () => any): any
   'internal/get'(ctx: Context, name: string, error: Error, next: () => any): any
   'internal/set'(ctx: Context, name: string, value: any, error: Error, next: () => boolean): boolean
   'internal/listener'(this: Context, name: string, listener: any, prepend: boolean): void
