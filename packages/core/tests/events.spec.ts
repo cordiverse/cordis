@@ -100,6 +100,17 @@ describe('Events', () => {
     expect(callback.mock.calls).to.have.length(1)
   })
 
+  it('ctx.parallel() reports the parallel dispatch mode', async () => {
+    const { root } = setup()
+    const dispatch = mock.fn()
+
+    root.on('internal/dispatch', dispatch)
+    await root.parallel(event)
+
+    expect(dispatch.mock.calls).to.have.length(1)
+    expect(dispatch.mock.calls[0].arguments[0]).to.equal('parallel')
+  })
+
   it('ctx.parallel()', async () => {
     const { root } = setup()
     await root.parallel(event)
