@@ -5,6 +5,8 @@ import { Entry, EntryOptions } from './config/entry.ts'
 import isolate from './config/isolate.ts'
 import { EntryTree } from './config/tree.ts'
 
+let internalsDiagnosticsReported = false
+
 export * from './config/entry.ts'
 export * from './config/group.ts'
 export * from './config/isolate.ts'
@@ -70,6 +72,17 @@ export class Loader extends EntryTree {
     })
 
     ctx.reflect.provide('loader', this, this[Service.check])
+
+    // a user who installed the recommended addon and still sees the HMR
+    // warning needs the failure reason, not a repeat of the same advice;
+    // report it once per process, not once per loader instance
+    if (!internalsDiagnosticsReported) {
+      internalsDiagnosticsReported = true
+      const diagnostics = ModuleLoader.getInternalDiagnostics()
+      if (!this.internal && diagnostics) {
+        ctx.logger.debug(diagnostics)
+      }
+    }
 
     ctx.on('internal/update', function (config, noSave, next) {
       if (!this.entry || noSave || this.parent.fiber?.entry === this.entry) return next()
