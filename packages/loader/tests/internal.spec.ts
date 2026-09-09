@@ -13,4 +13,11 @@ describe('ModuleLoader.fromInternal', () => {
       : loader!.resolveSync('node:path', import.meta.url, {})
     expect(resolved.url).to.equal('node:path')
   })
+
+  it('reports no reason once the loader is reachable', () => {
+    ModuleLoader.fromInternal()
+    // only the failure branch carries a reason; a reachable loader must stay
+    // silent, so the startup report cannot fire on a healthy process
+    expect(ModuleLoader.getInternalDiagnostics()).to.be.undefined
+  })
 })
