@@ -26,10 +26,46 @@ declare module './context' {
     bail<K extends keyof Events>(thisArg: NoInfer<ThisType<Events[K]>>, name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
     waterfall<K extends keyof Events>(name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
     waterfall<K extends keyof Events>(thisArg: NoInfer<ThisType<Events[K]>>, name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
+    waterfallWith<K extends keyof Events>(options: WaterfallOptions, name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
+    waterfallWith<K extends keyof Events>(options: WaterfallOptions, thisArg: NoInfer<ThisType<Events[K]>>, name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
     on<K extends keyof Events>(name: K, listener: Events[K], options?: boolean | EventOptions): () => boolean
     once<K extends keyof Events>(name: K, listener: Events[K], options?: boolean | EventOptions): () => boolean
     /* eslint-enable max-len */
   }
+}
+
+/**
+ * Options for {@link Context.waterfallWith}.
+ *
+ * - `signal`: an optional `AbortSignal` used for cooperative, checkpoint-only
+ *   cancellation. Deadlines can be composed at the call site with
+ *   `AbortSignal.timeout()` / `AbortSignal.any()` where the runtime supports
+ *   them; cordis core intentionally does not add its own timeout option.
+ */
+export interface WaterfallOptions {
+  signal?: AbortSignal | undefined
+}
+
+/**
+ * The `next` function passed to waterfall listeners by
+ * {@link Context.waterfallWith}. It carries the effective cancellation signal
+ * (possibly `undefined` when no signal was provided) as a readonly property,
+ * so already-running participants can observe it and pass it to abort-aware
+ * APIs. Handlers that treat `next` as a plain function are unaffected.
+ */
+export interface WaterfallNext<T = any> {
+  (): T
+  /**
+   * The effective `AbortSignal` for the current invocation, or `undefined` if
+   * none was provided. Note that this is a snapshot for cooperative checks; it
+   * never aborts on its own unless the caller's signal does.
+   */
+  readonly signal: AbortSignal | undefined
+}
+
+function abortReason(signal: AbortSignal): any {
+  // Node 18+/modern browsers expose `reason`; fall back for older runtimes.
+  return signal.reason ?? new DOMException('This operation was aborted', 'AbortError')
 }
 
 export interface EventOptions {
@@ -126,6 +162,48 @@ export class EventsService {
         called = true
         return dispatch()
       }
+      return Reflect.apply(callback, thisArg, [...args, next])
+    }
+    return dispatch()
+  }
+
+  /**
+   * Cancellation-aware variant of {@link Context.waterfall} implementing the
+   * **checkpoint-only** cancellation model (proposal for cordiverse/cordis#43):
+   *
+   * - If `options.signal` is already aborted before dispatch, or aborts before
+   *   a later `next()` boundary, no additional middleware or the final handler
+   *   is entered.
+   * - The invocation settles only once the currently running participant
+   *   settles: cordis cannot forcibly terminate a running Promise, timer, or
+   *   network request. Already-started participants run to completion and
+   *   should cooperate by observing `next.signal` and passing it to
+   *   abort-aware APIs.
+   * - When an abort checkpoint is reached, the invocation rejects with the
+   *   signal's abort reason (typically the value passed to `aborter.abort()`,
+   *   or a `DOMException` named `AbortError` by default).
+   * - With no signal (or a never-aborted one), behavior is identical to
+   *   `waterfall()`, including synchronous short-circuit semantics.
+   */
+  waterfallWith(...args: any[]) {
+    const options: WaterfallOptions = args.shift()
+    const [thisArg, callbacks] = this._resolve('waterfall', args)
+    const signal = options?.signal
+    const inner = args.pop()
+    const check = () => {
+      if (signal?.aborted) throw abortReason(signal)
+    }
+    const dispatch = () => {
+      check()
+      const callback = callbacks.shift()
+      if (!callback) return inner()
+      let called = false
+      const next = () => {
+        if (called) throw new Error('next() called multiple times')
+        called = true
+        return dispatch()
+      }
+      Object.defineProperty(next, 'signal', { value: signal, writable: false, enumerable: false, configurable: false })
       return Reflect.apply(callback, thisArg, [...args, next])
     }
     return dispatch()
