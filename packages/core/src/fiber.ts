@@ -195,6 +195,11 @@ export class Fiber {
           while (this.inertia) {
             await this.inertia
           }
+          // `_setEpoch` may have returned early (epoch already INACTIVE, or a
+          // failed fiber), in which case no `_updateState` ran afterwards —
+          // the state would stay PENDING/FAILED forever. Re-derive it now
+          // that `uid` is null; this is a no-op if already DISPOSED.
+          this._updateState(() => {})
         }
       }, 'ctx.plugin()')
     } else {

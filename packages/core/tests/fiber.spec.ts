@@ -239,4 +239,36 @@ describe('Fiber', () => {
     expect(Object.hasOwn(consumer, 'state')).to.equal(false)
     expect(Object.hasOwn(consumer, 'inertia')).to.equal(false)
   })
+
+  it('disposing a pending fiber settles its state (#127)', async () => {
+    const root = new Context()
+    const states: [FiberState, FiberState][] = []
+    root.on('internal/status', (fiber, oldState) => {
+      states.push([oldState, fiber.state])
+    })
+    const fiber = root.inject(['foo'], () => {})
+    await sleep()
+    expect(fiber.state).to.equal(FiberState.PENDING)
+    await fiber.dispose()
+    expect(fiber.state).to.equal(FiberState.DISPOSED)
+    expect(fiber.uid).to.equal(null)
+    expect(states).to.contain.deep.ordered.members([[FiberState.PENDING, FiberState.DISPOSED]])
+  })
+
+  it('disposing a failed fiber settles its state (#127)', async () => {
+    const root = new Context()
+    ;(root.logger as any).error = mock.fn()
+    const apply = mock.fn(() => { throw new Error('boom') })
+    const fiber = root.plugin(apply)
+    await sleep()
+    expect(fiber.state).to.equal(FiberState.FAILED)
+    const states: [FiberState, FiberState][] = []
+    root.on('internal/status', (fiber, oldState) => {
+      states.push([oldState, fiber.state])
+    })
+    await fiber.dispose()
+    expect(fiber.state).to.equal(FiberState.DISPOSED)
+    expect(fiber.uid).to.equal(null)
+    expect(states).to.contain.deep.ordered.members([[FiberState.FAILED, FiberState.DISPOSED]])
+  })
 })
