@@ -437,7 +437,13 @@ export class Fiber {
   }
 
   private async _unload() {
-    await Promise.all(this._disposables.clear().map(async (dispose) => {
+    // clear() yields disposables in reverse registration order: dependents
+    // are registered after their dependencies, so a dependent's async
+    // teardown settles before the dependency is torn down. Running them
+    // concurrently (Promise.all) let a dependency finish teardown while a
+    // dependent was still winding down (#26), e.g. logging after the logger
+    // service closed its stream.
+    for (const dispose of this._disposables.clear()) {
       try {
         await composeError(async (info) => {
           await Promise.resolve()
@@ -447,7 +453,7 @@ export class Fiber {
       } catch (reason) {
         this.ctx.logger.error(reason)
       }
-    }))
+    }
     this.store = undefined
     this._updateState(() => {
       if (this._runner.epoch === INACTIVE) {
