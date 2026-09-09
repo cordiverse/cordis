@@ -239,4 +239,49 @@ describe('Fiber', () => {
     expect(Object.hasOwn(consumer, 'state')).to.equal(false)
     expect(Object.hasOwn(consumer, 'inertia')).to.equal(false)
   })
+
+  it('update while loading settles on the latest config (#34)', async () => {
+    const root = new Context()
+    const applied: number[] = []
+    let started!: () => void
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { started = resolve })
+    const go = new Promise<void>((resolve) => { release = resolve })
+    const fiber = root.plugin(async (_ctx, config: { value: number }) => {
+      applied.push(config.value)
+      if (config.value === 1) {
+        started()
+        await go
+      }
+    }, { value: 1 })
+    await gate
+    fiber.update({ value: 2 })
+    release()
+    await fiber
+    expect(applied).to.deep.equal([1, 2])
+    expect(fiber.config).to.deep.equal({ value: 2 })
+    expect(fiber.state).to.equal(FiberState.ACTIVE)
+  })
+
+  it('restart while loading re-runs the latest config (#34)', async () => {
+    const root = new Context()
+    const applied: number[] = []
+    let started!: () => void
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { started = resolve })
+    const go = new Promise<void>((resolve) => { release = resolve })
+    const fiber = root.plugin(async (_ctx, config: { value: number }) => {
+      applied.push(config.value)
+      if (config.value === 1) {
+        started()
+        await go
+      }
+    }, { value: 1 })
+    await gate
+    fiber.restart()
+    release()
+    await fiber
+    expect(applied).to.deep.equal([1, 1])
+    expect(fiber.state).to.equal(FiberState.ACTIVE)
+  })
 })
