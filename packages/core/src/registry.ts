@@ -1,8 +1,8 @@
 import { defineProperty, Dict } from 'cosmokit'
 import { StandardSchemaV1 } from '@standard-schema/spec'
-import { Context } from './context'
-import { Fiber } from './fiber'
-import { buildOuterStack, DisposableList, symbols, withProps } from './utils'
+import { Context } from './context.ts'
+import { Fiber } from './fiber.ts'
+import { buildOuterStack, DisposableList, symbols, withProps } from './utils.ts'
 
 function isApplicable(object: Plugin) {
   return object && typeof object === 'object' && typeof object.apply === 'function'
@@ -115,7 +115,7 @@ type GetPluginConfig<P> =
   ? S
   : GetPluginParameters<P>[0]
 
-declare module './context' {
+declare module './context.ts' {
   export interface Context {
     inject(deps: Inject, callback: Plugin.Function<void>): Fiber & PromiseLike<Fiber>
     plugin<P extends Plugin>(plugin: P, ...args: Spread<GetPluginConfig<P>>): Fiber & PromiseLike<Fiber>

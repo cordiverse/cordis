@@ -1,7 +1,7 @@
 import { Awaitable, defineProperty, Promisify } from 'cosmokit'
-import { Context } from './context'
-import { Fiber, FiberState } from './fiber'
-import { DisposableList, symbols } from './utils'
+import { Context } from './context.ts'
+import { Fiber, FiberState } from './fiber.ts'
+import { DisposableList, symbols } from './utils.ts'
 
 export function isBailed(value: any) {
   return value !== null && value !== false && value !== undefined
@@ -13,7 +13,7 @@ export type ThisType<F> = F extends (this: infer T, ...args: any) => any ? T : n
 
 export type DispatchMode = 'emit' | 'parallel' | 'serial' | 'bail' | 'waterfall'
 
-declare module './context' {
+declare module './context.ts' {
   export interface Context {
     /* eslint-disable max-len */
     parallel<K extends keyof Events>(name: K, ...args: Parameters<Events[K]>): Promise<void>

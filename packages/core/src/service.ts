@@ -1,6 +1,6 @@
 import { defineProperty } from 'cosmokit'
-import { Context } from './context'
-import { createCallable, joinPrototype, symbols, Tracker } from './utils'
+import { Context } from './context.ts'
+import { createCallable, joinPrototype, symbols, Tracker } from './utils.ts'
 
 export abstract class Service<out T = never> {
   static readonly init: unique symbol = symbols.init
