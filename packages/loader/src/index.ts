@@ -7,6 +7,8 @@ import isolate from './config/isolate.ts'
 import { EntryTree } from './config/tree.ts'
 import { interpolate } from './config/utils.ts'
 
+let internalsDiagnosticsReported = false
+
 export * from './config/entry.ts'
 export * from './config/group.ts'
 export * from './config/isolate.ts'
@@ -72,6 +74,16 @@ export class Loader extends EntryTree {
     })
 
     ctx.reflect.provide('loader', this, this[Service.check])
+
+    // hmr already warns that internals are unavailable; this adds why,
+    // once per process rather than once per loader instance
+    if (!internalsDiagnosticsReported) {
+      internalsDiagnosticsReported = true
+      const diagnostics = ModuleLoader.getInternalDiagnostics()
+      if (!this.internal && diagnostics) {
+        ctx.logger.debug(diagnostics)
+      }
+    }
 
     // Registered after the built-in validation listener, so interpolation runs
     // on the source config and validation sees the interpolated result.
