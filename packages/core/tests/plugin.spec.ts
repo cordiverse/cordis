@@ -1,10 +1,26 @@
-import { Context, Service } from '../src'
+import { Context, Service, resolveConfig } from '../src'
 import { expect, describe, it } from 'vitest'
 import { mock } from 'node:test'
 import { inspect } from 'util'
 import { event, getHookSnapshot, sleep } from './utils'
 
 describe('Plugin', () => {
+  it('resolveConfig rejects a Config without Standard Schema support (#102)', () => {
+    expect(() => resolveConfig({ Config: {} } as any, {})).to.throw(TypeError, 'plugin Config must implement Standard Schema V1')
+    expect(() => resolveConfig({ Config: { '~standard': {} } } as any, {})).to.throw(TypeError, 'plugin Config must implement Standard Schema V1')
+  })
+
+  it('resolveConfig passes through valid schemas', () => {
+    const schema = {
+      '~standard': {
+        version: 1,
+        validate: (value: any) => ({ value }),
+      },
+    }
+    expect(resolveConfig({ Config: schema } as any, { foo: 'bar' })).to.deep.equal({ foo: 'bar' })
+    expect(resolveConfig({} as any, { foo: 'bar' })).to.deep.equal({ foo: 'bar' })
+  })
+
   it('apply functional plugin', async () => {
     const root = new Context()
     const callback = mock.fn()
