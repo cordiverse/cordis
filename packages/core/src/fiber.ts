@@ -116,6 +116,10 @@ export class Fiber {
   protected context: Context
 
   private _error: any
+  // monotonic counter of accepted epoch changes: a load settling against an
+  // epoch snapshot can ABA back to the same string (see #34), so reloads
+  // compare this instead
+  private _generation = 0
   private _runner: EffectRunner<string>
   private _store: Dict<Impl> = Object.create(null)
 
@@ -402,6 +406,7 @@ export class Fiber {
     // a failed fiber only recovers through update(), which clears _error
     if (this._error) return
     this._runner.epoch = epoch
+    this._generation++
     if (this.inertia) return
     this._updateState(() => {
       if (epoch !== INACTIVE && oldEpoch === INACTIVE) {
@@ -416,7 +421,7 @@ export class Fiber {
 
   private async _reload() {
     this.store = { ...this._store }
-    const oldEpoch = this._runner.epoch
+    const oldGeneration = this._generation
     try {
       await Promise.resolve()
       await this._execute(this._runner)
@@ -427,9 +432,11 @@ export class Fiber {
       this._runner.epoch = INACTIVE
     }
     this._updateState(() => {
-      if (this._runner.epoch === oldEpoch) {
+      if (this._generation === oldGeneration) {
         this.inertia = undefined
       } else {
+        // a transition request landed while loading: epoch may have swung
+        // back to its original value, so settle by generation, not by value
         this.inertia = this._unload()
         return FiberState.UNLOADING
       }
