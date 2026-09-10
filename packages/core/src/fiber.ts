@@ -118,6 +118,17 @@ export class Fiber {
   private _error: any
   private _runner: EffectRunner<string>
   private _store: Dict<Impl> = Object.create(null)
+  // bumped by every explicit `restart()` request. A lifecycle task snapshots
+  // it when it starts: if it has advanced by the time the task settles, a
+  // teardown-and-reapply was requested while the task was running, even when
+  // the epoch string happens to equal the snapshot (restart() toggles the
+  // epoch through `INACTIVE` and back, e.g. `'' -> INACTIVE -> ''` during a
+  // load). Comparing the raw epoch alone would miss such ABA sequences and
+  // silently swallow the request — an `update()` issued during `LOADING`
+  // would update `fiber.config` yet never re-run the plugin with it.
+  // Dependency churn that resolves to the same epoch before settle is *not*
+  // tracked here: it is deliberately tolerated (see the "inertia lock" tests).
+  private _generation = 0
 
   constructor(
     public parent: Context,
@@ -417,6 +428,7 @@ export class Fiber {
   private async _reload() {
     this.store = { ...this._store }
     const oldEpoch = this._runner.epoch
+    const oldGeneration = this._generation
     try {
       await Promise.resolve()
       await this._execute(this._runner)
@@ -427,7 +439,7 @@ export class Fiber {
       this._runner.epoch = INACTIVE
     }
     this._updateState(() => {
-      if (this._runner.epoch === oldEpoch) {
+      if (this._runner.epoch === oldEpoch && this._generation === oldGeneration) {
         this.inertia = undefined
       } else {
         this.inertia = this._unload()
@@ -470,6 +482,9 @@ export class Fiber {
   async restart() {
     const fiber = this.ctx.fiber
     fiber.assertActive()
+    // mark this explicit request so an in-flight lifecycle task does not
+    // mistake it for a no-op when the epoch returns to its previous value
+    fiber._generation++
     fiber._setEpoch(INACTIVE)
     fiber._refresh()
     await fiber.await()

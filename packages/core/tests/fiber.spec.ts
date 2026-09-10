@@ -182,6 +182,107 @@ describe('Fiber', () => {
     expect(callback.mock.calls[2].arguments[1]).to.deep.equal({ msg: '!!!' })
   })
 
+  // regression test for #34: an update() issued while the fiber is still
+  // LOADING toggles the epoch through INACTIVE and back ('' -> INACTIVE -> '');
+  // the in-flight reload used to compare the epoch value at settle, mistook the
+  // ABA for "no change" and cleared its inertia — fiber.config was updated but
+  // the plugin never re-ran with the new config.
+  it('applies an update issued while the fiber is still loading', async () => {
+    const applied: number[] = []
+    let markStarted!: () => void
+    let release!: () => void
+    const started = new Promise<void>(resolve => { markStarted = resolve })
+    const gate = new Promise<void>(resolve => { release = resolve })
+
+    const root = new Context()
+    const wrapped = root.plugin(async (_, config: { value: number }) => {
+      applied.push(config.value)
+      if (config.value === 1) {
+        markStarted()
+        await gate
+      }
+    }, { value: 1 })
+
+    await started
+    const fiber = Object.getPrototypeOf(wrapped)
+    expect(fiber.state).to.equal(FiberState.LOADING)
+
+    const updating = fiber.update({ value: 2 })
+    release()
+    await updating
+
+    expect(applied).to.deep.equal([1, 2])
+    expect(fiber.config).to.deep.equal({ value: 2 })
+    expect(fiber.state).to.equal(FiberState.ACTIVE)
+  })
+
+  it('coalesces concurrent updates issued during loading to the latest config', async () => {
+    const applied: number[] = []
+    let markStarted!: () => void
+    let release!: () => void
+    const started = new Promise<void>(resolve => { markStarted = resolve })
+    const gate = new Promise<void>(resolve => { release = resolve })
+
+    const root = new Context()
+    const wrapped = root.plugin(async (_, config: { value: number }) => {
+      applied.push(config.value)
+      if (config.value === 1) {
+        markStarted()
+        await gate
+      }
+    }, { value: 1 })
+
+    await started
+    const fiber = Object.getPrototypeOf(wrapped)
+
+    const updates = Promise.all([
+      fiber.update({ value: 2 }),
+      fiber.update({ value: 3 }),
+    ])
+    release()
+    await updates
+
+    // the intermediate config is superseded before the follow-up load runs
+    expect(applied).to.deep.equal([1, 3])
+    expect(fiber.config).to.deep.equal({ value: 3 })
+    expect(fiber.state).to.equal(FiberState.ACTIVE)
+  })
+
+  it('applies an update issued while an injected fiber is still loading', async () => {
+    const applied: string[] = []
+    let markStarted!: () => void
+    let release!: () => void
+    const started = new Promise<void>(resolve => { markStarted = resolve })
+    const gate = new Promise<void>(resolve => { release = resolve })
+
+    const plugin = {
+      inject: ['foo'],
+      apply: async (ctx: Context, config: { mode: string }) => {
+        applied.push(`${config.mode}:${ctx.foo}`)
+        if (config.mode === 'old') {
+          markStarted()
+          await gate
+        }
+      },
+    }
+
+    const root = new Context()
+    root.provide('foo', 1)
+    const wrapped = root.plugin(plugin, { mode: 'old' })
+
+    await started
+    const fiber = Object.getPrototypeOf(wrapped)
+    expect(fiber.state).to.equal(FiberState.LOADING)
+
+    const updating = fiber.update({ mode: 'new' })
+    release()
+    await updating
+
+    expect(applied).to.deep.equal(['old:1', 'new:1'])
+    expect(fiber.config).to.deep.equal({ mode: 'new' })
+    expect(fiber.state).to.equal(FiberState.ACTIVE)
+  })
+
   it('restart wrapped fiber', async () => {
     const root = new Context()
     const callback = mock.fn()
