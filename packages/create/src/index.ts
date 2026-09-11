@@ -146,7 +146,6 @@ export async function stageYarnBin(options: StageYarnOptions): Promise<string | 
     await new Promise<void>((resolve, reject) => {
       const stream = Readable.fromWeb(resp.body as any).pipe(tar.extract({
         cwd: tempDir,
-        newer: true,
         strip: 2,
       }, ['package/bin/yarn.js']))
       stream.on('finish', resolve)
