@@ -1032,6 +1032,48 @@ export function apply(ctx: Context) {
     }, 15000)
   })
 
+  // ===== Edits arriving while a reload is in flight =====
+  describe('edit during an in-flight reload', () => {
+    let ctx: Context
+    let fiber: Fiber<Context>
+    const drainDep = backupFile('drain-dep.ts')
+
+    beforeAll(async () => {
+      drainDep.restore()
+      const result = await createContext('cordis-drain.yml')
+      ctx = result.ctx
+      fiber = result.fiber
+    }, 10000)
+
+    afterEach(async () => {
+      drainDep.restore()
+      await new Promise(r => setTimeout(r, SETTLE_MS + 500))
+    })
+
+    afterAll(async () => {
+      fiber?.dispose()
+      await new Promise(r => setTimeout(r, 500))
+    })
+
+    it('should apply a re-edit of a file whose own reload is still in flight', async () => {
+      const stats = (globalThis as any).__hmrTest
+      await waitFor(() => ctx.bail('hmr-test/get-slow') === 'drain-v1')
+
+      const disposeBefore = stats.slowDisposeStartedAt
+      drainDep.modify(c => c.replace("version = 'drain-v1'", "version = 'drain-v2'"))
+
+      // `slowDisposeStartedAt` moves in the unload stage, after the replacement
+      // graph is imported, so it marks a deterministic in-flight window.
+      await waitFor(() => stats.slowDisposeStartedAt !== disposeBefore, 10000, 5)
+
+      // the re-edit lands in that window, on the file the batch is reloading
+      drainDep.modify(c => c.replace("version = 'drain-v1'", "version = 'drain-v3'"))
+      await waitFor(() => ctx.bail('hmr-test/get-slow') === 'drain-v3')
+
+      expect(ctx.bail('hmr-test/get-fast')).to.equal('drain-v3')
+    }, 30000)
+  })
+
   // ===== Malformed export =====
   describe('malformed export', () => {
     let ctx: Context
