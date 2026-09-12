@@ -219,29 +219,60 @@ class Scaffold {
     console.log(kleur.dim('  Scaffolding project in ') + project + kleur.dim(' ...'))
     const template = argv.template || this.options.template
 
-    const resp1 = await fetch(`${this.registry}/${template}`)
-    if (!resp1.ok) {
-      const { status, statusText } = resp1
-      console.log(`${kleur.red('error')} request failed with status code ${status} ${statusText}`)
+    const resp1 = await this.fetchOrExit(`${this.registry}/${template}`)
+    const remote = await resp1.json().catch(() => null)
+    if (!remote) {
+      console.log(kleur.red('error') + ` invalid registry response from ${this.registry}`)
       process.exit(1)
     }
-    const remote = await resp1.json()
-    const version = remote['dist-tags'][argv.ref || 'latest']
+    const version = remote['dist-tags']?.[argv.ref || 'latest']
+    // unknown dist-tags and mirror lag both leave this without a tarball
+    const tarball = remote.versions?.[version]?.dist?.tarball
+    if (!tarball) {
+      console.log(kleur.red('error') + ` unable to resolve dist-tag ${argv.ref || 'latest'}`)
+      process.exit(1)
+    }
 
-    const resp2 = await fetch(remote.versions[version].dist.tarball)
-    await new Promise<void>((resolve, reject) => {
-      const stream = Readable.fromWeb(resp2.body as any).pipe(tar.extract({
-        cwd: rootDir,
-        newer: true,
-        strip: 1,
-      }))
-      stream.on('finish', resolve)
-      stream.on('error', reject)
-    })
+    const resp2 = await this.fetchOrExit(tarball)
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const stream = Readable.fromWeb(resp2.body as any).pipe(tar.extract({
+          cwd: rootDir,
+          newer: true,
+          strip: 1,
+        }))
+        stream.on('finish', resolve)
+        stream.on('error', reject)
+      })
+    } catch {
+      console.log(kleur.red('error') + ` invalid tarball from ${tarball}`)
+      process.exit(1)
+    }
 
     await stageYarnBin({ rootDir, registry: this.registry, agent: which() })
     await this.writePackageJson()
     console.log(kleur.green('  Done.\n'))
+  }
+
+  private async fetchOrExit(url: string) {
+    // A registry without a scheme arrives here as a bare path.
+    if (!URL.canParse(url)) {
+      console.log(kleur.red('error') + ` invalid url ${url}`)
+      process.exit(1)
+    }
+    let resp: Response
+    try {
+      resp = await fetch(url)
+    } catch {
+      console.log(kleur.red('error') + ` unable to reach ${url}`)
+      process.exit(1)
+    }
+    // Name the url: the registry and the tarball host share this message.
+    if (!resp.ok) {
+      console.log(`${kleur.red('error')} request failed with status code ${resp.status} ${resp.statusText} from ${url}`)
+      process.exit(1)
+    }
+    return resp
   }
 
   async writePackageJson() {
