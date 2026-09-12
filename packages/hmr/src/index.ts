@@ -103,11 +103,14 @@ class Hmr extends Service {
    */
   private declined!: Set<string>
 
-  /** Stashed file changes waiting to be processed */
-  private stashed = new Set<string>()
+  /** Stashed file changes, tagged with how many times each has been stashed. */
+  private stashed = new Map<string, number>()
 
   /** Callbacks registered through `watch()`, keyed by absolute path. */
   private watchers = new Map<string, Set<WatchCallback>>()
+
+  /** Serializes partial reloads: each run sees the edits that landed while the previous one was still in flight. */
+  private reloadQueue: Promise<void> = Promise.resolve()
 
   constructor(ctx: Context, public config: Hmr.Config) {
     super(ctx, 'hmr')
@@ -184,7 +187,7 @@ class Hmr extends Service {
       // In Node 24, both CJS and ESM modules imported via import() end up
       // in loadCache, so this check covers all module formats.
       if (this.internal?.loadCache.has(url)) {
-        this.stashed.add(url)
+        this.stashed.set(url, (this.stashed.get(url) ?? 0) + 1)
         return partialReload()
       }
 
@@ -240,12 +243,12 @@ class Hmr extends Service {
   private async analyzeChanges() {
     const pending: string[] = []
 
-    this.accepted = new Set(this.stashed)
+    this.accepted = new Set(this.stashed.keys())
     this.declined = new Set(this.externals)
 
     const isExcluded = (url: string) => url.startsWith('node:') || url.includes('/node_modules/')
 
-    await Promise.all([...this.stashed].map(async (url) => {
+    await Promise.all([...this.stashed.keys()].map(async (url) => {
       const children = await this.getLinked(url)
       for (const child of children) {
         if (this.accepted.has(child) || this.declined.has(child) || isExcluded(child)) continue
@@ -293,7 +296,21 @@ class Hmr extends Service {
   }
 
   private async partialReload() {
+    const tail = this.reloadQueue
+    let release!: () => void
+    this.reloadQueue = new Promise<void>(resolve => { release = resolve })
+    await tail
+
+    try {
+      await this._partialReload()
+    } finally {
+      release()
+    }
+  }
+
+  private async _partialReload() {
     const internal = this.internal!
+    const batch = new Map(this.stashed)
     await this.analyzeChanges()
 
     const candidates = new Map<ModuleJob, Plugin>()
@@ -465,7 +482,11 @@ class Hmr extends Service {
     }))
 
     this.ctx.emit('hmr/reload', stalePlugins)
-    this.stashed = new Set()
+    // Keep anything stashed again while this run was in flight, including a
+    // second edit to a file the run already reloaded.
+    for (const [url, tag] of batch) {
+      if (this.stashed.get(url) === tag) this.stashed.delete(url)
+    }
   }
 }
 
