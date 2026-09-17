@@ -165,8 +165,19 @@ export abstract class EntryTree {
   }
 
   import(name: string, getOuterStack?: () => string[]) {
+    // a config file can omit `name`; without it there is no specifier to import
+    if (!name) {
+      return composeError(() => {
+        throw new Error('entry name is required')
+      }, getOuterStack)
+    }
+    const baseUrl = this.ctx.baseUrl || this.root?.ctx?.baseUrl
     if (name.startsWith('cordis:')) {
-      return this.ctx.loader.builtins[name.slice(7)]
+      return composeError(() => {
+        const plugin = this.ctx.loader.builtins[name.slice(7)]
+        if (!plugin) throw this.unresolvable(name, baseUrl)
+        return plugin
+      }, getOuterStack)
     }
     // On Windows, a drive-letter path is converted with `pathToFileURL`.
     if (process.platform === 'win32' && driveLetter.test(name)) {
@@ -182,17 +193,17 @@ export abstract class EntryTree {
       // internal.import
       info.offset += 3
       if (this.ctx.loader.internal) {
-        parent = this.ctx.baseUrl!
+        parent = baseUrl!
         return await this.ctx.loader.internal.import(name, parent, {})
       } else if (name.startsWith('.')) {
         parent = import.meta.url
-        return await import(/* @vite-ignore */ new URL(name, this.ctx.baseUrl).href)
+        return await import(/* @vite-ignore */ new URL(name, baseUrl).href)
       } else {
         // An `import()` written here anchors on this file, reaching the loader's
         // own dependencies. A helper inside the config file's project supplies
         // that project as the anchor; the plain import applies when no project
         // can be located.
-        const resolve = await createResolve(this.ctx.baseUrl)
+        const resolve = await createResolve(baseUrl)
         let url = name
         if (resolve) {
           try {
@@ -215,6 +226,11 @@ export abstract class EntryTree {
       if (frames.length) result.stack = [`${result.name}: ${result.message}`, ...frames].join('\n')
       throw result
     })
+  }
+
+  private unresolvable(name: string, baseUrl = this.ctx.baseUrl || this.root?.ctx?.baseUrl) {
+    const from = baseUrl ? ` from ${baseUrl}` : ''
+    return new Error(`cannot resolve ${name}${from}`)
   }
 
   abstract commit(change: EntryChange): void
