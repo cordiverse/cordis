@@ -3,6 +3,25 @@ import { Context, FiberState } from 'cordis'
 import MockLoader, { sleep } from './utils'
 import { Mock } from 'node:test'
 
+describe('Loader: disabled js expression', () => {
+  // `disabled: !!js <expr>` parses to an expression node, which is truthy as an
+  // object — reading it as a value disables the entry whatever it says
+  it('evaluates the expression instead of treating the node as truthy', async () => {
+    const root = new Context()
+    await root.plugin(MockLoader)
+    const loader = root.loader as any
+    loader.mock('plug', () => {})
+
+    const id = await loader.create({ id: 'a', name: 'plug', disabled: { __jsExpr: 'false' } })
+    await sleep()
+    expect(loader.store[id].disabled).to.equal(false)
+
+    const id2 = await loader.create({ id: 'b', name: 'plug', disabled: { __jsExpr: 'true' } })
+    await sleep()
+    expect(loader.store[id2].disabled).to.equal(true)
+  })
+})
+
 describe('Loader: basic support', () => {
   const root = new Context()
 
@@ -19,6 +38,7 @@ describe('Loader: basic support', () => {
     bar = loader.mock('bar', (ctx: Context) => ctx.on('internal/update', () => {}))
     qux = loader.mock('qux', (ctx: Context) => ctx.on('internal/update', () => {}))
   })
+
 
   it('loader initiate', async () => {
     await loader.read([{
