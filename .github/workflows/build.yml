@@ -4,6 +4,12 @@ on:
   push:
   pull_request:
 
+concurrency:
+  # A superseded run is cancelled, except a push to `main` where `Publish` runs.
+  # The group is per pull request, or per ref for a push.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+
 jobs:
   lint:
     runs-on: ubuntu-latest
