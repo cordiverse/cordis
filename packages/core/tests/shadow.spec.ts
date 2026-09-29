@@ -307,4 +307,52 @@ describe('Traceable caller', () => {
     expect(injected).toBe(true)
     expect(root.logger.buffer.filter(message => message.type === 'error')).toHaveLength(0)
   })
+
+  it('keeps the def site when a service derives from its own ctx', async () => {
+    let outerOrigin: Context
+
+    class Inner extends Service {
+      constructor(ctx: Context) {
+        super(ctx, 'inner')
+      }
+
+      inspect() {
+        return (this as any)[symbols.caller] as Context
+      }
+    }
+
+    class Outer extends Service {
+      static inject = ['inner']
+
+      constructor(ctx: Context) {
+        super(ctx, 'outer')
+        outerOrigin = ctx
+      }
+
+      derive() {
+        const derived = this.ctx.extend({ tag: 'derived' })
+        const isolated = this.ctx.isolate('scope')
+        return {
+          tag: (derived as any).tag,
+          caller: (derived['inner'] as Inner).inspect(),
+          isolatedCaller: (isolated['inner'] as Inner).inspect(),
+        }
+      }
+    }
+
+    const root = new Context()
+    await root.plugin(Inner)
+    await root.plugin(Outer)
+
+    let result!: ReturnType<Outer['derive']>
+    await root.inject(['outer'], (ctx) => {
+      result = (ctx['outer'] as Outer).derive()
+    })
+
+    // `this.ctx` is a shadow inside a service method; deriving from it must keep
+    // the def site, or the derived ctx resolves services from the wrong site
+    expect(result.tag).toBe('derived')
+    expect(result.caller).toBe(outerOrigin!)
+    expect(result.isolatedCaller).toBe(outerOrigin!)
+  })
 })
