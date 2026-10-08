@@ -144,6 +144,12 @@ export class Entry {
   }
 
   async init() {
+    // Already started. Callers reach `init()` directly (`Entry.update()` when
+    // there is no fiber yet, `Loader.refresh()`, `Loader.import()`), and only
+    // `refresh()` guards on `this.fiber`. `uid` is the running marker used by
+    // `update()` as well: a fiber that was disposed has it nulled, so a
+    // re-enabled entry still gets a fresh start.
+    if (this.fiber?.uid) return
     try {
       await (this._initTask ??= this._init())
     } finally {
