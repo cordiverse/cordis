@@ -76,9 +76,14 @@ export class Loader extends EntryTree {
       const unparse = this.runtime?.Config?.['simplify']
       const { entry } = this
       const legacy = { ...entry.options }
-      entry.options.config = unparse ? unparse(config) : config
+      const newConfig = unparse ? unparse(config) : config
+      const result = next()
+      // Only persist after the update has been accepted (next() was called).
+      // If a downstream middleware vetoes the update, the runtime config stays
+      // unchanged and we must not write the new value to persistence.
+      entry.options.config = newConfig
       entry.parent.tree.commit({ id: entry.options.id, group: entry.parent, options: entry.options, legacy })
-      return next()
+      return result
     }, { global: true, prepend: true })
 
     ctx.on('internal/update', function (config, _, next) {
