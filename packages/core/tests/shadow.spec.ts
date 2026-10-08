@@ -185,6 +185,33 @@ describe('Traceable caller', () => {
     expect((root['rooted'] as Rooted).probe()).toBe('hello')
   })
 
+  it('keeps unchecked access for services provided on the root ctx when setting', async () => {
+    class Rooted {
+      [Service.tracker] = {
+        property: 'ctx',
+      }
+
+      constructor(public ctx: Context) {}
+
+      write(value: string) {
+        ;(this.ctx as any).probeProp = value
+        return (this.ctx as any).probeProp
+      }
+    }
+
+    const root = new Context()
+    root.provide('rooted', new Rooted(root))
+
+    let pluginCtx!: Context
+    await root.plugin((ctx) => {
+      pluginCtx = ctx
+    })
+
+    // the def site is fiber-less no matter which ctx the service is accessed through, so the access stays unchecked
+    expect((root['rooted'] as Rooted).write('a')).toBe('a')
+    expect((pluginCtx['rooted'] as Rooted).write('b')).toBe('b')
+  })
+
   it('exposes the caller without preserving shadow for noShadow services', async () => {
     let outerOrigin: Context
 
