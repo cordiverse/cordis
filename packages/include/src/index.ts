@@ -114,7 +114,7 @@ export class Include extends EntryTree {
     this.ctx.baseUrl = new URL('.', pathToFileURL(this.filename)).href
     ensureInsertIds(config.patches, id => !!this.store[id])
 
-    ctx.on('internal/update', (config, _, next) => {
+    ctx.on('internal/update', (config, next) => {
       if (config.path !== this.config.path) return next()
       this.config = config
       ensureInsertIds(config.patches, id => !!this.store[id])

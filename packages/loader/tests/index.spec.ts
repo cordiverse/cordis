@@ -1,7 +1,7 @@
 import { expect, describe, it, beforeAll } from 'vitest'
 import { Context, FiberState } from 'cordis'
 import MockLoader, { sleep } from './utils'
-import { Mock } from 'node:test'
+import { Mock, mock } from 'node:test'
 
 describe('Loader: basic support', () => {
   const root = new Context()
@@ -192,5 +192,175 @@ describe('Loader: entry failure', () => {
 
     expect(loader.expectFiber('1').state).to.equal(FiberState.FAILED)
     expect(loader.expectFiber('2').state).to.equal(FiberState.ACTIVE)
+  })
+})
+
+// interpolated expressions read from the context, so they can only be
+// evaluated once the entry's dependencies are ready
+describe('Loader: config interpolation', () => {
+  const root = new Context()
+
+  let loader!: MockLoader
+  let consumer!: Mock<Function>
+
+  beforeAll(async () => {
+    await root.plugin(MockLoader)
+    loader = root.loader as any
+
+    loader.mock('provider', (ctx: Context, config: { value: number }) => {
+      ctx.provide('foo', { value: config.value })
+    })
+    consumer = loader.mock('consumer', () => {})
+  })
+
+  it('wait for dependencies', async () => {
+    await loader.read([{
+      id: '1',
+      name: 'consumer',
+      inject: ['foo'],
+      config: { value: { __jsExpr: 'foo.value' } },
+    }])
+    await sleep()
+
+    expect(loader.expectFiber('1').state).to.equal(FiberState.PENDING)
+    expect(consumer.mock.calls).to.have.length(0)
+  })
+
+  it('evaluate after dependencies are ready', async () => {
+    await loader.read([{
+      id: '1',
+      name: 'consumer',
+      inject: ['foo'],
+      config: { value: { __jsExpr: 'foo.value' } },
+    }, {
+      id: '2',
+      name: 'provider',
+      config: { value: 1 },
+    }])
+    await sleep()
+
+    expect(loader.expectFiber('1').state).to.equal(FiberState.ACTIVE)
+    expect(consumer.mock.calls).to.have.length(1)
+    expect(consumer.mock.calls[0].arguments[1]).to.deep.equal({ value: 1 })
+  })
+
+  it('re-evaluate when dependencies reload', async () => {
+    await loader.update('2', { config: { value: 2 } })
+    await sleep()
+
+    expect(consumer.mock.calls).to.have.length(2)
+    expect(consumer.mock.calls[1].arguments[1]).to.deep.equal({ value: 2 })
+  })
+
+  it('keep the source config unevaluated', () => {
+    expect(loader.expectFiber('1').config).to.deep.equal({ value: { __jsExpr: 'foo.value' } })
+  })
+})
+
+// a plugin created inside an entry inherits `entry` through the context
+// prototype chain, but its config comes from code rather than the config file
+describe('Loader: nested plugin config', () => {
+  const root = new Context()
+
+  let loader!: MockLoader
+  let child!: Mock<Function>
+
+  beforeAll(async () => {
+    await root.plugin(MockLoader)
+    loader = root.loader as any
+
+    child = loader.mock('child', () => {})
+  })
+
+  it('skip nested plugins', async () => {
+    const config = { value: { __jsExpr: 'foo.value' } }
+    loader.mock('parent', (ctx: Context) => {
+      ctx.plugin(child, config)
+    })
+
+    await loader.read([{ id: '1', name: 'parent' }])
+    await sleep()
+
+    expect(child.mock.calls).to.have.length(1)
+    // same reference: neither interpolated nor rebuilt
+    expect(child.mock.calls[0].arguments[1]).to.equal(config)
+  })
+})
+
+// resolution reads services through `fiber.store`, which a failed fiber no
+// longer has, so recovery must not depend on resolving the new config first
+describe('Loader: failed entry recovery', () => {
+  const root = new Context()
+
+  let loader!: MockLoader
+  let consumer!: Mock<Function>
+  let fail = true
+
+  beforeAll(async () => {
+    await root.plugin(MockLoader)
+    ;(root.logger as any).error = mock.fn()
+    loader = root.loader as any
+
+    loader.mock('provider', (ctx: Context) => {
+      ctx.provide('foo', { value: 1 })
+    })
+    consumer = loader.mock('consumer', () => {
+      if (fail) throw new Error('boom')
+    })
+  })
+
+  it('fail with dependencies available', async () => {
+    await loader.read([{
+      id: '1',
+      name: 'consumer',
+      inject: ['foo'],
+      config: { value: { __jsExpr: 'foo.value' } },
+    }, {
+      id: '2',
+      name: 'provider',
+    }])
+    await sleep()
+
+    expect(loader.expectFiber('1').state).to.equal(FiberState.FAILED)
+    expect(loader.expectFiber('1').store).to.equal(undefined)
+  })
+
+  it('recover through update', async () => {
+    fail = false
+    await loader.update('1', { config: { value: { __jsExpr: 'foo.value' }, fixed: true } })
+    await sleep()
+
+    expect(loader.expectFiber('1').state).to.equal(FiberState.ACTIVE)
+    expect(consumer.mock.calls[1].arguments[1]).to.deep.equal({ value: 1, fixed: true })
+  })
+})
+
+// persistence must not depend on whether the fiber can act on the update
+describe('Loader: pending entry update', () => {
+  const root = new Context()
+
+  let loader!: MockLoader
+
+  beforeAll(async () => {
+    await root.plugin(MockLoader)
+    loader = root.loader as any
+
+    loader.mock('foo', () => {})
+  })
+
+  it('persist an update to a pending fiber', async () => {
+    await loader.read([{ id: '1', name: 'foo', inject: ['never'] }])
+    await sleep()
+    expect(loader.expectFiber('1').state).to.equal(FiberState.PENDING)
+
+    loader.expectFiber('1').update({ a: 3 })
+    await sleep()
+
+    expect(loader.data).to.deep.equal([{
+      id: '1',
+      name: 'foo',
+      inject: ['never'],
+      config: { a: 3 },
+    }])
   })
 })
