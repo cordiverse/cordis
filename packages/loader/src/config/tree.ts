@@ -67,6 +67,9 @@ export abstract class EntryTree {
       do {
         options.id = Math.random().toString(16).slice(2, 10)
       } while (this.store[options.id])
+    } else if (options.id.includes(EntryTree.sep)) {
+      // IDs containing the tree separator cannot be resolved by resolve().
+      throw new Error(`entry id must not contain "${EntryTree.sep}": ${options.id}`)
     }
     return options.id!
   }

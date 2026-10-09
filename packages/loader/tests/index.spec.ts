@@ -193,6 +193,19 @@ describe('Loader: entry failure', () => {
     expect(loader.expectFiber('1').state).to.equal(FiberState.FAILED)
     expect(loader.expectFiber('2').state).to.equal(FiberState.ACTIVE)
   })
+
+  it('on an id containing the separator', async () => {
+    await loader.read([{
+      id: '2',
+      name: 'good',
+    }, {
+      id: '3:4',
+      name: 'good',
+    }])
+
+    expect(loader.store['3:4']).to.be.undefined
+    expect(loader.expectFiber('2').state).to.equal(FiberState.ACTIVE)
+  })
 })
 
 // interpolated expressions read from the context, so they can only be
