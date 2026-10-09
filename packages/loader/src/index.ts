@@ -86,17 +86,16 @@ export class Loader extends EntryTree {
       return interpolate(fiber.ctx, config)
     })
 
-    ctx.on('internal/update', function (config, noSave, next) {
-      if (!this.entry || noSave || this.parent.fiber?.entry === this.entry) return next()
-      const unparse = this.runtime?.Config?.['simplify']
-      const { entry } = this
+    ctx.on('internal/commit', (fiber, config) => {
+      if (!fiber.entry || fiber.parent.fiber?.entry === fiber.entry) return
+      const unparse = fiber.runtime?.Config?.['simplify']
+      const { entry } = fiber
       const legacy = { ...entry.options }
       entry.options.config = unparse ? unparse(config) : config
       entry.parent.tree.commit({ id: entry.options.id, group: entry.parent, options: entry.options, legacy })
-      return next()
-    }, { global: true, prepend: true })
+    })
 
-    ctx.on('internal/update', function (config, _, next) {
+    ctx.on('internal/update', function (config, next) {
       if (!this.entry || this.parent.fiber?.entry === this.entry) return next()
       self.showLog(this.entry, 'reload')
       return next()

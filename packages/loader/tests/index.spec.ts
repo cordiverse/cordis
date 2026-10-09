@@ -334,3 +334,33 @@ describe('Loader: failed entry recovery', () => {
     expect(consumer.mock.calls[1].arguments[1]).to.deep.equal({ value: 1, fixed: true })
   })
 })
+
+// persistence must not depend on whether the fiber can act on the update
+describe('Loader: pending entry update', () => {
+  const root = new Context()
+
+  let loader!: MockLoader
+
+  beforeAll(async () => {
+    await root.plugin(MockLoader)
+    loader = root.loader as any
+
+    loader.mock('foo', () => {})
+  })
+
+  it('persist an update to a pending fiber', async () => {
+    await loader.read([{ id: '1', name: 'foo', inject: ['never'] }])
+    await sleep()
+    expect(loader.expectFiber('1').state).to.equal(FiberState.PENDING)
+
+    loader.expectFiber('1').update({ a: 3 })
+    await sleep()
+
+    expect(loader.data).to.deep.equal([{
+      id: '1',
+      name: 'foo',
+      inject: ['never'],
+      config: { a: 3 },
+    }])
+  })
+})
