@@ -158,8 +158,6 @@ export class Entry {
     } catch (error) {
       this.ctx.logger.error(error)
       return
-    } finally {
-      this._initTask = undefined
     }
     const plugin = this.loader.unwrapExports(exports)
     await this._patchContext([])
