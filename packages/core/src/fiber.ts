@@ -481,14 +481,14 @@ export class Fiber {
   update(config: any, noSave = false): Awaitable<void> {
     const fiber = this.ctx.fiber
     fiber.assertActive()
-    // Resolve ahead of time so that an invalid config cannot tear down a
-    // plugin that is running fine: this throws before the config is written
-    // back or the fiber is restarted. Only dependencies that are already
-    // satisfied can be resolved, so a fiber that is not running takes the
-    // same path as a first load and surfaces the failure as `_error`.
-    // The config is therefore resolved twice along this path.
-    if (fiber._runner.epoch !== INACTIVE) fiber._resolve(config)
-    const result = fiber.context.waterfall(fiber, 'internal/update', config, noSave, () => {
+    if (fiber._runner.epoch === INACTIVE) {
+      fiber.config = config
+      fiber._error = undefined
+      fiber._refresh()
+      return
+    }
+    const resolved = fiber._resolve(config)
+    const result = fiber.context.waterfall(fiber, 'internal/update', resolved, noSave, () => {
       fiber.config = config
       fiber._error = undefined
       return fiber.restart()

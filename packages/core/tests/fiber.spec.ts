@@ -248,7 +248,9 @@ describe('Fiber: config validation', () => {
     '~standard': {
       version: 1,
       vendor: 'test',
-      validate: (value: any) => value?.ok ? { value } : { issues: [{ message: 'not ok' }] },
+      validate: (value: any) => value?.ok
+        ? { value: { ...value, resolved: true } }
+        : { issues: [{ message: 'not ok' }] },
     },
   }
 
@@ -279,5 +281,26 @@ describe('Fiber: config validation', () => {
     expect(apply.mock.calls).to.have.length(1)
     expect(fiber.state).to.equal(FiberState.ACTIVE)
     expect(fiber.config).to.deep.equal({ ok: true })
+  })
+
+  // listeners see what the plugin would see, while the fiber keeps the source
+  it('pass the resolved config to listeners', async () => {
+    const root = new Context()
+    const received: any[] = []
+    const apply = mock.fn((ctx: Context) => {
+      ctx.on('internal/update', (config, noSave, next) => {
+        received.push(config)
+        return next()
+      })
+    })
+
+    const fiber = root.plugin({ apply, Config }, { ok: true })
+    await fiber
+    expect(apply.mock.calls[0].arguments[1]).to.deep.equal({ ok: true, resolved: true })
+
+    await fiber.update({ ok: true, extra: 1 })
+
+    expect(received).to.deep.equal([{ ok: true, extra: 1, resolved: true }])
+    expect(fiber.config).to.deep.equal({ ok: true, extra: 1 })
   })
 })
