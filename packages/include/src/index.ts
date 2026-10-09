@@ -354,7 +354,10 @@ export class Include extends EntryTree {
       await writeFile(tmp, text)
       for (let attempt = 0; ; attempt++) {
         if (expected !== undefined) {
-          const current = await readFile(this.filename, 'utf8').catch(() => undefined)
+          const current = await readFile(this.filename, 'utf8').catch((error) => {
+            if (isENOENT(error)) return undefined
+            throw error
+          })
           if (current !== expected) throw new StaleWriteError()
         }
         try {
