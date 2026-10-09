@@ -143,11 +143,14 @@ class Hmr extends Service {
 
     // Collect externals: framework modules reachable from the main entry.
     // Changes to these files require a full process restart, not HMR.
+    // process.argv[1] is undefined in REPL, node -e, and some packed binaries.
     this.externals = new Set()
-    const mainUrl = pathToFileURL(resolve(process.argv[1])).href
-    const mainJob = this.internal?.loadCache.get(mainUrl)
-    if (mainJob) {
-      this.externals = await loadDependencies(mainJob)
+    if (process.argv[1]) {
+      const mainUrl = pathToFileURL(resolve(process.argv[1])).href
+      const mainJob = this.internal?.loadCache.get(mainUrl)
+      if (mainJob) {
+        this.externals = await loadDependencies(mainJob)
+      }
     }
 
     const match = picomatch(ignored)
