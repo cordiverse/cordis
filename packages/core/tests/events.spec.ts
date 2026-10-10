@@ -279,4 +279,63 @@ describe('Events', () => {
     expect(callback.mock.calls).to.have.length(2)
     expect(terminal.mock.calls).to.have.length(2)
   })
+
+  describe('internal/update', () => {
+    it('does not accumulate across reloads', async () => {
+      const { root } = setup()
+      const calls: number[] = []
+      const fiber = root.plugin((ctx: Context, _: { n: number }) => {
+        ctx.on('internal/update', (config, next) => {
+          calls.push(config.n)
+          return next()
+        })
+      }, { n: 0 })
+
+      await fiber
+      await fiber.update({ n: 1 })
+      await fiber.update({ n: 2 })
+      await fiber.update({ n: 3 })
+      expect(calls).to.deep.equal([1, 2, 3])
+    })
+
+    it('can be disposed explicitly', async () => {
+      const { root } = setup()
+      const calls: number[] = []
+      let dispose!: () => void
+      const fiber = root.plugin((ctx: Context, _: { n: number }) => {
+        dispose = ctx.on('internal/update', (config, next) => {
+          calls.push(config.n)
+          return next()
+        })
+      }, { n: 0 })
+
+      await fiber
+      dispose()
+      await fiber.update({ n: 1 })
+      expect(calls).to.deep.equal([])
+    })
+
+    it('global listeners are not tied to a child fiber reload', async () => {
+      const { root } = setup()
+      const globalCalls: number[] = []
+      const localCalls: number[] = []
+      root.on('internal/update', (config, next) => {
+        globalCalls.push(config.n)
+        return next()
+      }, { global: true })
+
+      const fiber = root.plugin((ctx: Context, _: { n: number }) => {
+        ctx.on('internal/update', (config, next) => {
+          localCalls.push(config.n)
+          return next()
+        })
+      }, { n: 0 })
+
+      await fiber
+      await fiber.update({ n: 1 })
+      await fiber.update({ n: 2 })
+      expect(globalCalls).to.deep.equal([1, 2])
+      expect(localCalls).to.deep.equal([1, 2])
+    })
+  })
 })
