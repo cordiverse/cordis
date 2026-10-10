@@ -57,15 +57,22 @@ export class EntryGroup {
 
     // update inner plugins
     const ids = Reflect.ownKeys({ ...oldMap, ...newMap }) as string[]
-    await Promise.all(ids.map(async (id) => {
+
+    // Remove entries that are no longer present, then create/update the rest.
+    // Serial execution prevents a remove from racing with a create of the
+    // same id (e.g. when an entry is moved within the same group).
+    for (const id of ids) {
+      if (!newMap[id]) {
+        this.remove(id)
+      }
+    }
+    for (const id of ids) {
       if (newMap[id]) {
         await this.create(newMap[id]).catch((error) => {
           this.ctx.logger.error(error)
         })
-      } else {
-        this.remove(id)
       }
-    }))
+    }
   }
 
   stop() {
