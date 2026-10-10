@@ -95,17 +95,28 @@ export type ModuleLoader = ModuleLoaderV1 | ModuleLoaderV2
 
 export namespace ModuleLoader {
   let _cachedLoader: ModuleLoader | undefined
+  const _failures: string[] = []
 
   function requireInternal(id: string): any {
     const require = createRequire(import.meta.url)
-    if (process.execArgv.includes('--expose-internals')) {
+    // MODULE_NOT_FOUND appends a require stack that names this file, which
+    // tells the user nothing; the reason is the first line
+    const detail = (error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error)
+      return message.split('\n')[0]
+    }
+    if (process.execArgv.some(arg => arg === '--expose-internals' || arg === '--expose_internals')) {
       try {
         return require(id)
-      } catch {}
+      } catch (error) {
+        _failures.push(`require(${JSON.stringify(id)}) with expose-internals: ${detail(error)}`)
+      }
     }
     try {
       return require('node-addon-require-builtin').requireBuiltin(id)
-    } catch {}
+    } catch (error) {
+      _failures.push(`node-addon-require-builtin: ${detail(error)}`)
+    }
   }
 
   /**
@@ -120,16 +131,30 @@ export namespace ModuleLoader {
    * @returns the classified loader, or `undefined` when none is reachable or its shape is unknown.
    */
   export function fromInternal(): ModuleLoader | undefined {
-    if (_cachedLoader) return _cachedLoader
+    return fromInternalWithReason().loader
+  }
+
+  /**
+   * Returns why the last {@link fromInternal} probe produced no loader,
+   * so the loader service can report it once at startup.
+   */
+  export function getInternalDiagnostics(): string | undefined {
+    return fromInternalWithReason().reason
+  }
+
+  function fromInternalWithReason(): { loader?: ModuleLoader; reason?: string } {
+    if (_cachedLoader) return { loader: _cachedLoader }
+    _failures.length = 0
     const [major] = process.versions.node.split('.').map(Number)
-    if (major < 22) return
+    if (major < 22) return { reason: `node ${process.versions.node} predates the module-job APIs (v1: 22.9+, v2: 24.12+)` }
 
     const raw = requireInternal('internal/modules/esm/loader')?.getOrInitializeCascadedLoader()
-    if (!raw) return
+    if (!raw) return { reason: _failures.join('; ') || 'internal modules are unreachable' }
     const version = typeof raw.getOrCreateModuleJob === 'function'
       ? 'v2'
       : typeof raw.getModuleJobForImport === 'function' ? 'v1' : undefined
-    if (!version) return
-    return _cachedLoader = Object.assign(raw, { version })
+    if (!version) return { reason: 'the loaded internal loader matches neither the v1 nor the v2 shape' }
+    _cachedLoader = Object.assign(raw, { version })
+    return { loader: _cachedLoader }
   }
 }
