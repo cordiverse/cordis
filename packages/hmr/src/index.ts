@@ -170,8 +170,8 @@ class Hmr extends Service {
       // Full reload: the changed file is part of the framework
       if (this.externals.has(url)) return loader.exit()
 
-      // Awaited before the steps below, so that within one change a watcher
-      // is settled by the time the file reaches module reloading.
+      // A file with explicit watch callbacks is handled by them alone.
+      // Skip partial reload to avoid double-reloading the same file.
       const callbacks = this.watchers.get(filename)
       if (callbacks?.size) {
         await Promise.all([...callbacks].map(async (callback) => {
@@ -181,6 +181,7 @@ class Hmr extends Service {
             this.ctx.logger.warn(error)
           }
         }))
+        return
       }
 
       // Partial reload: the file is in the ESM loadCache
