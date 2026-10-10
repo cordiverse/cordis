@@ -162,4 +162,27 @@ describe('Service', () => {
     expect(bar.mock.calls).to.have.length(1)
     expect(qux.mock.calls).to.have.length(1)
   })
+
+  it('instanceof Service accepts values outside the service chain', async () => {
+    class Foo extends Service {
+      constructor(ctx: Context) {
+        super(ctx, 'foo')
+      }
+    }
+
+    const root = new Context()
+    await root.plugin(Foo)
+    expect(root.foo instanceof Service).to.equal(true)
+
+    // `null` and `undefined` have no `constructor` to read
+    expect(null instanceof Service).to.equal(false)
+    expect(undefined instanceof Service).to.equal(false)
+
+    // the prototype walk ends before reaching `Service`, and `getPrototypeOf`
+    // has nothing left to descend into
+    expect({} instanceof Service).to.equal(false)
+    expect(0 instanceof Service).to.equal(false)
+    expect('' instanceof Service).to.equal(false)
+    expect(false instanceof Service).to.equal(false)
+  })
 })
