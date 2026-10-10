@@ -132,8 +132,19 @@ export abstract class EntryTree {
   }
 
   import(name: string, getOuterStack?: () => string[]) {
+    // a config file can omit `name`; without it there is no specifier to import
+    if (!name) {
+      return composeError(() => {
+        throw new Error('entry name is required')
+      }, getOuterStack)
+    }
+    const baseUrl = this.ctx.baseUrl || this.root?.ctx?.baseUrl
     if (name.startsWith('cordis:')) {
-      return this.ctx.loader.builtins[name.slice(7)]
+      return composeError(() => {
+        const plugin = this.ctx.loader.builtins[name.slice(7)]
+        if (!plugin) throw this.unresolvable(name, baseUrl)
+        return plugin
+      }, getOuterStack)
     }
     return composeError(async (info) => {
       // ModuleJob.run
@@ -141,19 +152,58 @@ export abstract class EntryTree {
       // internal.import
       info.offset += 3
       if (this.ctx.loader.internal) {
-        return await this.ctx.loader.internal.import(name, this.ctx.baseUrl!, {})
-      } else if (name.startsWith('.')) {
-        return await import(/* @vite-ignore */ new URL(name, this.ctx.baseUrl).href)
+        if (!baseUrl && name.startsWith('.')) throw this.unresolvable(name, baseUrl)
+        const parentURL = baseUrl || import.meta.url
+        // a bare specifier carries no url to compare against, so the entry is
+        // left unknown and a set `error.url` then belongs to a dependency
+        const entry = name.startsWith('.') ? new URL(name, parentURL).href : undefined
+        try {
+          return await this.ctx.loader.internal.import(name, parentURL, {})
+        } catch (error: any) {
+          if (error?.code !== 'ERR_MODULE_NOT_FOUND') throw error
+          if (error.url && error.url !== entry) throw error
+          if (!error.url && !error.message?.includes(`'${name}'`) && (!entry || !error.message?.includes(`'${entry}'`))) throw error
+          throw this.unresolvable(name, baseUrl)
+        }
+      }
+      let url = name
+      if (name.startsWith('.')) {
+        // a relative specifier cannot be anchored without a base url, and
+        // `new URL` throws a bare TypeError for it
+        if (!baseUrl) throw this.unresolvable(name, baseUrl)
+        url = new URL(name, baseUrl).href
       } else {
         // An `import()` written here anchors on this file, reaching the loader's
         // own dependencies. A helper inside the config file's project supplies
         // that project as the anchor; the plain import applies when no project
         // can be located.
-        const resolve = await createResolve(this.ctx.baseUrl)
-        const url = resolve ? resolve(name) : name
+        const resolve = await createResolve(baseUrl)
+        if (resolve) {
+          try {
+            url = resolve(name)
+          } catch {
+            // `import.meta.resolve` only resolves; any failure is a resolve failure
+            throw this.unresolvable(name, baseUrl)
+          }
+        }
+      }
+      try {
         return await import(/* @vite-ignore */ url)
+      } catch (error: any) {
+        // an entry that cannot resolve is re-anchored to the config; one that
+        // resolved but failed to load keeps Node's error, which names the
+        // dependency that is actually missing
+        if (error?.code !== 'ERR_MODULE_NOT_FOUND') throw error
+        if (error.url && error.url !== url) throw error
+        if (!error.url && !error.message?.includes(`'${name}'`) && (!url || !error.message?.includes(`'${url}'`))) throw error
+        throw this.unresolvable(name, baseUrl)
       }
     }, getOuterStack)
+  }
+
+  private unresolvable(name: string, baseUrl = this.ctx.baseUrl || this.root?.ctx?.baseUrl) {
+    const from = baseUrl ? ` from ${baseUrl}` : ''
+    return new Error(`cannot resolve ${name}${from}`)
   }
 
   abstract commit(change: EntryChange): void
