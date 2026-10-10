@@ -108,14 +108,9 @@ export async function stageYarnBin(options: StageYarnOptions): Promise<string | 
   const rcPath = join(dir, '.yarnrc.yml')
   let rc: YarnRc = {}
   try {
-    const loaded = yaml.load(await readFile(rcPath, 'utf8'))
-    // An rc we cannot merge into still holds whatever the user put there, and
-    // this function rewrites the file wholesale when it decides to set
-    // `yarnPath`, so stay hands off rather than discard it.
-    if (loaded != null) {
-      if (typeof loaded !== 'object') return undefined
-      rc = loaded as YarnRc
-    }
+    const loaded = yaml.load(await readFile(rcPath, 'utf8')) ?? {}
+    if (typeof loaded !== 'object' || Array.isArray(loaded)) return undefined
+    rc = loaded as YarnRc
   } catch (error) {
     // Same for one we cannot read or parse: only a missing file means "no rc".
     if (!isENOENT(error)) return undefined
