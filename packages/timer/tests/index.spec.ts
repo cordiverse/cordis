@@ -339,6 +339,13 @@ describe('ctx.timer', () => {
       throttled()
       assert.strictEqual(callback.mock.calls.length, 0)
     }))
+
+    it('returns void and ignores callback return value', withContext(async (ctx) => {
+      const throttled = ctx.throttle((a: number, b: number) => a + b, 1000)
+      // @ts-expect-error throttled function returns void, assigning to number must fail
+      const res: number = throttled(1, 2)
+      assert.strictEqual(res, undefined)
+    }))
   })
 
   describe('ctx.debounce()', () => {
@@ -383,6 +390,13 @@ describe('ctx.timer', () => {
       debounced()
       await vi.advanceTimersByTimeAsync(2000)
       assert.strictEqual(callback.mock.calls.length, 0)
+    }))
+
+    it('returns void and ignores callback return value', withContext(async (ctx) => {
+      const debounced = ctx.debounce((a: number, b: number) => a + b, 1000)
+      // @ts-expect-error debounced function returns void, assigning to number must fail
+      const res: number = debounced(1, 2)
+      assert.strictEqual(res, undefined)
     }))
   })
 })
