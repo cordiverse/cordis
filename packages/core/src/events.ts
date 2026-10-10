@@ -94,7 +94,14 @@ export class EventsService {
     const [thisArg, callbacks] = this._resolve('parallel', args)
     const results = await Promise.allSettled(callbacks.map(async callback => Reflect.apply(callback, thisArg, args)))
     const errors = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
-    if (errors.length) throw new AggregateError(errors.map(error => error.reason))
+    if (errors.length) {
+      // `AggregateError` leaves the message empty, and the message is what a
+      // reader sees first
+      const first = errors[0].reason?.message ?? String(errors[0].reason)
+      const rest = errors.length - 1
+      const message = rest ? `${first} (and ${rest} more error${rest > 1 ? 's' : ''})` : first
+      throw new AggregateError(errors.map(error => error.reason), message)
+    }
   }
 
   emit(...args: any[]) {
