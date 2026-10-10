@@ -66,6 +66,39 @@ function isAggregateError(error: any): error is Error & { errors: Error[] } {
   return error instanceof Error && Array.isArray(error['errors'])
 }
 
+/** The sequences `Logger.color` writes, and what a formatter may write. */
+const ESCAPE = /\u001b\[[0-9;]*m/g
+
+/**
+ * Cuts a line at `maxLength` characters, counting what the line shows rather
+ * than the escape sequences it carries, and never leaves a colour open.
+ */
+function truncate(line: string, maxLength: number): string {
+  let shown = 0
+  for (const char of line.replace(ESCAPE, '')) shown++
+  if (shown <= maxLength) return line
+  ESCAPE.lastIndex = 0
+  let visible = 0, cursor = 0, cut = line.length
+  let match: RegExpExecArray | null
+  while ((match = ESCAPE.exec(line))) {
+    const step = match.index - cursor
+    if (visible + step >= maxLength) {
+      cut = cursor + maxLength - visible
+      break
+    }
+    visible += step
+    cursor = ESCAPE.lastIndex
+  }
+  if (cut === line.length && visible + line.length - cursor > maxLength) {
+    cut = cursor + maxLength - visible
+  }
+  if (cut >= line.length) return line
+  const kept = line.slice(0, cut)
+  const sequences = kept.match(ESCAPE) ?? []
+  const opened = sequences.filter(s => s !== '\u001b[0m').length
+  return kept + '...' + (opened > sequences.length - opened ? '\u001b[0m' : '')
+}
+
 export class Logger {
   static color(exporter: Exporter, code: number, value: any, decoration = '') {
     if (!exporter.colors) return '' + value
@@ -111,9 +144,7 @@ export class Logger {
     }
 
     const { maxLength = 10240 } = exporter
-    return format.split(/\r?\n/g).map(line => {
-      return line.slice(0, maxLength) + (line.length > maxLength ? '...' : '')
-    }).join('\n')
+    return format.split(/\r?\n/g).map(line => truncate(line, maxLength)).join('\n')
   }
 
   constructor(options: LoggerOptions, private service: LoggerService) {
