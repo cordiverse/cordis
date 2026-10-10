@@ -91,7 +91,7 @@ export class Loader extends EntryTree {
       const unparse = fiber.runtime?.Config?.['simplify']
       const { entry } = fiber
       const legacy = { ...entry.options }
-      entry.options.config = unparse ? unparse(config) : config
+      entry.options.config = unparse ? unparse.call(fiber.runtime!.Config, config) : config
       entry.parent.tree.commit({ id: entry.options.id, group: entry.parent, options: entry.options, legacy })
     })
 
