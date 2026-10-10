@@ -203,9 +203,13 @@ class Hmr extends Service {
    * a path runs on each change.
    */
   watch(path: string | URL, callback: WatchCallback) {
-    const filename = path instanceof URL || path.startsWith('file:')
+    const absolute = path instanceof URL || path.startsWith('file:')
       ? fileURLToPath(path)
       : resolve(this.baseDir, path)
+    // Chokidar reports paths relative to `cwd`, which the change handler
+    // resolves back against `baseDir`. On Windows `relative()` matches case-
+    // insensitively, so the key takes the same round trip to agree with it.
+    const filename = resolve(this.baseDir, relative(this.baseDir, absolute))
     return this.ctx.effect(() => {
       let callbacks = this.watchers.get(filename)
       if (!callbacks) this.watchers.set(filename, callbacks = new Set())

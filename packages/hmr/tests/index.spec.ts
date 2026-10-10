@@ -3,7 +3,7 @@ import Loader from '@cordisjs/plugin-loader'
 import Logger from '@cordisjs/plugin-logger-console'
 import type { Include } from '@cordisjs/plugin-include'
 import { writeFileSync, readFileSync, unlinkSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { basename, dirname, resolve } from 'node:path'
 import { expect, describe, it, beforeAll, afterAll, afterEach, vi } from 'vitest'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -1220,6 +1220,17 @@ export function apply(ctx: Context) {
       writeFileSync(dotPath, 'v2')
       await waitFor(() => seen.length >= 2)
       expect([...seen].sort()).to.deep.equal(['a', 'b'])
+    }, 15000)
+
+    it.runIf(process.platform === 'win32')('matches paths that differ in case on Windows', async () => {
+      let calls = 0
+      // drive letter and directories alike
+      const dir = dirname(dotPath).replace(/[a-z]/gi, c => c === c.toUpperCase() ? c.toLowerCase() : c.toUpperCase())
+      disposables.push(ctx.hmr.watch(resolve(dir, basename(dotPath)), () => { calls++ }))
+      await new Promise(r => setTimeout(r, SETTLE_MS))
+
+      writeFileSync(dotPath, 'v3')
+      await waitFor(() => calls > 0)
     }, 15000)
   })
 
