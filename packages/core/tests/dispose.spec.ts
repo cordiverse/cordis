@@ -1,4 +1,4 @@
-import { Context } from '../src'
+import { Context, Service } from '../src'
 import { expect, describe, it, vi } from 'vitest'
 import { mock } from 'node:test'
 import { sleep, withTimers } from './utils'
@@ -237,4 +237,46 @@ describe('Effects', () => {
     expect(caught).to.be.instanceOf(Error)
     expect(seq).to.deep.equal([1])
   })
+
+  // a dependent (injecting a service) is registered after its dependency, so
+  // unload must let the dependent's async teardown settle before tearing the
+  // dependency down (#26)
+  it('dependent async teardown settles before its dependency (#26)', withTimers(async (root) => {
+    const timeline: string[] = []
+    class Writer extends Service {
+      closed = false
+
+      constructor(ctx: Context) {
+        super(ctx, 'writer')
+      }
+
+      *[Service.init]() {
+        yield () => {
+          this.closed = true
+          timeline.push('closed')
+        }
+      }
+
+      log(message: string) {
+        timeline.push(`${message}:${this.closed}`)
+      }
+    }
+    const fiber = root.plugin((ctx) => {
+      ctx.plugin(Writer)
+      ctx.inject(['writer'], (c) => {
+        c.effect(() => {
+          c.writer.log('start')
+          return async () => {
+            await sleep(3000)
+            c.writer.log('end')
+          }
+        })
+      })
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    const pending = fiber.dispose()
+    await vi.advanceTimersByTimeAsync(3000)
+    await pending
+    expect(timeline).to.deep.equal(['start:false', 'end:false', 'closed'])
+  }))
 })
