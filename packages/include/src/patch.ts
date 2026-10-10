@@ -156,6 +156,8 @@ export class PatchIndex {
         return
       }
       if (!id) return
+      const inserted = this.inserts.get(id)
+      if (patch.name && inserted && patch.name !== inserted.options.name) return
       const keys = this.keys.get(id) ?? new Map<string, number>()
       for (const key of Object.keys(omit(patch, ['id', 'insert', 'name']))) {
         keys.set(key, index)
@@ -173,9 +175,9 @@ export class PatchIndex {
   /** Owner of one key of an entry. */
   key(id: string, key: string): EntryOwner {
     const insert = this.inserts.get(id)
-    if (insert) return insert
     const index = this.keys.get(id)?.get(key)
-    return index === undefined ? { type: 'file' } : { type: 'patch', index }
+    if (index !== undefined && (!insert || index > insert.index)) return { type: 'patch', index }
+    return insert ?? { type: 'file' }
   }
 
   fileOwned(id: string, key: string | null) {
@@ -238,12 +240,6 @@ export function routeJournal(journal: Journal, data: EntryOptions[], patches: Pa
       continue
     }
 
-    if (owner.type === 'insert') {
-      applyChanges(current.options, record.changes)
-      patched = true
-      continue
-    }
-
     const patchChanges: Dict<Dict> = {}
     applyChanges(current.options, record.changes, (key) => {
       const keyOwner = index.key(id, key)
@@ -251,6 +247,7 @@ export function routeJournal(journal: Journal, data: EntryOptions[], patches: Pa
       ;(patchChanges[keyOwner.index] ??= {})[key] = record.changes[key]
       return false
     })
+    if (owner.type === 'insert') patched = true
     for (const [i, changes] of Object.entries(patchChanges)) {
       applyChanges(patches[i] as any, changes)
       patched = true
