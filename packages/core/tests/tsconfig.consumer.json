@@ -1,0 +1,13 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": "../../..",
+    "noEmit": true,
+    "composite": false,
+    "incremental": false,
+    "paths": {
+      "cordis": ["packages/core/lib/index.d.ts"]
+    }
+  },
+  "files": ["events.consumer.types.ts"]
+}

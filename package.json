@@ -16,7 +16,8 @@
     "test": "yarn yakumo vitest --import tsx",
     "test:text": "shx rm -rf coverage && yarn test --coverage --coverage.reporter text",
     "test:json": "shx rm -rf coverage && yarn test --coverage --coverage.reporter json",
-    "test:html": "shx rm -rf coverage && yarn test --coverage --coverage.reporter html"
+    "test:html": "shx rm -rf coverage && yarn test --coverage --coverage.reporter html",
+    "test:types:core": "yarn exec tsc -p packages/core/tests/tsconfig.consumer.json"
   },
   "devDependencies": {
     "@cordisjs/eslint-config": "^1.1.1",
