@@ -1,12 +1,13 @@
-import { Context, Fiber } from 'cordis'
+import { Context, Fiber, Message } from 'cordis'
 import Loader from '@cordisjs/plugin-loader'
 import Logger from '@cordisjs/plugin-logger-console'
+import type { Include } from '@cordisjs/plugin-include'
 import { writeFileSync, readFileSync, unlinkSync } from 'node:fs'
-import { resolve } from 'node:path'
-import { expect, describe, it, beforeAll, afterAll, afterEach } from 'vitest'
-import { pathToFileURL } from 'node:url'
+import { dirname, resolve } from 'node:path'
+import { expect, describe, it, beforeAll, afterAll, afterEach, vi } from 'vitest'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
-const testDir = new URL('.', import.meta.url).pathname
+const testDir = dirname(fileURLToPath(import.meta.url))
 
 // Helper: read and backup a file, returning restore function
 function backupFile(filename: string) {
@@ -277,6 +278,30 @@ describe('HMR', () => {
 
       expect(ctx.bail('hmr-test/get-dep')).to.equal('prefix:original-shared')
     }, 10000)
+
+    it('should not reload a sibling that only shares an unchanged module', async () => {
+      const stats = (globalThis as any).__hmrTest
+      expect(ctx.bail('hmr-test/get-dep-common')).to.equal('common')
+      expect(ctx.bail('hmr-test/get-dep-sibling')).to.equal('common')
+      const applied = stats.depSiblingApplied
+
+      const reloaded: string[] = []
+      const disposeExporter = ctx.logger.exporter({
+        export(message) {
+          if (message.args[0] === 'reload plugin at %C') reloaded.push(message.args[1])
+        },
+      })
+
+      // dep.ts is imported by plugin-dep only; plugin-dep-sibling is listed
+      // after it in the config and shares dep-common.ts with it
+      dep.modify(c => c.replace("sharedValue = 'original-shared'", "sharedValue = 'updated-shared'"))
+      await waitFor(() => ctx.bail('hmr-test/get-dep') === 'updated-shared')
+      await new Promise(r => setTimeout(r, 500))
+      disposeExporter()
+
+      expect(reloaded).to.deep.equal(['plugin-dep.ts'])
+      expect(stats.depSiblingApplied).to.equal(applied)
+    }, 10000)
   })
 
   // ===== Import error rollback =====
@@ -427,6 +452,86 @@ export function apply(ctx: Context) {
       const value = ctx.bail('hmr-test/get-value')
       expect(value).to.not.equal('initial')
     }, 10000)
+  })
+
+  // ===== Config file atomic writes =====
+  describe('config file atomic writes', () => {
+    let ctx: Context
+    let fiber: Fiber<Context>
+    const configPath = resolve(testDir, 'cordis-atomic.yml')
+    const messages: Message[] = []
+
+    const configWith = (value: string) => `- id: timer
+  name: '@cordisjs/plugin-timer'
+- id: hmr
+  name: '@cordisjs/plugin-hmr'
+  config:
+    root:
+      - .
+    debounce: 50
+- id: cfg
+  name: ./plugin-config
+  config:
+    value: ${value}
+`
+
+    beforeAll(async () => {
+      writeFileSync(configPath, configWith('v0'))
+      const result = await createContext('cordis-atomic.yml')
+      ctx = result.ctx
+      fiber = result.fiber
+      ctx.logger.exporter({ export: message => messages.push(message) })
+    }, 10000)
+
+    afterAll(async () => {
+      await fiber?.dispose()
+      try { unlinkSync(configPath) } catch {}
+    })
+
+    function include() {
+      for (const entry of ctx.loader.entries()) {
+        if ((entry.subtree as Include | undefined)?.filename === configPath) return entry.subtree as Include
+      }
+      throw new Error('include not found')
+    }
+
+    it('keeps watching the file across its own rename-based writes', async () => {
+      const inc = include()
+      const id = ctx.loader.store[inc.ctx.fiber.entry!.options.id]!.id
+      const refresh = vi.spyOn(inc, 'refresh')
+
+      // two runtime writes → two temp-file-plus-rename cycles on the config
+      for (const value of ['v1', 'v2']) {
+        await ctx.loader.update(`${id}:cfg`, { config: { value } })
+        await inc.refresh()
+      }
+      await waitFor(() => readFileSync(configPath, 'utf8').includes('value: v2'))
+      await new Promise(r => setTimeout(r, 500))
+      const settled = refresh.mock.calls.length
+
+      // an external edit must still reach the tree through the watcher
+      const external = configWith('v3')
+      writeFileSync(configPath, external)
+      await waitFor(() => ctx.bail('hmr-test/get-config')?.value === 'v3')
+
+      // and our own writes must not have spawned a feedback loop
+      await new Promise(r => setTimeout(r, 500))
+      expect(refresh.mock.calls.length - settled).toBeLessThanOrEqual(3)
+      expect(readFileSync(configPath, 'utf8')).toBe(external)
+    }, 15000)
+
+    it('logs instead of rejecting when the config file is unparsable', async () => {
+      const before = messages.length
+      writeFileSync(configPath, '- {\n')
+      await waitFor(() => messages.slice(before).some(m => m.type === 'warn' && String(m.args[0]).includes('failed to parse')))
+
+      // hmr is still alive and the tree kept its last good state
+      expect(ctx.hmr).to.be.ok
+      expect(ctx.bail('hmr-test/get-config')?.value).toBe('v3')
+
+      writeFileSync(configPath, configWith('v4'))
+      await waitFor(() => ctx.bail('hmr-test/get-config')?.value === 'v4')
+    }, 15000)
   })
 
   // ===== Service plugin HMR =====
@@ -795,6 +900,395 @@ export function apply(ctx: Context) {
       await waitFor(() => ctx.bail('hmr-test/get-value') === 'stash-test-2')
 
       expect(ctx.bail('hmr-test/get-value')).to.equal('stash-test-2')
+    }, 10000)
+  })
+
+  // ===== Nested entry trees =====
+  describe('nested entry tree', () => {
+    let ctx: Context
+    let fiber: Fiber<Context>
+    const treeDep = backupFile('tree-dep.ts')
+
+    beforeAll(async () => {
+      treeDep.restore()
+      const result = await createContext('cordis-nested.yml')
+      ctx = result.ctx
+      fiber = result.fiber
+    }, 10000)
+
+    afterEach(async () => {
+      treeDep.restore()
+      await new Promise(r => setTimeout(r, SETTLE_MS))
+    })
+
+    afterAll(async () => {
+      fiber?.dispose()
+      await new Promise(r => setTimeout(r, 200))
+    })
+
+    it('should load the nested entry', async () => {
+      await waitFor(() => ctx.bail('hmr-test/get-nested') === 'tree-v1')
+      expect(ctx.bail('hmr-test/get-tree')).to.equal('tree-v1')
+    }, 10000)
+
+    it('should instantiate a nested entry exactly once when its host reloads too', async () => {
+      const stats = (globalThis as any).__hmrTest
+      await waitFor(() => ctx.bail('hmr-test/get-nested') === 'tree-v1')
+      const applied = stats.nestedApplied
+
+      // one change, two entries in the batch: the tree host and the entry
+      // nested two fiber levels below it
+      treeDep.modify(c => c.replace("version = 'tree-v1'", "version = 'tree-v2'"))
+      await waitFor(() => ctx.bail('hmr-test/get-nested') === 'tree-v2')
+      // let a duplicate instance, if any, finish being created and torn down
+      await new Promise(r => setTimeout(r, 500))
+
+      expect(ctx.bail('hmr-test/get-tree')).to.equal('tree-v2')
+      // the host rebuilds its subtree; reloading the nested entry separately
+      // would apply it a second time
+      expect(stats.nestedApplied - applied).to.equal(1)
+    }, 15000)
+
+    it('should skip a nested entry whose host has not started unloading', async () => {
+      const stats = (globalThis as any).__hmrTest
+      await waitFor(() => ctx.bail('hmr-test/get-nested') === 'tree-v1')
+
+      // batch 1: the host registers its subtree and then stalls inside init,
+      // which defers its own unload and keeps the intermediate fiber active
+      stats.stallTreeInit = 3000
+      treeDep.modify(c => c.replace("version = 'tree-v1'", "version = 'tree-v2'"))
+      await waitFor(() => ctx.bail('hmr-test/get-nested') === 'tree-v2')
+      const applied = stats.nestedApplied
+
+      // batch 2 arrives while the host is still stalled, so the nested entry's
+      // direct parent is very much alive; only walking up to the host itself
+      // reveals that the subtree is going away
+      stats.stallTreeInit = 0
+      treeDep.write(treeDep.original.replace("version = 'tree-v1'", "version = 'tree-v3'"))
+      // wait on the host, not the nested entry: the host only comes back after
+      // its stall ends, and a duplicate nested instance would be applied
+      // before that
+      await waitFor(() => ctx.bail('hmr-test/get-tree') === 'tree-v3', 12000)
+      await new Promise(r => setTimeout(r, 1000))
+
+      expect(ctx.bail('hmr-test/get-nested')).to.equal('tree-v3')
+      expect(stats.nestedApplied - applied).to.equal(1)
+    }, 30000)
+  })
+
+  // ===== Resource handoff between old and new instances =====
+  describe('resource handoff on reload', () => {
+    let ctx: Context
+    let fiber: Fiber<Context>
+    const drainDep = backupFile('drain-dep.ts')
+
+    beforeAll(async () => {
+      drainDep.restore()
+      const result = await createContext('cordis-drain.yml')
+      ctx = result.ctx
+      fiber = result.fiber
+    }, 10000)
+
+    afterEach(async () => {
+      drainDep.restore()
+      await new Promise(r => setTimeout(r, SETTLE_MS + 500))
+    })
+
+    afterAll(async () => {
+      fiber?.dispose()
+      await new Promise(r => setTimeout(r, 500))
+    })
+
+    it('should load both plugins', async () => {
+      await waitFor(() => ctx.bail('hmr-test/get-slow') === 'drain-v1')
+      expect(ctx.bail('hmr-test/get-fast')).to.equal('drain-v1')
+    }, 10000)
+
+    it('should not start the new instance before the old one released', async () => {
+      const stats = (globalThis as any).__hmrTest
+      await waitFor(() => ctx.bail('hmr-test/get-slow') === 'drain-v1')
+      const overlaps = stats.slowOverlaps ?? 0
+
+      drainDep.modify(c => c.replace("version = 'drain-v1'", "version = 'drain-v2'"))
+      await waitFor(() => ctx.bail('hmr-test/get-slow') === 'drain-v2')
+
+      expect((stats.slowOverlaps ?? 0) - overlaps).to.equal(0)
+    }, 15000)
+
+    it('should not delay an unrelated plugin behind a slow one', async () => {
+      const stats = (globalThis as any).__hmrTest
+      await waitFor(() => ctx.bail('hmr-test/get-fast') === 'drain-v1')
+
+      drainDep.modify(c => c.replace("version = 'drain-v1'", "version = 'drain-v3'"))
+      await waitFor(() => ctx.bail('hmr-test/get-fast') === 'drain-v3')
+      const fastAppliedAt = stats.fastAppliedAt
+      await waitFor(() => ctx.bail('hmr-test/get-slow') === 'drain-v3')
+
+      // plugin-fast must come back inside the window during which plugin-slow
+      // is still draining: waiting for the whole batch to drain would push it
+      // past `slowReleasedAt`.
+      expect(fastAppliedAt).to.be.greaterThanOrEqual(stats.slowDisposeStartedAt)
+      expect(fastAppliedAt).to.be.lessThan(stats.slowReleasedAt)
+    }, 15000)
+  })
+
+  // ===== Malformed export =====
+  describe('malformed export', () => {
+    let ctx: Context
+    let fiber: Fiber<Context>
+    const pluginError = backupFile('plugin-error.ts')
+
+    const countingPlugin = `
+import { Context } from 'cordis'
+
+const stats: any = ((globalThis as any).__hmrTest ??= {})
+
+export const name = 'plugin-error'
+
+export let value = 'counting'
+
+export function apply(ctx: Context) {
+  ctx.on('hmr-test/get-error', () => value)
+  ctx.effect(() => () => {
+    stats.errorDisposed = (stats.errorDisposed ?? 0) + 1
+  })
+}
+`
+
+    beforeAll(async () => {
+      pluginError.restore()
+      const result = await createContext('cordis-error.yml')
+      ctx = result.ctx
+      fiber = result.fiber
+    }, 10000)
+
+    afterEach(async () => {
+      pluginError.restore()
+      await new Promise(r => setTimeout(r, SETTLE_MS))
+    })
+
+    afterAll(async () => {
+      fiber?.dispose()
+      await new Promise(r => setTimeout(r, 200))
+    })
+
+    it('should leave the running plugin untouched', async () => {
+      const stats = (globalThis as any).__hmrTest
+      pluginError.write(countingPlugin)
+      await waitFor(() => ctx.bail('hmr-test/get-error') === 'counting')
+      const disposed = stats.errorDisposed ?? 0
+
+      // imports fine, but is not a plugin
+      pluginError.write(`
+export const name = 'plugin-error'
+export const apply = 'not a function'
+`)
+      await new Promise(r => setTimeout(r, 2000))
+
+      // validation happens before anything is unloaded, so the old instance
+      // is never disposed and never rebuilt
+      expect(ctx.bail('hmr-test/get-error')).to.equal('counting')
+      expect((stats.errorDisposed ?? 0) - disposed).to.equal(0)
+    }, 15000)
+
+    it('should recover after fixing the export', async () => {
+      pluginError.write(`
+export const name = 'plugin-error'
+export const apply = 'not a function'
+`)
+      await new Promise(r => setTimeout(r, 1000))
+
+      pluginError.write(`
+import { Context } from 'cordis'
+
+export const name = 'plugin-error'
+
+export let value = 'fixed-export'
+
+export function apply(ctx: Context) {
+  ctx.on('hmr-test/get-error', () => value)
+}
+`)
+      await waitFor(() => ctx.bail('hmr-test/get-error') === 'fixed-export')
+      expect(ctx.bail('hmr-test/get-error')).to.equal('fixed-export')
+    }, 15000)
+  })
+
+  // ===== One plugin, several entries =====
+  describe('plugin with multiple entries', () => {
+    let ctx: Context
+    let fiber: Fiber<Context>
+    const pluginMulti = backupFile('plugin-multi.ts')
+
+    beforeAll(async () => {
+      pluginMulti.restore()
+      const result = await createContext('cordis-multi-entry.yml')
+      ctx = result.ctx
+      fiber = result.fiber
+    }, 10000)
+
+    afterEach(async () => {
+      pluginMulti.restore()
+      await new Promise(r => setTimeout(r, SETTLE_MS))
+    })
+
+    afterAll(async () => {
+      fiber?.dispose()
+      await new Promise(r => setTimeout(r, 200))
+    })
+
+    it('should rebuild every fiber, each keeping its own config', async () => {
+      const stats = (globalThis as any).__hmrTest
+      // both entries resolve to the same file, so one runtime holds two fibers
+      await waitFor(() => ctx.bail('hmr-test/get-multi', 'a') === 'multi-v1')
+      expect(ctx.bail('hmr-test/get-multi', 'b')).to.equal('multi-v1')
+
+      // count the per-plugin log line while the reload happens
+      let reloadLogs = 0
+      const disposeExporter = ctx.logger.exporter({
+        export(message) {
+          if (message.args[0] === 'reload plugin at %C') reloadLogs++
+        },
+      })
+
+      stats.multiApplies = []
+      pluginMulti.modify(c => c.replace("version = 'multi-v1'", "version = 'multi-v2'"))
+      await waitFor(() =>
+        ctx.bail('hmr-test/get-multi', 'a') === 'multi-v2' &&
+        ctx.bail('hmr-test/get-multi', 'b') === 'multi-v2',
+      )
+      await new Promise(r => setTimeout(r, 500))
+      disposeExporter()
+
+      // exactly one new instance per entry, each with its own config intact
+      expect([...stats.multiApplies].sort()).to.deep.equal(['a:multi-v2', 'b:multi-v2'])
+      // two fibers, but the plugin is reported once
+      expect(reloadLogs).to.equal(1)
+    }, 15000)
+  })
+
+  describe('hmr.watch', () => {
+    let ctx: Context
+    let fiber: Fiber<Context>
+    const plugin = backupFile('plugin.ts')
+    // matches the default `ignored` patterns, so only an explicit claim can
+    // bring it into the watch set
+    const dotPath = resolve(testDir, '.claimed.yml')
+    // released in `afterEach`, so that a failing test cannot leave a watcher
+    // behind for the next one
+    const disposables: (() => any)[] = []
+
+    beforeAll(async () => {
+      plugin.restore()
+      writeFileSync(dotPath, 'v0')
+      const result = await createContext('cordis.yml')
+      ctx = result.ctx
+      fiber = result.fiber
+    }, 10000)
+
+    afterEach(async () => {
+      disposables.splice(0).forEach(dispose => dispose())
+      await new Promise(r => setTimeout(r, SETTLE_MS))
+    })
+
+    afterAll(async () => {
+      fiber?.dispose()
+      try { unlinkSync(dotPath) } catch {}
+      await new Promise(r => setTimeout(r, 200))
+    })
+
+    // What happens to a watched file that is *also* part of the module graph
+    // is deliberately left unpinned: both of these use a file no module
+    // imports. The config-file suites above cover a watched file in `root`
+    // end to end, through include.
+
+    it('watches a path that `ignored` would skip', async () => {
+      let calls = 0
+      disposables.push(ctx.hmr.watch(dotPath, () => { calls++ }))
+      await new Promise(r => setTimeout(r, SETTLE_MS))
+
+      writeFileSync(dotPath, 'v1')
+      await waitFor(() => calls > 0)
+    }, 15000)
+
+    it('runs every callback registered for the same path', async () => {
+      const seen: string[] = []
+      disposables.push(ctx.hmr.watch(dotPath, () => { seen.push('a') }))
+      disposables.push(ctx.hmr.watch(dotPath, () => { seen.push('b') }))
+      await new Promise(r => setTimeout(r, SETTLE_MS))
+
+      writeFileSync(dotPath, 'v2')
+      await waitFor(() => seen.length >= 2)
+      expect([...seen].sort()).to.deep.equal(['a', 'b'])
+    }, 15000)
+  })
+
+  // ===== Without loader internals =====
+  describe('without loader internals', () => {
+    let ctx: Context
+    let fiber: Fiber<Context>
+    const warnings: string[] = []
+    const configPath = resolve(testDir, 'cordis-no-internal.yml')
+    const configBackup = readFileSync(configPath, 'utf-8')
+    const plugin = backupFile('plugin.ts')
+
+    beforeAll(async () => {
+      plugin.restore()
+      writeFileSync(configPath, configBackup)
+      ctx = new Context()
+      await ctx.plugin(Logger)
+      fiber = await ctx.plugin(Loader)
+      // the loader only exposes the internals; nothing else reads them
+      ctx.loader.internal = undefined
+      ctx.logger.exporter({
+        export(message) {
+          if (message.type === 'warn') warnings.push(message.args[0])
+        },
+      })
+      await ctx.loader.create({
+        name: '@cordisjs/plugin-include',
+        config: {
+          path: pathToFileURL(configPath).href,
+        },
+      })
+      await waitFor(() => ctx.hmr, 5000)
+      await waitFor(() => ctx.bail('hmr-test/get-value') === 'initial', 5000)
+    }, 10000)
+
+    afterEach(async () => {
+      plugin.restore()
+      writeFileSync(configPath, configBackup)
+      await new Promise(r => setTimeout(r, SETTLE_MS))
+    })
+
+    afterAll(async () => {
+      fiber?.dispose()
+      await new Promise(r => setTimeout(r, 200))
+    })
+
+    it('should start and warn once', () => {
+      expect(warnings.filter(w => w.includes('source code HMR is disabled'))).to.have.length(1)
+    })
+
+    it('should emit hmr/change for a source file instead of reloading it', async () => {
+      const changePromise = waitForEvent(ctx, 'hmr/change')
+      plugin.modify(c => c.replace("value = 'initial'", "value = 'no-internal'"))
+
+      const [url] = await changePromise
+      expect(url).to.equal(pathToFileURL(plugin.path).href)
+      await new Promise(r => setTimeout(r, SETTLE_MS))
+      expect(ctx.bail('hmr-test/get-value')).to.equal('initial')
+    }, 10000)
+
+    it('should still reload config files', async () => {
+      writeFileSync(configPath, configBackup.replace(
+        '- id: test\n  name: ./plugin',
+        '- id: test\n  name: ./plugin\n  disabled: true',
+      ))
+      await waitFor(() => ctx.bail('hmr-test/get-value') === undefined)
+
+      writeFileSync(configPath, configBackup)
+      await waitFor(() => ctx.bail('hmr-test/get-value') === 'initial')
     }, 10000)
   })
 })

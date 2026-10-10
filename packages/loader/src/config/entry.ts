@@ -3,7 +3,7 @@ import { deepEqual, isNullable } from 'cosmokit'
 import { Loader } from '../index.ts'
 import { EntryGroup } from './group.ts'
 import { EntryTree } from './tree.ts'
-import { evaluate, interpolate } from './utils.ts'
+import { evaluate } from './utils.ts'
 
 export interface EntryOptions {
   id: string
@@ -42,7 +42,7 @@ export class Entry {
   public subgroup?: EntryGroup
   public subtree?: EntryTree
 
-  _initTask?: Promise<void>
+  _initTask?: Promise<void> | undefined
 
   constructor(public loader: Loader) {
     this.ctx = loader.ctx.extend({ [Entry.key]: this })
@@ -76,17 +76,12 @@ export class Entry {
     return evaluate(this.ctx, expr)
   }
 
-  _resolveConfig(plugin: any): [any, any?] {
-    if (plugin[EntryGroup.key]) return this.options.config
-    return interpolate(this.ctx, this.options.config)
-  }
-
-  private _patchContext(diff: string[]) {
-    this.context.waterfall('loader/patch-context', this, () => {
+  private async _patchContext(diff: string[]) {
+    await this.context.waterfall('loader/patch-context', this, async () => {
       Object.setPrototypeOf(this.ctx, this.parent.ctx)
 
       if (this.fiber?.uid && (diff.includes('config') || this.options.group)) {
-        this.fiber.update(this._resolveConfig(this.fiber.runtime!.callback), true)
+        await this.fiber.update(this.options.config, true)
       }
     })
   }
@@ -127,7 +122,7 @@ export class Entry {
         .filter(key => !deepEqual(this.options[key], legacy[key]))
       if (!diff.length && !force) return
       this.context.emit('loader/partial-dispose', this, legacy, true)
-      this._patchContext(diff)
+      await this._patchContext(diff)
     } else {
       await this.init()
     }
@@ -149,7 +144,8 @@ export class Entry {
     } finally {
       this._initTask = undefined
     }
-    this.fiber?.await().finally(() => {
+    // failures are already reported by the fiber; we only need it to settle
+    this.fiber?.await().catch(() => {}).finally(() => {
       if (this.loader.getTasks().length) return
       this.ctx.reflect.notify(['loader'])
     })
@@ -162,12 +158,10 @@ export class Entry {
     } catch (error) {
       this.ctx.logger.error(error)
       return
-    } finally {
-      this._initTask = undefined
     }
     const plugin = this.loader.unwrapExports(exports)
-    this._patchContext([])
+    await this._patchContext([])
     this.loader.showLog(this, 'apply')
-    this.fiber = this.ctx.registry.plugin(plugin, this._resolveConfig(plugin), this.getOuterStack)
+    this.fiber = this.ctx.registry.plugin(plugin, this.options.config, this.getOuterStack)
   }
 }

@@ -14,7 +14,9 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: 26
+      - name: Install Corepack
+        run: npm install -g --force corepack@latest
       - name: Enable Corepack
         run: corepack enable
       - name: Install
@@ -35,7 +37,9 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: 26
+      - name: Install Corepack
+        run: npm install -g --force corepack@latest
       - name: Enable Corepack
         run: corepack enable
       - name: Install
@@ -54,11 +58,12 @@ jobs:
           yarn yakumo publish
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
 
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
         node-version: [24, 26]
 
     steps:
@@ -68,6 +73,8 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.node-version }}
+      - name: Install Corepack
+        run: npm install -g --force corepack@latest
       - name: Enable Corepack
         run: corepack enable
       - name: Install

@@ -1,6 +1,6 @@
-import { defineProperty, Promisify } from 'cosmokit'
+import { Awaitable, defineProperty, Promisify } from 'cosmokit'
 import { Context } from './context'
-import { Fiber, FiberState } from './fiber'
+import { Fiber, FiberState, resolveConfig } from './fiber'
 import { DisposableList, symbols } from './utils'
 
 export function isBailed(value: any) {
@@ -43,7 +43,7 @@ export interface Hook extends EventOptions {
 }
 
 export class EventsService {
-  _hooks: Record<keyof any, Hook[]> = {}
+  _hooks: Record<keyof any, Hook[]> = Object.create(null)
 
   constructor(private ctx: Context) {
     defineProperty(this, symbols.tracker, {
@@ -59,20 +59,24 @@ export class EventsService {
       }
     })
 
-    this.on('internal/update', function (config, noSave, next) {
+    this.on('internal/update', function (config, next) {
       const cbs = [...this._hooks['internal/update'] || []]
       const _next = () => {
         const cb = cbs.shift() ?? next
-        return cb.call(this, config, noSave, _next)
+        return cb.call(this, config, _next)
       }
       return _next()
     }, { global: true, prepend: true })
+
+    this.on('internal/config', (fiber, next) => {
+      return resolveConfig(fiber.runtime!, next())
+    })
   }
 
   private _resolve(type: string, args: any[]) {
     const thisArg = typeof args[0] === 'object' || typeof args[0] === 'function' ? args.shift() : null
-    const name: string = args.shift()
-    if (!name.startsWith('internal/') && this._hooks['internal/dispatch']?.length) {
+    const name: string | symbol = args.shift()
+    if ((typeof name !== 'string' || !name.startsWith('internal/')) && this._hooks['internal/dispatch']?.length) {
       this.emit('internal/dispatch', type, name, args, thisArg)
     }
     const filter = thisArg?.[Context.filter]
@@ -87,7 +91,7 @@ export class EventsService {
   }
 
   async parallel(...args: any[]) {
-    const [thisArg, callbacks] = this._resolve('emit', args)
+    const [thisArg, callbacks] = this._resolve('parallel', args)
     const results = await Promise.allSettled(callbacks.map(async callback => Reflect.apply(callback, thisArg, args)))
     const errors = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
     if (errors.length) throw new AggregateError(errors.map(error => error.reason))
@@ -117,26 +121,36 @@ export class EventsService {
   waterfall(...args: any[]) {
     const [thisArg, callbacks] = this._resolve('waterfall', args)
     const inner = args.pop()
-    const next = () => {
+    const dispatch = () => {
       const callback = callbacks.shift()
-      return callback ? Reflect.apply(callback, thisArg, args) : inner(...args)
+      if (!callback) return inner()
+      let called = false
+      const next = () => {
+        if (called) throw new Error('next() called multiple times')
+        called = true
+        return dispatch()
+      }
+      return Reflect.apply(callback, thisArg, [...args, next])
     }
-    args.push(next)
-    return next()
+    return dispatch()
   }
 
-  register(label: string, hooks: Hook[], callback: any, options: EventOptions): () => void {
+  private register(label: string, name: string | symbol, callback: any, options: EventOptions): () => void {
     const method = options.prepend ? 'unshift' : 'push'
     return this.ctx.fiber.effect(() => {
+      const hooks = this._hooks[name] ??= []
       hooks[method]({ ctx: this.ctx, callback, ...options })
-      return () => this.unregister(hooks, callback)
+      return () => this.unregister(name, callback)
     }, label)
   }
 
-  unregister(hooks: Hook[], callback: any) {
+  private unregister(name: string | symbol, callback: any) {
+    const hooks = this._hooks[name]
+    if (!hooks) return
     const index = hooks.findIndex(hook => hook.callback === callback)
     if (index >= 0) {
       hooks.splice(index, 1)
+      if (!hooks.length) delete this._hooks[name]
       return true
     }
   }
@@ -152,12 +166,11 @@ export class EventsService {
     const result = this.bail(this.ctx, 'internal/listener', name, listener, options)
     if (result) return result
 
-    const hooks = this._hooks[name] ||= []
     const label = `ctx.on(${typeof name === 'string' ? JSON.stringify(name) : name.toString()})`
-    return this.register(label, hooks, listener, options)
+    return this.register(label, name, listener, options)
   }
 
-  once(name: string, listener: (...args: any) => any, options?: boolean | EventOptions) {
+  once(name: string | symbol, listener: (...args: any) => any, options?: boolean | EventOptions) {
     const dispose = this.on(name, function (...args: any[]) {
       dispose()
       return listener.apply(this, args)
@@ -167,12 +180,15 @@ export class EventsService {
 }
 
 export interface Events {
+  [key: symbol]: (...args: any[]) => any
   'internal/plugin'(fiber: Fiber): void
   'internal/status'(fiber: Fiber, oldValue: FiberState): void
   'internal/service'(this: Context, name: string, value: any): void
-  'internal/update'(this: Fiber, config: any, noSave: boolean, next: () => void): void
+  'internal/update'(this: Fiber, resolvedConfig: any, next: () => Awaitable<void>): Awaitable<void>
+  'internal/commit'(fiber: Fiber, originalConfig: any): void
+  'internal/config'(fiber: Fiber, next: () => any): any
   'internal/get'(ctx: Context, name: string, error: Error, next: () => any): any
   'internal/set'(ctx: Context, name: string, value: any, error: Error, next: () => boolean): boolean
   'internal/listener'(this: Context, name: string, listener: any, prepend: boolean): void
-  'internal/dispatch'(mode: DispatchMode, name: string, args: any[], thisArg: any): void
+  'internal/dispatch'(mode: DispatchMode, name: string | symbol, args: any[], thisArg: any): void
 }

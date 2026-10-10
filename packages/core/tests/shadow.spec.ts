@@ -49,6 +49,140 @@ describe('Traceable caller', () => {
     expect(result.caller).toBe(outerOrigin!)
     expect(result.shadow).toBe(innerOrigin!)
     expect(result.outerShadow).toBe(outerOrigin!)
+
+    // accessing the service from root must not collapse the shadow
+    const direct = root['outer'].inspect()
+    expect(direct.caller).toBe(outerOrigin!)
+    expect(direct.shadow).toBe(innerOrigin!)
+    expect(direct.outerShadow).toBe(outerOrigin!)
+  })
+
+  it('applies the service inject when entered from root', async () => {
+    class Inner extends Service {
+      constructor(ctx: Context) {
+        super(ctx, 'inner')
+      }
+
+      hello() {
+        return 'hello'
+      }
+    }
+
+    class Outer extends Service {
+      // deliberately does not inject `inner`
+      constructor(ctx: Context) {
+        super(ctx, 'outer')
+      }
+
+      probe() {
+        return (this.ctx['inner'] as Inner).hello()
+      }
+    }
+
+    const root = new Context()
+    await root.plugin(Inner)
+    await root.plugin(Outer)
+
+    const message = 'cannot get property "inner" without inject'
+    expect(() => root['outer'].probe()).toThrow(message)
+    await root.inject(['outer'], (ctx) => {
+      expect(() => ctx['outer'].probe()).toThrow(message)
+    })
+  })
+
+  it('resolves dependencies through a captured shadow', async () => {
+    class Inner extends Service {
+      constructor(ctx: Context) {
+        super(ctx, 'inner')
+      }
+
+      hello() {
+        return 'hello'
+      }
+    }
+
+    // a plain object handed out by a service, capturing its `this.ctx`
+    class Holder {
+      [Service.tracker] = {
+        property: 'ctx',
+      }
+
+      constructor(public ctx: Context) {}
+
+      probe() {
+        return [(this.ctx['outer'] as Outer).tag(), (this.ctx['inner'] as Inner).hello()]
+      }
+
+      depth() {
+        let depth = 0
+        let cursor: any = this.ctx
+        while (cursor?.[symbols.shadow]) {
+          depth += 1
+          cursor = cursor[symbols.shadow]
+        }
+        return depth
+      }
+    }
+
+    class Outer extends Service {
+      static inject = ['inner']
+
+      constructor(ctx: Context) {
+        super(ctx, 'outer')
+      }
+
+      tag() {
+        return 'outer'
+      }
+
+      create() {
+        return new Holder(this.ctx)
+      }
+    }
+
+    const root = new Context()
+    await root.plugin(Inner)
+    await root.plugin(Outer)
+
+    // the holder's own ctx is a shadow, but the shadow it is accessed through
+    // must stay exactly one level deep
+    expect((root['outer'] as Outer).create().probe()).toEqual(['outer', 'hello'])
+    expect((root['outer'] as Outer).create().depth()).toBe(1)
+    await root.inject(['outer'], (ctx) => {
+      expect((ctx['outer'] as Outer).create().probe()).toEqual(['outer', 'hello'])
+      expect((ctx['outer'] as Outer).create().depth()).toBe(1)
+    })
+  })
+
+  it('keeps unchecked access for services provided on the root ctx', async () => {
+    class Inner extends Service {
+      constructor(ctx: Context) {
+        super(ctx, 'inner')
+      }
+
+      hello() {
+        return 'hello'
+      }
+    }
+
+    // provided outside the fiber system, so it can never declare `inject`
+    class Rooted {
+      [Service.tracker] = {
+        property: 'ctx',
+      }
+
+      constructor(public ctx: Context) {}
+
+      probe() {
+        return (this.ctx['inner'] as Inner).hello()
+      }
+    }
+
+    const root = new Context()
+    await root.plugin(Inner)
+    root.provide('rooted', new Rooted(root))
+
+    expect((root['rooted'] as Rooted).probe()).toBe('hello')
   })
 
   it('exposes the caller without preserving shadow for noShadow services', async () => {

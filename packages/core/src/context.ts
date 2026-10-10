@@ -11,7 +11,7 @@ export interface Context {
   [symbols.intercept]: Dict
   /** @experimental */
   root: this
-  baseUrl?: string
+  baseUrl?: string | undefined
   events: EventsService
   logger: LoggerService
   reflect: ReflectService

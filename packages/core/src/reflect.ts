@@ -76,10 +76,12 @@ export class ReflectService {
           return def.get.call(ctx, ctx[symbols.receiver], error)
         }
 
-        if (!ctx.fiber.runtime) return ctx.reflect.get(prop, false)
+        // a fiber-less def site cannot declare `inject` at all, so it keeps the unchecked root access.
+        const defSite = (ctx[symbols.shadow] as Context | undefined) ?? ctx
+        if (!defSite.fiber.runtime) return ctx.reflect.get(prop, false)
         return ctx.events.waterfall('internal/get', ctx, prop, error, () => {
           const key = target[symbols.isolate][prop]
-          let fiber = (ctx[symbols.shadow] as Context ?? ctx).fiber
+          let fiber = defSite.fiber
           while (true) {
             const impl = fiber.store?.[prop]
             if (impl) return getTraceable(ctx, impl.value)

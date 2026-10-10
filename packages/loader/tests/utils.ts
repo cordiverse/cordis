@@ -1,6 +1,6 @@
 import { Dict } from 'cosmokit'
 import { Context, Fiber, Plugin } from 'cordis'
-import { EntryOptions, Group, Loader } from '../src'
+import { EntryChange, EntryOptions, Group, Loader } from '../src'
 import { Mock, mock } from 'node:test'
 import { expect } from 'vitest'
 
@@ -15,6 +15,7 @@ declare module '../src' {
 
 export default class MockLoader extends Loader {
   public data: EntryOptions[] = []
+  public changes: EntryChange[] = []
   public modules: Dict<Plugin.Object> = Object.create(null)
 
   constructor(ctx: Context) {
@@ -27,8 +28,9 @@ export default class MockLoader extends Loader {
     })
   }
 
-  write() {
+  commit(change: EntryChange) {
     this.data = this.root.data
+    this.changes.push(change)
   }
 
   async read(data: any) {
