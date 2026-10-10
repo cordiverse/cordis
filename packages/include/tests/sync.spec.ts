@@ -203,6 +203,42 @@ describe('Include sync', () => {
     expect(entry.config.patches).toEqual([{ insert: [plugin('x', 2)] }])
   }, 10000)
 
+  it('routes changes to an overridden inserted entry into the override (#129)', async () => {
+    const inner = fixture('tmp-sync-inner-override.yml')
+    const innerText = yaml.dump([plugin('a', 1)])
+    await writeFile(inner, innerText)
+    const app = await setup('tmp-sync-outer-override.yml', [{
+      id: 'inc',
+      name: '@cordisjs/plugin-include',
+      config: {
+        path: './tmp-sync-inner-override.yml',
+        patches: [
+          { insert: [plugin('x', 1)] },
+          { id: 'x', config: { tag: 'x', value: 2 } },
+        ],
+      },
+    }])
+    app.files.push(inner)
+    const innerInclude = () => app.include().store['inc']!.subtree as Include
+    await innerInclude().refresh()
+    await app.ctx.loader.await()
+    expect(app.config('x').value).toBe(2)
+
+    await app.update('inc:x', { config: { tag: 'x', value: 3 } })
+    await innerInclude().refresh()
+    await app.settle()
+
+    // the runtime value and the last effective override become 3; the
+    // insertion and the child file stay untouched
+    expect(app.config('x').value).toBe(3)
+    expect(await readFile(inner, 'utf8')).toBe(innerText)
+    const [entry] = await app.read()
+    expect(entry.config.patches).toEqual([
+      { insert: [plugin('x', 1)] },
+      { id: 'x', config: { tag: 'x', value: 3 } },
+    ])
+  }, 10000)
+
   it('keeps anonymous entries stable across reloads without writing', async () => {
     const anonymous = { name: './config-plugin', config: { tag: 'anon', value: 1 } }
     const text = yaml.dump([anonymous, plugin('b', 1)])

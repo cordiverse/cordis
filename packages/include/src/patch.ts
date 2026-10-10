@@ -170,12 +170,13 @@ export class PatchIndex {
     return this.inserts.get(id) ?? { type: 'file' }
   }
 
-  /** Owner of one key of an entry. */
+  /** Owner of one key of an entry: the last override wins, then the insertion, then the file. */
   key(id: string, key: string): EntryOwner {
+    const index = this.keys.get(id)?.get(key)
+    if (index !== undefined) return { type: 'patch', index }
     const insert = this.inserts.get(id)
     if (insert) return insert
-    const index = this.keys.get(id)?.get(key)
-    return index === undefined ? { type: 'file' } : { type: 'patch', index }
+    return { type: 'file' }
   }
 
   fileOwned(id: string, key: string | null) {
@@ -239,8 +240,23 @@ export function routeJournal(journal: Journal, data: EntryOptions[], patches: Pa
     }
 
     if (owner.type === 'insert') {
-      applyChanges(current.options, record.changes)
-      patched = true
+      // per-key overrides still win over the insertion (last owner, as when reading)
+      const patchChanges: Dict<Dict> = {}
+      let inserted = false
+      applyChanges(current.options, record.changes, (key) => {
+        const keyOwner = index.key(id, key)
+        if (keyOwner.type === 'patch') {
+          ;(patchChanges[keyOwner.index] ??= {})[key] = record.changes[key]
+          return false
+        }
+        inserted = true
+        return true
+      })
+      for (const [i, changes] of Object.entries(patchChanges)) {
+        applyChanges(patches[i] as any, changes)
+        patched = true
+      }
+      if (inserted) patched = true
       continue
     }
 
