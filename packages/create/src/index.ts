@@ -38,6 +38,10 @@ function supports(command: string) {
   }
 }
 
+function isENOENT(error: unknown) {
+  return (error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT'
+}
+
 async function confirm(message: string) {
   const { yes } = await prompts({
     type: 'confirm',
@@ -104,9 +108,13 @@ export async function stageYarnBin(options: StageYarnOptions): Promise<string | 
   const rcPath = join(dir, '.yarnrc.yml')
   let rc: YarnRc = {}
   try {
-    const loaded = yaml.load(await readFile(rcPath, 'utf8'))
-    if (loaded && typeof loaded === 'object') rc = loaded as YarnRc
-  } catch {}
+    const loaded = yaml.load(await readFile(rcPath, 'utf8')) ?? {}
+    if (typeof loaded !== 'object' || Array.isArray(loaded)) return undefined
+    rc = loaded as YarnRc
+  } catch (error) {
+    // Same for one we cannot read or parse: only a missing file means "no rc".
+    if (!isENOENT(error)) return undefined
+  }
 
   const pinned = rc.yarnPath?.match(/^\.yarn\/releases\/yarn-([^/]+)\.cjs$/)?.[1]
   let version: string
