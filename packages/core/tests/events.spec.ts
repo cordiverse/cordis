@@ -338,4 +338,18 @@ describe('Events', () => {
       expect(localCalls).to.deep.equal([1, 2])
     })
   })
+
+  it('ctx.waterfall() forwards initial arguments to terminal', () => {
+    const { root } = setup()
+    const terminal = mock.fn((value: number) => value * 2)
+    expect(root.waterfall('test/waterfall', 3, terminal)).to.equal(6)
+    expect(terminal.mock.calls).to.have.length(1)
+    expect(terminal.mock.calls[0].arguments).to.deep.equal([3])
+
+    terminal.mock.resetCalls()
+    root.on('test/waterfall', (value, next) => next())
+    expect(root.waterfall('test/waterfall', 5, terminal)).to.equal(10)
+    expect(terminal.mock.calls).to.have.length(1)
+    expect(terminal.mock.calls[0].arguments).to.deep.equal([5])
+  })
 })
