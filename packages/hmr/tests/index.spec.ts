@@ -1032,6 +1032,112 @@ export function apply(ctx: Context) {
     }, 15000)
   })
 
+  // ===== Edits arriving while a reload is in flight =====
+  describe('edit during an in-flight reload', () => {
+    let ctx: Context
+    let fiber: Fiber<Context>
+    const drainDep = backupFile('drain-dep.ts')
+    // `cordis-drain.yml` sets hmr.debounce to this.
+    const DEBOUNCE_MS = 50
+
+    // `holdDrain` makes the fixture hold the next drain open until the test
+    // calls `releaseSlow`, so the in-flight window is bounded by the test
+    // rather than by a timeout. `plugin-slow` clears the flag itself, so the
+    // runs those saves queue drain normally.
+    const release = () => { (globalThis as any).__hmrTest.releaseSlow?.() }
+    const whenDisposeStarted = () => new Promise<void>(r => { (globalThis as any).__hmrTest.resolveDisposeStarted = r })
+    const whenReleased = () => new Promise<void>(r => { (globalThis as any).__hmrTest.resolveReleased = r })
+
+    // The watcher runs registered callbacks before it stashes the change and
+    // starts the debounce, so awaiting one here settles the save and the sleep
+    // then clears the debounce timer it registered. That makes every save a run
+    // of its own.
+    let settle: (() => void) | undefined
+    const nextChange = () => new Promise<void>(resolve => { settle = resolve })
+    const onChange = () => {
+      const resolve = settle
+      settle = undefined
+      resolve?.()
+    }
+    const save = async (version: string) => {
+      const change = nextChange()
+      drainDep.modify(c => c.replace("version = 'drain-v1'", `version = '${version}'`))
+      await change
+      await new Promise(r => setTimeout(r, DEBOUNCE_MS + 50))
+    }
+
+    beforeAll(async () => {
+      drainDep.restore()
+      const result = await createContext('cordis-drain.yml')
+      ctx = result.ctx
+      fiber = result.fiber
+      ctx.hmr.watch(drainDep.path, onChange)
+    }, 10000)
+
+    afterEach(async () => {
+      // release first, so the restore below does not start a reload whose drain
+      // is held open
+      release()
+      drainDep.restore()
+      await new Promise(r => setTimeout(r, SETTLE_MS + 500))
+    })
+
+    afterAll(async () => {
+      fiber?.dispose()
+      await new Promise(r => setTimeout(r, 500))
+    })
+
+    it('should apply a re-edit of a file whose own reload is still in flight', async () => {
+      const stats = (globalThis as any).__hmrTest
+      await waitFor(() => ctx.bail('hmr-test/get-slow') === 'drain-v1')
+
+      stats.holdDrain = true
+      const disposeStarted = whenDisposeStarted()
+      await save('drain-v2')
+      await disposeStarted
+
+      // the re-edit lands in that window, on the file the batch is reloading
+      await save('drain-v3')
+      const released = whenReleased()
+      release()
+      await released
+      await waitFor(() => ctx.bail('hmr-test/get-slow') === 'drain-v3')
+
+      expect(ctx.bail('hmr-test/get-fast')).to.equal('drain-v3')
+    }, 30000)
+
+    it('should not run a pass with nothing left to reload', async () => {
+      const stats = (globalThis as any).__hmrTest
+      await waitFor(() => ctx.bail('hmr-test/get-slow') === 'drain-v1')
+
+      const sizes: number[] = []
+      const off = ctx.on('hmr/reload' as any, (map: Map<any, any>) => sizes.push(map.size))
+      const overlaps = stats.slowOverlaps ?? 0
+
+      stats.holdDrain = true
+      const disposeStarted = whenDisposeStarted()
+      await save('drain-v2')
+      await disposeStarted
+
+      // two more saves, each its own run, both inside the drain: the second
+      // queues a run that finds the stash already consumed
+      await save('drain-v3')
+      await save('drain-v4')
+      const released = whenReleased()
+      release()
+      await released
+
+      await waitFor(() => ctx.bail('hmr-test/get-slow') === 'drain-v4')
+      await new Promise(r => setTimeout(r, SETTLE_MS))
+      off()
+
+      // the queued runs start only after the drain finishes
+      expect((stats.slowOverlaps ?? 0) - overlaps).to.equal(0)
+      expect(sizes.length).to.be.greaterThan(0)
+      expect(sizes).to.not.include(0)
+    }, 30000)
+  })
+
   // ===== Malformed export =====
   describe('malformed export', () => {
     let ctx: Context
