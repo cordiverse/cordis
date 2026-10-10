@@ -123,7 +123,7 @@ export class EventsService {
     const inner = args.pop()
     const dispatch = () => {
       const callback = callbacks.shift()
-      if (!callback) return inner()
+      if (!callback) return inner(...args)
       let called = false
       const next = () => {
         if (called) throw new Error('next() called multiple times')
