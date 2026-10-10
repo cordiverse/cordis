@@ -240,11 +240,12 @@ export class ReflectService {
 
   mixin(source: any, mixins: string[] | Dict<string>) {
     const self = this
+    const label = typeof source === 'string' ? JSON.stringify(source) : '<object>'
     return this.ctx.fiber.effect(function* () {
       const entries = Array.isArray(mixins) ? mixins.map(key => [key, key]) : Object.entries(mixins)
       const getTarget = (ctx: Context, error: Error) => {
         // TODO enhance error message
-        return ctx[source]
+        return typeof source === 'string' ? ctx[source] : source
       }
       for (const [key, value] of entries) {
         yield self.accessor(value, {
@@ -263,7 +264,7 @@ export class ReflectService {
           },
         })
       }
-    }, `ctx.mixin(${JSON.stringify(source)})`)
+    }, `ctx.mixin(${label})`)
   }
 
   trace<T>(value: T) {
