@@ -84,6 +84,22 @@ describe('Fiber', () => {
     expect(callback.mock.calls).to.have.length(1)
   })
 
+  it('rejects invalid plugin config schema before apply', async () => {
+    const root = new Context()
+    const apply = mock.fn()
+    ;(root.logger as any).error = mock.fn()
+
+    const plugin = {
+      Config: {} as any,
+      apply,
+    }
+
+    await expect(root.plugin(plugin)).rejects.toThrow(
+      'plugin Config must implement Standard Schema V1',
+    )
+    expect(apply.mock.calls).to.have.length(0)
+  })
+
   it('failed fiber does not re-enter on dependency refresh', async () => {
     const root = new Context()
     ;(root.logger as any).error = mock.fn()
