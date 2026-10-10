@@ -115,6 +115,7 @@ export class Fiber {
   protected context: Context
 
   private _error: any
+  private _revision = 0
   private _runner: EffectRunner<string>
   private _store: Dict<Impl> = Object.create(null)
 
@@ -202,7 +203,7 @@ export class Fiber {
       this.state = FiberState.ACTIVE
       this.store = Object.create(null)
       this._runner = {
-        epoch: '',
+        epoch: '0',
         getOuterStack,
         execute: () => {},
         collect,
@@ -386,8 +387,7 @@ export class Fiber {
   }
 
   _refresh() {
-    let epoch: string | boolean = false
-    epoch = ''
+    let epoch = `${this._revision}`
     for (const name of Object.keys(this.inject)) {
       const impl = this._store[name]
       if (!impl) {
@@ -422,12 +422,17 @@ export class Fiber {
     const oldEpoch = this._runner.epoch
     try {
       await Promise.resolve()
-      await this._execute(this._runner)
+      if (this._runner.epoch === oldEpoch) {
+        await this._execute(this._runner)
+      }
     } catch (reason) {
       // impl guarantees that the error is non-null (?)
       this.ctx.logger.error(reason)
-      this._error = reason
-      this._runner.epoch = INACTIVE
+      // A superseded load still needs cleanup, but cannot fail the new target.
+      if (this._runner.epoch === oldEpoch) {
+        this._error = reason
+        this._runner.epoch = INACTIVE
+      }
     }
     this._updateState(() => {
       if (this._runner.epoch === oldEpoch) {
@@ -473,7 +478,7 @@ export class Fiber {
   async restart() {
     const fiber = this.ctx.fiber
     fiber.assertActive()
-    fiber._setEpoch(INACTIVE)
+    fiber._revision++
     fiber._refresh()
     await fiber.await()
   }
