@@ -104,15 +104,18 @@ export class TimerService extends Service {
     }
   }
 
-  private _schedule(label: string, trigger: (args: any[], isDisposed: boolean) => any, isDisposed = false) {
+  private _schedule(label: string, trigger: (args: any[]) => number | NodeJS.Timeout | undefined) {
     let timer: number | NodeJS.Timeout | undefined
+    let isDisposed = false
     const dispose = this.ctx.effect(() => () => {
       isDisposed = true
       clearTimeout(timer)
+      timer = undefined
     }, label)
     const wrapper: any = (...args: any[]) => {
+      if (isDisposed) return
       clearTimeout(timer)
-      timer = trigger(args, isDisposed)
+      timer = trigger(args)
     }
     wrapper.dispose = dispose
     return wrapper
@@ -124,20 +127,19 @@ export class TimerService extends Service {
       lastCall = Date.now()
       callback(...args)
     }
-    return this._schedule('ctx.throttle()', (args, isDisposed) => {
+    return this._schedule('ctx.throttle()', (args) => {
       const now = Date.now()
       const remaining = delay - now + lastCall
       if (remaining <= 0) {
         execute(...args)
-      } else if (!isDisposed) {
+      } else if (!noTrailing) {
         return setTimeout(execute, remaining, ...args)
       }
-    }, noTrailing)
+    })
   }
 
   debounce<F extends (...args: any[]) => void>(callback: F, delay: number): WithDispose<F> {
-    return this._schedule('ctx.debounce()', (args, isDisposed) => {
-      if (isDisposed) return
+    return this._schedule('ctx.debounce()', (args) => {
       return setTimeout(callback, delay, ...args)
     })
   }

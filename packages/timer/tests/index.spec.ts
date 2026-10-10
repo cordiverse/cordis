@@ -208,9 +208,15 @@ describe('ctx.timer', () => {
       assert.strictEqual(reject.mock.calls.length, 1)
     }))
 
-    it('async iterator (context dispose)', withContext(async function* (ctx) {
+    it('async iterator (context dispose)', withContext(async (ctx) => {
       const callback = mock.fn()
-      const iterator = ctx.interval(1000)
+      let iterator!: AsyncIterableIterator<void>
+      const fiber = await ctx.plugin({
+        inject: ['timer'],
+        apply: (ctx) => {
+          iterator = ctx.interval(1000)
+        },
+      })
       async function iterate() {
         for await (const _ of iterator) {
           callback()
@@ -224,24 +230,25 @@ describe('ctx.timer', () => {
       assert.strictEqual(callback.mock.calls.length, 1)
       await vi.advanceTimersByTimeAsync(1000)
       assert.strictEqual(callback.mock.calls.length, 2)
-      ctx.fiber.dispose()
-      yield async () => {
-        await vi.advanceTimersByTimeAsync(1000)
-        assert.strictEqual(callback.mock.calls.length, 2)
-        assert.strictEqual(resolve.mock.calls.length, 0)
-        assert.strictEqual(reject.mock.calls.length, 1)
-      }
+      await fiber.dispose()
+      await vi.advanceTimersByTimeAsync(1000)
+      assert.strictEqual(callback.mock.calls.length, 2)
+      assert.strictEqual(resolve.mock.calls.length, 0)
+      assert.strictEqual(reject.mock.calls.length, 1)
     }))
 
-    it('async iterator (context dispose with concurrent reads)', withContext(async function* (ctx) {
-      const iterator = ctx.interval(1000)
+    it('async iterator (context dispose with concurrent reads)', withContext(async (ctx) => {
+      let iterator!: AsyncIterableIterator<void>
+      const fiber = await ctx.plugin({
+        inject: ['timer'],
+        apply: (ctx) => {
+          iterator = ctx.interval(1000)
+        },
+      })
       const reads = [iterator.next(), iterator.next(), iterator.next()]
-      ctx.fiber.dispose()
-
-      yield async () => {
-        for (const read of reads) {
-          await assert.rejects(read, { message: 'Context has been disposed' })
-        }
+      await fiber.dispose()
+      for (const read of reads) {
+        await assert.rejects(read, { message: 'Context has been disposed' })
       }
     }))
   })
@@ -276,16 +283,61 @@ describe('ctx.timer', () => {
       assert.strictEqual(callback.mock.calls.length, 2)
     }))
 
+    it('no trailing mode', withContext(async (ctx) => {
+      const callback = mock.fn()
+      const throttled = ctx.throttle(callback, 1000, true)
+      throttled()
+      assert.strictEqual(callback.mock.calls.length, 1)
+      await vi.advanceTimersByTimeAsync(500)
+      throttled()
+      assert.strictEqual(callback.mock.calls.length, 1)
+      await vi.advanceTimersByTimeAsync(2000)
+      assert.strictEqual(callback.mock.calls.length, 1)
+      throttled()
+      assert.strictEqual(callback.mock.calls.length, 2)
+    }))
+
+    it('context dispose', withContext(async (ctx) => {
+      const callback = mock.fn()
+      let throttled!: () => void
+      const fiber = await ctx.plugin({
+        inject: ['timer'],
+        apply: (ctx) => {
+          throttled = ctx.throttle(callback, 1000)
+        },
+      })
+      throttled()
+      assert.strictEqual(callback.mock.calls.length, 1)
+      await vi.advanceTimersByTimeAsync(500)
+      throttled()
+      await fiber.dispose()
+      await vi.advanceTimersByTimeAsync(2000)
+      assert.strictEqual(callback.mock.calls.length, 1)
+      throttled()
+      assert.strictEqual(callback.mock.calls.length, 1)
+    }))
+
     it('disposed', withContext(async (ctx) => {
       const callback = mock.fn()
       const throttled = ctx.throttle(callback, 1000)
       throttled.dispose()
       throttled()
-      assert.strictEqual(callback.mock.calls.length, 1)
+      assert.strictEqual(callback.mock.calls.length, 0)
       await vi.advanceTimersByTimeAsync(500)
       throttled()
       await vi.advanceTimersByTimeAsync(2000)
-      assert.strictEqual(callback.mock.calls.length, 1)
+      assert.strictEqual(callback.mock.calls.length, 0)
+    }))
+
+    it('disposed with noTrailing', withContext(async (ctx) => {
+      const callback = mock.fn()
+      const throttled = ctx.throttle(callback, 1000, true)
+      throttled.dispose()
+      throttled()
+      assert.strictEqual(callback.mock.calls.length, 0)
+      await vi.advanceTimersByTimeAsync(2000)
+      throttled()
+      assert.strictEqual(callback.mock.calls.length, 0)
     }))
   })
 
@@ -311,6 +363,24 @@ describe('ctx.timer', () => {
       debounced.dispose()
       debounced()
       assert.strictEqual(callback.mock.calls.length, 0)
+      await vi.advanceTimersByTimeAsync(2000)
+      assert.strictEqual(callback.mock.calls.length, 0)
+    }))
+
+    it('context dispose', withContext(async (ctx) => {
+      const callback = mock.fn()
+      let debounced!: () => void
+      const fiber = await ctx.plugin({
+        inject: ['timer'],
+        apply: (ctx) => {
+          debounced = ctx.debounce(callback, 1000)
+        },
+      })
+      debounced()
+      await fiber.dispose()
+      await vi.advanceTimersByTimeAsync(2000)
+      assert.strictEqual(callback.mock.calls.length, 0)
+      debounced()
       await vi.advanceTimersByTimeAsync(2000)
       assert.strictEqual(callback.mock.calls.length, 0)
     }))
