@@ -1,4 +1,4 @@
-import { Context, FiberState, Service } from '../src'
+import { Context, Fiber, FiberState, Service } from '../src'
 import { expect, describe, it, vi } from 'vitest'
 import { mock } from 'node:test'
 import { event, sleep, withTimers } from './utils'
@@ -61,6 +61,65 @@ describe('Fiber', () => {
     ])
     expect(fiber.state).to.equal(FiberState.PENDING)
   }))
+
+  it('dispose late plugin registered during unload', async () => {
+    const root = new Context()
+    const dispose = root.provide('foo', 1)
+    const listener = mock.fn()
+    let resume!: () => void
+    const barrier = new Promise<void>(resolve => { resume = resolve })
+    let child!: Fiber
+
+    const fiber = root.inject(['foo'], (ctx) => {
+      ctx.effect(async () => {
+        await barrier
+        child = await ctx.plugin((ctx) => {
+          ctx.on(event, listener)
+        })
+      })
+    })
+    await fiber
+
+    const task = Promise.resolve(dispose())
+    expect(fiber.state).to.equal(FiberState.UNLOADING)
+    resume()
+    await task
+    await fiber
+
+    expect(fiber.state).to.equal(FiberState.PENDING)
+    expect(child.uid).to.equal(null)
+    expect(fiber._disposables.length).to.equal(0)
+
+    await fiber.dispose()
+    root.emit(event)
+    expect(listener.mock.calls).to.have.length(0)
+    expect(root.registry.size).to.equal(0)
+  })
+
+  it('bound runaway effect registration during unload', async () => {
+    const root = new Context()
+    const dispose = root.provide('foo', 1)
+    const error = mock.fn()
+    ;(root.logger as any).error = error
+
+    const fiber = root.inject(['foo'], (ctx) => {
+      const register = () => {
+        ctx.effect(() => () => {
+          register()
+        })
+      }
+      register()
+    })
+    await fiber
+    expect(fiber.state).to.equal(FiberState.ACTIVE)
+
+    await Promise.resolve(dispose())
+    await fiber
+
+    expect(fiber.state).to.equal(FiberState.PENDING)
+    expect(fiber._disposables.length).to.equal(0)
+    expect(error.mock.calls).to.have.length(1)
+  })
 
   it('plugin error', async () => {
     const root = new Context()
