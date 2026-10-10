@@ -176,6 +176,28 @@ describe('Fiber', () => {
     expect(fiber.state).to.equal(FiberState.FAILED)
   })
 
+  // The same guarantee on the disposed path: the rejection is created here
+  // rather than by the fiber, so a dropped return value is handled explicitly.
+  it('update on a disposed fiber does not leak a dropped failure', async () => {
+    const root = new Context()
+    const fiber = root.plugin(() => {})
+    await fiber.await()
+    await fiber.dispose()
+
+    const leaked: unknown[] = []
+    const onUnhandled = (reason: unknown) => leaked.push(reason)
+    process.on('unhandledRejection', onUnhandled)
+    try {
+      // A caller that neither awaits nor attaches a handler.
+      fiber.update({})
+      await sleep()
+      await sleep()
+    } finally {
+      process.off('unhandledRejection', onUnhandled)
+    }
+    expect(leaked).to.have.length(0)
+  })
+
   it('dispose error', async () => {
     const root = new Context()
     const error = mock.fn()
@@ -271,6 +293,28 @@ describe('Fiber', () => {
     expect(Object.hasOwn(consumer, 'config')).to.equal(false)
     expect(Object.hasOwn(consumer, 'state')).to.equal(false)
     expect(Object.hasOwn(consumer, 'inertia')).to.equal(false)
+  })
+
+  it('update on a disposed fiber is observable through .catch()', async () => {
+    const root = new Context()
+    const fiber = root.plugin(() => {})
+    await fiber.await()
+    await fiber.dispose()
+
+    let syncThrew = false
+    let promise: any
+    try {
+      // A caller that never awaits still attaches a handler.
+      promise = fiber.update({})
+    } catch {
+      syncThrew = true
+    }
+    expect(syncThrew).to.equal(false)
+    const caught = await new Promise<any>((resolve) => {
+      promise?.catch?.(resolve)
+    })
+    expect(caught).to.be.an('error')
+    expect(caught.code).to.equal('INACTIVE_EFFECT')
   })
 })
 
