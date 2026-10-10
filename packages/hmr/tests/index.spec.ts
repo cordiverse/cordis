@@ -77,6 +77,37 @@ async function createContext(configFile: string): Promise<{ ctx: Context; fiber:
 const SETTLE_MS = 500
 
 describe('HMR', () => {
+  // ===== Startup =====
+  describe('startup', () => {
+    const plugin = backupFile('plugin.ts')
+
+    beforeAll(() => {
+      plugin.restore()
+    })
+
+    it('does not reload a plugin while the watcher scans the tree', async () => {
+      const ctx = new Context()
+      // the scan emits `add` for every file under `root`, and the plugin is
+      // already in the module graph when it runs
+      const reloads: string[] = []
+      ctx.on('hmr/reload', () => reloads.push('reload'))
+
+      await ctx.plugin(Logger)
+      const fiber = await ctx.plugin(Loader)
+      await ctx.loader.create({
+        name: '@cordisjs/plugin-include',
+        config: { path: pathToFileURL(resolve(testDir, 'cordis.yml')).href },
+      })
+      await waitFor(() => ctx.hmr, 5000)
+      await new Promise(r => setTimeout(r, SETTLE_MS))
+
+      expect(reloads).to.deep.equal([])
+      expect(ctx.bail('hmr-test/get-value')).to.equal('initial')
+
+      await fiber.dispose()
+    }, 15000)
+  })
+
   // ===== Basic single plugin tests =====
   describe('basic single plugin', () => {
     let ctx: Context
@@ -118,6 +149,25 @@ describe('HMR', () => {
       expect(ctx.bail('hmr-test/get-value')).to.equal('modified')
       expect(disposed).to.be.true
     }, 10000)
+
+    it('should reload a plugin recreated after being deleted', async () => {
+
+      // chokidar delivers the removal first and the recreate as `add` after,
+      // so waiting for the removal keeps the timing out of the test
+      const watcher = (ctx.hmr as any).watcher
+      const removed = new Promise<void>((resolve) => {
+        watcher.on('unlink', (path: string) => {
+          if (path.endsWith('plugin.ts')) resolve()
+        })
+      })
+      unlinkSync(plugin.path)
+      await removed
+      plugin.modify(c => c.replace("value = 'initial'", "value = 'recreated'"))
+
+      await waitFor(() => ctx.bail('hmr-test/get-value') === 'recreated')
+
+      expect(ctx.bail('hmr-test/get-value')).to.equal('recreated')
+    }, 15000)
 
     it('should handle reverting file back to original', async () => {
 
@@ -1231,6 +1281,33 @@ export function apply(ctx: Context) {
 
       writeFileSync(dotPath, 'v3')
       await waitFor(() => calls > 0)
+    }, 15000)
+
+    it('runs a callback when the watched file is recreated after deletion', async () => {
+      // a file in `root` that no module imports, so the recreate reaches the
+      // watcher as `unlink` + `add` rather than a collapsed `change`
+      const target = resolve(testDir, 'watched-root.txt')
+      writeFileSync(target, 'v0')
+      await new Promise(r => setTimeout(r, SETTLE_MS))
+      try {
+        let calls = 0
+        disposables.push(ctx.hmr.watch(target, () => { calls++ }))
+        await new Promise(r => setTimeout(r, SETTLE_MS))
+
+        const watcher = (ctx.hmr as any).watcher
+        const removed = new Promise<void>((resolve) => {
+          watcher.on('unlink', (path: string) => {
+            if (path.endsWith('watched-root.txt')) resolve()
+          })
+        })
+        unlinkSync(target)
+        await removed
+        writeFileSync(target, 'v1')
+
+        await waitFor(() => calls > 0)
+      } finally {
+        try { unlinkSync(target) } catch {}
+      }
     }, 15000)
   })
 

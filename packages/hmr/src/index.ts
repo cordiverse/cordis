@@ -106,6 +106,10 @@ class Hmr extends Service {
   /** Stashed file changes waiting to be processed */
   private stashed = new Set<string>()
 
+  /** Files removed by the watcher; their recreate arrives as an `add` and the
+   * entry is dropped once handled, so only unreplaced removals remain. */
+  private removed = new Set<string>()
+
   /** Callbacks registered through `watch()`, keyed by absolute path. */
   private watchers = new Map<string, Set<WatchCallback>>()
 
@@ -162,7 +166,7 @@ class Hmr extends Service {
 
     const partialReload = this.ctx.debounce(() => this.partialReload(), this.config.debounce)
 
-    this.watcher.on('change', async (path) => {
+    const handleChange = async (path: string) => {
       this.ctx.logger.debug('change detected at %C', path)
       const filename = resolve(this.baseDir, path)
       const url = pathToFileURL(filename).href
@@ -192,6 +196,22 @@ class Hmr extends Service {
       }
 
       this.ctx.emit('hmr/change', url)
+    }
+
+    this.watcher.on('change', (path) => {
+      this.removed.delete(resolve(this.baseDir, path))
+      return handleChange(path)
+    })
+
+    // chokidar reports a recreate as `add` when it does not collapse it into
+    // `change`; an `add` is replayed only for a path we watched disappear.
+    this.watcher.on('add', (path) => {
+      if (!this.removed.delete(resolve(this.baseDir, path))) return
+      return handleChange(path)
+    })
+
+    this.watcher.on('unlink', (path) => {
+      this.removed.add(resolve(this.baseDir, path))
     })
   }
 
