@@ -104,7 +104,7 @@ export class TimerService extends Service {
     }
   }
 
-  private _schedule(label: string, trigger: (args: any[]) => any) {
+  private _schedule(label: string, trigger: (args: any[]) => number | NodeJS.Timeout | undefined) {
     let timer: number | NodeJS.Timeout | undefined
     let isDisposed = false
     const dispose = this.ctx.effect(() => () => {
