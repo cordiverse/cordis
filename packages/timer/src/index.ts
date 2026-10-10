@@ -6,7 +6,7 @@ declare module 'cordis' {
   }
 }
 
-type WithDispose<T> = T & { dispose: () => void }
+type Scheduled<F extends (...args: any[]) => any> = ((...args: Parameters<F>) => void) & { dispose: () => void }
 
 export class TimerService extends Service {
   constructor(ctx: Context) {
@@ -121,7 +121,7 @@ export class TimerService extends Service {
     return wrapper
   }
 
-  throttle<F extends (...args: any[]) => void>(callback: F, delay: number, noTrailing?: boolean): WithDispose<F> {
+  throttle<F extends (...args: any[]) => any>(callback: F, delay: number, noTrailing?: boolean): Scheduled<F> {
     let lastCall = -Infinity
     const execute = (...args: any[]) => {
       lastCall = Date.now()
@@ -138,7 +138,7 @@ export class TimerService extends Service {
     })
   }
 
-  debounce<F extends (...args: any[]) => void>(callback: F, delay: number): WithDispose<F> {
+  debounce<F extends (...args: any[]) => any>(callback: F, delay: number): Scheduled<F> {
     return this._schedule('ctx.debounce()', (args) => {
       return setTimeout(callback, delay, ...args)
     })
