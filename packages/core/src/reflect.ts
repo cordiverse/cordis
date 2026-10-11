@@ -197,7 +197,7 @@ export class ReflectService {
       }
       return async () => {
         if (this.store[impl.key] === impl) delete this.store[impl.key]
-        const fibers = this.notify([name])
+        const fibers = this.ctx.isolate(name, impl.key).reflect.notify([name])
         await Promise.allSettled(fibers.map(fiber => fiber.await()))
         // ensure self access before dependencies cleanup
         delete this.ctx.fiber.store![name]

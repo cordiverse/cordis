@@ -1,5 +1,5 @@
 import { expect, describe, it } from 'vitest'
-import { Context } from 'cordis'
+import { Context, FiberState } from 'cordis'
 import MockLoader from './utils'
 
 interface Slot {
@@ -207,5 +207,70 @@ describe('Service Isolation: provide migration', () => {
     const left = slots(root, 'svc')
     expect(left.some(slot => slot.impl === stay.impl)).to.equal(true)
     expect(left.some(slot => slot.impl === move.impl)).to.equal(false)
+  })
+
+  it.each(['fiber', 'provide'])('notifies the retained realm on %s disposal after a blocked move', async (mode) => {
+    const disposers: Record<string, () => void> = {}
+    const consumers: Record<string, Context> = {}
+    const starts: string[] = []
+    const stops: string[] = []
+    const { root, loader } = await boot({
+      provider: (ctx, config) => {
+        disposers[config.tag] = ctx.provide('svc', { tag: config.tag })
+      },
+      consumer: Object.assign((ctx: Context, config: { tag: string }) => {
+        consumers[config.tag] = ctx
+        starts.push(ctx.svc.tag)
+        return () => { stops.push(ctx.svc.tag) }
+      }, { inject: ['svc'] }),
+    })
+    const first = await loader.create({ name: 'provider', config: { tag: 'first' }, isolate: { svc: 'A' } })
+    const second = await loader.create({ name: 'provider', config: { tag: 'second' }, isolate: { svc: 'B' } })
+    const ca = await loader.create({ name: 'consumer', config: { tag: 'A' }, isolate: { svc: 'A' } })
+    const cb = await loader.create({ name: 'consumer', config: { tag: 'B' }, isolate: { svc: 'B' } })
+    for (const id of [first, second, ca, cb]) await started(loader, id)
+    const a = slots(root, 'svc').find(slot => slot.tag === 'first')!
+    const b = slots(root, 'svc').find(slot => slot.tag === 'second')!
+
+    await loader.update(first, { isolate: { svc: 'B' } })
+    expect(root.reflect.store[a.key]).to.equal(a.impl)
+    expect(root.reflect.store[b.key]).to.equal(b.impl)
+    expect(starts).to.deep.equal(['first', 'second'])
+    expect(stops).to.deep.equal([])
+
+    const eventsA: unknown[] = []
+    const eventsB: unknown[] = []
+    root.isolate('svc', a.key).on('internal/service', (name, value) => {
+      if (name === 'svc') eventsA.push(value?.tag)
+    })
+    root.isolate('svc', b.key).on('internal/service', (name, value) => {
+      if (name === 'svc') eventsB.push(value?.tag)
+    })
+    if (mode === 'fiber') {
+      await loader.expectFiber(first).dispose()
+    } else {
+      await disposers.first()
+    }
+    await loader.await()
+    expect(stops).to.deep.equal(['first'])
+    expect(loader.expectFiber(ca).state).to.equal(FiberState.PENDING)
+    expect(() => consumers.A.svc).to.throw('inactive context')
+    expect(loader.expectFiber(cb).state).to.equal(FiberState.ACTIVE)
+    expect(consumers.B.svc.tag).to.equal('second')
+    expect(root.reflect.store[a.key]).to.be.undefined
+    expect(root.reflect.store[b.key]).to.equal(b.impl)
+    expect(eventsA).to.deep.equal(mode === 'fiber' ? ['first', undefined] : [undefined])
+    expect(eventsB).to.deep.equal([])
+
+    const replacement = await loader.create({ name: 'provider', config: { tag: 'replacement' }, isolate: { svc: 'A' } })
+    await started(loader, replacement)
+    await loader.await()
+    expect(loader.expectFiber(ca).state).to.equal(FiberState.ACTIVE)
+    expect(consumers.A.svc.tag).to.equal('replacement')
+    expect(starts).to.deep.equal(['first', 'second', 'replacement'])
+    expect(stops).to.deep.equal(['first'])
+    expect(loader.expectFiber(cb).state).to.equal(FiberState.ACTIVE)
+    expect(consumers.B.svc.tag).to.equal('second')
+    expect(eventsB).to.deep.equal([])
   })
 })
