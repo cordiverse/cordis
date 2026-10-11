@@ -21,6 +21,11 @@ export namespace JournalRecord {
     /** Index within `parent`; only meaningful alongside a `parent`. */
     position: number
     /**
+     * Sibling ids under `parent` after the latest same-parent reorder there.
+     * One permutation, not an index replayed in journal insertion order.
+     */
+    order?: string[]
+    /**
      * Per-key delta relative to the options the entry had when the change
      * was reported; `undefined` deletes a key. Collected at report time: the
      * live tree is reconciled asynchronously and may lag behind the file.
@@ -57,6 +62,8 @@ export function mergeRecords(older: JournalRecord | undefined, newer: JournalRec
     created: older.created,
     parent: relocated ? newer.parent : older.parent,
     position: relocated ? newer.position : older.position,
+    // A cross-parent move drops a same-parent snapshot. A config edit keeps it.
+    order: newer.order ?? (relocated ? undefined : older.order),
     changes: { ...older.changes, ...newer.changes },
   }
 }
@@ -79,13 +86,27 @@ export function record(journal: Journal, change: EntryChange, parent: string | n
   if (!legacy) {
     return merge(journal, id, { kind: 'upsert', created: true, parent, position, changes: omit(options, ['id']) })
   }
+  // `from` stays unset when the group object does not change.
+  const placed = !!change.from || !!change.reordered
+  const order = change.reordered ? change.group.data.map(entry => entry.id) : undefined
   merge(journal, id, {
     kind: 'upsert',
     created: false,
-    parent: change.from ? parent : undefined,
+    parent: placed ? parent : undefined,
     position,
+    ...(order ? { order } : {}),
     changes: diffOptions(legacy, options),
   })
+  // Every pending placement in this parent shares the latest snapshot, so a
+  // later reorder of an earlier journal key still describes the whole list.
+  if (order) {
+    for (const [entryId, rec] of journal) {
+      if (rec.kind !== 'upsert' || rec.parent !== parent) continue
+      rec.order = order.slice()
+      const index = order.indexOf(entryId)
+      if (index >= 0) rec.position = index
+    }
+  }
 }
 
 export interface FlatEntry {
@@ -140,6 +161,28 @@ export function place(data: EntryOptions[], options: EntryOptions, parent: strin
   return true
 }
 
+export function applyOrder(list: EntryOptions[], order: string[]) {
+  const wanted = new Set(order)
+  const pending = new Map<string, EntryOptions[]>()
+  for (const entry of list) {
+    if (!entry.id || !wanted.has(entry.id)) continue
+    const bucket = pending.get(entry.id)
+    if (bucket) bucket.push(entry)
+    else pending.set(entry.id, [entry])
+  }
+  const queued: EntryOptions[] = []
+  for (const id of order) {
+    const entry = pending.get(id)?.shift()
+    if (entry) queued.push(entry)
+  }
+  let index = 0
+  const next = list.map(entry => {
+    if (!entry.id || !wanted.has(entry.id)) return entry
+    return queued[index++] ?? entry
+  })
+  list.splice(0, list.length, ...next)
+}
+
 /**
  * Overlay a journal onto `data` in place. `filter(id, key)` restricts which
  * changes apply; `key` is `null` when asking about the entry as a whole
@@ -169,11 +212,17 @@ export function applyJournal(
     }
     applyChanges(flat.options, record.changes, key => filter(id, key))
     if (record.parent !== undefined && flat.parent !== record.parent) {
+      const previous = flat
       detach(data, id)
-      if (!place(data, flat.options, record.parent, record.position)) {
+      if (!place(data, previous.options, record.parent, record.position)) {
         warn('cannot move entry %C: group %C not found', id, record.parent)
-        place(data, flat.options, flat.parent, flat.position)
+        place(data, previous.options, previous.parent, previous.position)
+      } else if (record.order) {
+        const moved = flatten(data).get(id)
+        if (moved) applyOrder(moved.list, record.order)
       }
+    } else if (record.order?.length && record.parent === flat.parent) {
+      applyOrder(flat.list, record.order)
     }
   }
   return data
@@ -229,11 +278,37 @@ export function reconcile(
       conflicts.push({ id, reason: `key "${key}" modified both in file and at runtime` })
       delete record.changes[key]
     }
-    if (record.parent !== undefined && b && t.parent !== b.parent && t.parent !== record.parent) {
+    const runtimeParent = record.parent
+    const orderConflict = record.parent !== undefined && !!b && (
+      (t.parent !== b.parent && t.parent !== record.parent)
+      || (
+        record.parent === b.parent
+        && t.parent === b.parent
+        && t.position !== b.position
+        && t.position !== record.position
+      )
+      || (
+        record.parent === t.parent
+        && record.parent !== b.parent
+        && t.position !== record.position
+      )
+    )
+    if (orderConflict) {
       conflicts.push({ id, reason: 'moved both in file and at runtime' })
+      record.order = undefined
+      if (runtimeParent !== undefined) {
+        for (const rec of journal.values()) {
+          if (rec.kind !== 'upsert' || rec.parent !== runtimeParent || !rec.order) continue
+          if (rec.order.includes(id)) rec.order = rec.order.filter(item => item !== id)
+        }
+      }
       record.parent = undefined
     }
-    const moved = record.parent !== undefined && record.parent !== t.parent
+    const sameList = record.parent !== undefined && record.parent === t.parent
+    const anchored = !!b && sameList && record.parent === b.parent
+    const moved = (record.parent !== undefined && record.parent !== t.parent)
+      || (anchored && record.position !== t.position)
+      || (sameList && !!record.order?.length)
     if (!Object.keys(record.changes).length && !moved) {
       journal.delete(id)
     }

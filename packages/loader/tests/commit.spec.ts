@@ -58,6 +58,7 @@ describe('EntryTree.commit: change reports', () => {
     const [change] = loader.changes
     expect(change.group).to.equal(loader.store[group]!.subgroup)
     expect(change.from).to.equal(loader.root)
+    expect(change.reordered).to.be.undefined
     expect(change.options).to.deep.equal(change.legacy)
   })
 
@@ -66,6 +67,7 @@ describe('EntryTree.commit: change reports', () => {
 
     expect(loader.changes).to.have.length(1)
     expect(loader.changes[0].from).to.be.undefined
+    expect(loader.changes[0].reordered).to.be.undefined
   })
 
   it('fiber.update from inside the plugin reports a config change', async () => {
@@ -118,6 +120,30 @@ describe('EntryTree.commit: change reports', () => {
     await sleep()
     expect(loader.changes).to.have.length(0)
     expect(loader.store['x']).to.be.undefined
+  })
+
+  it('same-parent reorder does not report a cross-group move', async () => {
+    const local = await loader.create({ name: 'foo', config: { a: 1 } })
+    const extra = await loader.create({ name: 'foo', config: { a: 1 } })
+    loader.changes = []
+
+    await loader.update(extra, {}, null, 0)
+
+    expect(loader.changes).to.have.length(1)
+    expect(loader.changes[0].id).to.equal(extra)
+    expect(loader.changes[0].from).to.be.undefined
+    expect(loader.changes[0].reordered).to.equal(true)
+    expect(loader.root.data[0]!.id).to.equal(extra)
+
+    loader.changes = []
+    const order = loader.root.data.map(entry => entry.id)
+    await loader.update(extra, {}, undefined, 0)
+    expect(loader.changes[0].from).to.be.undefined
+    expect(loader.changes[0].reordered).to.be.undefined
+    expect(loader.root.data.map(entry => entry.id)).to.deep.equal(order)
+
+    await loader.remove(local)
+    await loader.remove(extra)
   })
 })
 
