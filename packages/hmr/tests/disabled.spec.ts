@@ -379,79 +379,74 @@ describe('HMR disabled entry', () => {
     })
   }, 15000)
 
-  it('does not plugin again while re-enable init is still in patch-context', async () => {
+  it('waits for a second re-enable init before deciding whether to rebuild', async () => {
     const entry = findEntry(ctx, 'live')
     const previous = entry.fiber!
     const inside = arm(gate)
-    let reloadedEarly = false
-    const reloaded = waitForEvent(ctx, 'hmr/reload').then((args) => {
-      reloadedEarly = true
-      return args
-    })
-    plugin.modify(content => content.replace("value = 'initial'", "value = 'mid-init'"))
+    const reloaded = waitForEvent(ctx, 'hmr/reload')
+    plugin.modify(content => content.replace("value = 'initial'", "value = 'second-init'"))
     await inside
 
-    let releaseInit!: () => void
-    let markInit!: () => void
-    const holdInit = new Promise<void>((resolve) => {
-      releaseInit = resolve
-    })
-    const initInside = new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('init barrier timed out')), 8000)
-      markInit = () => {
-        clearTimeout(timer)
-        resolve()
-      }
-    })
+    let releaseFirst!: () => void
+    let releaseSecond!: () => void
+    const firstHold = new Promise<void>((resolve) => { releaseFirst = resolve })
+    const secondHold = new Promise<void>((resolve) => { releaseSecond = resolve })
+    let patches = 0
+    let firstInstalled: Fiber | undefined
+    let updating: Promise<void> | undefined
+    let reenabled: Promise<void> | undefined
     const stop = ctx.on('loader/patch-context', async (patched, next) => {
-      if (patched.options.id !== 'live' || !patched._initTask) return next()
-      markInit()
-      await holdInit
+      if (patched !== entry) return next()
+      if (++patches === 1) {
+        await firstHold
+      } else if (patches === 2) {
+        await secondHold
+      }
       return next()
     })
     try {
-      const updating = entry.update({ disabled: true }).then(() => entry.update({ disabled: false }))
-      await initInside
-
-      expect(entry._initTask).to.not.equal(undefined)
-      expect(entry.fiber === previous).to.equal(true)
-      expect(previous.uid).to.equal(null)
-      expect(gate.applies).to.equal(0)
-
-      gate.release?.()
-      await new Promise(r => setTimeout(r, 50))
-      expect({
-        reloadedEarly,
-        applies: gate.applies,
-        sameFiber: entry.fiber === previous,
-      }).to.deep.equal({
-        reloadedEarly: false,
-        applies: 0,
-        sameFiber: true,
+      await entry.update({ disabled: true })
+      updating = entry.update({ disabled: false })
+      await waitFor(() => patches === 1)
+      // Joining through init() observes its completion before the outer update().
+      reenabled = entry.init().then(() => {
+        firstInstalled = entry.fiber
+        void entry.update({ disabled: true })
+        return entry.update({ disabled: false })
       })
 
-      releaseInit()
-      await updating
-      await reloaded
-      await waitFor(() => ctx.bail('hmr-test/get-value') === 'mid-init')
+      gate.release?.()
+      // HMR was already awaiting this unload before the test joins it.
+      await previous.await()
+      releaseFirst()
+      await waitFor(() => patches === 2)
+      releaseSecond()
+      await Promise.all([updating, reenabled, reloaded])
+      await firstInstalled?.await()
+      await ctx.loader.await()
+
       expect({
+        patches,
         event: ctx.bail('hmr-test/get-value'),
         applies: gate.applies,
         acquired: gate.acquired,
         live: liveUids(gate),
-        sameAsUnloaded: entry.fiber === previous,
-        uid: entry.fiber?.uid ?? null,
       }).to.deep.equal({
-        event: 'mid-init',
-        applies: 1,
+        patches: 2,
+        event: 'second-init',
+        applies: 2,
         acquired: 1,
         live: [entry.fiber?.uid],
-        sameAsUnloaded: false,
-        uid: entry.fiber?.uid,
       })
     } finally {
-      releaseInit()
+      releaseFirst()
+      releaseSecond()
+      disarm(gate)
       stop()
+      await Promise.allSettled([updating, reenabled, reloaded])
+      // Remove any duplicate produced by a failing implementation before cleanup reloads.
+      const current = entry.fiber && Object.getPrototypeOf(entry.fiber)
+      await Promise.all(gate.fibers.filter(fiber => fiber !== current).map(fiber => fiber.dispose()))
     }
   }, 15000)
 
@@ -490,5 +485,13 @@ describe('HMR disabled entry', () => {
       entryRebuilt: true,
     })
     expect(entry.fiber?.uid ?? null).to.not.equal(null)
+    const retainsHostRoot = host.fiber === hostRoot
+    await host.update({ disabled: true })
+    await hostRoot.await()
+    expect({ retainsHostRoot, hostUid: hostRoot.uid, live: liveUids(gate) }).to.deep.equal({
+      retainsHostRoot: true,
+      hostUid: null,
+      live: [entry.fiber?.uid],
+    })
   }, 15000)
 })
