@@ -237,7 +237,7 @@ export function routeJournal(journal: Journal, data: EntryOptions[], patches: Pa
       placeAt(current.options, record.parent, record.position)
       if (record.order) {
         const moved = flatten(data).get(id)
-        if (moved) applyOrder(moved.list, record.order)
+        if (moved) applyOrder(moved.list, record.order, journal)
       }
       continue
     }
@@ -250,7 +250,7 @@ export function routeJournal(journal: Journal, data: EntryOptions[], patches: Pa
 
     const flat = flatten(data).get(id)
     if (flat && record.order?.length && record.parent === flat.parent) {
-      applyOrder(flat.list, record.order)
+      applyOrder(flat.list, record.order, journal)
     }
 
     const patchChanges: Dict<Dict> = {}

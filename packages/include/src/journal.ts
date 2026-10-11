@@ -72,6 +72,15 @@ export function merge(journal: Journal, id: string, record: JournalRecord) {
   const merged = mergeRecords(journal.get(id), record)
   if (merged) {
     journal.set(id, merged)
+    // invariant: restored batches and new changes share the latest placement snapshot.
+    if (record.kind === 'upsert' && record.order) {
+      for (const [entryId, rec] of journal) {
+        if (rec.kind !== 'upsert' || rec.parent !== record.parent) continue
+        rec.order = record.order.slice()
+        const index = rec.order.indexOf(entryId)
+        if (index >= 0) rec.position = index
+      }
+    }
   } else {
     journal.delete(id)
   }
@@ -97,16 +106,6 @@ export function record(journal: Journal, change: EntryChange, parent: string | n
     ...(order ? { order } : {}),
     changes: diffOptions(legacy, options),
   })
-  // Every pending placement in this parent shares the latest snapshot, so a
-  // later reorder of an earlier journal key still describes the whole list.
-  if (order) {
-    for (const [entryId, rec] of journal) {
-      if (rec.kind !== 'upsert' || rec.parent !== parent) continue
-      rec.order = order.slice()
-      const index = order.indexOf(entryId)
-      if (index >= 0) rec.position = index
-    }
-  }
 }
 
 export interface FlatEntry {
@@ -161,26 +160,32 @@ export function place(data: EntryOptions[], options: EntryOptions, parent: strin
   return true
 }
 
-export function applyOrder(list: EntryOptions[], order: string[]) {
+export function applyOrder(list: EntryOptions[], order: string[], journal: Journal) {
   const wanted = new Set(order)
-  const pending = new Map<string, EntryOptions[]>()
+  const movable = new Set([...journal].filter(([id, rec]) =>
+    rec.kind === 'upsert' && rec.order?.includes(id),
+  ).map(([id]) => id))
+  const entries = new Map<string, EntryOptions[]>()
   for (const entry of list) {
-    if (!entry.id || !wanted.has(entry.id)) continue
-    const bucket = pending.get(entry.id)
+    if (!wanted.has(entry.id)) continue
+    const bucket = entries.get(entry.id)
     if (bucket) bucket.push(entry)
-    else pending.set(entry.id, [entry])
+    else entries.set(entry.id, [entry])
   }
-  const queued: EntryOptions[] = []
-  for (const id of order) {
-    const entry = pending.get(id)?.shift()
-    if (entry) queued.push(entry)
+  for (const [id, bucket] of entries) {
+    if (bucket.length !== order.filter(entryId => entryId === id).length) movable.delete(id)
+  }
+  const next = list.filter(entry => wanted.has(entry.id) && !movable.has(entry.id))
+  // invariant: untouched siblings retain file order; excluded ids retain their slots.
+  let anchor: EntryOptions | undefined
+  for (const id of order.toReversed()) {
+    const entry = entries.get(id)?.pop()
+    if (!entry) continue
+    if (movable.has(id)) next.splice(anchor ? next.indexOf(anchor) : next.length, 0, entry)
+    anchor = entry
   }
   let index = 0
-  const next = list.map(entry => {
-    if (!entry.id || !wanted.has(entry.id)) return entry
-    return queued[index++] ?? entry
-  })
-  list.splice(0, list.length, ...next)
+  list.splice(0, list.length, ...list.map(entry => wanted.has(entry.id) ? next[index++] : entry))
 }
 
 /**
@@ -219,10 +224,10 @@ export function applyJournal(
         place(data, previous.options, previous.parent, previous.position)
       } else if (record.order) {
         const moved = flatten(data).get(id)
-        if (moved) applyOrder(moved.list, record.order)
+        if (moved) applyOrder(moved.list, record.order, journal)
       }
     } else if (record.order?.length && record.parent === flat.parent) {
-      applyOrder(flat.list, record.order)
+      applyOrder(flat.list, record.order, journal)
     }
   }
   return data
@@ -278,14 +283,18 @@ export function reconcile(
       conflicts.push({ id, reason: `key "${key}" modified both in file and at runtime` })
       delete record.changes[key]
     }
+    const common = b && new Set(b.list.filter(entry => theirs.get(entry.id)?.parent === b.parent).map(entry => entry.id))
+    const basePosition = b?.list.filter(entry => common?.has(entry.id)).findIndex(entry => entry.id === id)
+    const filePosition = t.list.filter(entry => common?.has(entry.id)).findIndex(entry => entry.id === id)
+    const runtimePosition = record.order?.filter(entryId => common?.has(entryId)).indexOf(id) ?? record.position
     const runtimeParent = record.parent
     const orderConflict = record.parent !== undefined && !!b && (
       (t.parent !== b.parent && t.parent !== record.parent)
       || (
         record.parent === b.parent
         && t.parent === b.parent
-        && t.position !== b.position
-        && t.position !== record.position
+        && filePosition !== basePosition
+        && filePosition !== runtimePosition
       )
       || (
         record.parent === t.parent

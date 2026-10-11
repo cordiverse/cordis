@@ -1,10 +1,80 @@
 import { expect, describe, it } from 'vitest'
 import { writeFile } from 'node:fs/promises'
+import { createRequire, syncBuiltinESMExports } from 'node:module'
 import * as yaml from 'js-yaml'
 import { group, harness, plugin } from './utils'
+import { applyJournal, Journal } from '../src/journal'
 
 describe('Include same-parent order', () => {
   const { setup } = harness()
+
+  it('preserves distinct options for repeated sibling ids', () => {
+    const data = [plugin('a', 1), plugin('a', 2), plugin('b', 3)]
+    const journal: Journal = new Map([['a', {
+      kind: 'upsert', created: false, parent: null, position: 1,
+      order: ['b', 'a', 'a'], changes: {},
+    }]])
+    applyJournal(data, journal)
+    expect(data).toEqual([plugin('b', 3), plugin('a', 1), plugin('a', 2)])
+  })
+
+  it('preserves file ordering of siblings untouched at runtime', async () => {
+    const app = await setup('tmp-order-independent.yml', ['a', 'b', 'c', 'd'].map(id => plugin(id, 1)))
+    await writeFile(app.filename, yaml.dump(['a', 'c', 'b', 'd'].map(id => plugin(id, 1))))
+    await app.include().update('a', {}, null, 3)
+    await app.settle()
+    expect((await app.read()).map(entry => entry.id)).toEqual(['c', 'b', 'd', 'a'])
+    expect(app.include().root.data.map(entry => entry.id)).toEqual(['c', 'b', 'd', 'a'])
+    expect(app.logs('error')).toEqual([])
+  }, 10000)
+
+  it('keeps runtime ordering across an independent file insertion', async () => {
+    const app = await setup('tmp-order-insertion.yml', ['a', 'b', 'c'].map(id => plugin(id, 1)))
+    await writeFile(app.filename, yaml.dump(['x', 'a', 'b', 'c'].map(id => plugin(id, 1))))
+    await app.include().update('a', {}, null, 2)
+    await app.settle()
+    expect((await app.read()).map(entry => entry.id)).toEqual(['x', 'b', 'c', 'a'])
+    expect(app.include().root.data.map(entry => entry.id)).toEqual(['x', 'b', 'c', 'a'])
+    expect(app.logs('error')).toEqual([])
+  }, 10000)
+
+  it('keeps latest sibling order when a failed older batch restores over a newer reorder', async () => {
+    const app = await setup('tmp-order-batch.yml', [plugin('a', 1), plugin('b', 1), plugin('c', 1), plugin('d', 1)])
+    const child = app.include()
+    const fsp = createRequire(import.meta.url)('node:fs/promises') as typeof import('node:fs/promises')
+    const original = fsp.rename
+    let release!: () => void
+    let started!: () => void
+    const held = new Promise<void>(resolve => { release = resolve })
+    const ready = new Promise<void>(resolve => { started = resolve })
+    let once = true
+    fsp.rename = async (from, to) => {
+      if (once && String(to) === app.filename) {
+        once = false
+        started()
+        await held
+        throw Object.assign(new Error('one write failed'), { code: 'ENOSPC' })
+      }
+      return original(from, to)
+    }
+    syncBuiltinESMExports()
+    try {
+      const first = child.update('a', {}, null, 3)
+      const second = child.update('b', {}, null, 2)
+      await ready
+      const third = child.update('a', {}, null, 0)
+      release()
+      await Promise.all([first, second, third])
+      await app.settle()
+      expect((await app.read()).map(entry => entry.id)).toEqual(['a', 'c', 'd', 'b'])
+      expect(child.root.data.map(entry => entry.id)).toEqual(['a', 'c', 'd', 'b'])
+      expect(app.logs('error').filter(line => line.includes('one write failed'))).toHaveLength(1)
+    } finally {
+      release()
+      fsp.rename = original
+      syncBuiltinESMExports()
+    }
+  }, 10000)
 
   it('persists moving an earlier sibling later', async () => {
     const app = await setup('tmp-order-later.yml', [plugin('a', 1), plugin('b', 1), plugin('c', 1)])
