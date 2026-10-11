@@ -1,5 +1,6 @@
 import { expect, describe, it } from 'vitest'
 import { readFile, chmod, writeFile } from 'node:fs/promises'
+import { createRequire, syncBuiltinESMExports } from 'node:module'
 import * as yaml from 'js-yaml'
 import Include from '../src'
 import { applied } from './fixtures/config-plugin'
@@ -287,5 +288,238 @@ describe('Include sync', () => {
     await task.catch(() => {})
 
     expect((await app.read())[0].config.value).toBe(2)
+  }, 10000)
+
+  it('persists a patch-only change when dispose interrupts the write', async () => {
+    const inner = fixture('tmp-sync-inner-dispose-insert.yml')
+    const innerText = yaml.dump([plugin('a', 1)])
+    await writeFile(inner, innerText)
+    const app = await setup('tmp-sync-outer-dispose-insert.yml', [{
+      id: 'inc',
+      name: '@cordisjs/plugin-include',
+      config: {
+        path: './tmp-sync-inner-dispose-insert.yml',
+        patches: [{ insert: [plugin('x', 1)] }],
+      },
+    }])
+    app.files.push(inner)
+    const innerInclude = () => app.include().store['inc']!.subtree as Include
+    await innerInclude().refresh()
+    await app.ctx.loader.await()
+    expect(app.config('x').value).toBe(1)
+
+    // Hold the write after the journal is recorded and before it is detached,
+    // until the include fiber's uid has been cleared.
+    const fsp = createRequire(import.meta.url)('node:fs/promises') as typeof import('node:fs/promises')
+    const actualReadFile = fsp.readFile.bind(fsp)
+    let release!: () => void
+    const opened = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let armed = true
+    let seen = false
+    fsp.readFile = (async (path, options) => {
+      if (armed && String(path) === inner) {
+        seen = true
+        return opened.then(() => actualReadFile(path, options))
+      }
+      return actualReadFile(path, options)
+    }) as typeof fsp.readFile
+    syncBuiltinESMExports()
+
+    let stopping: Promise<void> | undefined
+    try {
+      const task = app.update('inc:x', { config: { tag: 'x', value: 2 } })
+      const started = Date.now()
+      while (!seen) {
+        if (Date.now() - started > 3000) throw new Error('write did not reach readFile')
+        await new Promise((resolve) => setImmediate(resolve))
+      }
+      await task
+      const fiber = innerInclude().ctx.fiber
+      stopping = app.dispose()
+      const marked = Date.now()
+      while (fiber.uid !== null) {
+        if (Date.now() - marked > 3000) throw new Error('include fiber stayed active')
+        await new Promise((resolve) => setImmediate(resolve))
+      }
+      armed = false
+      release()
+      await stopping
+      const [entry] = await app.read()
+      expect(entry.config.patches).toEqual([{ insert: [plugin('x', 2)] }])
+      expect(await readFile(inner, 'utf8')).toBe(innerText)
+      expect(app.logs('error').join('\n')).not.toContain('INACTIVE_EFFECT')
+    } finally {
+      armed = false
+      release()
+      fsp.readFile = actualReadFile
+      syncBuiltinESMExports()
+      await stopping
+    }
+  }, 10000)
+
+  it('keeps the journal when the write cannot be cloned', async () => {
+    const app = await setup('tmp-sync-clone.yml', [plugin('a', 1)])
+    const include = app.include()
+    include.config.patches = [{ id: 'a', blow: () => {} }]
+
+    await app.update('a', { config: { tag: 'a', value: 2 } })
+    await include.flush()
+
+    expect((await app.read())[0].config.value).toBe(1)
+    expect(app.logs('warn').some(line => line.includes('kept in memory'))).toBe(true)
+    include.config.patches = undefined
+    await app.dispose()
+    expect((await app.read())[0].config.value).toBe(2)
+  }, 10000)
+
+  it('reports a patch that the parent file cannot store on dispose', async () => {
+    const inner = fixture('tmp-sync-inner-dispose-ro.yml')
+    const innerText = yaml.dump([plugin('a', 1)])
+    await writeFile(inner, innerText)
+    const app = await setup('tmp-sync-outer-dispose-ro.yml', [{
+      id: 'inc',
+      name: '@cordisjs/plugin-include',
+      config: {
+        path: './tmp-sync-inner-dispose-ro.yml',
+        patches: [{ insert: [plugin('x', 1)] }],
+      },
+    }])
+    app.files.push(inner)
+    const innerInclude = () => app.include().store['inc']!.subtree as Include
+    await innerInclude().refresh()
+    await app.ctx.loader.await()
+    const outerText = await app.text()
+    await chmod(app.filename, 0o444)
+
+    const fsp = createRequire(import.meta.url)('node:fs/promises') as typeof import('node:fs/promises')
+    const actualReadFile = fsp.readFile.bind(fsp)
+    let release!: () => void
+    const opened = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let armed = true
+    fsp.readFile = (async (path, options) => {
+      if (armed && String(path) === inner) return opened.then(() => actualReadFile(path, options))
+      return actualReadFile(path, options)
+    }) as typeof fsp.readFile
+    syncBuiltinESMExports()
+
+    let stopping: Promise<void> | undefined
+    try {
+      const task = app.update('inc:x', { config: { tag: 'x', value: 2 } })
+      const fiber = innerInclude().ctx.fiber
+      stopping = app.dispose()
+      const marked = Date.now()
+      while (fiber.uid !== null) {
+        if (Date.now() - marked > 3000) throw new Error('include fiber stayed active')
+        await new Promise((resolve) => setImmediate(resolve))
+      }
+      armed = false
+      release()
+      await task.catch((error: unknown) => {
+        if (!(error instanceof Error)) throw error
+      })
+      await stopping
+      expect(await app.text()).toBe(outerText)
+      expect(app.logs('warn').some(line => line.includes('cannot be persisted'))).toBe(true)
+    } finally {
+      armed = false
+      release()
+      fsp.readFile = actualReadFile
+      syncBuiltinESMExports()
+      await chmod(app.filename, 0o644).catch(() => {})
+      await stopping
+    }
+  }, 10000)
+
+  it('finishes dispose when the parent file cannot be parsed', async () => {
+    const inner = fixture('tmp-sync-inner-dispose-bad.yml')
+    await writeFile(inner, yaml.dump([plugin('a', 1)]))
+    const app = await setup('tmp-sync-outer-dispose-bad.yml', [{
+      id: 'inc',
+      name: '@cordisjs/plugin-include',
+      config: {
+        path: './tmp-sync-inner-dispose-bad.yml',
+        patches: [{ insert: [plugin('x', 1)] }],
+      },
+    }])
+    app.files.push(inner)
+    const innerInclude = () => app.include().store['inc']!.subtree as Include
+    await innerInclude().refresh()
+    await app.ctx.loader.await()
+    await writeFile(app.filename, '[\n')
+
+    const fsp = createRequire(import.meta.url)('node:fs/promises') as typeof import('node:fs/promises')
+    const actualReadFile = fsp.readFile.bind(fsp)
+    let release!: () => void
+    const opened = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let armed = true
+    fsp.readFile = (async (path, options) => {
+      if (armed && String(path) === inner) return opened.then(() => actualReadFile(path, options))
+      return actualReadFile(path, options)
+    }) as typeof fsp.readFile
+    syncBuiltinESMExports()
+
+    let stopping: Promise<void> | undefined
+    try {
+      const task = app.update('inc:x', { config: { tag: 'x', value: 2 } })
+      const fiber = innerInclude().ctx.fiber
+      stopping = app.dispose()
+      const marked = Date.now()
+      while (fiber.uid !== null) {
+        if (Date.now() - marked > 3000) throw new Error('include fiber stayed active')
+        await new Promise((resolve) => setImmediate(resolve))
+      }
+      armed = false
+      release()
+      await task.catch((error: unknown) => {
+        if (!(error instanceof Error)) throw error
+      })
+      await stopping
+      expect(await app.text()).toBe('[\n')
+      expect(app.logs('warn').some(line => line.includes('cannot be persisted'))).toBe(true)
+    } finally {
+      armed = false
+      release()
+      fsp.readFile = actualReadFile
+      syncBuiltinESMExports()
+      await stopping
+    }
+  }, 10000)
+
+  it('keeps a patch batch when committing it throws', async () => {
+    const inner = fixture('tmp-sync-inner-commit-throw.yml')
+    const innerText = yaml.dump([plugin('a', 1)])
+    await writeFile(inner, innerText)
+    const app = await setup('tmp-sync-outer-commit-throw.yml', [{
+      id: 'inc',
+      name: '@cordisjs/plugin-include',
+      config: {
+        path: './tmp-sync-inner-commit-throw.yml',
+        patches: [{ insert: [plugin('x', 1)] }],
+      },
+    }])
+    app.files.push(inner)
+    const innerInclude = () => app.include().store['inc']!.subtree as Include
+    await innerInclude().refresh()
+    await app.ctx.loader.await()
+    app.ctx.on('internal/config', (fiber, next) => {
+      const config = next()
+      if (fiber.entry?.options.id === 'inc') throw new Error('blow config')
+      return config
+    })
+
+    await app.update('inc:x', { config: { tag: 'x', value: 2 } })
+    await innerInclude().flush()
+    await app.include().flush()
+    expect((await app.read())[0].config.patches).toEqual([{ insert: [plugin('x', 1)] }])
+
+    await app.dispose()
+    expect((await app.read())[0].config.patches).toEqual([{ insert: [plugin('x', 2)] }])
+    expect(await readFile(inner, 'utf8')).toBe(innerText)
   }, 10000)
 })
