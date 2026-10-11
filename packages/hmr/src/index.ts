@@ -455,6 +455,23 @@ class Hmr extends Service {
       try {
         while (fiber.inertia) await fiber.inertia
 
+        const entry = fiber.entry
+        // Re-enable's init() may still be awaiting. It does not wait on stage 3.
+        // A rejection is already logged and must not skip the decision below.
+        if (entry?._initTask) await entry._initTask.catch(() => {})
+
+        const removed = !!entry && entry.parent.tree.store[entry.options.id] !== entry
+        // A nested fiber shares the host entry. Only the entry root can already be live.
+        let replaced = false
+        if (entry && fiber.parent.fiber?.entry !== entry && entry.fiber) {
+          replaced = Object.getPrototypeOf(entry.fiber) !== fiber && entry.fiber.uid !== null
+        }
+        if (entry?.disabled || removed || replaced) {
+          const reason = entry?.disabled ? 'disabled' : removed ? 'removed' : 'live fiber'
+          this.ctx.logger.debug(`skip plugin at %C (${reason})`, path)
+          return
+        }
+
         const newFiber = fiber.parent.registry.plugin(replacement, fiber.config, this.getOuterStack)
         newFiber.entry = fiber.entry
         if (newFiber.entry) newFiber.entry.fiber = newFiber
