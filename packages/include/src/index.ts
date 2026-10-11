@@ -88,6 +88,8 @@ export class Include extends EntryTree {
   private cache?: Snapshot
   /** Tree-side changes that have not reached the file yet. */
   private journal: Journal = new Map()
+  // invariant: retries route against the ownership before an accepted patch handoff.
+  private replay?: { patches: PatchOptions[]; accepted: PatchOptions[]; batch: Journal }
   /** Ids we assigned to entries the file leaves anonymous. */
   private anonymous = new Map<string, Anonymous>()
 
@@ -101,11 +103,14 @@ export class Include extends EntryTree {
   private _pendingTree?: EntryOptions[]
   private _applyTask?: Promise<void>
 
+  private ownerConfig: any
+
   private _disposed = false
   private _seq = 0
 
   constructor(ctx: Context, public config: Include.Config) {
     super(ctx)
+    this.ownerConfig = ctx.fiber.entry?.options.config
     this.enableLogs = config.enableLogs ?? ctx.fiber.entry?.parent.tree.enableLogs ?? false
     this.filename = fileURLToPath(new URL(this.config.path, this.ctx.baseUrl))
     const ext = extname(this.filename)
@@ -119,6 +124,7 @@ export class Include extends EntryTree {
     ctx.on('internal/update', (config, next) => {
       if (config.path !== this.config.path) return next()
       this.config = config
+      this.ownerConfig = ctx.fiber.entry?.options.config
       ensureInsertIds(config.patches, id => !!this.store[id])
       this._scheduleApply()
       return this._applyTask
@@ -158,7 +164,7 @@ export class Include extends EntryTree {
     this._pendingTree = undefined
     // Flush what the user last did before the tree goes away; this is also the
     // last attempt for changes a failed write left in the journal.
-    if (this.journal.size) {
+    if (this.journal.size || this.replay) {
       this.dirtyWrite = true
       this._drain()
     }
@@ -254,8 +260,21 @@ export class Include extends EntryTree {
     this._assignIds(data)
 
     if (this.cache) {
-      const index = new PatchIndex(this.config.patches ?? [])
-      const conflicts = reconcile(this.journal, flatten(this.cache.data), flatten(data), (id, key) => index.fileOwned(id, key))
+      const index = new PatchIndex(this.replay?.patches ?? this.config.patches ?? [])
+      const base = flatten(this.cache.data)
+      const theirs = flatten(data)
+      if (this.replay) {
+        for (const [id, change] of this.journal) {
+          if (change.kind !== 'upsert' || change.parent === undefined) continue
+          const owner = index.entry(id)
+          if (owner.type !== 'insert' || index.entry(change.parent).type !== 'file') continue
+          if (base.has(id) || !theirs.has(id)) continue
+          owner.list.splice(owner.list.indexOf(owner.options), 1)
+          this.journal.delete(id)
+          this.ctx.logger.error('config conflict in %C: entry %C added in file during move; file wins', this.filename, id)
+        }
+      }
+      const conflicts = reconcile(this.journal, base, theirs, (id, key) => index.fileOwned(id, key))
       for (const { id, reason } of conflicts) {
         this.ctx.logger.error('config conflict in %C: entry %C %s; file wins', this.filename, id, reason)
       }
@@ -264,7 +283,7 @@ export class Include extends EntryTree {
     this.cache = { content, data }
     this._scheduleApply()
     // the file changed while tree-side changes were pending: write the merge
-    if (this.journal.size) this.dirtyWrite = true
+    if (this.journal.size || this.replay) this.dirtyWrite = true
   }
 
   /**
@@ -294,6 +313,10 @@ export class Include extends EntryTree {
     const fiber = this.ctx.fiber
     const entry = fiber.entry
     if (!entry) return this.refusePatches()
+    const parent = entry.parent.tree
+    // invariant: shutdown retains the owning options and config, replacement does not.
+    if (flatten(parent.root.data).get(entry.options.id)?.options !== entry.options
+      || !deepEqual(entry.options.config, this.ownerConfig)) return this.refusePatches()
     if (fiber.uid !== null) {
       const previous = entry.options.config
       // Not awaited: the returned promise is the tree reconciliation, and
@@ -308,6 +331,7 @@ export class Include extends EntryTree {
         if (entry.options.config === previous) return false
       }
       this.config = next
+      this.ownerConfig = entry.options.config
       return true
     }
 
@@ -316,8 +340,6 @@ export class Include extends EntryTree {
     // an effect and may already be gone. Write the parent commit directly.
     if (fiber.parent.fiber?.entry === entry) return this.refusePatches()
     const previousConfig = entry.options.config
-    const parent = entry.parent.tree
-    const parentJournal = parent instanceof Include && parent !== this ? parent.journal : undefined
     try {
       const unparse = fiber.runtime?.Config?.['simplify']
       const legacy = { ...entry.options }
@@ -333,19 +355,30 @@ export class Include extends EntryTree {
       this.ctx.logger.error(error)
       return false
     }
+    const committed = this.ownerConfig = entry.options.config
     if (parent instanceof Include && parent !== this) {
       await parent._flushWrites()
-      // A failed write restores the same Map. A successful one replaced it.
-      // A later commit on that restored Map must not look like success.
-      if (parent.journal === parentJournal && parent.journal.has(entry.options.id)) return this.refusePatches()
+      if (parent.journal.has(entry.options.id)) return this.refusePatches()
+      try {
+        const persisted = applyPatches(parent.cache?.data ?? [], parent.config.patches, this.warn)
+        if (!deepEqual(flatten(persisted).get(entry.options.id)?.options.config, committed)) return this.refusePatches()
+      } catch (error) {
+        this.ctx.logger.error(error)
+        return this.refusePatches()
+      }
     }
     fiber.config = next
     this.config = next
+    this.ownerConfig = entry.options.config
     return true
   }
 
   private async _write() {
-    if (!this.cache || !this.journal.size) return
+    if (!this.cache || (!this.journal.size && !this.replay)) return
+    if (this.replay && !deepEqual(this.config.patches ?? [], this.replay.accepted)) {
+      this.refusePatches()
+      return
+    }
     const current = await readFile(this.filename, 'utf8').catch((error) => {
       if (isENOENT(error)) return undefined
       throw error
@@ -378,23 +411,35 @@ export class Include extends EntryTree {
 
     let data: EntryOptions[]
     let patches: PatchOptions[]
+    let original: PatchOptions[]
     try {
       data = structuredClone(this.cache.data)
-      patches = structuredClone(this.config.patches ?? [])
+      original = structuredClone(this.replay?.patches ?? this.config.patches ?? [])
+      patches = structuredClone(original)
     } catch (error) {
       return keep(error)
     }
     let patched = false
     try {
       patched = routeJournal(batch, data, patches, this.warn)
+      patched ||= !!this.replay && !deepEqual(patches, this.config.patches ?? [])
     } catch (error) {
       return keep(error)
     }
-    if (patched && !await this._persistPatches(patches)) restore()
+    if (patched) {
+      const previous = this.replay
+      this.replay = { patches: original, accepted: patches, batch }
+      if (!await this._persistPatches(patches)) {
+        this.replay = previous
+        restore()
+        return
+      }
+    }
 
     // nothing for the file itself (patch-only changes, or ids we assigned to
     // anonymous entries that are already part of the cache)
     if (deepEqual(data, this.cache.data)) {
+      this.replay = undefined
       this._scheduleApply()
       return
     }
@@ -421,6 +466,7 @@ export class Include extends EntryTree {
       throw error
     }
     this.cache = { content: text, data }
+    this.replay = undefined
     this._scheduleApply()
   }
 
@@ -509,7 +555,10 @@ export class Include extends EntryTree {
 
   private _scheduleApply() {
     if (this._disposed || !this.cache) return
-    const tree = applyPatches(this.cache.data, this.config.patches, this.warn)
+    const patches = this.replay && deepEqual(this.config.patches ?? [], this.replay.accepted)
+      ? this.replay.patches : this.config.patches
+    const tree = applyPatches(this.cache.data, patches, this.warn)
+    if (this.replay && patches === this.replay.patches) applyJournal(tree, this.replay.batch, undefined, this.warn)
     this._pendingTree = applyJournal(tree, this.journal, undefined, this.warn)
     this._applyTask ??= (async () => {
       try {
