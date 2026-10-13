@@ -455,9 +455,31 @@ class Hmr extends Service {
       try {
         while (fiber.inertia) await fiber.inertia
 
+        const entry = fiber.entry
+        // Re-enable's init() may still be awaiting. It does not wait on stage 3.
+        // A rejection is already logged and must not skip the decision below.
+        while (entry?._initTask) await entry._initTask.catch(() => {})
+
+        // The host may have been replaced during the wait (e.g. disabled and re-enabled).
+        if (hasInactiveAncestor(fiber)) {
+          this.ctx.logger.debug('skip plugin at %C (inactive ancestor)', path)
+          return
+        }
+
+        const removed = !!entry && entry.parent.tree.store[entry.options.id] !== entry
+        // A nested fiber shares the host entry. Only the entry root can already be live.
+        const isEntryRoot = !!entry && fiber.parent.fiber?.entry !== entry
+        // `fiber` itself is disposed, so a live `entry.fiber` is a replacement.
+        const replaced = isEntryRoot && entry.fiber?.uid != null
+        if (entry?.disabled || removed || replaced) {
+          const reason = entry?.disabled ? 'disabled' : removed ? 'removed' : 'live fiber'
+          this.ctx.logger.debug(`skip plugin at %C (${reason})`, path)
+          return
+        }
+
         const newFiber = fiber.parent.registry.plugin(replacement, fiber.config, this.getOuterStack)
         newFiber.entry = fiber.entry
-        if (newFiber.entry) newFiber.entry.fiber = newFiber
+        if (isEntryRoot) entry.fiber = newFiber
         if (!logged.has(path)) {
           logged.add(path)
           this.ctx.logger.info('reload plugin at %C', path)
