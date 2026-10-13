@@ -39,7 +39,6 @@ describe('Loader: basic support', () => {
     qux = loader.mock('qux', (ctx: Context) => ctx.on('internal/update', () => {}))
   })
 
-
   it('loader initiate', async () => {
     await loader.read([{
       id: '1',

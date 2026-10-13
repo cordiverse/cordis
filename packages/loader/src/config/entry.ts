@@ -3,7 +3,7 @@ import { deepEqual, isNullable } from 'cosmokit'
 import { Loader } from '../index.ts'
 import { EntryGroup } from './group.ts'
 import { EntryTree } from './tree.ts'
-import { evaluate, interpolate, isJsExpr } from './utils.ts'
+import { evaluate, isJsExpr } from './utils.ts'
 
 export interface EntryOptions {
   id: string
@@ -61,13 +61,7 @@ export class Entry {
     return id
   }
 
-  /**
-   * Effective disabled state. A `!!js` node is an expression, not a truthy
-   * object: `Boolean(node)` disables the entry whatever the expression says, so
-   * it is evaluated against the loader context instead. The raw node stays in
-   * the options, so write-back keeps the `!!js` form.
-   */
-  private _disabledOf(options: EntryOptions): boolean {
+  private _resolveDisabled(options: EntryOptions): boolean {
     return isJsExpr(options.disabled)
       ? Boolean(this.evaluate(options.disabled.__jsExpr))
       : Boolean(options.disabled)
@@ -78,7 +72,7 @@ export class Entry {
     if (this.options.group) return false
     let entry: Entry | undefined = this
     do {
-      if (this._disabledOf(entry.options)) return true
+      if (this._resolveDisabled(entry.options)) return true
       entry = entry.parent.ctx.fiber.entry
     } while (entry)
     return false
