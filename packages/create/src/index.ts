@@ -72,8 +72,8 @@ export interface StageYarnOptions {
 }
 
 /**
- * Set up a yarn binary in `rootDir` per the following spec. Returns the version
- * staged (or already present), or `undefined` if nothing was done.
+ * Set up a yarn binary in `rootDir` per the following spec.
+ * Once setup is required, failures reject instead of silently skipping it.
  *
  * 1. `package.json` has `packageManager` → no-op (the template opted into a
  *    specific toolchain; respect it).
@@ -89,7 +89,7 @@ export interface StageYarnOptions {
  * 5. Any other yarn case (2+/3+/4+ without yarnPath, or yarnPath with a
  *    non-standard path) → no-op.
  */
-export async function stageYarnBin(options: StageYarnOptions): Promise<string | undefined> {
+export async function stageYarnBin(options: StageYarnOptions): Promise<void> {
   const { rootDir: dir, registry, agent, fetcher = fetch } = options
   const cacheDir = options.cacheDir ?? join(paths.cache, '.yarn/releases')
   const tempDir = options.tempDir ?? join(paths.temp, '@yarnpkg/cli-dist')
@@ -98,22 +98,22 @@ export async function stageYarnBin(options: StageYarnOptions): Promise<string | 
   try {
     pkg = JSON.parse(await readFile(join(dir, 'package.json'), 'utf8'))
   } catch {
-    return undefined
+    return
   }
   // Rule 1.
-  if (pkg.packageManager) return undefined
+  if (pkg.packageManager) return
   // Rule 2.
-  if (agent?.name !== 'yarn') return undefined
+  if (agent?.name !== 'yarn') return
 
   const rcPath = join(dir, '.yarnrc.yml')
   let rc: YarnRc = {}
   try {
     const loaded = yaml.load(await readFile(rcPath, 'utf8')) ?? {}
-    if (typeof loaded !== 'object' || Array.isArray(loaded)) return undefined
+    if (typeof loaded !== 'object' || Array.isArray(loaded)) return
     rc = loaded as YarnRc
   } catch (error) {
     // Same for one we cannot read or parse: only a missing file means "no rc".
-    if (!isENOENT(error)) return undefined
+    if (!isENOENT(error)) return
   }
 
   const pinned = rc.yarnPath?.match(/^\.yarn\/releases\/yarn-([^/]+)\.cjs$/)?.[1]
@@ -123,22 +123,25 @@ export async function stageYarnBin(options: StageYarnOptions): Promise<string | 
   if (rc.yarnPath) {
     // Rule 3. Non-standard yarnPath — we can't know which cli-dist version to
     // fetch, so stay hands off.
-    if (!pinned) return undefined
+    if (!pinned) return
     const targetFile = join(dir, rc.yarnPath)
     try {
       await access(targetFile)
-      return pinned
+      return
     } catch {
       version = pinned
     }
   } else {
     // Rule 4 vs 5. Only yarn 1.x without yarnPath triggers auto-latest.
-    if (!agent.version?.startsWith('1.')) return undefined
-    const resp = await fetcher(`${registry}/@yarnpkg/cli-dist`)
-    if (!resp.ok) return undefined
+    if (!agent.version?.startsWith('1.')) return
+    const url = `${registry}/@yarnpkg/cli-dist`
+    const resp = await fetcher(url)
+    if (!resp.ok) {
+      throw new Error(`request failed with status code ${resp.status} ${resp.statusText} from ${url}`)
+    }
     const meta = await resp.json() as any
     version = meta?.['dist-tags']?.latest
-    if (!version) return undefined
+    if (typeof version !== 'string' || !version) throw new Error('no latest version from @yarnpkg/cli-dist')
     rc.yarnPath = `.yarn/releases/yarn-${version}.cjs`
     writeRc = true
   }
@@ -150,8 +153,11 @@ export async function stageYarnBin(options: StageYarnOptions): Promise<string | 
   } catch {
     await mkdir(tempDir, { recursive: true })
     await mkdir(cacheDir, { recursive: true })
-    const resp = await fetcher(`${registry}/@yarnpkg/cli-dist/-/cli-dist-${version}.tgz`)
-    if (!resp.ok) return undefined
+    const url = `${registry}/@yarnpkg/cli-dist/-/cli-dist-${version}.tgz`
+    const resp = await fetcher(url)
+    if (!resp.ok) {
+      throw new Error(`request failed with status code ${resp.status} ${resp.statusText} from ${url}`)
+    }
     await new Promise<void>((resolve, reject) => {
       // an aborted body errors on the source, which `pipe` does not forward
       const stream = Readable.fromWeb(resp.body as any).on('error', reject).pipe(tar.extract({
@@ -173,7 +179,6 @@ export async function stageYarnBin(options: StageYarnOptions): Promise<string | 
   if (writeRc) {
     await writeFile(rcPath, yaml.dump(rc))
   }
-  return version
 }
 
 function isTimeoutError(error: unknown) {
@@ -236,7 +241,11 @@ class Scaffold {
 
     const metaUrl = `${this.registry}/${template}`
     const resp1 = await this.fetchOrExit(metaUrl)
-    const remote = await resp1.json().catch(() => null)
+    const remote = await resp1.json().catch((error) => {
+      if (error instanceof SyntaxError) return null
+      console.log(kleur.red('error') + ` ${isTimeoutError(error) ? 'timed out downloading' : 'unable to download'} ${metaUrl}`)
+      process.exit(1)
+    })
     if (!remote) {
       console.log(kleur.red('error') + ` invalid registry response from ${metaUrl}`)
       process.exit(1)
@@ -265,7 +274,7 @@ class Scaffold {
       }))
       stream.on('finish', () => resolve(undefined))
       stream.on('error', () => resolve(`invalid tarball from ${tarball}`))
-    })
+    }).catch(() => `invalid tarball from ${tarball}`)
     if (failure) {
       console.log(kleur.red('error') + ` ${failure}`)
       process.exit(1)
@@ -279,9 +288,8 @@ class Scaffold {
         fetcher: (url, init) => fetch(url, { ...init, signal: this.options.timeout ? AbortSignal.timeout(this.options.timeout) : undefined }),
       })
     } catch (error) {
-      // the project is complete without a staged yarn binary, so this does not
-      // stop the scaffold; the rc is written last and stays untouched
-      console.log(kleur.yellow('warning') + ` unable to set up yarn: ${isTimeoutError(error) ? 'timed out' : (error as Error).message}`)
+      console.log(kleur.red('error') + ` unable to set up yarn: ${isTimeoutError(error) ? 'timed out' : (error as Error).message}`)
+      process.exit(1)
     }
     await this.writePackageJson(template)
     console.log(kleur.green('  Done.\n'))

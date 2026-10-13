@@ -28,17 +28,26 @@ function childEnv(overrides: Record<string, string>) {
   return { ...env, ...overrides }
 }
 
-async function runCli(registry: string, args: string[] = [], timeout?: number) {
+async function runCli(registry: string, args: string[] = [], options: { timeout?: number; yarn?: boolean } = {}) {
   const cwd = await mkdtemp(join(tmpdir(), 'cordis-create-'))
   try {
     await writeFile(join(cwd, '.npmrc'), `registry=${registry}\n`)
     // `bin.ts` passes no deadline, so a test that needs one runs its own entry
     let entry = bin
-    if (timeout) {
+    if (options.timeout || options.yarn) {
       entry = join(cwd, 'entry.mjs')
       await writeFile(entry, [
-        `import scaffold from ${JSON.stringify(pathToFileURL(resolve(testDir, '../src/index.ts')).href)}`,
-        `scaffold({ name: 'cordis', version: '0.0.0', template: '@cordisjs/boilerplate', timeout: ${timeout} })`,
+        // Keep Yarn's cache and extraction directory inside the test directory.
+        `import os from 'node:os'`,
+        `os.homedir = os.tmpdir = () => process.cwd()`,
+        `const { default: scaffold } = await import(${JSON.stringify(pathToFileURL(resolve(testDir, '../src/index.ts')).href)})`,
+        // Detect the registry with npm, then exercise Yarn staging without
+        // depending on a global Yarn installation on the test machine.
+        ...(options.yarn ? [
+          `const fetcher = globalThis.fetch`,
+          `globalThis.fetch = (...args) => { process.env.npm_config_user_agent = 'yarn/1.22.19'; return fetcher(...args) }`,
+        ] : []),
+        `scaffold({ name: 'cordis', version: '0.0.0', template: '@cordisjs/boilerplate', timeout: ${options.timeout} })`,
       ].join('\n'))
     }
     // `get-registry` picks its lookup from `npm_config_user_agent`. Pin it to npm
@@ -47,6 +56,12 @@ async function runCli(registry: string, args: string[] = [], timeout?: number) {
     const env = childEnv({
       npm_config_registry: registry,
       npm_config_user_agent: 'npm/10.0.0 node/v22.0.0',
+      // env-paths uses these instead of homedir on Linux and Windows.
+      ...(options.yarn ? {
+        XDG_CACHE_HOME: join(cwd, 'cache'),
+        APPDATA: join(cwd, 'appdata'),
+        LOCALAPPDATA: join(cwd, 'localappdata'),
+      } : {}),
     })
 
     const { stdout, stderr, code } = await new Promise<{ stdout: string; stderr: string; code: number }>((done) => {
@@ -62,14 +77,15 @@ async function runCli(registry: string, args: string[] = [], timeout?: number) {
     try {
       packageJson = JSON.parse(await readFile(join(cwd, 'myapp', 'package.json'), 'utf8'))
     } catch {}
-    return { output: `${stdout}${stderr}`, code, packageJson }
+    const yarnRc = await readFile(join(cwd, 'myapp', '.yarnrc.yml'), 'utf8').catch(() => null)
+    return { output: `${stdout}${stderr}`, code, packageJson, yarnRc }
   } finally {
     await rm(cwd, { recursive: true, force: true })
   }
 }
 
 /** Serves a dist-tag document for the default template, and optionally its tarball. */
-async function startRegistry(buildMeta: (url: string) => unknown, tarball?: Buffer) {
+async function startRegistry(buildMeta: (url: string) => unknown, tarball?: Buffer, yarnTarball?: (res: ServerResponse) => void) {
   const server = createServer((req, res) => {
     const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`
     if (req.url === '/@cordisjs/boilerplate') {
@@ -80,6 +96,10 @@ async function startRegistry(buildMeta: (url: string) => unknown, tarball?: Buff
     } else if (tarball && req.url === '/pkg.tgz') {
       res.writeHead(200, { 'content-type': 'application/octet-stream' })
       res.end(tarball)
+    } else if (req.url === '/@yarnpkg/cli-dist') {
+      res.end(JSON.stringify({ 'dist-tags': { latest: '9.9.9' } }))
+    } else if (yarnTarball && req.url === '/@yarnpkg/cli-dist/-/cli-dist-9.9.9.tgz') {
+      yarnTarball(res)
     } else {
       res.writeHead(404, { 'content-type': 'text/plain' })
       res.end('not found')
@@ -235,7 +255,7 @@ it('reports a registry that never answers', async () => {
   const registry = `http://127.0.0.1:${(server.address() as { port: number }).port}`
   try {
     // The deadline is injectable, so the test does not wait for the default deadline.
-    const { output, code } = await runCli(registry, [], 200)
+    const { output, code } = await runCli(registry, [], { timeout: 200 })
     expect(output).toContain(`error timed out waiting for ${registry}`)
     expect(code).toBe(1)
   } finally {
@@ -251,7 +271,7 @@ async function startTarballServer(sendTarball: (res: ServerResponse) => void) {
       res.writeHead(200, { 'content-type': 'application/json' })
       res.end(JSON.stringify(meta(`${url}/pkg.tgz`)))
     } else if (req.url === '/pkg.tgz') {
-      res.writeHead(200, { 'content-type': 'application/octet-stream' })
+      res.setHeader('content-type', 'application/octet-stream')
       sendTarball(res)
     } else {
       res.writeHead(404, { 'content-type': 'text/plain' })
@@ -277,7 +297,7 @@ it('reports a tarball whose download times out', async () => {
   })
   try {
     // The deadline is injected so the body is cut mid-stream quickly.
-    const { output, code } = await runCli(url, [], 400)
+    const { output, code } = await runCli(url, [], { timeout: 400 })
     expect(output).toContain(`error timed out downloading ${url}/pkg.tgz`)
     expect(output).not.toContain('Unhandled')
     expect(code).toBe(1)
@@ -300,15 +320,89 @@ it('reports a tarball whose connection drops', async () => {
   }
 }, 30000)
 
+it('reports a successful tarball response without a body', async () => {
+  const { server, url } = await startTarballServer((res) => {
+    res.writeHead(204)
+    res.end()
+  })
+  try {
+    const { output, code } = await runCli(url)
+    expect(output).toContain(`error invalid tarball from ${url}/pkg.tgz`)
+    expect(output.match(/^error /gm)).toHaveLength(1)
+    expect(output).not.toContain('TypeError')
+    expect(code).toBe(1)
+  } finally {
+    server.close()
+  }
+}, 30000)
+
+it.each(['timeout', 'disconnect'])('reports a registry body %s as a download failure', async (failure) => {
+  const server = createServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.write('{')
+    if (failure === 'disconnect') setTimeout(() => res.destroy(), 100)
+  })
+  await new Promise<void>((ready) => server.listen(0, '127.0.0.1', ready))
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`
+  try {
+    const { output, code } = await runCli(url, [], { timeout: 1000 })
+    const message = failure === 'timeout' ? 'timed out downloading' : 'unable to download'
+    expect(output).toContain(`error ${message} ${url}/@cordisjs/boilerplate`)
+    expect(output).not.toContain('invalid registry response')
+    expect(output.match(/^error /gm)).toHaveLength(1)
+    expect(code).toBe(1)
+  } finally {
+    server.close()
+  }
+}, 30000)
+
+it.each([
+  { pinned: true, failure: '404' },
+  { pinned: true, failure: 'timeout' },
+  { pinned: true, failure: 'disconnect' },
+  { pinned: false, failure: '404' },
+  { pinned: false, failure: 'timeout' },
+  { pinned: false, failure: 'disconnect' },
+])('handles yarn $failure with pinned=$pinned', async ({ pinned, failure }) => {
+  const rc = 'yarnPath: .yarn/releases/yarn-9.9.9.cjs\n'
+  const tarball = await archive({
+    'package.json': '{"name":"template"}',
+    ...(pinned ? { '.yarnrc.yml': rc } : {}),
+  })
+  const registry = await startRegistry(url => meta(`${url}/pkg.tgz`), tarball, (res) => {
+    if (failure === '404') {
+      res.writeHead(404)
+      res.end('not found')
+    } else {
+      res.writeHead(200)
+      res.write(Buffer.alloc(2000))
+      if (failure === 'disconnect') setTimeout(() => res.destroy(), 100)
+    }
+  })
+  try {
+    const { output, code, yarnRc } = await runCli(registry.url, [], { yarn: true, timeout: 1000 })
+    expect(yarnRc).toBe(pinned ? rc : null)
+    expect(output).not.toContain('TypeError')
+    expect(code).toBe(1)
+    expect(output).toContain('error unable to set up yarn:')
+    expect(output.match(/^error /gm)).toHaveLength(1)
+    expect(output).not.toContain('Done.')
+    if (failure === '404') expect(output).toContain('status code 404')
+    if (failure === 'timeout') expect(output).toContain('timed out')
+  } finally {
+    await registry.close()
+  }
+}, 30000)
+
 describe('stageYarnBin', () => {
-  async function stage(tarball: () => Response) {
+  async function stage(tarball: () => Response, metadata = () => Response.json({ 'dist-tags': { latest: '9.9.9' } })) {
     const root = await mkdtemp(join(tmpdir(), 'cordis-stage-'))
     const rootDir = join(root, 'project')
     await mkdir(rootDir)
     await writeFile(join(rootDir, 'package.json'), '{}')
     const fetcher = (async (url: string) => {
       if (url.endsWith('/@yarnpkg/cli-dist')) {
-        return new Response(JSON.stringify({ 'dist-tags': { latest: '9.9.9' } }))
+        return metadata()
       }
       return tarball()
     }) as typeof fetch
@@ -323,18 +417,31 @@ describe('stageYarnBin', () => {
     return { task, rc: () => readFile(join(rootDir, '.yarnrc.yml'), 'utf8').catch(() => null), root }
   }
 
-  it('skips a yarn release whose tarball is missing', async () => {
+  it('rejects a yarn release whose tarball is missing', async () => {
     const { task, rc, root } = await stage(() => new Response('not found', { status: 404 }))
     try {
-      expect(await task).toBe(undefined)
+      await expect(task).rejects.toThrow('status code 404')
       expect(await rc()).toBe(null)
     } finally {
       await rm(root, { recursive: true, force: true })
     }
   })
 
-  // The scaffold catches this and carries on; an error escaping as an event
-  // would crash the process instead.
+  it.each([
+    { name: 'failed metadata request', response: () => new Response('unavailable', { status: 503 }), message: 'status code 503' },
+    { name: 'invalid metadata', response: () => new Response('not json'), message: /JSON/ },
+    { name: 'missing latest version', response: () => Response.json({ 'dist-tags': {} }), message: 'no latest version' },
+  ])('rejects $name', async ({ response, message }) => {
+    const { task, rc, root } = await stage(() => { throw new Error('tarball should not be requested') }, response)
+    try {
+      await expect(task).rejects.toThrow(message)
+      expect(await rc()).toBe(null)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  // Reject through the promise so the scaffold can report one error line.
   it('rejects when the yarn download is cut off', async () => {
     const { task, rc, root } = await stage(() => new Response(new ReadableStream({
       start(controller) {
