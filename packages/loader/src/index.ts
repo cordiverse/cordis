@@ -4,7 +4,7 @@ import { ModuleLoader } from './internal.ts'
 import { Entry, EntryOptions } from './config/entry.ts'
 import { EntryGroup } from './config/group.ts'
 import isolate from './config/isolate.ts'
-import { EntryTree } from './config/tree.ts'
+import { EntryChange, EntryTree } from './config/tree.ts'
 import { interpolate } from './config/utils.ts'
 
 export * from './config/entry.ts'
@@ -148,7 +148,7 @@ export class Loader extends EntryTree {
     ctx.plugin(isolate)
   }
 
-  commit() {
+  commit(_change: EntryChange) {
     // the root tree lives in memory only; there is nothing to persist to
   }
 

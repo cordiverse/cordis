@@ -56,6 +56,8 @@ export interface Impl {
   fiber: Fiber
   value?: any
   check?: () => boolean
+  // Actual isolation symbol; may differ from the provider context after a blocked move.
+  isolate: symbol
 }
 
 export class ReflectService {
@@ -185,7 +187,7 @@ export class ReflectService {
 
       this.ctx.root[symbols.isolate][name] ??= Symbol(name)
       const key = this.ctx[symbols.isolate][name]
-      const impl: Impl = { name, value, fiber: this.ctx.fiber, check }
+      const impl: Impl = { name, value, fiber: this.ctx.fiber, check, isolate: key }
       if (this.store[key]) {
         throw new Error(`service "${name}" has been registered at <${this.store[key].fiber.name}>`)
       }
@@ -195,8 +197,8 @@ export class ReflectService {
         this.notify([name])
       }
       return async () => {
-        delete this.store[key]
-        const fibers = this.notify([name])
+        if (this.store[impl.isolate] === impl) delete this.store[impl.isolate]
+        const fibers = this.ctx.isolate(name, impl.isolate).reflect.notify([name])
         await Promise.allSettled(fibers.map(fiber => fiber.await()))
         // ensure self access before dependencies cleanup
         delete this.ctx.fiber.store![name]

@@ -126,9 +126,11 @@ export default function isolate(ctx: Context) {
 
     // step 5: replace service impl
     for (const [symbol1, symbol2, flag1, flag2] of Object.values(diff)) {
-      if (flag1 === flag2 && entry.ctx.reflect.store[symbol1] && !entry.ctx.reflect.store[symbol2]) {
-        entry.ctx.reflect.store[symbol2] = entry.ctx.reflect.store[symbol1]
+      const impl = entry.ctx.reflect.store[symbol1]
+      if (flag1 === flag2 && impl && !entry.ctx.reflect.store[symbol2]) {
+        entry.ctx.reflect.store[symbol2] = impl
         delete entry.ctx.reflect.store[symbol1]
+        impl.isolate = symbol2
       }
     }
 
