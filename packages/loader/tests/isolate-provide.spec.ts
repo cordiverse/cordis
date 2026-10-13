@@ -48,6 +48,24 @@ async function started(loader: MockLoader, id: string) {
 }
 
 describe('Service Isolation: provide migration', () => {
+  it('keeps self access while the provision context changes realms', async () => {
+    const reads: string[] = []
+    const { root, loader } = await boot({
+      prov: (ctx) => {
+        ctx.provide('svc', { tag: 'prov' })
+        ctx.on('internal/update', () => {
+          reads.push(ctx.svc.tag)
+        })
+      },
+    })
+    const id = await loader.create({ name: 'prov', config: { revision: 1 } })
+    const fiber = await started(loader, id)
+    await loader.update(id, { isolate: { svc: 'A' }, config: { revision: 2 } })
+    expect(reads).to.deep.equal(['prov'])
+    expect(fiber.ctx.svc.tag).to.equal('prov')
+    await root.fiber.dispose()
+  })
+
   it('reloads a self-provider after an isolate-only move', async () => {
     let calls = 0
     let duringReload: Slot[] | undefined
@@ -289,6 +307,7 @@ describe('Service Isolation: provide migration', () => {
     await loader.update(first, { isolate: { svc: 'B' } })
     expect(root.reflect.store[a.key]).to.equal(a.impl)
     expect(root.reflect.store[b.key]).to.equal(b.impl)
+    expect(loader.expectFiber(first).ctx.svc.tag).to.equal('first')
     expect(starts).to.deep.equal(['first', 'second'])
     expect(stops).to.deep.equal([])
 

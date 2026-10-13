@@ -320,7 +320,7 @@ describe('Loader: nested plugin config', () => {
   })
 })
 
-// resolution reads services through `fiber.store`, which a failed fiber no
+// resolution reads services through `fiber.committed`, which a failed fiber no
 // longer has, so recovery must not depend on resolving the new config first
 describe('Loader: failed entry recovery', () => {
   const root = new Context()
@@ -355,7 +355,7 @@ describe('Loader: failed entry recovery', () => {
     await sleep()
 
     expect(loader.expectFiber('1').state).to.equal(FiberState.FAILED)
-    expect(loader.expectFiber('1').store).to.equal(undefined)
+    expect(loader.expectFiber('1').committed).to.equal(undefined)
   })
 
   it('recover through update', async () => {

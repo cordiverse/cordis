@@ -105,7 +105,8 @@ export class Fiber {
   public readonly ctx: Context
   public state = FiberState.PENDING
   public readonly dispose: () => Promise<void>
-  public store: Dict<Impl> | undefined
+  public committed: Readonly<Dict<Impl>> | undefined
+  public readonly provisions = new Map<Impl, Context>()
   public inertia: Promise<void> | undefined
 
   public readonly _hooks: Dict<DisposableList<Function>> = Object.create(null)
@@ -204,7 +205,7 @@ export class Fiber {
       this.uid = 0
       this.ctx = this.context = parent
       this.state = FiberState.ACTIVE
-      this.store = Object.create(null)
+      this.committed = Object.create(null)
       this._runner = {
         epoch: '0',
         getOuterStack,
@@ -421,8 +422,8 @@ export class Fiber {
   }
 
   private async _reload() {
-    this.store = { ...this._store }
-    for (const impl of Object.values(this.store)) {
+    this.committed = { ...this._store }
+    for (const impl of Object.values(this.committed)) {
       if (impl.fiber === this) continue
       impl.dependents.add(this)
       impl.fiber._dependents.add(this)
@@ -472,14 +473,14 @@ export class Fiber {
       }
     }))
     // release the providers waiting for this fiber to unload
-    for (const impl of Object.values(this.store ?? {})) {
+    for (const impl of Object.values(this.committed ?? {})) {
       if (!impl.dependents.delete(this)) continue
       if (!impl.dependents.size) impl.release?.()
       const provider = impl.fiber
       if (!provider._dependents.delete(this) || provider._dependents.size) continue
       provider._release?.()
     }
-    this.store = undefined
+    this.committed = undefined
     this._updateState(() => {
       if (this._runner.epoch === INACTIVE) {
         this.inertia = undefined

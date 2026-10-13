@@ -28,6 +28,23 @@ function fixture() {
 }
 
 describe('Service disposal', () => {
+  it.each(['consumer', 'provider', 'root'])('releases an injected binding after providing the same name in another realm (%s)', async (action) => {
+    const root = new Context()
+    const provider = await root.plugin(ctx => ctx.provide('foo', { value: 1 }))
+    const consumer = await root.inject(['foo'], (ctx) => {
+      ctx.isolate('foo').provide('foo', { outer: ctx.foo })
+    })
+    const task = action === 'root' ? root.fiber.dispose()
+      : action === 'provider' ? provider.dispose()
+        : consumer.dispose().then(() => provider.dispose())
+    let disposed = false
+    task.then(() => disposed = true)
+    await setImmediate()
+    expect(disposed).toBe(true)
+    await task
+    await root.fiber.dispose()
+  })
+
   it('waits for a disposing consumer that has already left the registry', async () => {
     const root = new Context()
     const gate = Promise.withResolvers<void>()

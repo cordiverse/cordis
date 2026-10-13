@@ -85,10 +85,13 @@ export class ReflectService {
         const defSite = (ctx[symbols.shadow] as Context | undefined) ?? ctx
         if (!defSite.fiber.runtime) return ctx.reflect.get(prop, false)
         return ctx.events.waterfall('internal/get', ctx, prop, error, () => {
-          const key = target[symbols.isolate][prop]
+          const key = defSite[symbols.isolate][prop]
           let fiber = defSite.fiber
           while (true) {
-            const impl = fiber.store?.[prop]
+            let impl = fiber.committed?.[prop]
+            for (const [provision, site] of fiber.provisions) {
+              if (provision.name === prop && site[symbols.isolate][prop] === key) impl = provision
+            }
             if (impl) return getTraceable(ctx, impl.value)
             if (prop in fiber.inject) {
               error.message = `cannot get required service "${prop}" in inactive context`
@@ -196,7 +199,7 @@ export class ReflectService {
         throw new Error(`service "${name}" has been registered at <${this.store[key].fiber.name}>`)
       }
       this.store[key] = impl
-      this.ctx.fiber.store![name] = impl
+      this.ctx.fiber.provisions.set(impl, this.ctx)
       if (this.ctx.fiber.state === FiberState.ACTIVE) {
         this.notify([name])
       }
@@ -206,16 +209,14 @@ export class ReflectService {
         // Retired bindings cannot gain new dependents. Wait only for their
         // cleanup, even if a fiber has left the registry or starts a new load.
         // Yield even without direct dependents so child cleanup can still
-        // access the inherited service before its snapshot is removed.
+        // access the inherited service before its provision is removed.
         await new Promise<void>((resolve) => {
           impl.release = resolve
           if (!impl.dependents.size) resolve()
         })
         impl.release = undefined
         // ensure self access before dependencies cleanup
-        if (this.ctx.fiber.store?.[name] === impl) {
-          delete this.ctx.fiber.store[name]
-        }
+        this.ctx.fiber.provisions.delete(impl)
       }
     }, `ctx.provide(${JSON.stringify(name)})`)
   }
