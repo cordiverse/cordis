@@ -397,7 +397,7 @@ export class Fiber {
         epoch = INACTIVE
         break
       }
-      epoch += ':' + impl.fiber.uid
+      epoch += ':' + impl.uid
     }
     this._setEpoch(epoch)
   }
@@ -424,6 +424,7 @@ export class Fiber {
     this.store = { ...this._store }
     for (const impl of Object.values(this.store)) {
       if (impl.fiber === this) continue
+      impl.dependents.add(this)
       impl.fiber._dependents.add(this)
     }
     const oldEpoch = this._runner.epoch
@@ -458,6 +459,7 @@ export class Fiber {
     while (this._dependents.size) {
       await new Promise<void>((resolve) => this._release = resolve)
     }
+    this._release = undefined
     await Promise.all(this._disposables.clear().map(async (dispose) => {
       try {
         await composeError(async (info) => {
@@ -471,6 +473,8 @@ export class Fiber {
     }))
     // release the providers waiting for this fiber to unload
     for (const impl of Object.values(this.store ?? {})) {
+      if (!impl.dependents.delete(this)) continue
+      if (!impl.dependents.size) impl.release?.()
       const provider = impl.fiber
       if (!provider._dependents.delete(this) || provider._dependents.size) continue
       provider._release?.()
