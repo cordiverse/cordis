@@ -2,6 +2,12 @@ import { expect, describe, it } from 'vitest'
 import { Context, FiberState } from 'cordis'
 import MockLoader from './utils'
 
+declare module 'cordis' {
+  interface Context {
+    svc: { tag: string }
+  }
+}
+
 interface Slot {
   key: symbol
   description: string

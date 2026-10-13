@@ -130,7 +130,7 @@ export default function isolate(ctx: Context) {
       if (flag1 === flag2 && impl && !entry.ctx.reflect.store[symbol2]) {
         entry.ctx.reflect.store[symbol2] = impl
         delete entry.ctx.reflect.store[symbol1]
-        impl.key = symbol2
+        impl.isolate = symbol2
       }
     }
 

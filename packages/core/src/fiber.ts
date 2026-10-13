@@ -368,7 +368,7 @@ export class Fiber {
     for (const key of Reflect.ownKeys(this.ctx.reflect.store)) {
       const impl = this.ctx.reflect.store[key as symbol]
       if (impl.fiber !== this) continue
-      this.ctx.isolate(impl.name, impl.key).reflect.notify([impl.name])
+      this.ctx.isolate(impl.name, impl.isolate).reflect.notify([impl.name])
     }
   }
 
