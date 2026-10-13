@@ -118,6 +118,9 @@ export class Fiber {
   private _revision = 0
   private _runner: EffectRunner<string>
   private _store: Dict<Impl> = Object.create(null)
+  // fibers whose committed view resolves a service to this fiber
+  private _dependents = new Set<Fiber>()
+  private _release: (() => void) | undefined
 
   constructor(
     public parent: Context,
@@ -419,6 +422,10 @@ export class Fiber {
 
   private async _reload() {
     this.store = { ...this._store }
+    for (const impl of Object.values(this.store)) {
+      if (impl.fiber === this) continue
+      impl.fiber._dependents.add(this)
+    }
     const oldEpoch = this._runner.epoch
     try {
       await Promise.resolve()
@@ -445,6 +452,12 @@ export class Fiber {
   }
 
   private async _unload() {
+    // Dependents are notified when this fiber leaves ACTIVE, but may still
+    // access its services during their own teardown, so the effects of this
+    // fiber are only disposed after every dependent has unloaded.
+    while (this._dependents.size) {
+      await new Promise<void>((resolve) => this._release = resolve)
+    }
     await Promise.all(this._disposables.clear().map(async (dispose) => {
       try {
         await composeError(async (info) => {
@@ -456,6 +469,12 @@ export class Fiber {
         this.ctx.logger.error(reason)
       }
     }))
+    // release the providers waiting for this fiber to unload
+    for (const impl of Object.values(this.store ?? {})) {
+      const provider = impl.fiber
+      if (!provider._dependents.delete(this) || provider._dependents.size) continue
+      provider._release?.()
+    }
     this.store = undefined
     this._updateState(() => {
       if (this._runner.epoch === INACTIVE) {
