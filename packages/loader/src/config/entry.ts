@@ -3,7 +3,7 @@ import { deepEqual, isNullable } from 'cosmokit'
 import { Loader } from '../index.ts'
 import { EntryGroup } from './group.ts'
 import { EntryTree } from './tree.ts'
-import { evaluate } from './utils.ts'
+import { evaluate, isJsExpr } from './utils.ts'
 
 export interface EntryOptions {
   id: string
@@ -61,12 +61,18 @@ export class Entry {
     return id
   }
 
+  private _resolveDisabled(options: EntryOptions): boolean {
+    return isJsExpr(options.disabled)
+      ? Boolean(this.evaluate(options.disabled.__jsExpr))
+      : Boolean(options.disabled)
+  }
+
   get disabled() {
     // group is always enabled
     if (this.options.group) return false
     let entry: Entry | undefined = this
     do {
-      if (entry.options.disabled) return true
+      if (this._resolveDisabled(entry.options)) return true
       entry = entry.parent.ctx.fiber.entry
     } while (entry)
     return false
