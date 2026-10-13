@@ -54,7 +54,7 @@ export namespace Property {
 export interface Impl {
   uid: number
   name: string
-  fiber: Fiber
+  ctx: Context
   dependents: Set<Fiber>
   release?: () => void
   value?: any
@@ -89,8 +89,8 @@ export class ReflectService {
           let fiber = defSite.fiber
           while (true) {
             let impl = fiber.committed?.[prop]
-            for (const [provision, site] of fiber.provisions) {
-              if (provision.name === prop && site[symbols.isolate][prop] === key) impl = provision
+            for (const provision of fiber.provisions) {
+              if (provision.name === prop && provision.ctx[symbols.isolate][prop] === key) impl = provision
             }
             if (impl) return getTraceable(ctx, impl.value)
             if (prop in fiber.inject) {
@@ -166,7 +166,7 @@ export class ReflectService {
     const key = this.ctx[symbols.isolate][name]
     const impl = key && this.store[key]
     if (!impl) return
-    if (strict && impl.fiber.state !== FiberState.ACTIVE) return
+    if (strict && impl.ctx.fiber.state !== FiberState.ACTIVE) return
     return impl
   }
 
@@ -176,7 +176,7 @@ export class ReflectService {
     if (!impl) {
       throw new Error(`cannot set property "${name}" without provide`)
     }
-    if (impl.fiber !== this.ctx.fiber) {
+    if (impl.ctx.fiber !== this.ctx.fiber) {
       throw new Error(`cannot set property "${name}" in multiple fibers`)
     }
     impl.value = value
@@ -194,12 +194,12 @@ export class ReflectService {
 
       this.ctx.root[symbols.isolate][name] ??= Symbol(name)
       const key = this.ctx[symbols.isolate][name]
-      const impl: Impl = { uid: ++this._implCounter, name, value, fiber: this.ctx.fiber, check, isolate: key, dependents: new Set() }
+      const impl: Impl = { uid: ++this._implCounter, name, value, ctx: this.ctx, check, isolate: key, dependents: new Set() }
       if (this.store[key]) {
-        throw new Error(`service "${name}" has been registered at <${this.store[key].fiber.name}>`)
+        throw new Error(`service "${name}" has been registered at <${this.store[key].ctx.fiber.name}>`)
       }
       this.store[key] = impl
-      this.ctx.fiber.provisions.set(impl, this.ctx)
+      this.ctx.fiber.provisions.add(impl)
       if (this.ctx.fiber.state === FiberState.ACTIVE) {
         this.notify([name])
       }

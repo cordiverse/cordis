@@ -383,10 +383,15 @@ describe('Service disposal', () => {
     await root.fiber.dispose()
   })
 
-  it('retains resources for an already withdrawn binding during provider disposal', async () => {
+  it.each([false, true])('waits for current and withdrawn bindings during provider disposal (withdrawn first: %s)', async (withdrawnFirst) => {
     const { root, Provider, gate, timeline, isClosed } = fixture()
+    const current = Promise.withResolvers<void>()
     const provider = await root.plugin(Provider)
     const withdraw = provider.ctx.provide('bar', {})
+    await root.inject(['foo'], ctx => async () => {
+      await current.promise
+      ctx.foo.read()
+    })
     await root.inject(['bar'], () => async () => {
       await gate.promise
       timeline.push('consumer finished')
@@ -396,10 +401,17 @@ describe('Service disposal', () => {
     const task = provider.dispose()
     await setImmediate()
     const closedDuringDrain = isClosed()
-    gate.resolve()
+    const [first, second] = withdrawnFirst ? [gate, current] : [current, gate]
+    first.resolve()
+    await setImmediate()
+    const closedAfterFirst = isClosed()
+    second.resolve()
     await Promise.all([withdrawal, task])
     expect(closedDuringDrain).toBe(false)
-    expect(timeline).toEqual(['consumer finished', 'provider closed'])
+    expect(closedAfterFirst).toBe(false)
+    expect(timeline).toEqual(withdrawnFirst
+      ? ['consumer finished', 'consumer read: open', 'provider closed']
+      : ['consumer read: open', 'consumer finished', 'provider closed'])
     await root.fiber.dispose()
   })
 
