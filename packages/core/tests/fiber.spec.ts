@@ -37,7 +37,13 @@ describe('Fiber', () => {
     expect(fiber.state).to.equal(FiberState.LOADING)
     root.provide('foo', 2)
     await vi.advanceTimersByTimeAsync(400) // 1200
+    // A new binding from the same provider still supersedes the old load.
+    expect(fiber.state).to.equal(FiberState.UNLOADING)
+    await vi.advanceTimersByTimeAsync(1000) // 2200
+    expect(fiber.state).to.equal(FiberState.LOADING)
+    await vi.advanceTimersByTimeAsync(1000) // 3200
     expect(fiber.state).to.equal(FiberState.ACTIVE)
+    expect(fiber.ctx.foo).to.equal(2)
   }))
 
   it('inertia lock 3', withTimers(async (root) => {

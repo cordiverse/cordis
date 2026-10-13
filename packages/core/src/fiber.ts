@@ -105,7 +105,8 @@ export class Fiber {
   public readonly ctx: Context
   public state = FiberState.PENDING
   public readonly dispose: () => Promise<void>
-  public store: Dict<Impl> | undefined
+  public committed: Readonly<Dict<Impl>> | undefined
+  public readonly provisions = new Set<Impl>()
   public inertia: Promise<void> | undefined
 
   public readonly _hooks: Dict<DisposableList<Function>> = Object.create(null)
@@ -118,6 +119,7 @@ export class Fiber {
   private _revision = 0
   private _runner: EffectRunner<string>
   private _store: Dict<Impl> = Object.create(null)
+  private _release: (() => void) | undefined
 
   constructor(
     public parent: Context,
@@ -201,7 +203,7 @@ export class Fiber {
       this.uid = 0
       this.ctx = this.context = parent
       this.state = FiberState.ACTIVE
-      this.store = Object.create(null)
+      this.committed = Object.create(null)
       this._runner = {
         epoch: '0',
         getOuterStack,
@@ -367,7 +369,7 @@ export class Fiber {
     if (oldState !== FiberState.ACTIVE && this.state !== FiberState.ACTIVE) return
     for (const key of Reflect.ownKeys(this.ctx.reflect.store)) {
       const impl = this.ctx.reflect.store[key as symbol]
-      if (impl.fiber !== this) continue
+      if (impl.ctx.fiber !== this) continue
       this.ctx.isolate(impl.name, impl.isolate).reflect.notify([impl.name])
     }
   }
@@ -380,7 +382,7 @@ export class Fiber {
         return delete this._store[name]
       }
     } catch (error) {
-      impl.fiber.ctx.logger.error(error)
+      impl.ctx.logger.error(error)
       return delete this._store[name]
     }
     this._store[name] = impl
@@ -394,7 +396,7 @@ export class Fiber {
         epoch = INACTIVE
         break
       }
-      epoch += ':' + impl.fiber.uid
+      epoch += ':' + impl.uid
     }
     this._setEpoch(epoch)
   }
@@ -418,7 +420,11 @@ export class Fiber {
   }
 
   private async _reload() {
-    this.store = { ...this._store }
+    this.committed = { ...this._store }
+    for (const impl of Object.values(this.committed)) {
+      if (impl.ctx.fiber === this) continue
+      impl.dependents.add(this)
+    }
     const oldEpoch = this._runner.epoch
     try {
       await Promise.resolve()
@@ -445,6 +451,13 @@ export class Fiber {
   }
 
   private async _unload() {
+    // Dependents are notified when this fiber leaves ACTIVE, but may still
+    // access its services during their own teardown, so the effects of this
+    // fiber are only disposed after every dependent has unloaded.
+    while ([...this.provisions].some(impl => impl.dependents.size)) {
+      await new Promise<void>((resolve) => this._release = resolve)
+    }
+    this._release = undefined
     await Promise.all(this._disposables.clear().map(async (dispose) => {
       try {
         await composeError(async (info) => {
@@ -456,7 +469,13 @@ export class Fiber {
         this.ctx.logger.error(reason)
       }
     }))
-    this.store = undefined
+    // release the providers waiting for this fiber to unload
+    for (const impl of Object.values(this.committed ?? {})) {
+      if (!impl.dependents.delete(this) || impl.dependents.size) continue
+      impl.release?.()
+      impl.ctx.fiber._release?.()
+    }
+    this.committed = undefined
     this._updateState(() => {
       if (this._runner.epoch === INACTIVE) {
         this.inertia = undefined

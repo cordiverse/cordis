@@ -1,5 +1,6 @@
 import { expect, describe, it, beforeAll } from 'vitest'
-import { Context, FiberState } from 'cordis'
+import { Context, FiberState, Service } from 'cordis'
+import { EntryChange, EntryTree } from '../src'
 import MockLoader, { sleep } from './utils'
 import { Mock, mock } from 'node:test'
 
@@ -319,7 +320,7 @@ describe('Loader: nested plugin config', () => {
   })
 })
 
-// resolution reads services through `fiber.store`, which a failed fiber no
+// resolution reads services through `fiber.committed`, which a failed fiber no
 // longer has, so recovery must not depend on resolving the new config first
 describe('Loader: failed entry recovery', () => {
   const root = new Context()
@@ -354,7 +355,7 @@ describe('Loader: failed entry recovery', () => {
     await sleep()
 
     expect(loader.expectFiber('1').state).to.equal(FiberState.FAILED)
-    expect(loader.expectFiber('1').store).to.equal(undefined)
+    expect(loader.expectFiber('1').committed).to.equal(undefined)
   })
 
   it('recover through update', async () => {
@@ -394,5 +395,56 @@ describe('Loader: pending entry update', () => {
       inject: ['never'],
       config: { a: 3 },
     }])
+  })
+})
+
+// an entry disposed by the teardown of its parent has not disposed itself,
+// even when the parent is still registered
+describe('Loader: parent teardown', () => {
+  const root = new Context()
+
+  let loader!: MockLoader
+  const changes: EntryChange[] = []
+
+  class Tree extends EntryTree {
+    static inject = ['foo']
+
+    commit(change: EntryChange) {
+      changes.push(change)
+    }
+
+    import(name: string) {
+      return loader.import(name)
+    }
+
+    async* [Service.init]() {
+      yield async () => {
+        // the children are disposed before they are unregistered
+        await sleep()
+        this.root.stop()
+      }
+      await this.root.update([{ id: 'a', name: 'bar' }])
+    }
+  }
+
+  beforeAll(async () => {
+    await root.plugin(MockLoader)
+    loader = root.loader as any
+
+    loader.mock('bar', () => {})
+    loader.modules['tree'] = Tree as any
+  })
+
+  it('keep children enabled when the parent loses a dependency', async () => {
+    const dispose = root.provide('foo', {})
+    await loader.read([{ id: '1', name: 'tree' }])
+    await sleep()
+    expect(loader.expectFiber('1').state).to.equal(FiberState.ACTIVE)
+    expect(loader.resolve('1:a').fiber?.state).to.equal(FiberState.ACTIVE)
+
+    dispose()
+    await loader.await()
+    expect(loader.expectFiber('1').state).to.equal(FiberState.PENDING)
+    expect(changes).to.deep.equal([])
   })
 })

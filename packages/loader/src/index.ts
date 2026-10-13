@@ -1,4 +1,4 @@
-import { Context, Inject, Service } from 'cordis'
+import { Context, FiberState, Inject, Service } from 'cordis'
 import { Awaitable, defineProperty, Dict, isNullable } from 'cosmokit'
 import { ModuleLoader } from './internal.ts'
 import { Entry, EntryOptions } from './config/entry.ts'
@@ -132,11 +132,15 @@ export class Loader extends EntryTree {
       const { entry } = fiber
       this.showLog(entry, 'unload')
 
-      // case 6: the entry is being removed by the loader (`EntryGroup.remove`
+      // case 6: the entry's parent is being unloaded, which takes the entry with it
+      // (the parent may still be registered, e.g. when it has lost a dependency)
+      if (fiber.parent.fiber.state === FiberState.UNLOADING) return
+
+      // case 7: the entry is being removed by the loader (`EntryGroup.remove`
       // unregisters it before disposing the fiber)
       if (entry.parent.tree.store[entry.options.id] !== entry) return
 
-      // case 7: fiber is disposed by loader behavior
+      // case 8: fiber is disposed by loader behavior
       // such as inject checker, config file update, ancestor group disable
       if (entry.disabled) return
 
