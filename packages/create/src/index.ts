@@ -151,8 +151,10 @@ export async function stageYarnBin(options: StageYarnOptions): Promise<string | 
     await mkdir(tempDir, { recursive: true })
     await mkdir(cacheDir, { recursive: true })
     const resp = await fetcher(`${registry}/@yarnpkg/cli-dist/-/cli-dist-${version}.tgz`)
+    if (!resp.ok) return undefined
     await new Promise<void>((resolve, reject) => {
-      const stream = Readable.fromWeb(resp.body as any).pipe(tar.extract({
+      // an aborted body errors on the source, which `pipe` does not forward
+      const stream = Readable.fromWeb(resp.body as any).on('error', reject).pipe(tar.extract({
         cwd: tempDir,
         strip: 2,
       }, ['package/bin/yarn.js']))
@@ -232,10 +234,11 @@ class Scaffold {
     console.log(kleur.dim('  Scaffolding project in ') + project + kleur.dim(' ...'))
     const template = argv.template || this.options.template
 
-    const resp1 = await this.fetchOrExit(`${this.registry}/${template}`)
+    const metaUrl = `${this.registry}/${template}`
+    const resp1 = await this.fetchOrExit(metaUrl)
     const remote = await resp1.json().catch(() => null)
     if (!remote) {
-      console.log(kleur.red('error') + ` invalid registry response from ${this.registry}`)
+      console.log(kleur.red('error') + ` invalid registry response from ${metaUrl}`)
       process.exit(1)
     }
     const version = remote['dist-tags']?.[argv.ref || 'latest']
@@ -248,32 +251,38 @@ class Scaffold {
     }
 
     const resp2 = await this.fetchOrExit(tarball)
-    try {
-      await new Promise<void>((resolve, reject) => {
-        const source = Readable.fromWeb(resp2.body as any)
-        // an aborted body errors on the source, which `pipe` does not forward
-        source.on('error', reject)
-        const stream = source.pipe(tar.extract({
-          cwd: rootDir,
-          newer: true,
-          strip: 1,
-        }))
-        stream.on('finish', resolve)
-        stream.on('error', reject)
+    const failure = await new Promise<string | undefined>((resolve) => {
+      const source = Readable.fromWeb(resp2.body as any)
+      // an aborted body errors on the source, which `pipe` does not forward;
+      // it is a failed download, while an error from tar is a bad archive
+      source.on('error', (error) => {
+        resolve(`${isTimeoutError(error) ? 'timed out downloading' : 'unable to download'} ${tarball}`)
       })
-    } catch (error) {
-      console.log(kleur.red('error') + ` ${isTimeoutError(error) ? 'timed out downloading' : 'invalid tarball from'} ${tarball}`)
+      const stream = source.pipe(tar.extract({
+        cwd: rootDir,
+        newer: true,
+        strip: 1,
+      }))
+      stream.on('finish', () => resolve(undefined))
+      stream.on('error', () => resolve(`invalid tarball from ${tarball}`))
+    })
+    if (failure) {
+      console.log(kleur.red('error') + ` ${failure}`)
       process.exit(1)
     }
 
-    await stageYarnBin({
-      rootDir,
-      registry: this.registry,
-      agent: which(),
-      // `stageYarnBin` fetches through this, so a registry that accepts and never
-      // answers is reported as a timeout.
-      fetcher: (url, init) => fetch(url, { ...init, signal: this.options.timeout ? AbortSignal.timeout(this.options.timeout) : undefined }),
-    })
+    try {
+      await stageYarnBin({
+        rootDir,
+        registry: this.registry,
+        agent: which(),
+        fetcher: (url, init) => fetch(url, { ...init, signal: this.options.timeout ? AbortSignal.timeout(this.options.timeout) : undefined }),
+      })
+    } catch (error) {
+      // the project is complete without a staged yarn binary, so this does not
+      // stop the scaffold; the rc is written last and stays untouched
+      console.log(kleur.yellow('warning') + ` unable to set up yarn: ${isTimeoutError(error) ? 'timed out' : (error as Error).message}`)
+    }
     await this.writePackageJson(template)
     console.log(kleur.green('  Done.\n'))
   }

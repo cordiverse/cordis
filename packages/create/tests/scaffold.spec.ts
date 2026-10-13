@@ -1,12 +1,13 @@
 import { execFile } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { createServer } from 'node:http'
+import { createServer, ServerResponse } from 'node:http'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import * as tar from 'tar'
 import { describe, expect, it } from 'vitest'
+import { stageYarnBin } from '../src'
 
 const testDir = dirname(fileURLToPath(import.meta.url))
 const bin = resolve(testDir, '../src/bin.ts')
@@ -27,10 +28,19 @@ function childEnv(overrides: Record<string, string>) {
   return { ...env, ...overrides }
 }
 
-async function runCli(registry: string, ...args: string[]) {
+async function runCli(registry: string, args: string[] = [], timeout?: number) {
   const cwd = await mkdtemp(join(tmpdir(), 'cordis-create-'))
   try {
     await writeFile(join(cwd, '.npmrc'), `registry=${registry}\n`)
+    // `bin.ts` passes no deadline, so a test that needs one runs its own entry
+    let entry = bin
+    if (timeout) {
+      entry = join(cwd, 'entry.mjs')
+      await writeFile(entry, [
+        `import scaffold from ${JSON.stringify(pathToFileURL(resolve(testDir, '../src/index.ts')).href)}`,
+        `scaffold({ name: 'cordis', version: '0.0.0', template: '@cordisjs/boilerplate', timeout: ${timeout} })`,
+      ].join('\n'))
+    }
     // `get-registry` picks its lookup from `npm_config_user_agent`. Pin it to npm
     // so the registry is read from the config above and not from whichever
     // package manager happens to be running the tests.
@@ -40,7 +50,7 @@ async function runCli(registry: string, ...args: string[]) {
     })
 
     const { stdout, stderr, code } = await new Promise<{ stdout: string; stderr: string; code: number }>((done) => {
-      execFile(process.execPath, ['--import', tsx, bin, 'myapp', '--yes', ...args], {
+      execFile(process.execPath, ['--import', tsx, entry, 'myapp', '--yes', ...args], {
         cwd,
         env,
       }, (error, stdout, stderr) => {
@@ -119,7 +129,7 @@ it('reports a registry that is not a url', async () => {
 it('reports a dist-tag that resolves to nothing', async () => {
   const registry = await startRegistry(() => ({ 'dist-tags': {}, versions: {} }))
   try {
-    const { output, code } = await runCli(registry.url, '--ref', 'nonexistent-tag-xyz')
+    const { output, code } = await runCli(registry.url, ['--ref', 'nonexistent-tag-xyz'])
     expect(output).toContain('error no tarball for nonexistent-tag-xyz')
     expect(code).toBe(1)
   } finally {
@@ -177,7 +187,7 @@ it('reports a meta that is not json', async () => {
   const registry = await startRegistry(() => 'not json')
   try {
     const { output, code } = await runCli(registry.url)
-    expect(output).toContain(`error invalid registry response from ${registry.url}`)
+    expect(output).toContain(`error invalid registry response from ${registry.url}/@cordisjs/boilerplate`)
     expect(code).toBe(1)
   } finally {
     await registry.close()
@@ -223,38 +233,18 @@ it('reports a registry that never answers', async () => {
   const server = createServer(() => { /* the request is accepted and left open */ })
   await new Promise<void>((ready) => server.listen(0, '127.0.0.1', () => ready()))
   const registry = `http://127.0.0.1:${(server.address() as { port: number }).port}`
-  const cwd = await mkdtemp(join(tmpdir(), 'cordis-create-'))
   try {
-    await writeFile(join(cwd, '.npmrc'), `registry=${registry}\n`)
     // The deadline is injectable, so the test does not wait for the default deadline.
-    await writeFile(join(cwd, 'entry.mjs'), [
-      `import scaffold from ${JSON.stringify(pathToFileURL(resolve(testDir, '../src/index.ts')).href)}`,
-      `scaffold({ name: 'cordis', version: '0.0.0', template: '@cordisjs/boilerplate', timeout: 200 })`,
-    ].join('\n'))
-    const env = childEnv({
-      npm_config_registry: registry,
-      npm_config_user_agent: 'npm/10.0.0 node/v22.0.0',
-    })
-    const { stdout, stderr, code } = await new Promise<{ stdout: string; stderr: string; code: number }>((done) => {
-      execFile(process.execPath, ['--import', tsx, join(cwd, 'entry.mjs'), 'myapp', '--yes'], {
-        cwd,
-        env,
-      }, (error, stdout, stderr) => {
-        const code = (error as any)?.code
-        done({ stdout, stderr, code: typeof code === 'number' ? code : 0 })
-      })
-    })
-    expect(`${stdout}${stderr}`).toContain(`error timed out waiting for ${registry}`)
+    const { output, code } = await runCli(registry, [], 200)
+    expect(output).toContain(`error timed out waiting for ${registry}`)
     expect(code).toBe(1)
   } finally {
-    await rm(cwd, { recursive: true, force: true })
     server.close()
   }
 }, 30000)
 
-// A registry that sends headers instantly but trickles the body is cut off
-// mid-stream by the deadline: the source error must reach the report, not escape.
-it('reports a tarball whose download times out', async () => {
+/** Serves the default template's meta, and a tarball body handled by `sendTarball`. */
+async function startTarballServer(sendTarball: (res: ServerResponse) => void) {
   const server = createServer((req, res) => {
     const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`
     if (req.url === '/@cordisjs/boilerplate') {
@@ -262,48 +252,101 @@ it('reports a tarball whose download times out', async () => {
       res.end(JSON.stringify(meta(`${url}/pkg.tgz`)))
     } else if (req.url === '/pkg.tgz') {
       res.writeHead(200, { 'content-type': 'application/octet-stream' })
-      let sent = 0
-      const timer = setInterval(() => {
-        res.write(Buffer.alloc(2000))
-        if (++sent > 30) {
-          clearInterval(timer)
-          res.end()
-        }
-      }, 100)
+      sendTarball(res)
     } else {
       res.writeHead(404, { 'content-type': 'text/plain' })
       res.end('not found')
     }
   })
   await new Promise<void>((ready) => server.listen(0, '127.0.0.1', () => ready()))
-  const registry = `http://127.0.0.1:${(server.address() as { port: number }).port}`
-  const cwd = await mkdtemp(join(tmpdir(), 'cordis-create-'))
+  return { server, url: `http://127.0.0.1:${(server.address() as { port: number }).port}` }
+}
+
+// A registry that sends headers instantly but trickles the body is cut off
+// mid-stream by the deadline: the source error must reach the report, not escape.
+it('reports a tarball whose download times out', async () => {
+  const { server, url } = await startTarballServer((res) => {
+    let sent = 0
+    const timer = setInterval(() => {
+      res.write(Buffer.alloc(2000))
+      if (++sent > 30) {
+        clearInterval(timer)
+        res.end()
+      }
+    }, 100)
+  })
   try {
-    await writeFile(join(cwd, '.npmrc'), `registry=${registry}\n`)
     // The deadline is injected so the body is cut mid-stream quickly.
-    await writeFile(join(cwd, 'entry.mjs'), [
-      `import scaffold from ${JSON.stringify(pathToFileURL(resolve(testDir, '../src/index.ts')).href)}`,
-      `scaffold({ name: 'cordis', version: '0.0.0', template: '@cordisjs/boilerplate', timeout: 400 })`,
-    ].join('\n'))
-    const env = childEnv({
-      npm_config_registry: registry,
-      npm_config_user_agent: 'npm/10.0.0 node/v22.0.0',
-    })
-    const { stdout, stderr, code } = await new Promise<{ stdout: string; stderr: string; code: number }>((done) => {
-      execFile(process.execPath, ['--import', tsx, join(cwd, 'entry.mjs'), 'myapp', '--yes'], {
-        cwd,
-        env,
-      }, (error, stdout, stderr) => {
-        const code = (error as any)?.code
-        done({ stdout, stderr, code: typeof code === 'number' ? code : 0 })
-      })
-    })
-    const output = `${stdout}${stderr}`
-    expect(output).toContain(`error timed out downloading ${registry}/pkg.tgz`)
+    const { output, code } = await runCli(url, [], 400)
+    expect(output).toContain(`error timed out downloading ${url}/pkg.tgz`)
     expect(output).not.toContain('Unhandled')
     expect(code).toBe(1)
   } finally {
-    await rm(cwd, { recursive: true, force: true })
     server.close()
   }
 }, 30000)
+
+it('reports a tarball whose connection drops', async () => {
+  const { server, url } = await startTarballServer((res) => {
+    res.write(Buffer.alloc(2000))
+    setTimeout(() => res.socket!.destroy(), 100)
+  })
+  try {
+    const { output, code } = await runCli(url)
+    expect(output).toContain(`error unable to download ${url}/pkg.tgz`)
+    expect(code).toBe(1)
+  } finally {
+    server.close()
+  }
+}, 30000)
+
+describe('stageYarnBin', () => {
+  async function stage(tarball: () => Response) {
+    const root = await mkdtemp(join(tmpdir(), 'cordis-stage-'))
+    const rootDir = join(root, 'project')
+    await mkdir(rootDir)
+    await writeFile(join(rootDir, 'package.json'), '{}')
+    const fetcher = (async (url: string) => {
+      if (url.endsWith('/@yarnpkg/cli-dist')) {
+        return new Response(JSON.stringify({ 'dist-tags': { latest: '9.9.9' } }))
+      }
+      return tarball()
+    }) as typeof fetch
+    const task = stageYarnBin({
+      rootDir,
+      registry: 'https://registry.invalid',
+      agent: { name: 'yarn', version: '1.22.19' },
+      cacheDir: join(root, 'cache'),
+      tempDir: join(root, 'temp'),
+      fetcher,
+    })
+    return { task, rc: () => readFile(join(rootDir, '.yarnrc.yml'), 'utf8').catch(() => null), root }
+  }
+
+  it('skips a yarn release whose tarball is missing', async () => {
+    const { task, rc, root } = await stage(() => new Response('not found', { status: 404 }))
+    try {
+      expect(await task).toBe(undefined)
+      expect(await rc()).toBe(null)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  // The scaffold catches this and carries on; an error escaping as an event
+  // would crash the process instead.
+  it('rejects when the yarn download is cut off', async () => {
+    const { task, rc, root } = await stage(() => new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array(2000))
+        controller.error(new Error('connection dropped'))
+      },
+    })))
+    try {
+      await expect(task).rejects.toThrow('connection dropped')
+      expect(await rc()).toBe(null)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+})
