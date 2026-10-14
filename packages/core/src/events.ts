@@ -80,8 +80,10 @@ export class EventsService {
       this.emit('internal/dispatch', type, name, args, thisArg)
     }
     const filter = thisArg?.[Context.filter]
-    return [thisArg, (this._hooks[name] || [])
-      .filter(hook => hook.global || !filter || filter.call(thisArg, hook.ctx)).map(hook => hook.callback)] as const
+    const callbacks = (this._hooks[name] || [])
+      .filter(hook => hook.global || !filter || filter.call(thisArg, hook.ctx))
+      .map(hook => hook.callback)
+    return [thisArg, callbacks, name] as const
   }
 
   /** @deprecated */
@@ -91,10 +93,12 @@ export class EventsService {
   }
 
   async parallel(...args: any[]) {
-    const [thisArg, callbacks] = this._resolve('parallel', args)
+    const [thisArg, callbacks, name] = this._resolve('parallel', args)
     const results = await Promise.allSettled(callbacks.map(async callback => Reflect.apply(callback, thisArg, args)))
     const errors = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
-    if (errors.length) throw new AggregateError(errors.map(error => error.reason))
+    if (!errors.length) return
+    const label = typeof name === 'symbol' ? String(name) : `"${name}"`
+    throw new AggregateError(errors.map(error => error.reason), `one or more listeners of event ${label} failed`)
   }
 
   emit(...args: any[]) {
