@@ -141,11 +141,9 @@ it('scaffolds the default template to completion', async () => {
 }, 30000)
 
 it('reports a registry without a scheme', async () => {
-  // `URL.canParse` accepts `localhost:4873` — the host is read as the scheme —
-  // so the url is only known to be unusable once the scheme itself is checked.
   const { output, code } = await runCli('localhost:4873')
   expect(code).toBe(1)
-  expect(output).toContain('error invalid url localhost:4873/@cordisjs/boilerplate')
+  expect(output).toContain('error invalid npm registry localhost:4873')
 }, 30000)
 
 it('reports an unknown dist-tag', async () => {
