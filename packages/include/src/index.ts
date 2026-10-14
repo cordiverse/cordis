@@ -108,11 +108,9 @@ export class Include extends EntryTree {
   constructor(ctx: Context, public config: Include.Config) {
     super(ctx)
     this.enableLogs = config.enableLogs ?? ctx.fiber.entry?.parent.tree.enableLogs ?? false
-    // `new URL()` reads the `C:` of a drive-letter path as a URL scheme, which
-    // `fileURLToPath` then rejects. Only that form is converted: a leading-slash
-    // path is a legal URL path and has to keep resolving against `ctx.baseUrl`
-    // rather than against the working directory.
-    this.filename = fileURLToPath(driveLetter.test(this.config.path)
+    // On Windows, a drive-letter path is converted with `pathToFileURL`.
+    // `new URL()` would read its `C:` as a URL scheme, which `fileURLToPath` rejects.
+    this.filename = fileURLToPath(process.platform === 'win32' && driveLetter.test(this.config.path)
       ? pathToFileURL(this.config.path)
       : new URL(this.config.path, this.ctx.baseUrl))
     const ext = extname(this.filename)

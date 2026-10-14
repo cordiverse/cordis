@@ -9,7 +9,7 @@ describe('Include path', () => {
   // scheme (`c:`), and `fileURLToPath` rejects anything that is not `file:`.
   // An absolute POSIX path is a legal URL path and already resolves as-is, so
   // this case only fails on Windows.
-  it.runIf(process.platform === 'win32')('accepts an absolute path', async () => {
+  it.runIf(process.platform === 'win32')('accepts a drive-letter path', async () => {
     const filename = fixture('path-abs.yml')
     const state = await setup('path-abs.yml', [plugin('inner', 1)], { path: filename })
 
