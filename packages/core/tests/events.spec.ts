@@ -125,9 +125,21 @@ describe('Events', () => {
     })
     const error = await root.parallel(event).catch(e => e)
     expect(error).to.be.instanceof(AggregateError)
+    expect(error.message).to.equal('one or more listeners of event "custom-event" failed')
     expect(error.errors.map((e: Error) => e.message)).to.have.members(['test', 'async'])
     expect(settled).to.be.true
     dispose()
+  })
+
+  it('ctx.parallel() labels symbol events', async () => {
+    const { root } = setup()
+    const event = Symbol('parallel')
+    root.on(event, () => {
+      throw new Error('test')
+    })
+    const error = await root.parallel(event).catch(e => e)
+    expect(error).to.be.instanceof(AggregateError)
+    expect(error.message).to.equal('one or more listeners of event Symbol(parallel) failed')
   })
 
   it('ctx.emit()', async () => {
