@@ -1,4 +1,4 @@
-import { Context } from '../src'
+import { Context, CordisError, FiberState } from '../src'
 import { expect, describe, it, vi } from 'vitest'
 import { mock } from 'node:test'
 import { sleep, withTimers } from './utils'
@@ -236,5 +236,111 @@ describe('Effects', () => {
     }
     expect(caught).to.be.instanceOf(Error)
     expect(seq).to.deep.equal([1])
+  })
+
+  // a fiber that never activated still owns whatever an `internal/plugin`
+  // observer registered on it, and `_setEpoch(INACTIVE)` has no transition to
+  // drive for it — the disposables have to be unloaded explicitly
+  it('dispose unloads effects of a fiber that never activated', async () => {
+    const root = new Context()
+    const unloaded = mock.fn()
+    root.on('internal/plugin', (fiber) => {
+      if (!fiber.uid) return
+      fiber.ctx.effect(() => unloaded, 'observer')
+    })
+    const fiber = root.inject(['missing'], () => {})
+    await sleep()
+    expect(fiber.state).to.equal(FiberState.PENDING)
+    await fiber.dispose()
+    expect(unloaded.mock.calls).to.have.length(1)
+    expect(fiber.state).to.equal(FiberState.DISPOSED)
+  })
+
+  // a registration made while the owner is unloading lands after `_unload()`
+  // has cleared the list it drains, so it would outlive the teardown that was
+  // supposed to own it
+  it('rejects effect creation while the owner is unloading', async () => {
+    const root = new Context()
+    const disposeDep = root.provide('dep', 1)
+    const late = mock.fn()
+    let stateAtAttempt: FiberState | undefined
+    let error: unknown
+
+    const fiber = root.inject(['dep'], async (ctx) => {
+      ctx.effect(() => () => {
+        try {
+          ctx.effect(() => late, 'late')
+        } catch (reason) {
+          stateAtAttempt = fiber.state
+          error = reason
+        }
+      }, 'outer')
+    })
+    await sleep()
+    expect(fiber.state).to.equal(FiberState.ACTIVE)
+
+    disposeDep()
+    await sleep()
+
+    expect(stateAtAttempt).to.equal(FiberState.UNLOADING)
+    expect(error).to.be.instanceOf(CordisError)
+    expect((error as CordisError).code).to.equal('INACTIVE_EFFECT')
+    expect(late.mock.calls).to.have.length(0)
+    expect(fiber.state).to.equal(FiberState.PENDING)
+  })
+
+  // a throwing teardown observer must not starve its peers, and must not abort
+  // the disposal that issued the notification
+  it('contains a throwing teardown observer', async () => {
+    const root = new Context()
+    const errors = mock.fn()
+    ;(root.logger as any).error = errors
+    const seen: string[] = []
+
+    root.on('internal/plugin', (fiber) => {
+      if (fiber.uid !== null) return
+      seen.push('first')
+      throw new Error('observer boom')
+    })
+    root.on('internal/plugin', (fiber) => {
+      if (fiber.uid !== null) return
+      seen.push('second')
+    })
+
+    const cleaned = mock.fn()
+    const fiber = root.inject([], async (ctx) => {
+      ctx.effect(() => cleaned, 'e')
+    })
+    await sleep()
+
+    await fiber.dispose()
+
+    expect(seen).to.deep.equal(['first', 'second'])
+    expect(cleaned.mock.calls).to.have.length(1)
+    expect(fiber.state).to.equal(FiberState.DISPOSED)
+    expect(errors.mock.calls.length).to.be.greaterThan(0)
+  })
+
+  // an observer may dispose the fiber from inside the publication notification,
+  // so the disposer has to exist by then and the constructor must not carry on
+  // into activation afterwards
+  it('lets a publication observer dispose the fiber', async () => {
+    const root = new Context()
+    const applied = mock.fn()
+    let disposedFromObserver = false
+
+    root.on('internal/plugin', (fiber) => {
+      if (fiber.uid === null || disposedFromObserver) return
+      disposedFromObserver = true
+      expect(typeof fiber.dispose).to.equal('function')
+      fiber.dispose()
+    })
+
+    const fiber = root.inject([], async () => { applied() })
+    await sleep()
+
+    expect(disposedFromObserver).to.equal(true)
+    expect(applied.mock.calls).to.have.length(0)
+    expect(fiber.uid).to.equal(null)
   })
 })
