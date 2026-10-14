@@ -8,6 +8,6 @@ export function apply(ctx: Context) {
   ctx.on('hmr-test/get-dep', () => sharedValue)
   ctx.on('hmr-test/get-dep-common', () => commonValue)
   ctx.effect(() => () => {
-    ctx.root.emit('hmr-test/disposed-dep')
+    ctx[Context.root].emit('hmr-test/disposed-dep')
   })
 }

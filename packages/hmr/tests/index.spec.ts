@@ -797,7 +797,7 @@ export function apply(ctx: Context) {
   ctx.on('hmr-test/get-event', () => value)
   ctx.on('hmr-test/get-extra', () => 'extra-data')
   ctx.effect(() => () => {
-    ctx.root.emit('hmr-test/disposed-event')
+    ctx[Context.root].emit('hmr-test/disposed-event')
   })
 }
 `)
@@ -821,7 +821,7 @@ export function apply(ctx: Context) {
   ctx.on('hmr-test/get-event', () => value)
   ctx.on('hmr-test/get-extra', () => 'extra-data')
   ctx.effect(() => () => {
-    ctx.root.emit('hmr-test/disposed-event')
+    ctx[Context.root].emit('hmr-test/disposed-event')
   })
 }
 `)

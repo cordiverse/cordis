@@ -135,7 +135,7 @@ export class Include extends EntryTree {
   }
 
   private warn = (format: string, ...args: any[]) => {
-    this.ctx.root.logger?.('loader').warn(format, ...args)
+    this.ctx[Context.root].logger?.('loader').warn(format, ...args)
   }
 
   async* [Service.init]() {

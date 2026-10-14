@@ -7,6 +7,6 @@ export let value = 'initial'
 export function apply(ctx: Context) {
   ctx.on('hmr-test/get-value', () => value)
   ctx.effect(() => () => {
-    ctx.root.emit('hmr-test/disposed')
+    ctx[Context.root].emit('hmr-test/disposed')
   })
 }
