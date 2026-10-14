@@ -14,7 +14,7 @@ class Foo extends Service<Config> {
   }
 
   config() {
-    return this[Service.resolveConfig]()
+    return this[Service.resolveIntercept]()
   }
 }
 
@@ -89,7 +89,7 @@ describe('Intercept', () => {
 
   it('custom merge', async () => {
     class Tagged extends Foo {
-      [Service.mergeConfig](...configs: Config[]) {
+      [Service.mergeIntercept](...configs: Config[]) {
         return { tags: configs.flatMap(config => config.tags ?? []) }
       }
     }

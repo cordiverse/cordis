@@ -6,14 +6,13 @@ import { createCallable, joinPrototype, symbols, Tracker } from './utils.ts'
 export abstract class Service<out T = never> {
   static readonly init: unique symbol = symbols.init
   static readonly check: unique symbol = symbols.check
-  static readonly config: unique symbol = symbols.config
   static readonly invoke: unique symbol = symbols.invoke
   static readonly extend: unique symbol = symbols.extend
   static readonly tracker: unique symbol = symbols.tracker
-  static readonly mergeConfig: unique symbol = symbols.mergeConfig
-  static readonly resolveConfig: unique symbol = symbols.resolveConfig
+  static readonly mergeIntercept: unique symbol = symbols.mergeIntercept
+  static readonly resolveIntercept: unique symbol = symbols.resolveIntercept
 
-  declare [symbols.config]: T
+  declare [symbols.intercept]: T
 
   public name!: string
 
@@ -50,23 +49,23 @@ export abstract class Service<out T = never> {
     return Object.assign(self, props)
   }
 
-  [symbols.mergeConfig](...configs: T[]): T {
-    return Object.assign({}, ...configs)
+  [symbols.mergeIntercept](...values: T[]): T {
+    return Object.assign({}, ...values)
   }
 
-  [symbols.resolveConfig](): T {
-    const configs: T[] = []
+  [symbols.resolveIntercept](): T {
+    const values: T[] = []
     let intercept = this.ctx[Context.intercept]
     while (this.name in intercept) {
       if (Object.hasOwn(intercept, this.name)) {
-        configs.unshift(intercept[this.name])
+        values.unshift(intercept[this.name])
       }
       intercept = Object.getPrototypeOf(intercept)
     }
-    const config = locate((this as any)[symbols.caller] ?? this.ctx, this.name)?.fiber.inject[this.name]
-    if (!isNullable(config)) configs.unshift(config)
-    const merge = this[symbols.mergeConfig] ?? Service.prototype[symbols.mergeConfig]
-    return merge.apply(this, configs)
+    const value = locate((this as any)[symbols.caller] ?? this.ctx, this.name)?.fiber.inject[this.name]
+    if (!isNullable(value)) values.unshift(value)
+    const merge = this[symbols.mergeIntercept] ?? Service.prototype[symbols.mergeIntercept]
+    return merge.apply(this, values)
   }
 
   static [Symbol.hasInstance](instance: any) {

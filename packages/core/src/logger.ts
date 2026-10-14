@@ -4,12 +4,6 @@ import { Fiber } from './fiber.ts'
 import { Service } from './service.ts'
 import { createCallable, joinPrototype, symbols, Tracker } from './utils.ts'
 
-declare module './context.ts' {
-  interface Intercept {
-    logger: LoggerService.Intercept
-  }
-}
-
 export type LoggerType = 'error' | 'info' | 'warn' | 'debug'
 
 export type LoggerMethod = (format: any, ...param: any[]) => void
@@ -169,6 +163,8 @@ export interface LoggerService extends Record<LoggerType, LoggerMethod> {
 }
 
 export class LoggerService {
+  declare [symbols.intercept]: LoggerService.Intercept
+
   bufferSize = 1000
   buffer: Message[] = []
   ctx!: Context
@@ -214,7 +210,7 @@ export class LoggerService {
 
   [symbols.invoke](name?: string): Logger {
     const caller = (this as any)[symbols.caller] as Context | undefined
-    const config: LoggerService.Intercept = Service.prototype[Service.resolveConfig].call(this)
+    const config: LoggerService.Intercept = Service.prototype[Service.resolveIntercept].call(this)
     const fiber = (caller ?? this.ctx).fiber
     name ??= config.name
     name ??= hyphenate(fiber.name)

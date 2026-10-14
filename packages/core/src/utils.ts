@@ -64,12 +64,11 @@ export const symbols = {
   // service symbols
   init: Symbol.for('cordis.init') as typeof Service.init,
   check: Symbol.for('cordis.check') as typeof Service.check,
-  config: Symbol.for('cordis.config') as typeof Service.config,
   invoke: Symbol.for('cordis.invoke') as typeof Service.invoke,
   extend: Symbol.for('cordis.extend') as typeof Service.extend,
   tracker: Symbol.for('cordis.tracker') as typeof Service.tracker,
-  mergeConfig: Symbol.for('cordis.mergeConfig') as typeof Service.mergeConfig,
-  resolveConfig: Symbol.for('cordis.resolveConfig') as typeof Service.resolveConfig,
+  mergeIntercept: Symbol.for('cordis.mergeIntercept') as typeof Service.mergeIntercept,
+  resolveIntercept: Symbol.for('cordis.resolveIntercept') as typeof Service.resolveIntercept,
 }
 
 const GeneratorFunction = function* () {}.constructor

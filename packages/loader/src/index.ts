@@ -47,7 +47,7 @@ export namespace Loader {
 }
 
 export class Loader extends EntryTree {
-  declare [Service.config]: Loader.Intercept
+  declare [Context.intercept]: Loader.Intercept
 
   public envData = process.env.CORDIS_SHARED
     ? JSON.parse(process.env.CORDIS_SHARED)
@@ -157,7 +157,7 @@ export class Loader extends EntryTree {
   }
 
   [Service.check]() {
-    const config: Loader.Intercept = Service.prototype[Service.resolveConfig].call(this)
+    const config: Loader.Intercept = Service.prototype[Service.resolveIntercept].call(this)
     if (config.await && this.getTasks().length) return false
     return true
   }

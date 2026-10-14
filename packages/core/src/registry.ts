@@ -11,10 +11,10 @@ function isApplicable(object: Plugin) {
 export type Inject<M = Dict> = (keyof M)[] | { [K in keyof M]?: M[K] }
 
 export type InjectKey = keyof {
-  [K in keyof Context & string as Context[K] extends { [symbols.config]: any } ? K : never]: any
+  [K in keyof Context & string as Context[K] extends { [symbols.intercept]: any } ? K : never]: any
 }
 
-export function Inject<K extends InjectKey>(name: K, config?: Context[K] extends { [symbols.config]: infer T } ? T : never) {
+export function Inject<K extends InjectKey>(name: K, config?: Context[K] extends { [symbols.intercept]: infer T } ? T : never) {
   return function (value: any, decorator: ClassDecoratorContext<any> | ClassMethodDecoratorContext<any>) {
     if (decorator.kind === 'class') {
       if (!Object.hasOwn(value, 'inject')) {
