@@ -157,6 +157,7 @@ class Hmr extends Service {
     this.watcher = watch(root, {
       ...this.config,
       cwd: this.baseDir,
+      // picomatch only splits on `/`, so a Windows path is converted before matching.
       ignored: path => !this.watchers.has(resolve(this.baseDir, path))
         && match(relative(this.baseDir, path).split(sep).join('/')),
     })
