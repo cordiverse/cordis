@@ -6,7 +6,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { fileURLToPath } from 'node:url'
-import Hmr from '../src'
+import Hmr from '../src/index.ts'
 
 const testDir = dirname(fileURLToPath(import.meta.url))
 const fixture = resolve(testDir, '__ignored__')

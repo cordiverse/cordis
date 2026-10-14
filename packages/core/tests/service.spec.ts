@@ -1,7 +1,7 @@
-import { Context, Service } from '../src'
+import { Context, Service } from '../src/index.ts'
 import { expect, describe, it } from 'vitest'
 import { mock } from 'node:test'
-import { Counter, getHookSnapshot, sleep } from './utils'
+import { Counter, getHookSnapshot, sleep } from './utils.ts'
 
 describe('Service', () => {
   it('pending inject', async () => {

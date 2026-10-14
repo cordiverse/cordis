@@ -1,7 +1,7 @@
-import { Context, Events } from '../src'
+import { Context, Events } from '../src/index.ts'
 import { expect, describe, it } from 'vitest'
 import { mock } from 'node:test'
-import { event, Filter, Session } from './utils'
+import { event, Filter, Session } from './utils.ts'
 
 export function createArray<T>(length: number, create: (index: number) => T) {
   return [...new Array(length).keys()].map(create)

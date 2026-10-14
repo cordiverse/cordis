@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fixture, harness, plugin } from './utils'
+import { fixture, harness, plugin } from './utils.ts'
 
 describe('Include path', () => {
   const { setup } = harness()

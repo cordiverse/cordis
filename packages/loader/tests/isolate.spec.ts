@@ -1,7 +1,7 @@
 import { Mock, mock } from 'node:test'
 import { expect, describe, it, beforeAll, beforeEach } from 'vitest'
 import { Context, FiberState, Service } from 'cordis'
-import MockLoader, { sleep } from './utils'
+import MockLoader, { sleep } from './utils.ts'
 
 describe('Service Isolation: basic', () => {
   const root = new Context()

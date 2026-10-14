@@ -1,7 +1,7 @@
-import { Context, Service } from '../src'
+import { Context, Service } from '../src/index.ts'
 import { expect, describe, it } from 'vitest'
 import { mock } from 'node:test'
-import { event, sleep } from './utils'
+import { event, sleep } from './utils.ts'
 
 describe('Isolation', () => {
   it('keeps own provisions separate from the injected view', async () => {
