@@ -68,6 +68,7 @@ export const symbols = {
   invoke: Symbol.for('cordis.invoke') as typeof Service.invoke,
   extend: Symbol.for('cordis.extend') as typeof Service.extend,
   tracker: Symbol.for('cordis.tracker') as typeof Service.tracker,
+  mergeConfig: Symbol.for('cordis.mergeConfig') as typeof Service.mergeConfig,
   resolveConfig: Symbol.for('cordis.resolveConfig') as typeof Service.resolveConfig,
 }
 

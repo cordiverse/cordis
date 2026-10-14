@@ -1,4 +1,4 @@
-import { defineProperty } from 'cosmokit'
+import { defineProperty, isNullable } from 'cosmokit'
 import { Context } from './context.ts'
 import { createCallable, joinPrototype, symbols, Tracker } from './utils.ts'
 
@@ -9,6 +9,7 @@ export abstract class Service<out T = never> {
   static readonly invoke: unique symbol = symbols.invoke
   static readonly extend: unique symbol = symbols.extend
   static readonly tracker: unique symbol = symbols.tracker
+  static readonly mergeConfig: unique symbol = symbols.mergeConfig
   static readonly resolveConfig: unique symbol = symbols.resolveConfig
 
   declare [symbols.config]: T
@@ -48,22 +49,32 @@ export abstract class Service<out T = never> {
     return Object.assign(self, props)
   }
 
-  [symbols.resolveConfig](base?: T, head?: T): T {
+  [symbols.mergeConfig](...configs: T[]): T {
+    return Object.assign({}, ...configs)
+  }
+
+  // The configs merged in ascending priority: the config declared by the fiber whose `inject` admits
+  // the access (looked up from the def site), then the intercepts of the use site from outer to inner.
+  // Objects borrowing this method without extending `Service` merge with the default implementation.
+  [symbols.resolveConfig](): T {
+    const configs: T[] = []
     let intercept = this.ctx[Context.intercept]
-    const configs: any[] = []
     while (this.name in intercept) {
       if (Object.hasOwn(intercept, this.name)) {
         configs.unshift(intercept[this.name])
       }
       intercept = Object.getPrototypeOf(intercept)
     }
-    if (base) configs.unshift(base)
-    if (head) configs.push(head)
-    if (this['Config']?.merge) {
-      return this['Config'].merge(...configs)
-    } else {
-      return Object.assign({}, ...configs)
+    let fiber = ((this as any)[symbols.caller] as Context | undefined ?? this.ctx).fiber
+    while (fiber.runtime) {
+      if (this.name in fiber.inject) {
+        if (!isNullable(fiber.inject[this.name])) configs.unshift(fiber.inject[this.name])
+        break
+      }
+      fiber = fiber.parent.fiber
     }
+    const merge = this[symbols.mergeConfig] ?? Service.prototype[symbols.mergeConfig]
+    return merge.apply(this, configs)
   }
 
   static [Symbol.hasInstance](instance: any) {
