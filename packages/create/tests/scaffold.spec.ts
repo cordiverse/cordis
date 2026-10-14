@@ -140,6 +140,12 @@ it('scaffolds the default template to completion', async () => {
   expect(packageJson.name).toBe('myapp')
 }, 30000)
 
+it('reports a registry without a scheme', async () => {
+  const { output, code } = await runCli('localhost:4873')
+  expect(code).toBe(1)
+  expect(output).toContain('error invalid npm registry localhost:4873')
+}, 30000)
+
 it('reports an unknown dist-tag', async () => {
   const registry = await startRegistry()
   const { output, code } = await runCli(registry, ['--ref', 'nonexistent-tag-xyz'])

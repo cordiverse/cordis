@@ -232,6 +232,12 @@ class Scaffold {
       console.log(kleur.red('error') + ' unable to detect npm registry')
       process.exit(1)
     }
+    // A registry without a scheme can still parse as a url, with its host read
+    // as the scheme (`localhost:4873`).
+    if (!/^https?:\/\//i.test(registry)) {
+      console.log(kleur.red('error') + ` invalid npm registry ${registry}`)
+      process.exit(1)
+    }
 
     this.registry = registry.replace(/\/$/, '')
     console.log(kleur.dim('  Registry server: ') + this.registry)
@@ -296,7 +302,7 @@ class Scaffold {
   }
 
   private async fetchOrExit(url: string) {
-    // A registry without a scheme arrives here as a bare path.
+    // The tarball url comes from the registry response and may be malformed.
     if (!URL.canParse(url)) {
       console.log(kleur.red('error') + ` invalid url ${url}`)
       process.exit(1)
