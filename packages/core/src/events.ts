@@ -184,6 +184,13 @@ export interface Events {
   'internal/plugin'(fiber: Fiber): void
   'internal/status'(fiber: Fiber, oldValue: FiberState): void
   'internal/service'(this: Context, name: string, value: any): void
+  /**
+   * Accepts a configuration change without necessarily restarting the plugin.
+   * A newer update supersedes one still in flight and replays the whole chain
+   * against the latest stored config, so a listener MUST be a re-playable
+   * reduction of it: defer emissions that cannot be repeated, register
+   * fiber-scoped resources in the plugin body, or call `next()` to restart.
+   */
   'internal/update'(this: Fiber, resolvedConfig: any, next: () => Awaitable<void>): Awaitable<void>
   'internal/commit'(fiber: Fiber, originalConfig: any): void
   'internal/config'(fiber: Fiber, next: () => any): any
