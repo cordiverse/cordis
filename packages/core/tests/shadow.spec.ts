@@ -2,6 +2,32 @@ import { Context, Service, symbols } from '../src'
 import { describe, expect, it } from 'vitest'
 
 describe('Traceable caller', () => {
+  it('resolves same-name own provisions at their definition sites', async () => {
+    const first = Symbol('first')
+    const second = Symbol('second')
+    class Probe extends Service {
+      constructor(ctx: Context, public tag: string) {
+        super(ctx, 'foo')
+      }
+
+      inspect() {
+        return [this.ctx.foo.tag, this.ctx[Context.isolate].foo]
+      }
+    }
+    const root = new Context()
+    await root.plugin((ctx) => {
+      new Probe(ctx.isolate('foo', first), 'first')
+      new Probe(ctx.isolate('foo', second), 'second')
+    })
+    await root.isolate('foo', first).inject(['foo'], (ctx) => {
+      // The use site changes, while the injected binding and the service's
+      // definition site stay in the first realm.
+      expect(ctx.isolate('foo', second).foo.inspect()).toEqual(['first', second])
+    })
+    expect(root.isolate('foo', second).foo.inspect()).toEqual(['second', second])
+    await root.fiber.dispose()
+  })
+
   it('keeps caller metadata separate from the service shadow', async () => {
     let innerOrigin: Context
     let outerOrigin: Context

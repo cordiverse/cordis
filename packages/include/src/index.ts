@@ -8,6 +8,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import * as yaml from 'js-yaml'
 import { applyJournal, flatten, Journal, merge, reconcile, record } from './journal.ts'
 import { applyPatches, ensureIds, ensureInsertIds, PatchIndex, PatchOptions, routeJournal } from './patch.ts'
+import type {} from '@cordisjs/plugin-hmr'
+
+// A Windows drive-letter path, e.g. `C:\app\cordis.yml` or `C:/app/cordis.yml`.
+const driveLetter = /^[A-Za-z]:[\\/]/
 
 const JsExpr = new yaml.Type('tag:yaml.org,2002:js', {
   kind: 'scalar',
@@ -104,7 +108,11 @@ export class Include extends EntryTree {
   constructor(ctx: Context, public config: Include.Config) {
     super(ctx)
     this.enableLogs = config.enableLogs ?? ctx.fiber.entry?.parent.tree.enableLogs ?? false
-    this.filename = fileURLToPath(new URL(this.config.path, this.ctx.baseUrl))
+    // On Windows, a drive-letter path is converted with `pathToFileURL`.
+    // `new URL()` would read its `C:` as a URL scheme, which `fileURLToPath` rejects.
+    this.filename = fileURLToPath(process.platform === 'win32' && driveLetter.test(this.config.path)
+      ? pathToFileURL(this.config.path)
+      : new URL(this.config.path, this.ctx.baseUrl))
     const ext = extname(this.filename)
     if (!types[ext]) {
       throw new Error(`extension "${ext}" not supported`)
@@ -113,12 +121,16 @@ export class Include extends EntryTree {
     this.ctx.baseUrl = new URL('.', pathToFileURL(this.filename)).href
     ensureInsertIds(config.patches, id => !!this.store[id])
 
-    ctx.on('internal/update', (config, _, next) => {
+    ctx.on('internal/update', (config, next) => {
       if (config.path !== this.config.path) return next()
       this.config = config
       ensureInsertIds(config.patches, id => !!this.store[id])
       this._scheduleApply()
       return this._applyTask
+    })
+
+    ctx.inject(['hmr'], (ctx) => {
+      ctx.hmr.watch(this.filename, () => this.refresh())
     })
   }
 
@@ -349,7 +361,10 @@ export class Include extends EntryTree {
       await writeFile(tmp, text)
       for (let attempt = 0; ; attempt++) {
         if (expected !== undefined) {
-          const current = await readFile(this.filename, 'utf8').catch(() => undefined)
+          const current = await readFile(this.filename, 'utf8').catch((error) => {
+            if (isENOENT(error)) return undefined
+            throw error
+          })
           if (current !== expected) throw new StaleWriteError()
         }
         try {

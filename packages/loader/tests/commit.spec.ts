@@ -1,6 +1,7 @@
 import { Mock, mock } from 'node:test'
 import { expect, describe, it, beforeAll, beforeEach } from 'vitest'
-import { Context } from 'cordis'
+import { Context, Service } from 'cordis'
+import { EntryTree } from '../src'
 import MockLoader, { sleep } from './utils'
 
 describe('EntryTree.commit: change reports', () => {
@@ -151,5 +152,39 @@ describe('EntryGroup.remove: file-driven moves', () => {
     expect(loader.store['x']!.parent).to.equal(loader.store['g']!.subgroup)
     loader.expectFiber('x')
     loader.expectEnable(foo)
+  })
+})
+
+describe('EntryTree disposal', () => {
+  it('does not persist child disposal while the tree loses its loader', async () => {
+    const root = new Context()
+    const loader = await root.plugin(MockLoader)
+    const commit = mock.fn()
+    let tree!: EntryTree
+    class Tree extends EntryTree {
+      static inject = ['loader']
+
+      commit = commit
+
+      async import() {
+        return () => {}
+      }
+
+      async* [Service.init]() {
+        tree = this
+        await this.root.update([{ id: 'child', name: 'child' }])
+        yield async () => {
+          // Include flushes pending writes before stopping its entry group.
+          await Promise.resolve()
+          this.root.stop()
+        }
+      }
+    }
+    const fiber = await loader.ctx.plugin(Tree)
+    const options = tree.root.data[0]
+    await loader.dispose()
+    expect(options.disabled).toBeUndefined()
+    expect(commit.mock.calls).toHaveLength(0)
+    await fiber.dispose()
   })
 })

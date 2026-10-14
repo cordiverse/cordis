@@ -1,9 +1,11 @@
-import { Context, Inject, Service } from 'cordis'
+import { Context, FiberState, Inject, Service } from 'cordis'
 import { Awaitable, defineProperty, Dict, isNullable } from 'cosmokit'
 import { ModuleLoader } from './internal.ts'
 import { Entry, EntryOptions } from './config/entry.ts'
+import { EntryGroup } from './config/group.ts'
 import isolate from './config/isolate.ts'
-import { EntryTree } from './config/tree.ts'
+import { EntryChange, EntryTree } from './config/tree.ts'
+import { interpolate } from './config/utils.ts'
 
 export * from './config/entry.ts'
 export * from './config/group.ts'
@@ -71,17 +73,29 @@ export class Loader extends EntryTree {
 
     ctx.reflect.provide('loader', this, this[Service.check])
 
-    ctx.on('internal/update', function (config, noSave, next) {
-      if (!this.entry || noSave || this.parent.fiber?.entry === this.entry) return next()
-      const unparse = this.runtime?.Config?.['simplify']
-      const { entry } = this
+    // Registered after the built-in validation listener, so interpolation runs
+    // on the source config and validation sees the interpolated result.
+    ctx.on('internal/config', (fiber, next) => {
+      const config = next()
+      // nested plugins inherit `entry` through the context prototype chain;
+      // only the entry's own fiber carries the entry config
+      if (!fiber.entry || fiber.parent.fiber?.entry === fiber.entry) return config
+      // a group's config is the entry list itself, which the loader mutates in
+      // place and identifies by reference
+      if (fiber.runtime!.callback[EntryGroup.key]) return config
+      return interpolate(fiber.ctx, config)
+    })
+
+    ctx.on('internal/commit', (fiber, config) => {
+      if (!fiber.entry || fiber.parent.fiber?.entry === fiber.entry) return
+      const unparse = fiber.runtime?.Config?.['simplify']
+      const { entry } = fiber
       const legacy = { ...entry.options }
       entry.options.config = unparse ? unparse(config) : config
       entry.parent.tree.commit({ id: entry.options.id, group: entry.parent, options: entry.options, legacy })
-      return next()
-    }, { global: true, prepend: true })
+    })
 
-    ctx.on('internal/update', function (config, _, next) {
+    ctx.on('internal/update', function (config, next) {
       if (!this.entry || this.parent.fiber?.entry === this.entry) return next()
       self.showLog(this.entry, 'reload')
       return next()
@@ -118,11 +132,15 @@ export class Loader extends EntryTree {
       const { entry } = fiber
       this.showLog(entry, 'unload')
 
-      // case 6: the entry is being removed by the loader (`EntryGroup.remove`
+      // case 6: the entry's parent is being unloaded, which takes the entry with it
+      // (the parent may still be registered, e.g. when it has lost a dependency)
+      if (fiber.parent.fiber.state === FiberState.UNLOADING) return
+
+      // case 7: the entry is being removed by the loader (`EntryGroup.remove`
       // unregisters it before disposing the fiber)
       if (entry.parent.tree.store[entry.options.id] !== entry) return
 
-      // case 7: fiber is disposed by loader behavior
+      // case 8: fiber is disposed by loader behavior
       // such as inject checker, config file update, ancestor group disable
       if (entry.disabled) return
 
@@ -134,7 +152,7 @@ export class Loader extends EntryTree {
     ctx.plugin(isolate)
   }
 
-  commit() {
+  commit(_change: EntryChange) {
     // the root tree lives in memory only; there is nothing to persist to
   }
 
