@@ -296,8 +296,10 @@ class Scaffold {
   }
 
   private async fetchOrExit(url: string) {
-    // A registry without a scheme arrives here as a bare path.
-    if (!URL.canParse(url)) {
+    // A registry without a scheme arrives here as a bare path, or as a url whose
+    // scheme is read from its host (`localhost:4873`). Fetch speaks only http(s).
+    const protocol = URL.canParse(url) ? new URL(url).protocol : ''
+    if (protocol !== 'http:' && protocol !== 'https:') {
       console.log(kleur.red('error') + ` invalid url ${url}`)
       process.exit(1)
     }
