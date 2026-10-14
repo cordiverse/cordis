@@ -2,7 +2,7 @@ import { Context, Fiber, Inject, Plugin, Service } from 'cordis'
 import { Awaitable, Dict } from 'cosmokit'
 import { ModuleJob, ModuleLoader, ResolveResult } from '@cordisjs/plugin-loader'
 import { ChokidarOptions, FSWatcher, watch } from 'chokidar'
-import { relative, resolve } from 'node:path'
+import { relative, resolve, sep } from 'node:path'
 import { handleError } from './error.ts'
 import type {} from '@cordisjs/plugin-timer'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -157,7 +157,9 @@ class Hmr extends Service {
     this.watcher = watch(root, {
       ...this.config,
       cwd: this.baseDir,
-      ignored: path => !this.watchers.has(resolve(this.baseDir, path)) && match(relative(this.baseDir, path)),
+      // picomatch only splits on `/`, so a Windows path is converted before matching.
+      ignored: path => !this.watchers.has(resolve(this.baseDir, path))
+        && match(relative(this.baseDir, path).split(sep).join('/')),
     })
 
     const partialReload = this.ctx.debounce(() => this.partialReload(), this.config.debounce)
