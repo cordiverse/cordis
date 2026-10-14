@@ -1,5 +1,6 @@
 import { defineProperty, isNullable } from 'cosmokit'
 import { Context } from './context.ts'
+import { locate } from './reflect.ts'
 import { createCallable, joinPrototype, symbols, Tracker } from './utils.ts'
 
 export abstract class Service<out T = never> {
@@ -53,9 +54,6 @@ export abstract class Service<out T = never> {
     return Object.assign({}, ...configs)
   }
 
-  // The configs merged in ascending priority: the config declared by the fiber whose `inject` admits
-  // the access (looked up from the def site), then the intercepts of the use site from outer to inner.
-  // Objects borrowing this method without extending `Service` merge with the default implementation.
   [symbols.resolveConfig](): T {
     const configs: T[] = []
     let intercept = this.ctx[Context.intercept]
@@ -65,14 +63,8 @@ export abstract class Service<out T = never> {
       }
       intercept = Object.getPrototypeOf(intercept)
     }
-    let fiber = ((this as any)[symbols.caller] as Context | undefined ?? this.ctx).fiber
-    while (fiber.runtime) {
-      if (this.name in fiber.inject) {
-        if (!isNullable(fiber.inject[this.name])) configs.unshift(fiber.inject[this.name])
-        break
-      }
-      fiber = fiber.parent.fiber
-    }
+    const config = locate((this as any)[symbols.caller] ?? this.ctx, this.name)?.fiber.inject[this.name]
+    if (!isNullable(config)) configs.unshift(config)
     const merge = this[symbols.mergeConfig] ?? Service.prototype[symbols.mergeConfig]
     return merge.apply(this, configs)
   }

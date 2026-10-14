@@ -66,6 +66,20 @@ describe('Intercept', () => {
     expect(configs).to.deep.equal([{ a: 1 }, { b: 2 }])
   })
 
+  it('stop looking for injected config at an isolation boundary', async () => {
+    const root = new Context()
+    await root.plugin(Foo)
+    const label = Symbol('foo')
+    await root.isolate('foo', label).plugin(Foo)
+    let config!: Config
+    await root.inject({ foo: { a: 1 } }, async (ctx) => {
+      await ctx.plugin((ctx) => {
+        config = ctx.isolate('foo', label).get('foo').config()
+      })
+    })
+    expect(config).to.deep.equal({})
+  })
+
   it('take injected config from the def site', async () => {
     const root = new Context()
     await root.plugin(Foo)
