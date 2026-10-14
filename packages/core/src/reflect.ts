@@ -198,7 +198,7 @@ export class ReflectService {
       }
       this.props[name] = { type: 'service' }
 
-      this.ctx.root[symbols.isolate][name] ??= Symbol(name)
+      this.ctx[symbols.root][symbols.isolate][name] ??= Symbol(name)
       const key = this.ctx[symbols.isolate][name]
       const impl: Impl = { uid: ++this._implCounter, name, value, ctx: this.ctx, check, isolate: key, dependents: new Set() }
       if (this.store[key]) {

@@ -7,10 +7,9 @@ import { getTraceable, symbols } from './utils.ts'
 import { Fiber } from './fiber.ts'
 
 export interface Context {
+  [symbols.root]: this
   [symbols.isolate]: Dict<symbol>
   [symbols.intercept]: Dict
-  /** @experimental */
-  root: this
   baseUrl?: string | undefined
   events: EventsService
   logger: LoggerService
@@ -19,6 +18,7 @@ export interface Context {
 }
 
 export class Context {
+  static readonly root: unique symbol = symbols.root
   static readonly effect: unique symbol = symbols.effect
   static readonly filter: unique symbol = symbols.filter
   static readonly isolate: unique symbol = symbols.isolate
@@ -37,7 +37,7 @@ export class Context {
     this[symbols.isolate] = Object.create(null)
     this[symbols.intercept] = Object.create(null)
     const self = new Proxy<this>(this, ReflectService.handler)
-    this.root = self
+    this[symbols.root] = self
     this.baseUrl = undefined
     this.fiber = new Fiber(self, {}, Object.create(null), null, () => [])
     this.reflect = new ReflectService(self)

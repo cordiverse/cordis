@@ -56,6 +56,7 @@ export const symbols = {
   checkProto: Symbol.for('cordis.checkProto'),
 
   // context symbols
+  root: Symbol.for('cordis.root') as typeof Context.root,
   effect: Symbol.for('cordis.effect') as typeof Context.effect,
   filter: Symbol.for('cordis.filter') as typeof Context.filter,
   isolate: Symbol.for('cordis.isolate') as typeof Context.isolate,
