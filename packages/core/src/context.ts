@@ -1,10 +1,10 @@
 import { Dict } from 'cosmokit'
-import { EventsService } from './events'
-import { LoggerService } from './logger'
-import { ReflectService } from './reflect'
-import { InjectKey, RegistryService } from './registry'
-import { getTraceable, symbols } from './utils'
-import { Fiber } from './fiber'
+import { EventsService } from './events.ts'
+import { LoggerService } from './logger.ts'
+import { ReflectService } from './reflect.ts'
+import { InjectKey, RegistryService } from './registry.ts'
+import { getTraceable, symbols } from './utils.ts'
+import { Fiber } from './fiber.ts'
 
 export interface Context {
   [symbols.isolate]: Dict<symbol>

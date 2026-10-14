@@ -4,7 +4,7 @@ import { afterEach } from 'vitest'
 import { chmod, readFile, rm, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import * as yaml from 'js-yaml'
-import Include from '../src'
+import Include from '../src/index.ts'
 
 export const fixture = (name: string) => fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url))
 

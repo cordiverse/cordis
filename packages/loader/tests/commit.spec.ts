@@ -1,8 +1,8 @@
 import { Mock, mock } from 'node:test'
 import { expect, describe, it, beforeAll, beforeEach } from 'vitest'
 import { Context, Service } from 'cordis'
-import { EntryTree } from '../src'
-import MockLoader, { sleep } from './utils'
+import { EntryTree } from '../src/index.ts'
+import MockLoader, { sleep } from './utils.ts'
 
 describe('EntryTree.commit: change reports', () => {
   const root = new Context()

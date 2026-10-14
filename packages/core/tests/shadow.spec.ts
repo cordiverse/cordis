@@ -1,4 +1,4 @@
-import { Context, Service, symbols } from '../src'
+import { Context, Service, symbols } from '../src/index.ts'
 import { describe, expect, it } from 'vitest'
 
 describe('Traceable caller', () => {

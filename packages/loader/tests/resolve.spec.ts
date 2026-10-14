@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Context } from 'cordis'
-import { Loader } from '../src'
-import { createResolve } from '../src/resolve'
+import { Loader } from '../src/index.ts'
+import { createResolve } from '../src/resolve.ts'
 
 const roots: string[] = []
 

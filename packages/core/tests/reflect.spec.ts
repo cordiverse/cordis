@@ -1,6 +1,6 @@
 import { expect, describe, it } from 'vitest'
 import { mock } from 'node:test'
-import { Context } from '../src'
+import { Context } from '../src/index.ts'
 
 describe('Reflect', () => {
   it('Context.is()', () => {

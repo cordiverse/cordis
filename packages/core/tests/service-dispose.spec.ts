@@ -1,6 +1,6 @@
 import { setImmediate } from 'node:timers/promises'
 import { describe, expect, it, vi } from 'vitest'
-import { Context, Fiber, Service } from '../src'
+import { Context, Fiber, Service } from '../src/index.ts'
 
 function fixture() {
   const root = new Context()

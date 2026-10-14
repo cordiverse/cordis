@@ -1,7 +1,7 @@
 import { expect, describe, it } from 'vitest'
 import { Context, FiberState } from 'cordis'
 import { setImmediate } from 'node:timers/promises'
-import MockLoader from './utils'
+import MockLoader from './utils.ts'
 
 declare module 'cordis' {
   interface Context {

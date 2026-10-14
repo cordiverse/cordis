@@ -1,7 +1,7 @@
 import { expect, describe, it, beforeAll } from 'vitest'
 import { Context, FiberState, Service } from 'cordis'
-import { EntryChange, EntryTree } from '../src'
-import MockLoader, { sleep } from './utils'
+import { EntryChange, EntryTree } from '../src/index.ts'
+import MockLoader, { sleep } from './utils.ts'
 import { Mock, mock } from 'node:test'
 
 describe('Loader: disabled js expression', () => {

@@ -2,7 +2,7 @@ import { expect, describe, it, beforeAll, afterAll, afterEach } from 'vitest'
 import { writeFile } from 'node:fs/promises'
 import { createRequire, syncBuiltinESMExports } from 'node:module'
 import * as yaml from 'js-yaml'
-import { harness, plugin } from './utils'
+import { harness, plugin } from './utils.ts'
 
 /**
  * Failure injection for `rename`. Every scheduled failure rejects with the

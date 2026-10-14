@@ -1,5 +1,5 @@
 import { vi } from 'vitest'
-import { Context, Service } from '../src'
+import { Context, Service } from '../src/index.ts'
 import { Awaitable, Dict } from 'cosmokit'
 
 export function withTimers(fn: (ctx: Context) => Awaitable<void>, config?: { now?: number | Date }) {
@@ -38,7 +38,7 @@ export class Filter {
   }
 }
 
-declare module '../src/events' {
+declare module '../src/events.ts' {
   interface Events {
     [event](): void
     'test/waterfall'(value: number, next: () => number): number
@@ -67,7 +67,7 @@ export class Counter {
   }
 }
 
-declare module '../src/context' {
+declare module '../src/context.ts' {
   interface Context {
     foo: any
     bar: any

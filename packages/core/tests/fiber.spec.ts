@@ -1,7 +1,7 @@
-import { Context, FiberState, Service } from '../src'
+import { Context, FiberState, Service } from '../src/index.ts'
 import { expect, describe, it, vi } from 'vitest'
 import { mock } from 'node:test'
-import { event, sleep, withTimers } from './utils'
+import { event, sleep, withTimers } from './utils.ts'
 
 describe('Fiber', () => {
   it('inertia lock 1', withTimers(async (root) => {

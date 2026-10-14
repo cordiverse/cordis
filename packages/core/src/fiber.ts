@@ -1,11 +1,11 @@
 import { Awaitable, defineProperty, Dict, isNullable } from 'cosmokit'
-import { Context } from './context'
-import { Plugin } from './registry'
-import { buildOuterStack, composeError, DisposableList, getTraceable, isConstructor, isObject, symbols } from './utils'
-import { Impl } from './reflect'
+import { Context } from './context.ts'
+import { Plugin } from './registry.ts'
+import { buildOuterStack, composeError, DisposableList, getTraceable, isConstructor, isObject, symbols } from './utils.ts'
+import { Impl } from './reflect.ts'
 import { StandardSchemaV1 } from '@standard-schema/spec'
 
-declare module './context' {
+declare module './context.ts' {
   export interface Context extends Pick<Fiber, 'effect'> {
     fiber: Fiber
   }
