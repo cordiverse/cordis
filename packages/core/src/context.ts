@@ -68,7 +68,7 @@ export class Context {
     return this.extend({ [symbols.isolate]: shadow })
   }
 
-  intercept<K extends InjectKey>(name: K, config: Context[K] extends { [symbols.config]: infer T } ? T : never): this
+  intercept<K extends InjectKey>(name: K, config: Context[K] extends { [symbols.metadata]: infer T } ? T : never): this
   intercept(name: string, config: any): this
   intercept(name: string, config: any) {
     const intercept = Object.create(this[symbols.intercept])

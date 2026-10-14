@@ -136,15 +136,6 @@ export class Fiber {
       this.uid = parent.registry.counter
       this.ctx = this.context = parent.extend({ fiber: this })
 
-      const injectEntries = Object.entries(this.inject)
-      if (injectEntries.length) {
-        this.ctx[Context.intercept] = Object.create(parent[Context.intercept])
-        for (const [name, config] of injectEntries) {
-          if (isNullable(config)) continue
-          this.ctx[Context.intercept][name] = config
-        }
-      }
-
       this._runner = {
         epoch: INACTIVE,
         getOuterStack,
