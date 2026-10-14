@@ -47,7 +47,7 @@ export namespace Loader {
 }
 
 export class Loader extends EntryTree {
-  declare [Context.intercept]: Loader.Intercept
+  declare [Service.metadata]: Loader.Intercept
 
   public envData = process.env.CORDIS_SHARED
     ? JSON.parse(process.env.CORDIS_SHARED)

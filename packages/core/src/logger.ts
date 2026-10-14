@@ -163,7 +163,7 @@ export interface LoggerService extends Record<LoggerType, LoggerMethod> {
 }
 
 export class LoggerService {
-  declare [symbols.intercept]: LoggerService.Intercept
+  declare [symbols.metadata]: LoggerService.Intercept
 
   bufferSize = 1000
   buffer: Message[] = []

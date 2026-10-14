@@ -7,12 +7,13 @@ export abstract class Service<out T = never> {
   static readonly init: unique symbol = symbols.init
   static readonly check: unique symbol = symbols.check
   static readonly invoke: unique symbol = symbols.invoke
+  static readonly metadata: unique symbol = symbols.metadata
   static readonly extend: unique symbol = symbols.extend
   static readonly tracker: unique symbol = symbols.tracker
   static readonly mergeIntercept: unique symbol = symbols.mergeIntercept
   static readonly resolveIntercept: unique symbol = symbols.resolveIntercept
 
-  declare [symbols.intercept]: T
+  declare [symbols.metadata]: T
 
   public name!: string
 

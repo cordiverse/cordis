@@ -51,7 +51,7 @@ export const symbols = {
   caller: Symbol.for('cordis.caller'),
   receiver: Symbol.for('cordis.receiver'),
   original: Symbol.for('cordis.original'),
-  metadata: Symbol.for('cordis.metadata'),
+  decorator: Symbol.for('cordis.decorator'),
   initHooks: Symbol.for('cordis.initHooks'),
   checkProto: Symbol.for('cordis.checkProto'),
 
@@ -65,6 +65,7 @@ export const symbols = {
   init: Symbol.for('cordis.init') as typeof Service.init,
   check: Symbol.for('cordis.check') as typeof Service.check,
   invoke: Symbol.for('cordis.invoke') as typeof Service.invoke,
+  metadata: Symbol.for('cordis.metadata') as typeof Service.metadata,
   extend: Symbol.for('cordis.extend') as typeof Service.extend,
   tracker: Symbol.for('cordis.tracker') as typeof Service.tracker,
   mergeIntercept: Symbol.for('cordis.mergeIntercept') as typeof Service.mergeIntercept,
