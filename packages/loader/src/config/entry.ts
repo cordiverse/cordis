@@ -3,7 +3,7 @@ import { deepEqual, isNullable } from 'cosmokit'
 import { Loader } from '../index.ts'
 import { EntryGroup } from './group.ts'
 import { EntryTree } from './tree.ts'
-import { evaluate, interpolate } from './utils.ts'
+import { evaluate, isJsExpr } from './utils.ts'
 
 export interface EntryOptions {
   id: string
@@ -61,12 +61,18 @@ export class Entry {
     return id
   }
 
+  private _resolveDisabled(options: EntryOptions): boolean {
+    return isJsExpr(options.disabled)
+      ? Boolean(this.evaluate(options.disabled.__jsExpr))
+      : Boolean(options.disabled)
+  }
+
   get disabled() {
     // group is always enabled
     if (this.options.group) return false
     let entry: Entry | undefined = this
     do {
-      if (entry.options.disabled) return true
+      if (this._resolveDisabled(entry.options)) return true
       entry = entry.parent.ctx.fiber.entry
     } while (entry)
     return false
@@ -76,17 +82,12 @@ export class Entry {
     return evaluate(this.ctx, expr)
   }
 
-  _resolveConfig(plugin: any): [any, any?] {
-    if (plugin[EntryGroup.key]) return this.options.config
-    return interpolate(this.ctx, this.options.config)
-  }
-
   private async _patchContext(diff: string[]) {
     await this.context.waterfall('loader/patch-context', this, async () => {
       Object.setPrototypeOf(this.ctx, this.parent.ctx)
 
       if (this.fiber?.uid && (diff.includes('config') || this.options.group)) {
-        await this.fiber.update(this._resolveConfig(this.fiber.runtime!.callback), true)
+        await this.fiber.update(this.options.config, true)
       }
     })
   }
@@ -163,12 +164,10 @@ export class Entry {
     } catch (error) {
       this.ctx.logger.error(error)
       return
-    } finally {
-      this._initTask = undefined
     }
     const plugin = this.loader.unwrapExports(exports)
     await this._patchContext([])
     this.loader.showLog(this, 'apply')
-    this.fiber = this.ctx.registry.plugin(plugin, this._resolveConfig(plugin), this.getOuterStack)
+    this.fiber = this.ctx.registry.plugin(plugin, this.options.config, this.getOuterStack)
   }
 }

@@ -1,9 +1,9 @@
 import { expect, describe, it } from 'vitest'
 import { readFile, chmod, writeFile } from 'node:fs/promises'
 import * as yaml from 'js-yaml'
-import Include from '../src'
-import { applied } from './fixtures/config-plugin'
-import { fixture, group, harness, plugin } from './utils'
+import Include from '../src/index.ts'
+import { applied } from './fixtures/config-plugin.ts'
+import { fixture, group, harness, plugin } from './utils.ts'
 
 describe('Include sync', () => {
   const { setup } = harness()

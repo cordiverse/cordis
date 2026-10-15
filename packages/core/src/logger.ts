@@ -1,13 +1,8 @@
 import { defineProperty, hyphenate } from 'cosmokit'
-import { Context } from './context'
-import { Fiber } from './fiber'
-import { createCallable, joinPrototype, symbols, Tracker } from './utils'
-
-declare module './context' {
-  interface Intercept {
-    logger: LoggerService.Intercept
-  }
-}
+import { Context } from './context.ts'
+import { Fiber } from './fiber.ts'
+import { Service } from './service.ts'
+import { createCallable, joinPrototype, symbols, Tracker } from './utils.ts'
 
 export type LoggerType = 'error' | 'info' | 'warn' | 'debug'
 
@@ -168,6 +163,8 @@ export interface LoggerService extends Record<LoggerType, LoggerMethod> {
 }
 
 export class LoggerService {
+  declare [symbols.metadata]: LoggerService.Intercept
+
   bufferSize = 1000
   buffer: Message[] = []
   ctx!: Context
@@ -211,21 +208,9 @@ export class LoggerService {
     }, 'ctx.logger.exporter()')
   }
 
-  private _resolveConfig(): LoggerService.Intercept {
-    let intercept = this.ctx[symbols.intercept]
-    const configs: LoggerService.Intercept[] = []
-    while ('logger' in intercept) {
-      if (Object.hasOwn(intercept, 'logger')) {
-        configs.unshift(intercept['logger'])
-      }
-      intercept = Object.getPrototypeOf(intercept)
-    }
-    return Object.assign({}, ...configs)
-  }
-
   [symbols.invoke](name?: string): Logger {
-    const config = this._resolveConfig()
     const caller = (this as any)[symbols.caller] as Context | undefined
+    const config: LoggerService.Intercept = Service.prototype[Service.resolveIntercept].call(this)
     const fiber = (caller ?? this.ctx).fiber
     name ??= config.name
     name ??= hyphenate(fiber.name)

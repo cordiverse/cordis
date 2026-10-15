@@ -1,7 +1,7 @@
-import { Context, Service } from '../src'
+import { Context, Service } from '../src/index.ts'
 import { expect, describe, it } from 'vitest'
 import { mock } from 'node:test'
-import { Counter, getHookSnapshot, sleep } from './utils'
+import { Counter, getHookSnapshot, sleep } from './utils.ts'
 
 describe('Service', () => {
   it('pending inject', async () => {
@@ -161,5 +161,74 @@ describe('Service', () => {
     expect(foo.mock.calls).to.have.length(1)
     expect(bar.mock.calls).to.have.length(1)
     expect(qux.mock.calls).to.have.length(1)
+  })
+
+  class Foo extends Service {
+    active = false
+
+    constructor(ctx: Context, public seq: string[]) {
+      super(ctx, 'foo')
+    }
+
+    * [Service.init]() {
+      this.active = true
+      yield () => {
+        this.active = false
+        this.seq.push('foo')
+      }
+    }
+  }
+
+  function dependent(seq: string[]) {
+    return (ctx: Context) => {
+      ctx.effect(() => async () => {
+        await sleep(10)
+        seq.push(ctx.foo.active ? 'dependent' : 'dependent (stale)')
+      })
+    }
+  }
+
+  it('dispose dependents before provider', async () => {
+    const root = new Context()
+    const seq: string[] = []
+    const fiber = root.plugin((ctx) => {
+      ctx.plugin(Foo, seq)
+      ctx.inject(['foo'], dependent(seq))
+    })
+    await sleep()
+    await fiber.dispose()
+    expect(seq).to.deep.equal(['dependent', 'foo'])
+  })
+
+  it('dispose dependents before provider restarts', async () => {
+    const root = new Context()
+    const seq: string[] = []
+    const fiber = root.plugin(Foo, seq)
+    const callback = mock.fn(dependent(seq))
+    root.inject(['foo'], callback)
+    await sleep()
+    expect(callback.mock.calls).to.have.length(1)
+    await fiber.restart()
+    expect(seq).to.deep.equal(['dependent', 'foo'])
+    await sleep()
+    expect(callback.mock.calls).to.have.length(2)
+  })
+
+  it('dispose dependents before isolated provider', async () => {
+    const root = new Context()
+    const label = Symbol('realm')
+    const callback = mock.fn()
+    const dispose = mock.fn()
+    root.isolate('foo', label).inject(['foo'], () => {
+      callback()
+      return dispose
+    })
+    const fiber = root.plugin((ctx) => {
+      ctx.isolate('foo', label).provide('foo', {})
+    })
+    await sleep()
+    expect(callback.mock.calls).to.have.length(1)
+    await fiber.dispose()
+    expect(dispose.mock.calls).to.have.length(1)
   })
 })

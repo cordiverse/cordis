@@ -7,6 +7,6 @@ export let value = 'beta'
 export function apply(ctx: Context) {
   ctx.on('hmr-test/get-b', () => value)
   ctx.effect(() => () => {
-    ctx.root.emit('hmr-test/disposed-b')
+    ctx[Context.root].emit('hmr-test/disposed-b')
   })
 }

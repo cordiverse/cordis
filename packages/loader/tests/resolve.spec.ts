@@ -1,12 +1,13 @@
-import { expect, describe, it, afterEach } from 'vitest'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { expect, describe, it, beforeAll, afterAll, afterEach } from 'vitest'
+import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
+import { createRequire, syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Context } from 'cordis'
-import { Loader } from '../src'
-import { createResolve } from '../src/resolve'
+import { Loader } from '../src/index.ts'
+import { createResolve } from '../src/resolve.ts'
 
 const roots: string[] = []
 
@@ -84,6 +85,91 @@ describe('bareImporter', () => {
   it('declines when there is no project to anchor to', async () => {
     expect(await createResolve(undefined)).to.be.undefined
     expect(await createResolve('https://example.com/cordis.yml')).to.be.undefined
+  })
+})
+
+describe('helper preparation', () => {
+  const stale = 'export default () => "stale"\n'
+  const renames = { path: '', calls: 0, failures: 0, code: 'EBUSY' }
+  const fsp = createRequire(import.meta.url)('node:fs/promises') as typeof import('node:fs/promises')
+  const actualRename = fsp.rename
+
+  // Node opens files with FILE_SHARE_DELETE on Windows, so openSync('r')
+  // does not block replacement. Inject failures and sync the builtin ESM
+  // bindings so the resolver observes them through either module loader.
+  beforeAll(() => {
+    fsp.rename = async (from, to) => {
+      if (to === renames.path) {
+        renames.calls++
+        if (renames.failures > 0) {
+          renames.failures--
+          throw Object.assign(new Error(`${renames.code}: rename failed`), { code: renames.code })
+        }
+      }
+      return actualRename(from, to)
+    }
+    syncBuiltinESMExports()
+  })
+
+  afterAll(() => {
+    fsp.rename = actualRename
+    syncBuiltinESMExports()
+  })
+
+  afterEach(() => {
+    Object.assign(renames, { path: '', calls: 0, failures: 0, code: 'EBUSY' })
+  })
+
+  async function prepareHelper() {
+    const { root, baseUrl } = await fixture()
+    const dir = join(root, '.cordis')
+    const helper = join(dir, 'resolve.mjs')
+    await mkdir(dir)
+    await writeFile(helper, stale)
+    renames.path = helper
+    return { baseUrl, dir, helper }
+  }
+
+  it('reuses an identical helper without attempting rename', async () => {
+    // Copy a generated helper into a scope that has not been cached yet.
+    const source = await fixture()
+    await createResolve(source.baseUrl)
+    const { baseUrl, helper } = await prepareHelper()
+    await copyFile(join(source.root, '.cordis', 'resolve.mjs'), helper)
+    renames.failures = Infinity
+
+    const resolver = await createResolve(baseUrl)
+    expect(renames.calls).to.equal(0)
+    expect((await import(resolver!('fixture-dep'))).tag).to.equal('bare-dep')
+  })
+
+  it.each(['EACCES', 'EPERM', 'EBUSY'])('retries a stale helper after %s', async (code) => {
+    const { baseUrl } = await prepareHelper()
+    renames.code = code
+    renames.failures = 2
+
+    const resolver = await createResolve(baseUrl)
+    expect(renames.calls).to.equal(3)
+    expect((await import(resolver!('fixture-dep'))).tag).to.equal('bare-dep')
+  })
+
+  it.each([
+    { code: 'EBUSY', attempts: 11 },
+    { code: 'ENOSPC', attempts: 1 },
+  ])('cleans up after $code and recovers on a later call', async ({ code, attempts }) => {
+    const { baseUrl, dir, helper } = await prepareHelper()
+    renames.code = code
+    renames.failures = Infinity
+
+    expect(await createResolve(baseUrl)).to.be.undefined
+    expect(renames.calls).to.equal(attempts)
+    expect(await readFile(helper, 'utf8')).to.equal(stale)
+    expect((await readdir(dir)).sort()).to.deep.equal(['.gitignore', 'resolve.mjs'])
+
+    renames.failures = 0
+    const resolver = await createResolve(baseUrl)
+    expect(renames.calls).to.equal(attempts + 1)
+    expect((await import(resolver!('fixture-dep'))).tag).to.equal('bare-dep')
   })
 })
 

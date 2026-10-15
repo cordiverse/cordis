@@ -2,7 +2,7 @@ import { Context, Fiber, Inject, Plugin, Service } from 'cordis'
 import { Awaitable, Dict } from 'cosmokit'
 import { ModuleJob, ModuleLoader, ResolveResult } from '@cordisjs/plugin-loader'
 import { ChokidarOptions, FSWatcher, watch } from 'chokidar'
-import { relative, resolve } from 'node:path'
+import { relative, resolve, sep } from 'node:path'
 import { handleError } from './error.ts'
 import type {} from '@cordisjs/plugin-timer'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -143,18 +143,23 @@ class Hmr extends Service {
 
     // Collect externals: framework modules reachable from the main entry.
     // Changes to these files require a full process restart, not HMR.
+    // process.argv[1] is undefined in REPL, node -e, and some packed binaries.
     this.externals = new Set()
-    const mainUrl = pathToFileURL(resolve(process.argv[1])).href
-    const mainJob = this.internal?.loadCache.get(mainUrl)
-    if (mainJob) {
-      this.externals = await loadDependencies(mainJob)
+    if (process.argv[1]) {
+      const mainUrl = pathToFileURL(resolve(process.argv[1])).href
+      const mainJob = this.internal?.loadCache.get(mainUrl)
+      if (mainJob) {
+        this.externals = await loadDependencies(mainJob)
+      }
     }
 
     const match = picomatch(ignored)
     this.watcher = watch(root, {
       ...this.config,
       cwd: this.baseDir,
-      ignored: path => !this.watchers.has(resolve(this.baseDir, path)) && match(relative(this.baseDir, path)),
+      // picomatch only splits on `/`, so a Windows path is converted before matching.
+      ignored: path => !this.watchers.has(resolve(this.baseDir, path))
+        && match(relative(this.baseDir, path).split(sep).join('/')),
     })
 
     const partialReload = this.ctx.debounce(() => this.partialReload(), this.config.debounce)
@@ -200,9 +205,13 @@ class Hmr extends Service {
    * a path runs on each change.
    */
   watch(path: string | URL, callback: WatchCallback) {
-    const filename = path instanceof URL || path.startsWith('file:')
+    const absolute = path instanceof URL || path.startsWith('file:')
       ? fileURLToPath(path)
       : resolve(this.baseDir, path)
+    // Chokidar reports paths relative to `cwd`, which the change handler
+    // resolves back against `baseDir`. On Windows `relative()` matches case-
+    // insensitively, so the key takes the same round trip to agree with it.
+    const filename = resolve(this.baseDir, relative(this.baseDir, absolute))
     return this.ctx.effect(() => {
       let callbacks = this.watchers.get(filename)
       if (!callbacks) this.watchers.set(filename, callbacks = new Set())
@@ -448,9 +457,31 @@ class Hmr extends Service {
       try {
         while (fiber.inertia) await fiber.inertia
 
+        const entry = fiber.entry
+        // Re-enable's init() may still be awaiting. It does not wait on stage 3.
+        // A rejection is already logged and must not skip the decision below.
+        while (entry?._initTask) await entry._initTask.catch(() => {})
+
+        // The host may have been replaced during the wait (e.g. disabled and re-enabled).
+        if (hasInactiveAncestor(fiber)) {
+          this.ctx.logger.debug('skip plugin at %C (inactive ancestor)', path)
+          return
+        }
+
+        const removed = !!entry && entry.parent.tree.store[entry.options.id] !== entry
+        // A nested fiber shares the host entry. Only the entry root can already be live.
+        const isEntryRoot = !!entry && fiber.parent.fiber?.entry !== entry
+        // `fiber` itself is disposed, so a live `entry.fiber` is a replacement.
+        const replaced = isEntryRoot && entry.fiber?.uid != null
+        if (entry?.disabled || removed || replaced) {
+          const reason = entry?.disabled ? 'disabled' : removed ? 'removed' : 'live fiber'
+          this.ctx.logger.debug(`skip plugin at %C (${reason})`, path)
+          return
+        }
+
         const newFiber = fiber.parent.registry.plugin(replacement, fiber.config, this.getOuterStack)
         newFiber.entry = fiber.entry
-        if (newFiber.entry) newFiber.entry.fiber = newFiber
+        if (isEntryRoot) entry.fiber = newFiber
         if (!logged.has(path)) {
           logged.add(path)
           this.ctx.logger.info('reload plugin at %C', path)

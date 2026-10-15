@@ -1,7 +1,7 @@
-import { Context, Service } from '../src'
-import { Message } from '../src/logger'
+import { Context, Service } from '../src/index.ts'
+import { Message } from '../src/logger.ts'
 import { describe, expect, it } from 'vitest'
-import { sleep } from './utils'
+import { sleep } from './utils.ts'
 
 function setup() {
   const ctx = new Context()

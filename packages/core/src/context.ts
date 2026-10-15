@@ -1,16 +1,15 @@
 import { Dict } from 'cosmokit'
-import { EventsService } from './events'
-import { LoggerService } from './logger'
-import { ReflectService } from './reflect'
-import { InjectKey, RegistryService } from './registry'
-import { getTraceable, symbols } from './utils'
-import { Fiber } from './fiber'
+import { EventsService } from './events.ts'
+import { LoggerService } from './logger.ts'
+import { ReflectService } from './reflect.ts'
+import { InjectKey, RegistryService } from './registry.ts'
+import { getTraceable, symbols } from './utils.ts'
+import { Fiber } from './fiber.ts'
 
 export interface Context {
+  [symbols.root]: this
   [symbols.isolate]: Dict<symbol>
   [symbols.intercept]: Dict
-  /** @experimental */
-  root: this
   baseUrl?: string | undefined
   events: EventsService
   logger: LoggerService
@@ -19,6 +18,7 @@ export interface Context {
 }
 
 export class Context {
+  static readonly root: unique symbol = symbols.root
   static readonly effect: unique symbol = symbols.effect
   static readonly filter: unique symbol = symbols.filter
   static readonly isolate: unique symbol = symbols.isolate
@@ -37,7 +37,7 @@ export class Context {
     this[symbols.isolate] = Object.create(null)
     this[symbols.intercept] = Object.create(null)
     const self = new Proxy<this>(this, ReflectService.handler)
-    this.root = self
+    this[symbols.root] = self
     this.baseUrl = undefined
     this.fiber = new Fiber(self, {}, Object.create(null), null, () => [])
     this.reflect = new ReflectService(self)
@@ -68,7 +68,7 @@ export class Context {
     return this.extend({ [symbols.isolate]: shadow })
   }
 
-  intercept<K extends InjectKey>(name: K, config: Context[K] extends { [symbols.config]: infer T } ? T : never): this
+  intercept<K extends InjectKey>(name: K, config: Context[K] extends { [symbols.metadata]: infer T } ? T : never): this
   intercept(name: string, config: any): this
   intercept(name: string, config: any) {
     const intercept = Object.create(this[symbols.intercept])

@@ -1,5 +1,6 @@
 import { defineProperty } from 'cosmokit'
-import type { Context, Service } from '.'
+import type { Context } from './context.ts'
+import type { Service } from './service.ts'
 
 export class DisposableList<T extends WeakKey> {
   private sn = 0
@@ -50,11 +51,12 @@ export const symbols = {
   caller: Symbol.for('cordis.caller'),
   receiver: Symbol.for('cordis.receiver'),
   original: Symbol.for('cordis.original'),
-  metadata: Symbol.for('cordis.metadata'),
+  decorator: Symbol.for('cordis.decorator'),
   initHooks: Symbol.for('cordis.initHooks'),
   checkProto: Symbol.for('cordis.checkProto'),
 
   // context symbols
+  root: Symbol.for('cordis.root') as typeof Context.root,
   effect: Symbol.for('cordis.effect') as typeof Context.effect,
   filter: Symbol.for('cordis.filter') as typeof Context.filter,
   isolate: Symbol.for('cordis.isolate') as typeof Context.isolate,
@@ -63,11 +65,12 @@ export const symbols = {
   // service symbols
   init: Symbol.for('cordis.init') as typeof Service.init,
   check: Symbol.for('cordis.check') as typeof Service.check,
-  config: Symbol.for('cordis.config') as typeof Service.config,
   invoke: Symbol.for('cordis.invoke') as typeof Service.invoke,
+  metadata: Symbol.for('cordis.metadata') as typeof Service.metadata,
   extend: Symbol.for('cordis.extend') as typeof Service.extend,
   tracker: Symbol.for('cordis.tracker') as typeof Service.tracker,
-  resolveConfig: Symbol.for('cordis.resolveConfig') as typeof Service.resolveConfig,
+  mergeIntercept: Symbol.for('cordis.mergeIntercept') as typeof Service.mergeIntercept,
+  resolveIntercept: Symbol.for('cordis.resolveIntercept') as typeof Service.resolveIntercept,
 }
 
 const GeneratorFunction = function* () {}.constructor

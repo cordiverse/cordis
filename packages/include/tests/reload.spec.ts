@@ -4,7 +4,7 @@ import LoggerConsole from '@cordisjs/plugin-logger-console'
 import { expect, describe, it, afterEach } from 'vitest'
 import { readFile, rm, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import Include from '../src'
+import Include from '../src/index.ts'
 
 function waitFor(condFn: () => any, timeout = 5000, interval = 20): Promise<void> {
   return new Promise<void>((resolve, reject) => {
