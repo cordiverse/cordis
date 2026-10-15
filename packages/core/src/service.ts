@@ -63,7 +63,7 @@ export abstract class Service<out T = never> {
       }
       intercept = Object.getPrototypeOf(intercept)
     }
-    const value = locate((this as any)[symbols.caller] ?? this.ctx, this.name)?.fiber.inject[this.name]
+    const value = locate((this as any)[symbols.caller] ?? this.ctx, this.name)?.fiber?.inject[this.name]
     if (!isNullable(value)) values.unshift(value)
     const merge = this[symbols.mergeIntercept] ?? Service.prototype[symbols.mergeIntercept]
     return merge.apply(this, values)

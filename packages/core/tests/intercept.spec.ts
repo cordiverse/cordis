@@ -80,6 +80,19 @@ describe('Intercept', () => {
     expect(config).to.deep.equal({})
   })
 
+  it('take no injected config for own provisions', async () => {
+    const root = new Context()
+    await root.plugin(Foo)
+    let configs!: Config[]
+    await root.inject({ foo: { a: 1 } }, (ctx) => {
+      const isolated = ctx.isolate('foo')
+      new Foo(isolated)
+      // the injected config belongs to the dependency, not to the service the fiber provides itself
+      configs = [ctx.foo.config(), isolated.foo.config(), isolated.intercept('foo', { b: 2 }).foo.config()]
+    })
+    expect(configs).to.deep.equal([{ a: 1 }, {}, { b: 2 }])
+  })
+
   it('take injected config from the def site', async () => {
     const root = new Context()
     await root.plugin(Foo)

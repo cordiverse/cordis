@@ -63,11 +63,13 @@ export interface Impl {
   isolate: symbol
 }
 
-// Locate the fiber that governs an access to service `name` from the def site `ctx`: the nearest one
-// that either provides the impl in the same isolation, or declares the service in its `inject`.
-// Isolating `name` derives a context that no longer shares the fiber's `inject`, so the lookup ends
-// at the first fiber whose context is separated from the def site by such a derivation.
-export function locate(ctx: Context, name: string): { fiber: Fiber; impl?: Impl } | undefined {
+// Resolve an access to service `name` from the def site `ctx` by walking up its fibers.
+// `fiber` is the fiber whose `inject` admits the access, and `impl` is the impl the access reaches.
+// - `{ impl }`: a fiber provides the impl itself in the same isolation.
+// - `{ fiber, impl }`: the impl comes from the committed view of `fiber`.
+// - `{ fiber }`: `fiber` declares the service but is inactive.
+// - `undefined`: no fiber declares the service, or the walk reaches a context that isolates `name` again.
+export function locate(ctx: Context, name: string): { fiber?: Fiber; impl?: Impl } | undefined {
   const key = ctx[symbols.isolate][name]
   let table = ctx[symbols.isolate]
   let fiber = ctx.fiber
@@ -76,7 +78,7 @@ export function locate(ctx: Context, name: string): { fiber: Fiber; impl?: Impl 
     for (const provision of fiber.provisions) {
       if (provision.name === name && provision.ctx[symbols.isolate][name] === key) impl = provision
     }
-    if (impl) return { fiber, impl }
+    if (impl) return { impl }
     while (table !== fiber.ctx[symbols.isolate]) {
       if (!table || Object.hasOwn(table, name)) return
       table = Object.getPrototypeOf(table)
