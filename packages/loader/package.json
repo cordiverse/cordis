@@ -36,7 +36,6 @@
   ],
   "devDependencies": {
     "@cordisjs/plugin-logger-console": "^1.0.0",
-    "@types/js-yaml": "^4.0.9",
     "cordis": "^4.0.0-rc.11"
   },
   "peerDependencies": {

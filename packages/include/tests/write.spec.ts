@@ -1,7 +1,7 @@
 import { expect, describe, it, beforeAll, afterAll, afterEach } from 'vitest'
 import { writeFile } from 'node:fs/promises'
 import { createRequire, syncBuiltinESMExports } from 'node:module'
-import * as yaml from 'js-yaml'
+import * as yaml from 'yaml'
 import { harness, plugin } from './utils.ts'
 
 /**
@@ -65,7 +65,7 @@ describe('Include write', () => {
     const app = await setup('tmp-write-race.yml', [plugin('a', 1), plugin('b', 1)])
     renames.calls = 0
     renames.failures = 1
-    renames.beforeFail = () => writeFile(app.filename, yaml.dump([plugin('a', 1), plugin('b', 2)]))
+    renames.beforeFail = () => writeFile(app.filename, yaml.stringify([plugin('a', 1), plugin('b', 2)]))
 
     await app.update('a', { config: { tag: 'a', value: 2 } })
     await app.settle()

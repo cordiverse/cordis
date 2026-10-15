@@ -1,6 +1,6 @@
 import { expect, describe, it } from 'vitest'
 import { readFile, chmod, writeFile } from 'node:fs/promises'
-import * as yaml from 'js-yaml'
+import * as yaml from 'yaml'
 import Include from '../src/index.ts'
 import { applied } from './fixtures/config-plugin.ts'
 import { fixture, group, harness, plugin } from './utils.ts'
@@ -34,11 +34,11 @@ describe('Include sync', () => {
   }, 10000)
 
   it('does not write back when the file removes an entry', async () => {
-    const before = '# keep me\n' + yaml.dump([plugin('a', 1), plugin('b', 1)])
+    const before = '# keep me\n' + yaml.stringify([plugin('a', 1), plugin('b', 1)])
     const app = await setup('tmp-sync-remove.yml', before)
     expect(app.config('b')).toBeTruthy()
 
-    const after = '# keep me\n' + yaml.dump([plugin('a', 1)])
+    const after = '# keep me\n' + yaml.stringify([plugin('a', 1)])
     await writeFile(app.filename, after)
     await app.settle()
 
@@ -48,9 +48,9 @@ describe('Include sync', () => {
   }, 10000)
 
   it('does not write back when the file disables an entry', async () => {
-    const app = await setup('tmp-sync-disable.yml', '# keep me\n' + yaml.dump([plugin('a', 1)]))
+    const app = await setup('tmp-sync-disable.yml', '# keep me\n' + yaml.stringify([plugin('a', 1)]))
 
-    const after = '# keep me\n' + yaml.dump([plugin('a', 1, { disabled: true })])
+    const after = '# keep me\n' + yaml.stringify([plugin('a', 1, { disabled: true })])
     await writeFile(app.filename, after)
     await app.settle()
 
@@ -62,7 +62,7 @@ describe('Include sync', () => {
     const app = await setup('tmp-sync-merge.yml', [plugin('a', 1), plugin('b', 1)])
 
     // the file changes under us without any watcher telling us
-    await writeFile(app.filename, yaml.dump([plugin('a', 1), plugin('b', 2)]))
+    await writeFile(app.filename, yaml.stringify([plugin('a', 1), plugin('b', 2)]))
     await app.update('a', { config: { tag: 'a', value: 2 } })
     await app.settle()
 
@@ -80,7 +80,7 @@ describe('Include sync', () => {
     it(`merges a watcher-driven file edit racing a runtime edit (${order})`, async () => {
       const app = await setup(`tmp-sync-race-${order.replace(' ', '-')}.yml`, [plugin('a', 1), plugin('b', 1)])
 
-      await writeFile(app.filename, yaml.dump([plugin('a', 1), plugin('b', 2)]))
+      await writeFile(app.filename, yaml.stringify([plugin('a', 1), plugin('b', 2)]))
       const tasks: Promise<unknown>[] = []
       if (order === 'refresh first') tasks.push(app.include().refresh())
       tasks.push(app.update('a', { config: { tag: 'a', value: 2 } }))
@@ -100,7 +100,7 @@ describe('Include sync', () => {
   it('lets the file win a conflict on the same entry and reports it', async () => {
     const app = await setup('tmp-sync-conflict.yml', [plugin('a', 1)])
 
-    await writeFile(app.filename, yaml.dump([plugin('a', 3)]))
+    await writeFile(app.filename, yaml.stringify([plugin('a', 3)]))
     await app.update('a', { config: { tag: 'a', value: 2 } })
     await app.settle()
 
@@ -115,7 +115,7 @@ describe('Include sync', () => {
   it('combines a move in the file with an edit at runtime', async () => {
     const app = await setup('tmp-sync-move.yml', [plugin('a', 1), group('g', [])])
 
-    await writeFile(app.filename, yaml.dump([group('g', [plugin('a', 1)])]))
+    await writeFile(app.filename, yaml.stringify([group('g', [plugin('a', 1)])]))
     await app.update('a', { config: { tag: 'a', value: 2 } })
     await app.settle()
 
@@ -139,7 +139,7 @@ describe('Include sync', () => {
     expect(app.config('a').value).toBe(2)
 
     // once the file is valid again the pending change goes out with the merge
-    await writeFile(app.filename, yaml.dump([plugin('a', 1), plugin('b', 1)]))
+    await writeFile(app.filename, yaml.stringify([plugin('a', 1), plugin('b', 1)]))
     await app.settle()
     const [a, b] = await app.read()
     expect(a.config.value).toBe(2)
@@ -149,7 +149,7 @@ describe('Include sync', () => {
 
   it('routes changes to patch-owned keys into the parent config', async () => {
     const inner = fixture('tmp-sync-inner-patch.yml')
-    const innerText = yaml.dump([plugin('a', 1)])
+    const innerText = yaml.stringify([plugin('a', 1)])
     await writeFile(inner, innerText)
     const app = await setup('tmp-sync-outer-patch.yml', [{
       id: 'inc',
@@ -177,7 +177,7 @@ describe('Include sync', () => {
 
   it('routes changes past a patch that does not apply into the file', async () => {
     const inner = fixture('tmp-sync-inner-skipped.yml')
-    await writeFile(inner, yaml.dump([plugin('a', 1)]))
+    await writeFile(inner, yaml.stringify([plugin('a', 1)]))
     const app = await setup('tmp-sync-outer-skipped.yml', [{
       id: 'inc',
       name: '@cordisjs/plugin-include',
@@ -197,14 +197,14 @@ describe('Include sync', () => {
     await app.settle()
 
     expect(app.config('a').value).toBe(3)
-    expect(yaml.load(await readFile(inner, 'utf8'))).toEqual([plugin('a', 3)])
+    expect(yaml.parse(await readFile(inner, 'utf8'))).toEqual([plugin('a', 3)])
     const [entry] = await app.read()
     expect(entry.config.patches).toEqual([{ id: 'a', name: './other-plugin', config: { tag: 'a', value: 2 } }])
   }, 10000)
 
   it('routes changes to inserted entries into their patch', async () => {
     const inner = fixture('tmp-sync-inner-insert.yml')
-    const innerText = yaml.dump([plugin('a', 1)])
+    const innerText = yaml.stringify([plugin('a', 1)])
     await writeFile(inner, innerText)
     const app = await setup('tmp-sync-outer-insert.yml', [{
       id: 'inc',
@@ -232,7 +232,7 @@ describe('Include sync', () => {
 
   it('routes changes to overridden keys of inserted entries into the override', async () => {
     const inner = fixture('tmp-sync-inner-insert-override.yml')
-    const innerText = yaml.dump([plugin('a', 1)])
+    const innerText = yaml.stringify([plugin('a', 1)])
     await writeFile(inner, innerText)
     const app = await setup('tmp-sync-outer-insert-override.yml', [{
       id: 'inc',
@@ -265,7 +265,7 @@ describe('Include sync', () => {
   describe('entries of a group config replaced by a patch', () => {
     async function start(name: string, config: any[] = [plugin('a', 1)]) {
       const inner = fixture(`tmp-sync-inner-${name}.yml`)
-      const innerText = yaml.dump([group('g', [plugin('hidden', 1)])])
+      const innerText = yaml.stringify([group('g', [plugin('hidden', 1)])])
       await writeFile(inner, innerText)
       const app = await setup(`tmp-sync-outer-${name}.yml`, [{
         id: 'inc',
@@ -334,7 +334,7 @@ describe('Include sync', () => {
 
   it('routes an edit to an entry whose group moved in the same batch', async () => {
     const inner = fixture('tmp-sync-inner-batch-move.yml')
-    await writeFile(inner, yaml.dump([group('h', [])]))
+    await writeFile(inner, yaml.stringify([group('h', [])]))
     const app = await setup('tmp-sync-outer-batch-move.yml', [{
       id: 'inc',
       name: '@cordisjs/plugin-include',
@@ -358,20 +358,20 @@ describe('Include sync', () => {
 
     expect(app.config('x').value).toBe(2)
     expect(app.logs('error')).toEqual([])
-    expect(yaml.load(await readFile(inner, 'utf8'))).toEqual([group('h', [group('g', [plugin('x', 2)])])])
+    expect(yaml.parse(await readFile(inner, 'utf8'))).toEqual([group('h', [group('g', [plugin('x', 2)])])])
     const [entry] = await app.read()
     expect(entry.config.patches).toEqual([{ insert: [] }])
   }, 10000)
 
   it('keeps anonymous entries stable across reloads without writing', async () => {
     const anonymous = { name: './config-plugin', config: { tag: 'anon', value: 1 } }
-    const text = yaml.dump([anonymous, plugin('b', 1)])
+    const text = yaml.stringify([anonymous, plugin('b', 1)])
     const app = await setup('tmp-sync-anonymous.yml', text)
     expect(app.config('anon').value).toBe(1)
     expect(await app.text()).toBe(text)
     const applies = applied.filter(tag => tag === 'anon').length
 
-    const edited = yaml.dump([anonymous, plugin('b', 2)])
+    const edited = yaml.stringify([anonymous, plugin('b', 2)])
     await writeFile(app.filename, edited)
     await app.settle()
 
@@ -389,7 +389,7 @@ describe('Include sync', () => {
 
   it('does not give a root anonymous plugin the nested plugin\'s id', async () => {
     const shape = () => ({ name: './config-plugin', config: { tag: 'x', value: 1 } })
-    const app = await setup('tmp-sync-anon-root.yml', yaml.dump([
+    const app = await setup('tmp-sync-anon-root.yml', yaml.stringify([
       { name: '@cordisjs/plugin-group', group: true, config: [shape()] },
       shape(),
     ]))
@@ -408,7 +408,7 @@ describe('Include sync', () => {
     )
     const applies = applied.filter(tag => tag === 'x').length
 
-    await writeFile(app.filename, yaml.dump([shape()]))
+    await writeFile(app.filename, yaml.stringify([shape()]))
     await app.settle()
 
     const surviving = Object.values(app.include().store).filter(entry => entry.options.config?.tag === 'x')
@@ -422,7 +422,7 @@ describe('Include sync', () => {
   it('keeps an anonymous group and its child stable when a neighbor changes', async () => {
     const child = { name: './config-plugin', config: { tag: 'child', value: 1 } }
     const anonGroup = { name: '@cordisjs/plugin-group', group: true, config: [child] }
-    const app = await setup('tmp-sync-anon-neighbor.yml', yaml.dump([anonGroup, plugin('b', 1)]))
+    const app = await setup('tmp-sync-anon-neighbor.yml', yaml.stringify([anonGroup, plugin('b', 1)]))
 
     const includeId = app.include().ctx.fiber.entry!.options.id
     const groupEntry = Object.values(app.include().store).find(entry => entry.options.group)
@@ -433,7 +433,7 @@ describe('Include sync', () => {
     const childId = childEntry!.options.id
     const childApplies = applied.filter(tag => tag === 'child').length
 
-    await writeFile(app.filename, yaml.dump([anonGroup, plugin('b', 2)]))
+    await writeFile(app.filename, yaml.stringify([anonGroup, plugin('b', 2)]))
     await app.settle()
 
     expect(app.config('b').value).toBe(2)
@@ -447,12 +447,12 @@ describe('Include sync', () => {
 
   it('does not reuse an id that the file now writes explicitly', async () => {
     const anonymous = { name: './config-plugin', config: { tag: 'anon', value: 1 } }
-    const app = await setup('tmp-sync-explicit-id.yml', yaml.dump([anonymous]))
+    const app = await setup('tmp-sync-explicit-id.yml', yaml.stringify([anonymous]))
     const [live] = Object.values(app.include().store)
     const id = live!.options.id
     expect(await app.text()).not.toContain(id)
 
-    await writeFile(app.filename, yaml.dump([
+    await writeFile(app.filename, yaml.stringify([
       anonymous,
       { id, name: './config-plugin', config: { tag: 'other', value: 1 } },
     ]))
@@ -469,7 +469,7 @@ describe('Include sync', () => {
   it('does not reuse an id owned by an explicit patch insert', async () => {
     const name = 'tmp-sync-patch-insert.yml'
     const anonymous = { name: './config-plugin', config: { tag: 'anon', value: 1 } }
-    const app = await setup(name, yaml.dump([anonymous]))
+    const app = await setup(name, yaml.stringify([anonymous]))
     const [live] = Object.values(app.include().store)
     const id = live!.options.id
     expect(await app.text()).not.toContain(id)
@@ -483,7 +483,7 @@ describe('Include sync', () => {
     await app.ctx.loader.await()
 
     // a byte change forces a reread; the assigned id stays out of the file
-    await writeFile(app.filename, `# reread\n${yaml.dump([anonymous])}`)
+    await writeFile(app.filename, `# reread\n${yaml.stringify([anonymous])}`)
     await app.settle()
 
     const store = app.include().store
@@ -508,7 +508,7 @@ describe('Include sync', () => {
 
     // an unrelated file edit keeps the in-memory overlay
     await chmod(app.filename, 0o644)
-    await writeFile(app.filename, yaml.dump([plugin('a', 1), plugin('b', 2)]))
+    await writeFile(app.filename, yaml.stringify([plugin('a', 1), plugin('b', 2)]))
     await chmod(app.filename, 0o444)
     await app.settle()
 

@@ -1,11 +1,12 @@
-import { EntryChange, EntryOptions, EntryTree, isJsExpr } from '@cordisjs/plugin-loader'
+import { EntryChange, EntryOptions, EntryTree, formatIssue, isJsExpr, SourceLocation } from '@cordisjs/plugin-loader'
 import { Context, Service } from 'cordis'
 import { deepEqual } from 'cosmokit'
 import { basename, dirname, extname, join } from 'node:path'
 import { access, constants, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import * as yaml from 'js-yaml'
+import { Document, isAlias, isMap, isNode, isScalar, isSeq, parseDocument, Range, Scalar, ScalarTag, SchemaOptions, stringify, YAMLError } from 'yaml'
+import { stringifyString } from 'yaml/util'
 import { applyJournal, flatten, Journal, merge, reconcile, record } from './journal.ts'
 import { applyPatches, ensureIds, ensureInsertIds, PatchOptions, routeJournal } from './patch.ts'
 import type {} from '@cordisjs/plugin-hmr'
@@ -13,15 +14,21 @@ import type {} from '@cordisjs/plugin-hmr'
 // A Windows drive-letter path, e.g. `C:\app\cordis.yml` or `C:/app/cordis.yml`.
 const driveLetter = /^[A-Za-z]:[\\/]/
 
-const JsExpr = new yaml.Type('tag:yaml.org,2002:js', {
-  kind: 'scalar',
-  resolve: (data) => typeof data === 'string',
-  construct: (data) => ({ __jsExpr: data }),
-  predicate: isJsExpr,
-  represent: (data) => data['__jsExpr'],
-})
+const JsExpr: ScalarTag = {
+  tag: 'tag:yaml.org,2002:js',
+  identify: isJsExpr,
+  resolve: (source) => ({ __jsExpr: source }),
+  // the expression is quoted like any other string, behind the tag
+  stringify: (item, ctx, onComment, onChompKeep) => {
+    const scalar = new Scalar((item.value as any).__jsExpr)
+    return stringifyString(Object.assign(scalar, { type: item.type }), ctx, onComment, onChompKeep)
+  },
+}
 
-const schema = yaml.JSON_SCHEMA.extend(JsExpr)
+const yamlOptions: SchemaOptions = {
+  schema: 'core',
+  customTags: [JsExpr],
+}
 
 const types: Record<string, string> = {
   '.json': 'application/json',
@@ -34,13 +41,16 @@ type ConfigStage = 'read' | 'parse' | 'validate'
 interface Snapshot {
   content: string
   data: EntryOptions[]
+  /** Parsed on demand, for locating values in `content`. */
+  document?: Document
 }
 
 export class ConfigFileError extends Error {
   name = 'ConfigFileError'
 
-  constructor(public stage: ConfigStage, path: string, cause: unknown) {
-    super(`failed to ${stage} config file ${path}`, { cause })
+  /** `details` lists the issues found in the file, which then take the place of `cause`. */
+  constructor(public stage: ConfigStage, path: string, cause: unknown, details: string[] = []) {
+    super([`failed to ${stage} config file ${path}`, ...details].join('\n'), { cause })
   }
 }
 
@@ -79,6 +89,42 @@ export namespace Include {
     patches?: PatchOptions[]
     enableLogs?: boolean
   }
+}
+
+/** Index path of an entry in a nested entry list. */
+function findEntry(entries: EntryOptions[], id: string): PropertyKey[] | undefined {
+  for (const [index, options] of entries.entries()) {
+    if (options.id === id) return [index]
+    if (!options.group || !Array.isArray(options.config)) continue
+    const path = findEntry(options.config, id)
+    if (path) return [index, 'config', ...path]
+  }
+}
+
+/**
+ * Range of the node at `path`, or of its deepest ancestor in the document.
+ * A collection may span many lines, so the key that holds it stands for it.
+ */
+function seek(document: Document, path: PropertyKey[]): Range | null | undefined {
+  let node: unknown = document.contents
+  let anchor = isNode(node) ? node.range : undefined
+  for (const key of path) {
+    if (isAlias(node)) node = node.resolve(document)
+    if (isMap(node)) {
+      const pair = node.items.find(pair => String(isScalar(pair.key) ? pair.key.value : pair.key) === String(key))
+      if (!pair) break
+      node = pair.value
+      if (isNode(pair.key)) anchor = pair.key.range
+    } else if (isSeq(node)) {
+      const item = node.items[key as number]
+      if (!isNode(item)) break
+      node = item
+      anchor = item.range
+    } else {
+      break
+    }
+  }
+  return isScalar(node) ? node.range : anchor
 }
 
 export class Include extends EntryTree {
@@ -242,17 +288,30 @@ export class Include extends EntryTree {
     if (content === this.cache?.content) return
 
     let data: any
-    try {
-      data = this.type === 'application/yaml'
-        ? yaml.load(content, { schema })
-        : JSON.parse(content)
-    } catch (error) {
-      throw new ConfigFileError('parse', this.filename, error)
+    let document: Document | undefined
+    if (this.type === 'application/yaml') {
+      document = parseDocument(content, { ...yamlOptions, prettyErrors: false })
+      // unknown tags are only warnings to the parser, but leave the data incomplete
+      const errors: YAMLError[] = [...document.errors, ...document.warnings]
+      if (errors.length) {
+        const details = errors.flatMap(error => formatIssue(error.message, this._locate(content, error.pos)))
+        throw new ConfigFileError('parse', this.filename, undefined, details)
+      }
+      data = document.toJS()
+    } else {
+      try {
+        data = JSON.parse(content)
+      } catch (error) {
+        throw new ConfigFileError('parse', this.filename, error)
+      }
     }
     // An empty or truncated file (routine mid-edit) parses to `undefined`, so
     // every non-array shape is rejected here as one "invalid file" signal.
     if (!Array.isArray(data)) {
-      throw new ConfigFileError('validate', this.filename, new TypeError('config file must be a top-level array'))
+      const message = 'config file must be a top-level array'
+      const range = document?.contents?.range
+      if (!range) throw new ConfigFileError('validate', this.filename, new TypeError(message))
+      throw new ConfigFileError('validate', this.filename, undefined, formatIssue(message, this._locate(content, range)))
     }
 
     this._assignIds(data)
@@ -265,7 +324,7 @@ export class Include extends EntryTree {
       }
     }
 
-    this.cache = { content, data }
+    this.cache = { content, data, document }
     this._scheduleApply()
     // the file changed while tree-side changes were pending: write the merge
     if (this.journal.size) this.dirtyWrite = true
@@ -383,8 +442,33 @@ export class Include extends EntryTree {
 
   private dump(data: EntryOptions[]) {
     return this.type === 'application/yaml'
-      ? yaml.dump(data, { schema })
+      ? stringify(data, { ...yamlOptions, singleQuote: true })
       : JSON.stringify(data, null, 2)
+  }
+
+  getLocation(id: string, path: PropertyKey[]): SourceLocation | undefined {
+    // a pending tree-side change is not in the file yet
+    if (!this.cache || this.journal.has(id)) return
+    const patches = this.config.patches ?? []
+    const index = new PatchIndex(patches)
+    const owner = path.length ? index.key(id, String(path[0])) : index.entry(id)
+    if (owner.type === 'patch') {
+      return this.ctx.fiber.entry?.getLocation(['config', 'patches', owner.index, ...path])
+    } else if (owner.type === 'insert') {
+      const prefix = findEntry(patches[owner.index].insert!, id)
+      if (!prefix) return
+      return this.ctx.fiber.entry?.getLocation(['config', 'patches', owner.index, 'insert', ...prefix, ...path])
+    }
+    const prefix = findEntry(this.cache.data, id)
+    if (!prefix) return
+    // JSON is parsed as YAML here: only the node ranges are of interest
+    this.cache.document ??= parseDocument(this.cache.content, yamlOptions)
+    const range = seek(this.cache.document, [...prefix, ...path])
+    if (range) return this._locate(this.cache.content, range)
+  }
+
+  private _locate(source: string, [start, end]: readonly number[]): SourceLocation {
+    return { filename: this.filename, source, start, end }
   }
 
   /**
