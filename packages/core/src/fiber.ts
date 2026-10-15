@@ -179,15 +179,15 @@ export class Fiber {
             }
           }
           this._setEpoch(INACTIVE)
-          // `this.inertia` itself should never reject — both `_reload` and
-          // `_unload` swallow their own work errors via `ctx.logger.error`.
-          // If it *does* reject, the only remaining cause is the logger
-          // itself failing, which we can't recover from in this exact spot
-          // (calling the logger again is what just failed). Let the
-          // rejection propagate; process-level crash is the honest outcome.
+          // `inertia` never rejects: `_reload` and `_unload` both log their
+          // own work errors. A rejection here would mean the logger itself
+          // failed, so let it propagate.
           while (this.inertia) {
             await this.inertia
           }
+          // `_setEpoch()` above returns early for a fiber that was not ACTIVE,
+          // so the cached state is not refreshed. Re-derive it now that
+          // `uid` is null; the empty callback falls through to `_getState()`.
           this._updateState(() => {})
         }
       }, 'ctx.plugin()')
