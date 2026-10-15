@@ -63,19 +63,29 @@ export interface Impl {
   isolate: symbol
 }
 
-// Locate the fiber that governs an access to service `name` from the def site `ctx`: the nearest one
-// within the same isolation that either holds the impl or declares the service in its `inject`.
-export function locate(ctx: Context, name: string): { fiber: Fiber; impl?: Impl } | undefined {
+// Resolve an access to service `name` from the def site `ctx` by walking up its fibers.
+// `fiber` is the fiber whose `inject` admits the access, and `impl` is the impl the access reaches.
+// - `{ impl }`: a fiber provides the impl itself in the same isolation.
+// - `{ fiber, impl }`: the impl comes from the committed view of `fiber`.
+// - `{ fiber }`: `fiber` declares the service but is inactive.
+// - `undefined`: no fiber declares the service, or the walk reaches a context that isolates `name` again.
+export function locate(ctx: Context, name: string): { fiber?: Fiber; impl?: Impl } | undefined {
   const key = ctx[symbols.isolate][name]
+  let table = ctx[symbols.isolate]
   let fiber = ctx.fiber
   while (true) {
-    let impl = fiber.committed?.[name]
+    let impl: Impl | undefined
     for (const provision of fiber.provisions) {
       if (provision.name === name && provision.ctx[symbols.isolate][name] === key) impl = provision
     }
+    if (impl) return { impl }
+    while (table !== fiber.ctx[symbols.isolate]) {
+      if (!table || Object.hasOwn(table, name)) return
+      table = Object.getPrototypeOf(table)
+    }
+    impl = fiber.committed?.[name]
     if (impl || name in fiber.inject) return { fiber, impl }
     if (!fiber.runtime) return
-    if (fiber.parent[symbols.isolate][name] !== key) return
     fiber = fiber.parent.fiber
   }
 }

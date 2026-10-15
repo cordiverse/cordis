@@ -536,3 +536,43 @@ describe('Service Isolation: transfer', () => {
     expect(dispose.mock.calls).to.have.length(0)
   })
 })
+
+describe('Service Isolation: migration', () => {
+  it('keeps the committed views of a parent and a pinned child across a realm move', async () => {
+    const root = new Context()
+    await root.plugin(MockLoader)
+    const loader = root.loader as MockLoader
+    const loads: string[] = []
+    const unloads: string[] = []
+
+    loader.mock('bar', class Bar extends Service {
+      constructor(ctx: Context, public config: { tag: string }) {
+        super(ctx, 'bar')
+      }
+    })
+
+    loader.mock('parent', Object.assign((ctx: Context) => {
+      // the child is pinned to the realm the parent resolves `bar` in
+      ctx.isolate('bar', ctx[Context.isolate].bar).inject(['bar'], (ctx) => {
+        loads.push('child:' + ctx['bar'].config.tag)
+        return () => unloads.push('child:' + ctx['bar'].config.tag)
+      })
+      return () => unloads.push('parent:' + ctx['bar'].config.tag)
+    }, { inject: ['bar'] }))
+
+    await loader.create({ name: 'bar', isolate: { bar: 'a' }, config: { tag: 'a' } })
+    await loader.create({ name: 'bar', isolate: { bar: 'b' }, config: { tag: 'b' } })
+    const id = await loader.create({ name: 'parent', isolate: { bar: 'a' } })
+    await sleep()
+    expect(loads).to.deep.equal(['child:a'])
+
+    // the loader moves the isolation of the parent before unloading it, while
+    // the old activation still tears down against the view committed in realm a
+    await loader.update(id, { isolate: { bar: 'b' } })
+    await sleep()
+    expect(loads).to.deep.equal(['child:a', 'child:b'])
+    expect(unloads.sort()).to.deep.equal(['child:a', 'parent:a'])
+    expect(root.logger.buffer.filter(message => message.type === 'error')).to.have.length(0)
+    await root.fiber.dispose()
+  })
+})
