@@ -1,4 +1,4 @@
-import { Context, FiberState, Service } from '../src/index.ts'
+import { Context, FiberState, Service, ValidationError } from '../src/index.ts'
 import { expect, describe, it, vi } from 'vitest'
 import { mock } from 'node:test'
 import { event, sleep, withTimers } from './utils.ts'
@@ -320,6 +320,18 @@ describe('Fiber: config validation', () => {
     expect(apply.mock.calls).to.have.length(1)
     expect(fiber.state).to.equal(FiberState.ACTIVE)
     expect(fiber.config).to.deep.equal({ ok: true })
+  })
+
+  it('keep the issues and their paths', () => {
+    const issues = [
+      { message: 'not a number', path: [{ key: 'items' }, 0] },
+      { message: 'required', path: [] },
+    ]
+    const error = new ValidationError(issues)
+    expect(error.issues).to.equal(issues)
+    expect(ValidationError.is(error)).to.be.true
+    expect(ValidationError.is(new TypeError())).to.be.false
+    expect(error.message).to.equal('invalid config:\n  - not a number (at items.0)\n  - required')
   })
 
   // listeners see what the plugin would see, while the fiber keeps the source

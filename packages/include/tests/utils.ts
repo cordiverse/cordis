@@ -3,7 +3,7 @@ import Loader from '@cordisjs/plugin-loader'
 import { afterEach } from 'vitest'
 import { chmod, readFile, rm, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import * as yaml from 'js-yaml'
+import * as yaml from 'yaml'
 import Include from '../src/index.ts'
 
 export const fixture = (name: string) => fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url))
@@ -42,7 +42,7 @@ export function harness() {
   async function setup(name: string, data: any[] | string, config: any = {}) {
     const filename = fixture(name)
     files.push(filename)
-    await writeFile(filename, typeof data === 'string' ? data : yaml.dump(data))
+    await writeFile(filename, typeof data === 'string' ? data : yaml.stringify(data))
 
     const ctx = new Context()
     const messages: Message[] = []
@@ -72,7 +72,7 @@ export function harness() {
       files,
       dispose: () => fiber!.dispose(),
       text: () => readFile(filename, 'utf8'),
-      read: async () => yaml.load(await readFile(filename, 'utf8')) as any[],
+      read: async () => yaml.parse(await readFile(filename, 'utf8')) as any[],
       config: (tag: string) => ctx.bail('test/config', tag),
       logs: (type: Message['type']) => messages.filter(m => m.type === type).map(m => m.args.join(' ')),
       update: (local: string, options: any) => ctx.loader.update(`${id}:${local}`, options),

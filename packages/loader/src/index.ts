@@ -1,4 +1,4 @@
-import { Context, FiberState, Inject, Service } from 'cordis'
+import { Context, FiberState, Inject, Service, ValidationError } from 'cordis'
 import { Awaitable, defineProperty, Dict, isNullable } from 'cosmokit'
 import { ModuleLoader } from './internal.ts'
 import { Entry, EntryOptions } from './config/entry.ts'
@@ -10,6 +10,7 @@ import { interpolate } from './config/utils.ts'
 export * from './config/entry.ts'
 export * from './config/group.ts'
 export * from './config/isolate.ts'
+export * from './config/source.ts'
 export * from './config/tree.ts'
 export * from './config/utils.ts'
 export * from './internal.ts'
@@ -72,6 +73,18 @@ export class Loader extends EntryTree {
     })
 
     ctx.reflect.provide('loader', this, this[Service.check])
+
+    // Registered in front of the built-in validation listener, so that it
+    // receives validation failures and can trace them to the config source.
+    ctx.on('internal/config', (fiber, next) => {
+      if (!fiber.entry || fiber.parent.fiber?.entry === fiber.entry) return next()
+      try {
+        return next()
+      } catch (error) {
+        if (ValidationError.is(error)) fiber.entry.traceValidation(error)
+        throw error
+      }
+    }, { prepend: true })
 
     // Registered after the built-in validation listener, so interpolation runs
     // on the source config and validation sees the interpolated result.
