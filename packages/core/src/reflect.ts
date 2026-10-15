@@ -64,18 +64,26 @@ export interface Impl {
 }
 
 // Locate the fiber that governs an access to service `name` from the def site `ctx`: the nearest one
-// within the same isolation that either holds the impl or declares the service in its `inject`.
+// that either provides the impl in the same isolation, or declares the service in its `inject`.
+// Isolating `name` derives a context that no longer shares the fiber's `inject`, so the lookup ends
+// at the first fiber whose context is separated from the def site by such a derivation.
 export function locate(ctx: Context, name: string): { fiber: Fiber; impl?: Impl } | undefined {
   const key = ctx[symbols.isolate][name]
+  let table = ctx[symbols.isolate]
   let fiber = ctx.fiber
   while (true) {
-    let impl = fiber.committed?.[name]
+    let impl: Impl | undefined
     for (const provision of fiber.provisions) {
       if (provision.name === name && provision.ctx[symbols.isolate][name] === key) impl = provision
     }
+    if (impl) return { fiber, impl }
+    while (table !== fiber.ctx[symbols.isolate]) {
+      if (!table || Object.hasOwn(table, name)) return
+      table = Object.getPrototypeOf(table)
+    }
+    impl = fiber.committed?.[name]
     if (impl || name in fiber.inject) return { fiber, impl }
     if (!fiber.runtime) return
-    if (fiber.parent[symbols.isolate][name] !== key) return
     fiber = fiber.parent.fiber
   }
 }
