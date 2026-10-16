@@ -91,22 +91,29 @@ export class Include extends EntryTree {
   private cache?: Snapshot
   /** Tree-side changes that have not reached the file yet. */
   private journal: Journal = new Map()
+  // invariant: retries route against the ownership before an accepted patch handoff.
+  private replay?: { patches: PatchOptions[]; accepted: PatchOptions[]; batch: Journal }
   /** Ids we assigned to entries the file leaves anonymous. */
   private anonymous = new Map<string, Anonymous>()
 
   private dirtyRead = false
   private dirtyWrite = false
   private _draining?: Promise<void>
+  /** Bumped only from `commit`, so a read abort's leftover `dirtyWrite` is not another attempt. */
+  private _commitEpoch = 0
 
   /** Only the latest intended tree is ever applied; older ones are skipped. */
   private _pendingTree?: EntryOptions[]
   private _applyTask?: Promise<void>
+
+  private ownerConfig: any
 
   private _disposed = false
   private _seq = 0
 
   constructor(ctx: Context, public config: Include.Config) {
     super(ctx)
+    this.ownerConfig = ctx.fiber.entry?.options.config
     this.enableLogs = config.enableLogs ?? ctx.fiber.entry?.parent.tree.enableLogs ?? false
     // On Windows, a drive-letter path is converted with `pathToFileURL`.
     // `new URL()` would read its `C:` as a URL scheme, which `fileURLToPath` rejects.
@@ -124,6 +131,7 @@ export class Include extends EntryTree {
     ctx.on('internal/update', (config, next) => {
       if (config.path !== this.config.path) return next()
       this.config = config
+      this.ownerConfig = ctx.fiber.entry?.options.config
       ensureInsertIds(config.patches, id => !!this.store[id])
       this._scheduleApply()
       return this._applyTask
@@ -163,7 +171,7 @@ export class Include extends EntryTree {
     this._pendingTree = undefined
     // Flush what the user last did before the tree goes away; this is also the
     // last attempt for changes a failed write left in the journal.
-    if (this.journal.size) {
+    if (this.journal.size || this.replay) {
       this.dirtyWrite = true
       this._drain()
     }
@@ -194,6 +202,7 @@ export class Include extends EntryTree {
     this.context.emit('loader/config-update')
     const parent = change.group === this.root ? null : change.group.ctx.fiber.entry!.options.id
     record(this.journal, change, parent)
+    this._commitEpoch++
     this.dirtyWrite = true
     this._drain()
   }
@@ -258,8 +267,21 @@ export class Include extends EntryTree {
     this._assignIds(data)
 
     if (this.cache) {
-      const index = new PatchIndex(this.config.patches ?? [])
-      const conflicts = reconcile(this.journal, flatten(this.cache.data), flatten(data), (id, key) => index.fileOwned(id, key))
+      const index = new PatchIndex(this.replay?.patches ?? this.config.patches ?? [])
+      const base = flatten(this.cache.data)
+      const theirs = flatten(data)
+      if (this.replay) {
+        for (const [id, change] of this.journal) {
+          if (change.kind !== 'upsert' || change.parent === undefined) continue
+          const owner = index.entry(id)
+          if (owner.type !== 'insert' || index.entry(change.parent).type !== 'file') continue
+          if (base.has(id) || !theirs.has(id)) continue
+          owner.list.splice(owner.list.indexOf(owner.options), 1)
+          this.journal.delete(id)
+          this.ctx.logger.error('config conflict in %C: entry %C added in file during move; file wins', this.filename, id)
+        }
+      }
+      const conflicts = reconcile(this.journal, base, theirs, (id, key) => index.fileOwned(id, key))
       for (const { id, reason } of conflicts) {
         this.ctx.logger.error('config conflict in %C: entry %C %s; file wins', this.filename, id, reason)
       }
@@ -268,11 +290,102 @@ export class Include extends EntryTree {
     this.cache = { content, data }
     this._scheduleApply()
     // the file changed while tree-side changes were pending: write the merge
-    if (this.journal.size) this.dirtyWrite = true
+    if (this.journal.size || this.replay) this.dirtyWrite = true
+  }
+
+  /**
+   * Wait out the drain already in progress. A `commit` that arrives as that
+   * drain clears its flag starts one more. Leftover `dirtyWrite` from a read
+   * abort is not another attempt.
+   */
+  private async _flushWrites() {
+    let seen = this._commitEpoch
+    for (;;) {
+      while (this._draining) await this._draining
+      if (this._commitEpoch === seen) return
+      seen = this._commitEpoch
+      if (!this.dirtyRead && !this.dirtyWrite) continue
+      this._drain()
+      if (!this._draining) return
+    }
+  }
+
+  private refusePatches() {
+    this.ctx.logger.warn('patches of %C changed at runtime but cannot be persisted', this.filename)
+    return false
+  }
+
+  private async _persistPatches(patches: PatchOptions[]) {
+    const next = { ...this.config, patches }
+    const fiber = this.ctx.fiber
+    const entry = fiber.entry
+    if (!entry) return this.refusePatches()
+    const parent = entry.parent.tree
+    // invariant: shutdown retains the owning options and config, replacement does not.
+    if (flatten(parent.root.data).get(entry.options.id)?.options !== entry.options
+      || !deepEqual(entry.options.config, this.ownerConfig)) return this.refusePatches()
+    if (fiber.uid !== null) {
+      const previous = entry.options.config
+      // Not awaited: the returned promise is the tree reconciliation, and
+      // the drain loop must not block on fibers. `internal/config` throws
+      // before `internal/commit`.
+      try {
+        Promise.resolve(fiber.update(next)).catch((error) => {
+          this.ctx.logger.error(error)
+        })
+      } catch (error) {
+        this.ctx.logger.error(error)
+        if (entry.options.config === previous) return false
+      }
+      this.config = next
+      this.ownerConfig = entry.options.config
+      return true
+    }
+
+    // `Fiber.dispose` clears `uid` before effect disposers, so `stop()` cannot
+    // call `Fiber.update`. The ancestor's `internal/commit` listener is itself
+    // an effect and may already be gone. Write the parent commit directly.
+    if (fiber.parent.fiber?.entry === entry) return this.refusePatches()
+    const previousConfig = entry.options.config
+    try {
+      const unparse = fiber.runtime?.Config?.['simplify']
+      const legacy = { ...entry.options }
+      entry.options.config = typeof unparse === 'function' ? unparse(next) : next
+      parent.commit({
+        id: entry.options.id,
+        group: entry.parent,
+        options: entry.options,
+        legacy,
+      })
+    } catch (error) {
+      entry.options.config = previousConfig
+      this.ctx.logger.error(error)
+      return false
+    }
+    const committed = this.ownerConfig = entry.options.config
+    if (parent instanceof Include && parent !== this) {
+      await parent._flushWrites()
+      if (parent.journal.has(entry.options.id)) return this.refusePatches()
+      try {
+        const persisted = applyPatches(parent.cache?.data ?? [], parent.config.patches, this.warn)
+        if (!deepEqual(flatten(persisted).get(entry.options.id)?.options.config, committed)) return this.refusePatches()
+      } catch (error) {
+        this.ctx.logger.error(error)
+        return this.refusePatches()
+      }
+    }
+    fiber.config = next
+    this.config = next
+    this.ownerConfig = entry.options.config
+    return true
   }
 
   private async _write() {
-    if (!this.cache || !this.journal.size) return
+    if (!this.cache || (!this.journal.size && !this.replay)) return
+    if (this.replay && !deepEqual(this.config.patches ?? [], this.replay.accepted)) {
+      this.refusePatches()
+      return
+    }
     const current = await readFile(this.filename, 'utf8').catch((error) => {
       if (isENOENT(error)) return undefined
       throw error
@@ -297,34 +410,52 @@ export class Include extends EntryTree {
       this.journal = batch
     }
 
-    const data = structuredClone(this.cache.data)
-    const patches = structuredClone(this.config.patches ?? [])
-    if (routeJournal(batch, data, patches, this.warn)) {
-      // Take the new patches now so that the tree scheduled below already
-      // reflects them; the round trip through the parent only persists them.
-      this.config = { ...this.config, patches }
-      if (this.ctx.fiber.entry) {
-        // Not awaited: the returned promise is the tree reconciliation, and
-        // the drain loop must not block on fibers.
-        try {
-          Promise.resolve(this.ctx.fiber.update(this.config)).catch((error) => {
-            this.ctx.logger.error(error)
-          })
-        } catch (error) {
-          this.ctx.logger.error(error)
-        }
-      } else {
-        this.ctx.logger.warn('patches of %C changed at runtime but cannot be persisted', this.filename)
+    const keep = (error: unknown): never => {
+      restore()
+      this.ctx.logger.warn('failed to write config file %C, %d pending change(s) kept in memory', this.filename, this.journal.size)
+      throw error
+    }
+
+    let data: EntryOptions[]
+    let patches: PatchOptions[]
+    let original: PatchOptions[]
+    try {
+      data = structuredClone(this.cache.data)
+      original = structuredClone(this.replay?.patches ?? this.config.patches ?? [])
+      patches = structuredClone(original)
+    } catch (error) {
+      return keep(error)
+    }
+    let patched = false
+    try {
+      patched = routeJournal(batch, data, patches, this.warn)
+      patched ||= !!this.replay && !deepEqual(patches, this.config.patches ?? [])
+    } catch (error) {
+      return keep(error)
+    }
+    if (patched) {
+      const previous = this.replay
+      this.replay = { patches: original, accepted: patches, batch }
+      if (!await this._persistPatches(patches)) {
+        this.replay = previous
+        restore()
+        return
       }
     }
 
     // nothing for the file itself (patch-only changes, or ids we assigned to
     // anonymous entries that are already part of the cache)
     if (deepEqual(data, this.cache.data)) {
+      this.replay = undefined
       this._scheduleApply()
       return
     }
-    const text = this.dump(data)
+    let text: string
+    try {
+      text = this.dump(data)
+    } catch (error) {
+      return keep(error)
+    }
 
     try {
       await access(this.filename, constants.W_OK)
@@ -347,6 +478,7 @@ export class Include extends EntryTree {
       throw error
     }
     this.cache = { content: text, data }
+    this.replay = undefined
     this._scheduleApply()
   }
 
@@ -435,7 +567,10 @@ export class Include extends EntryTree {
 
   private _scheduleApply() {
     if (this._disposed || !this.cache) return
-    const tree = applyPatches(this.cache.data, this.config.patches, this.warn)
+    const patches = this.replay && deepEqual(this.config.patches ?? [], this.replay.accepted)
+      ? this.replay.patches : this.config.patches
+    const tree = applyPatches(this.cache.data, patches, this.warn)
+    if (this.replay && patches === this.replay.patches) applyJournal(tree, this.replay.batch, undefined, this.warn)
     this._pendingTree = applyJournal(tree, this.journal, undefined, this.warn)
     this._applyTask ??= (async () => {
       try {
