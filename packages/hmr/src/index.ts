@@ -12,6 +12,9 @@ import enUS from './locales/en-US.yml'
 import zhCN from './locales/zh-CN.yml'
 import z from 'schemastery'
 
+// A Windows drive-letter path, e.g. `C:\app\cordis.yml` or `C:/app/cordis.yml`.
+const driveLetter = /^[A-Za-z]:[\\/]/
+
 declare module 'cordis' {
   interface Context {
     hmr: Hmr
@@ -112,7 +115,11 @@ class Hmr extends Service {
   constructor(ctx: Context, public config: Hmr.Config) {
     super(ctx, 'hmr')
     this.internal = this.ctx.loader.internal
-    this.baseDir = fileURLToPath(new URL(config.base || '.', ctx.baseUrl))
+    // On Windows, a drive-letter path is converted with `pathToFileURL`.
+    // `new URL()` would read its `C:` as a URL scheme, which `fileURLToPath` rejects.
+    this.baseDir = fileURLToPath(process.platform === 'win32' && config.base && driveLetter.test(config.base)
+      ? pathToFileURL(config.base)
+      : new URL(config.base || '.', ctx.baseUrl))
   }
 
   /**
