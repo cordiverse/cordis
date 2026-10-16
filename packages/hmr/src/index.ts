@@ -117,8 +117,8 @@ class Hmr extends Service {
     this.internal = this.ctx.loader.internal
     // On Windows, a drive-letter path is converted with `pathToFileURL`.
     // `new URL()` would read its `C:` as a URL scheme, which `fileURLToPath` rejects.
-    this.baseDir = fileURLToPath(process.platform === 'win32' && driveLetter.test(config.base || '.')
-      ? pathToFileURL(config.base!)
+    this.baseDir = fileURLToPath(process.platform === 'win32' && config.base && driveLetter.test(config.base)
+      ? pathToFileURL(config.base)
       : new URL(config.base || '.', ctx.baseUrl))
   }
 

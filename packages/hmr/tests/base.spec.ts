@@ -16,12 +16,13 @@ describe('Hmr baseDir', () => {
     fiber = undefined
   })
 
+  // Only `baseDir` is asserted, so nothing is watched.
   async function createContext(base?: string) {
     const ctx = new Context()
     ctx.baseUrl = import.meta.url
     await ctx.plugin(Loader)
     await ctx.plugin(Timer)
-    fiber = await ctx.plugin(Hmr, base ? { base } : {})
+    fiber = await ctx.plugin(Hmr, { base, root: [] })
     return ctx
   }
 
@@ -34,8 +35,13 @@ describe('Hmr baseDir', () => {
     expect(ctx.hmr.baseDir).to.equal(base)
   })
 
-  // A relative base still resolves against the context, exactly as before.
-  it('accepts a relative base', async () => {
+  it('resolves a relative base against the context', async () => {
+    const ctx = await createContext('..')
+
+    expect(ctx.hmr.baseDir).to.equal(dirname(testDir) + sep)
+  })
+
+  it('defaults to the context directory', async () => {
     const ctx = await createContext()
 
     expect(ctx.hmr.baseDir).to.equal(testDir + sep)
