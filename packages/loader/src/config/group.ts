@@ -50,6 +50,18 @@ export class EntryGroup {
   }
 
   async update(config: EntryOptions[]) {
+    // A repeated id keeps only the last entry in `newMap` below, so the
+    // shadowed one would vanish without a trace.
+    const seen = new Set<string | symbol>()
+    const repeated = new Set<string | symbol>()
+    for (const { id } of config) {
+      if (id === undefined) continue
+      if (seen.has(id)) repeated.add(id)
+      else seen.add(id)
+    }
+    for (const id of repeated) {
+      this.ctx.logger.error('duplicate entry id %C, only the last one takes effect', id)
+    }
     const oldConfig = this.data as EntryOptions[]
     this.data = config
     const oldMap = Object.fromEntries(oldConfig.map(options => [options.id, options]))
