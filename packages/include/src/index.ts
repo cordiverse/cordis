@@ -443,7 +443,12 @@ export class Include extends EntryTree {
       this._scheduleApply()
       return
     }
-    const text = this.dump(data)
+    let text: string
+    try {
+      text = this.dump(data)
+    } catch (error) {
+      return keep(error)
+    }
 
     try {
       await access(this.filename, constants.W_OK)

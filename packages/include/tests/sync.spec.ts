@@ -383,6 +383,103 @@ describe('Include sync', () => {
     expect((await app.read())[0].config.value).toBe(2)
   }, 10000)
 
+  // Two updates, no await between the calls, so both land in the batch `dump` rejects.
+  it('keeps the journal when YAML cannot serialize one change in the batch', async () => {
+    const app = await setup('tmp-sync-dump.yml', [plugin('a', 1), plugin('b', 1)])
+    const include = app.include()
+    const text = await app.text()
+
+    const pending = Promise.all([
+      app.update('a', { config: { tag: 'a', value: 2 } }),
+      app.update('b', { config: { tag: 'b', value: 3n } }),
+    ])
+    await pending
+    await include.flush()
+
+    expect(await app.text()).toBe(text)
+    expect(app.logs('warn').some(line => line.includes('kept in memory'))).toBe(true)
+
+    await app.update('b', { config: { tag: 'b', value: 3 } })
+    await include.flush()
+    const [a, b] = await app.read()
+    expect(a.config.value).toBe(2)
+    expect(b.config.value).toBe(3)
+  }, 10000)
+
+  it('keeps the journal when JSON cannot serialize one change in the batch', async () => {
+    const body = JSON.stringify([plugin('a', 1), plugin('b', 1)], null, 2)
+    const app = await setup('tmp-sync-dump.json', body)
+    const include = app.include()
+
+    const pending = Promise.all([
+      app.update('a', { config: { tag: 'a', value: 2 } }),
+      app.update('b', { config: { tag: 'b', value: 3n } }),
+    ])
+    await pending
+    await include.flush()
+
+    expect(await app.text()).toBe(body)
+    expect(app.logs('warn').some(line => line.includes('kept in memory'))).toBe(true)
+    expect(app.logs('error').some(line => line.includes('TypeError'))).toBe(true)
+
+    await app.update('b', { config: { tag: 'b', value: 3 } })
+    await include.flush()
+    const [a, b] = JSON.parse(await app.text())
+    expect(a.config.value).toBe(2)
+    expect(b.config.value).toBe(3)
+  }, 10000)
+
+  it('finishes dispose when the config cannot be serialized', async () => {
+    const app = await setup('tmp-sync-dispose-dump.yml', [plugin('a', 1), plugin('b', 1)])
+    const text = await app.text()
+    const pending = Promise.allSettled([
+      app.update('a', { config: { tag: 'a', value: 2 } }),
+      app.update('b', { config: { tag: 'b', value: 3n } }),
+    ])
+
+    await app.dispose()
+    await pending
+
+    expect(await app.text()).toBe(text)
+    expect(app.logs('warn').some(line => line.includes('kept in memory'))).toBe(true)
+  }, 10000)
+
+  it('replays one patch handoff after serialization fails', async () => {
+    const inner = fixture('tmp-sync-dump-replay-inner.yml')
+    const innerText = yaml.dump([plugin('x', 1), plugin('b', 1)])
+    await writeFile(inner, innerText)
+    const app = await setup('tmp-sync-dump-replay-outer.yml', [{
+      id: 'inc',
+      name: '@cordisjs/plugin-include',
+      config: {
+        path: './tmp-sync-dump-replay-inner.yml',
+        patches: [{ insert: [group('g', [])] }],
+      },
+    }])
+    app.files.push(inner)
+    const child = app.include().store.inc!.subtree as Include
+    await child.refresh()
+    await app.ctx.loader.await()
+
+    // Same batch: the move is handed to the parent, then `dump` rejects the bigint.
+    const moved = app.ctx.loader.update(`${app.id}:inc:x`, {}, `${app.id}:inc:g`)
+    const blown = app.update('inc:b', { config: { tag: 'b', value: 3n } })
+    await Promise.all([moved, blown])
+    await child.flush()
+    await app.include().flush()
+
+    expect(await readFile(inner, 'utf8')).toBe(innerText)
+    expect(app.logs('warn').some(line => line.includes('kept in memory'))).toBe(true)
+    expect((await app.read())[0].config.patches).toEqual([{ insert: [group('g', [plugin('x', 1)])] }])
+
+    await app.update('inc:b', { config: { tag: 'b', value: 3 } })
+    await child.flush()
+    await app.include().flush()
+
+    expect(yaml.load(await readFile(inner, 'utf8'))).toEqual([plugin('b', 3)])
+    expect((await app.read())[0].config.patches).toEqual([{ insert: [group('g', [plugin('x', 1)])] }])
+  }, 10000)
+
   it('reports a patch that the parent file cannot store on dispose', async () => {
     const inner = fixture('tmp-sync-inner-dispose-ro.yml')
     const innerText = yaml.dump([plugin('a', 1)])
