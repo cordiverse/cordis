@@ -56,11 +56,38 @@ describe('logger-console', () => {
     expect(data).toBeTruthy()
   })
 
+  it('multiline messages', () => {
+    exporter.label = undefined
+    ctx.logger('test').info('message\nmessage')
+    expect(data).toBe([
+      '[I] test message\n',
+      '         message +0ms\n',
+    ].join(''))
+  })
+
   it('label style', () => {
     exporter.label = { align: 'right', width: 10, margin: 2 }
     ctx.logger('test').info('message\nmessage')
     expect(data).toBe([
       '      test  [I]  message\n',
+      '                 message +0ms\n',
+    ].join(''))
+  })
+
+  it('label style with a narrow width', () => {
+    exporter.label = { align: 'right', width: 2, margin: 2 }
+    ctx.logger('test').info('message\nmessage')
+    expect(data).toBe([
+      'test  [I]  message\n',
+      '           message +0ms\n',
+    ].join(''))
+  })
+
+  it('left-aligned label style', () => {
+    exporter.label = { align: 'left', width: 10, margin: 2 }
+    ctx.logger('test').info('message\nmessage')
+    expect(data).toBe([
+      '[I]  test        message\n',
       '                 message +0ms\n',
     ].join(''))
   })
