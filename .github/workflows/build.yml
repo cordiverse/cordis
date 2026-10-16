@@ -5,12 +5,9 @@ on:
   pull_request:
 
 concurrency:
-  # A superseded run is cancelled, except a push to `main` where `Publish` runs.
-  # The group is per pull request, or per ref for a push. This cancels a running
-  # run only: a run still queued on `main` is replaced by the next push under
-  # GitHub's default queueing, so an intermediate commit on `main` can skip CI.
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+  # Each push to `main` gets its own group, so every commit there is built and published.
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.run_id || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint:
