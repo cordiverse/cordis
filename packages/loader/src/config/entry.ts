@@ -165,8 +165,13 @@ export class Entry {
       this.ctx.logger.error(error)
       return
     }
+    // re-check liveness at every suspension point (the import and the async
+    // `loader/patch-context` hook), not just after the import
+    const isLive = () => this.parent.tree.store[this.options.id] === this && !this.disabled
+    if (!isLive()) return
     const plugin = this.loader.unwrapExports(exports)
     await this._patchContext([])
+    if (!isLive()) return
     this.loader.showLog(this, 'apply')
     this.fiber = this.ctx.registry.plugin(plugin, this.options.config, this.getOuterStack)
   }
