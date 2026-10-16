@@ -521,8 +521,8 @@ namespace Hmr {
     ignored: z.array(String).role('table').default([
       '**/node_modules',
       '**/.*',
-      'cache',
-      'data',
+      '**/cache',
+      '**/data',
     ]),
     debounce: z.natural().role('ms').default(100),
   }).i18n({

@@ -76,5 +76,40 @@ describe('Hmr path', () => {
       expect(watched).to.include(join('__ignored__', 'src', 'index.js'))
       expect(watched.filter(path => path.includes('node_modules'))).to.deep.equal([])
     }, 10000)
+
+    // `cache` and `data` carry no `**/` prefix, so they only match a top-level
+    // entry, and a nested one is watched. Its own root and `base` keep the tree
+    // clear of the other cases, and it is removed only once the watcher is closed.
+    it('does not watch a nested cache or data directory', async () => {
+      const nested = resolve(fixture, '__nested__')
+      rmSync(nested, { recursive: true, force: true })
+      try {
+        for (const file of [
+          'src/index.js',
+          'cache/root.js',
+          'data/root.js',
+          'packages/core/cache/nested.js',
+          'packages/core/data/nested.js',
+        ]) {
+          mkdirSync(dirname(resolve(nested, file)), { recursive: true })
+          writeFileSync(resolve(nested, file), '')
+        }
+
+        const ctx = await createContext({ base: nested + sep, root: ['.'] })
+        const watcher = ctx.hmr['watcher']
+        await once(watcher, 'ready')
+
+        const watched = Object.entries(watcher.getWatched())
+          .flatMap(([dir, names]) => names.map(name => join(dir, name)))
+        expect(watched).to.include(join('src', 'index.js'))
+        // A nested entry only matches `**/cache` or `**/data`, not the bare patterns.
+        expect(watched.filter(path => /packages[\\/]core[\\/](cache|data)/.test(path)))
+          .to.deep.equal([])
+      } finally {
+        await fiber?.dispose()
+        fiber = undefined
+        rmSync(nested, { recursive: true, force: true })
+      }
+    }, 10000)
   })
 })
