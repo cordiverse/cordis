@@ -1,6 +1,6 @@
 import { EntryOptions } from '@cordisjs/plugin-loader'
 import { Dict, omit } from 'cosmokit'
-import { applyChanges, detach, flatten, Journal, place } from './journal.ts'
+import { applyChanges, applyOrder, detach, flatten, Journal, place } from './journal.ts'
 
 export interface PatchOptions {
   id?: string
@@ -235,6 +235,10 @@ export function routeJournal(journal: Journal, data: EntryOptions[], patches: Pa
       }
       applyChanges(current.options, record.changes)
       placeAt(current.options, record.parent, record.position)
+      if (record.order) {
+        const moved = flatten(data).get(id)
+        if (moved) applyOrder(moved.list, record.order, journal)
+      }
       continue
     }
 
@@ -242,6 +246,11 @@ export function routeJournal(journal: Journal, data: EntryOptions[], patches: Pa
       applyChanges(current.options, record.changes)
       patched = true
       continue
+    }
+
+    const flat = flatten(data).get(id)
+    if (flat && record.order?.length && record.parent === flat.parent) {
+      applyOrder(flat.list, record.order, journal)
     }
 
     const patchChanges: Dict<Dict> = {}
