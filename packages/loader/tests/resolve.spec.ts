@@ -198,4 +198,12 @@ describe('EntryTree.import without internals', () => {
     expect((await tree.import('./plugin.js')).tag).to.equal('relative')
     expect(existsSync(join(root, '.cordis'))).to.be.false
   })
+
+  it.runIf(process.platform === 'win32')('accepts a drive-letter path', async () => {
+    const { root, baseUrl } = await fixture()
+    const pluginPath = join(root, 'src', 'abs-plugin.mjs')
+    await writeFile(pluginPath, 'export const tag = "win-abs"\n')
+    const tree = await treeFor(baseUrl)
+    expect((await tree.import(pluginPath)).tag).to.equal('win-abs')
+  })
 })
