@@ -2,6 +2,7 @@ import { composeError, Context } from 'cordis'
 import { Dict, isNonNullable } from 'cosmokit'
 import { Entry, EntryOptions } from './entry.ts'
 import { EntryGroup } from './group.ts'
+import { SourceLocation } from './source.ts'
 import { createResolve } from '../resolve.ts'
 
 /**
@@ -157,4 +158,14 @@ export abstract class EntryTree {
   }
 
   abstract commit(change: EntryChange): void
+
+  /**
+   * Where a value of an entry's options is written down, `path` being relative
+   * to the options. A path that leaves the source (a missing key, or a value
+   * computed by an expression) yields its deepest written ancestor. Trees that
+   * live in memory have no source to point to.
+   */
+  getLocation(_id: string, _path: PropertyKey[]): SourceLocation | undefined {
+    return undefined
+  }
 }

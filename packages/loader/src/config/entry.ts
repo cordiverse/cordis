@@ -1,7 +1,8 @@
-import { Context, Fiber, Inject } from 'cordis'
+import { Context, Fiber, Inject, ValidationError } from 'cordis'
 import { deepEqual, isNullable } from 'cosmokit'
 import { Loader } from '../index.ts'
 import { EntryGroup } from './group.ts'
+import { formatIssue, formatLocation } from './source.ts'
 import { EntryTree } from './tree.ts'
 import { evaluate, isJsExpr } from './utils.ts'
 
@@ -134,14 +135,36 @@ export class Entry {
     }
   }
 
+  getLocation(path: PropertyKey[] = []) {
+    return this.parent.tree.getLocation(this.options.id, path)
+  }
+
   getOuterStack = () => {
     let entry: Entry | undefined = this
     const result: string[] = []
     do {
-      result.push(`    at ${entry.parent.tree.ctx.baseUrl}#${entry.options.id}`)
+      const location = entry.getLocation()
+      result.push(location
+        ? `    at ${entry.options.id} (${formatLocation(location)})`
+        : `    at ${entry.parent.tree.ctx.baseUrl}#${entry.options.id}`)
       entry = entry.parent.ctx.fiber.entry
     } while (entry)
     return result
+  }
+
+  /**
+   * Point every issue of a failed config validation at the place in the
+   * config source it comes from. Internal frames are dropped from the stack:
+   * the entry chain is what locates the failure.
+   */
+  traceValidation(error: ValidationError) {
+    const lines = error.issues.flatMap((issue) => {
+      const path = ValidationError.normalizePath(issue.path)
+      const name = path.length ? ValidationError.formatPath(path) : undefined
+      return formatIssue(issue.message, this.getLocation(['config', ...path]), name)
+    })
+    error.message = `invalid config:\n${lines.join('\n')}`
+    error.stack = [`${error.name}: ${error.message}`, ...this.getOuterStack()].join('\n')
   }
 
   async init() {
