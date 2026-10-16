@@ -1,8 +1,12 @@
 import { composeError, Context } from 'cordis'
 import { Dict, isNonNullable } from 'cosmokit'
+import { pathToFileURL } from 'node:url'
 import { Entry, EntryOptions } from './entry.ts'
 import { EntryGroup } from './group.ts'
 import { createResolve } from '../resolve.ts'
+
+// A Windows drive-letter path, e.g. `C:\app\plugin.js` or `C:/app/plugin.js`.
+const driveLetter = /^[A-Za-z]:[\\/]/
 
 /**
  * One tree-side mutation, reported to `EntryTree.commit()` synchronously after
@@ -140,6 +144,9 @@ export abstract class EntryTree {
       // onImport.tracePromise.__proto__
       // internal.import
       info.offset += 3
+      if (process.platform === 'win32' && driveLetter.test(name)) {
+        name = pathToFileURL(name).href
+      }
       if (this.ctx.loader.internal) {
         return await this.ctx.loader.internal.import(name, this.ctx.baseUrl!, {})
       } else if (name.startsWith('.')) {
