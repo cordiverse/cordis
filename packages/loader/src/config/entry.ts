@@ -62,9 +62,13 @@ export class Entry {
   }
 
   private _resolveDisabled(options: EntryOptions): boolean {
-    return isJsExpr(options.disabled)
-      ? Boolean(this.evaluate(options.disabled.__jsExpr))
-      : Boolean(options.disabled)
+    if (!isJsExpr(options.disabled)) return Boolean(options.disabled)
+    try {
+      return Boolean(this.evaluate(options.disabled.__jsExpr))
+    } catch (error) {
+      this.ctx.logger.error(error)
+      return true
+    }
   }
 
   get disabled() {
