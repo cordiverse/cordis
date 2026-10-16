@@ -459,4 +459,40 @@ describe('Fiber: config validation', () => {
       { ok: true, extra: 1, resolved: true },
     ])
   })
+
+  it('validate a failed plugin whose dependency is present', async () => {
+    const root = new Context()
+    ;(root.logger as any).error = mock.fn()
+    const apply = mock.fn(() => { throw new Error('boom') })
+    root.provide('foo')
+    const fiber = root.plugin({ inject: ['foo'], apply, Config }, { ok: true })
+    await fiber.await().catch(() => {})
+    expect(fiber.state).to.equal(FiberState.FAILED)
+
+    const commit = mock.fn()
+    root.on('internal/commit', commit)
+    expect(() => fiber.update({ ok: false })).toThrow('invalid config')
+    expect(fiber.config).to.deep.equal({ ok: true })
+    expect(commit.mock.calls).to.have.length(0)
+    expect(fiber.state).to.equal(FiberState.FAILED)
+  })
+
+  it('defer validation after a failed plugin loses its dependency', async () => {
+    const root = new Context()
+    ;(root.logger as any).error = mock.fn()
+    const apply = mock.fn(() => { throw new Error('boom') })
+    const dispose = root.provide('foo')
+    const fiber = root.plugin({ inject: ['foo'], apply, Config }, { ok: true })
+    await fiber.await().catch(() => {})
+    expect(fiber.state).to.equal(FiberState.FAILED)
+
+    await dispose()
+
+    const commit = mock.fn()
+    root.on('internal/commit', commit)
+    const pending = fiber.update({ ok: false })
+    expect(commit.mock.calls).to.have.length(1)
+    expect(fiber.config).to.deep.equal({ ok: false })
+    await pending
+  })
 })

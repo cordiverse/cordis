@@ -380,17 +380,18 @@ export class Fiber {
     this._store[name] = impl
   }
 
-  _refresh() {
+  private _getEpoch() {
     let epoch = `${this._revision}`
     for (const name of Object.keys(this.inject)) {
       const impl = this._store[name]
-      if (!impl) {
-        epoch = INACTIVE
-        break
-      }
+      if (!impl) return INACTIVE
       epoch += ':' + impl.uid
     }
-    this._setEpoch(epoch)
+    return epoch
+  }
+
+  _refresh() {
+    this._setEpoch(this._getEpoch())
   }
 
   private _setEpoch(epoch: string) {
@@ -498,7 +499,17 @@ export class Fiber {
     const fiber = this.ctx.fiber
     fiber.assertActive()
     const loaded = fiber._runner.epoch !== INACTIVE
-    const resolved = loaded ? fiber._resolve(config) : undefined
+    const ready = loaded || fiber._getEpoch() !== INACTIVE
+    // Resolution reads injected services from `committed`. A failed fiber has
+    // dropped that view, so show the current store for this check only.
+    const peeked = ready && !loaded && fiber.committed === undefined
+    if (peeked) fiber.committed = { ...fiber._store }
+    let resolved: any
+    try {
+      resolved = ready ? fiber._resolve(config) : undefined
+    } finally {
+      if (peeked) fiber.committed = undefined
+    }
     if (!noSave) fiber.context.emit('internal/commit', fiber, config)
     fiber.config = config
     fiber._error = undefined
