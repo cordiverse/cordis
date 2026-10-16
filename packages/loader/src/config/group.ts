@@ -77,7 +77,28 @@ export class EntryGroup {
     this.context.emit('loader/partial-dispose', entry, entry.options, false)
   }
 
+  /** The ids already reported as repeated, so an unchanged duplicate is said once. */
+  private _reported: Set<string | symbol> = new Set()
+
   async update(config: EntryOptions[]) {
+    // A repeated id keeps only the last entry in `newMap` below, so the
+    // shadowed one would vanish without a trace.
+    const seen = new Set<string | symbol>()
+    const repeated = new Set<string | symbol>()
+    for (const { id } of config) {
+      if (id === undefined) continue
+      if (seen.has(id)) repeated.add(id)
+      else seen.add(id)
+    }
+    // `update` runs again on every reload, and the duplicate is a property of the
+    // configuration rather than of that reload: reporting it each time turns one
+    // mistake into a line per edit. An id that stops being repeated is forgotten,
+    // so a duplicate introduced a second time is reported again.
+    for (const id of repeated) {
+      if (this._reported.has(id)) continue
+      this.ctx.logger.error('duplicate entry id %C, only the last one takes effect', id)
+    }
+    this._reported = repeated
     const oldConfig = this.data as EntryOptions[]
     this.data = config
     const oldMap = Object.fromEntries(oldConfig.map(options => [options?.id, options]))
