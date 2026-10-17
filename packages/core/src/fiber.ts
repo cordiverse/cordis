@@ -500,15 +500,16 @@ export class Fiber {
     fiber.assertActive()
     const loaded = fiber._runner.epoch !== INACTIVE
     const ready = loaded || fiber._getEpoch() !== INACTIVE
-    // Resolution reads injected services from `committed`. A failed fiber has
-    // dropped that view, so show the current store for this check only.
-    const peeked = ready && !loaded && fiber.committed === undefined
-    if (peeked) fiber.committed = { ...fiber._store }
+    // Inactive loads may still own a committed view during cleanup.
+    const committed = fiber.committed
+    const peeked = ready && !loaded ? { ...fiber._store } : undefined
+    if (peeked) fiber.committed = peeked
     let resolved: any
     try {
       resolved = ready ? fiber._resolve(config) : undefined
     } finally {
-      if (peeked) fiber.committed = undefined
+      // Resolution can start a new load; restore only our temporary view.
+      if (peeked && fiber.committed === peeked) fiber.committed = committed
     }
     if (!noSave) fiber.context.emit('internal/commit', fiber, config)
     fiber.config = config
