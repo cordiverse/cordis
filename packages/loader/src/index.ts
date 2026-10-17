@@ -140,6 +140,11 @@ export class Loader extends EntryTree {
       // unregisters it before disposing the fiber)
       if (entry.parent.tree.store[entry.options.id] !== entry) return
 
+      // the entry has already released this fiber (name/inject rebind).
+      // registry.plugin() returns Object.create(fiber), so the stored value is
+      // not the object this event receives. The disposer is the shared identity.
+      if (entry.fiber !== fiber && entry.fiber?.dispose !== fiber.dispose) return
+
       // case 8: fiber is disposed by loader behavior
       // such as inject checker, config file update, ancestor group disable
       if (entry.disabled) return

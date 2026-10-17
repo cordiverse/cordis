@@ -127,6 +127,19 @@ export class Entry {
         .keys({ ...this.options, ...legacy })
         .filter(key => !deepEqual(this.options[key], legacy[key]))
       if (!diff.length && !force) return
+      if (diff.includes('name') || diff.includes('inject')) {
+        this.context.emit('loader/partial-dispose', this, legacy, true)
+        const fiber = this.fiber!
+        this.fiber = undefined
+        // visible to getTasks() and to an update that arrives before dispose settles
+        this._initTask = fiber.dispose().then(() => {
+          if (this.disabled || this.fiber?.uid) return
+          if (this.parent.tree.store[this.options.id] !== this) return
+          return this._init()
+        })
+        await this.init()
+        return
+      }
       this.context.emit('loader/partial-dispose', this, legacy, true)
       await this._patchContext(diff)
     } else {
@@ -145,10 +158,12 @@ export class Entry {
   }
 
   async init() {
+    const task = this._initTask ??= this._init()
     try {
-      await (this._initTask ??= this._init())
+      await task
     } finally {
-      this._initTask = undefined
+      // a rebind started while this task was settling owns the slot now
+      if (this._initTask === task) this._initTask = undefined
     }
     // failures are already reported by the fiber; we only need it to settle
     this.fiber?.await().catch(() => {}).finally(() => {
@@ -167,6 +182,8 @@ export class Entry {
     }
     const plugin = this.loader.unwrapExports(exports)
     await this._patchContext([])
+    if (this.disabled || this.fiber?.uid) return
+    if (this.parent.tree.store[this.options.id] !== this) return
     this.loader.showLog(this, 'apply')
     this.fiber = this.ctx.registry.plugin(plugin, this.options.config, this.getOuterStack)
   }
