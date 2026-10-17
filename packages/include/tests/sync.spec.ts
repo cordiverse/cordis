@@ -227,6 +227,113 @@ describe('Include sync', () => {
     expect(first.config.tag).toBe('anon')
   }, 10000)
 
+  it('does not give a root anonymous plugin the nested plugin\'s id', async () => {
+    const shape = () => ({ name: './config-plugin', config: { tag: 'x', value: 1 } })
+    const app = await setup('tmp-sync-anon-root.yml', yaml.dump([
+      { name: '@cordisjs/plugin-group', group: true, config: [shape()] },
+      shape(),
+    ]))
+
+    const includeId = app.include().ctx.fiber.entry!.options.id
+    const tagged = Object.values(app.include().store).filter(entry => entry.options.config?.tag === 'x')
+    const root = tagged.find(entry => entry.parent.ctx.fiber.entry!.options.id === includeId)
+    const nested = tagged.find(entry => entry.parent.ctx.fiber.entry!.options.id !== includeId)
+    expect(root).toBeTruthy()
+    expect(nested).toBeTruthy()
+    expect(root).not.toBe(nested)
+    const rootId = root!.options.id
+    const nestedId = nested!.options.id
+    expect(nested!.parent.ctx.fiber.entry!.options.id).toBe(
+      Object.values(app.include().store).find(entry => entry.options.group)!.options.id,
+    )
+    const applies = applied.filter(tag => tag === 'x').length
+
+    await writeFile(app.filename, yaml.dump([shape()]))
+    await app.settle()
+
+    const surviving = Object.values(app.include().store).filter(entry => entry.options.config?.tag === 'x')
+    expect(surviving).toHaveLength(1)
+    expect(surviving[0]).toBe(root)
+    expect(surviving[0]!.options.id).toBe(rootId)
+    expect(surviving[0]!.options.id).not.toBe(nestedId)
+    expect(applied.filter(tag => tag === 'x')).toHaveLength(applies)
+  }, 10000)
+
+  it('keeps an anonymous group and its child stable when a neighbor changes', async () => {
+    const child = { name: './config-plugin', config: { tag: 'child', value: 1 } }
+    const anonGroup = { name: '@cordisjs/plugin-group', group: true, config: [child] }
+    const app = await setup('tmp-sync-anon-neighbor.yml', yaml.dump([anonGroup, plugin('b', 1)]))
+
+    const includeId = app.include().ctx.fiber.entry!.options.id
+    const groupEntry = Object.values(app.include().store).find(entry => entry.options.group)
+    const childEntry = Object.values(app.include().store).find(entry => entry.options.config?.tag === 'child')
+    expect(groupEntry?.parent.ctx.fiber.entry!.options.id).toBe(includeId)
+    expect(childEntry?.parent.ctx.fiber.entry!.options.id).toBe(groupEntry!.options.id)
+    const groupId = groupEntry!.options.id
+    const childId = childEntry!.options.id
+    const childApplies = applied.filter(tag => tag === 'child').length
+
+    await writeFile(app.filename, yaml.dump([anonGroup, plugin('b', 2)]))
+    await app.settle()
+
+    expect(app.config('b').value).toBe(2)
+    expect(app.include().store[groupId]).toBe(groupEntry)
+    expect(app.include().store[childId]).toBe(childEntry)
+    expect(groupEntry!.options.id).toBe(groupId)
+    expect(childEntry!.options.id).toBe(childId)
+    expect(childEntry!.parent.ctx.fiber.entry!.options.id).toBe(groupId)
+    expect(applied.filter(tag => tag === 'child')).toHaveLength(childApplies)
+  }, 10000)
+
+  it('does not reuse an id that the file now writes explicitly', async () => {
+    const anonymous = { name: './config-plugin', config: { tag: 'anon', value: 1 } }
+    const app = await setup('tmp-sync-explicit-id.yml', yaml.dump([anonymous]))
+    const [live] = Object.values(app.include().store)
+    const id = live!.options.id
+    expect(await app.text()).not.toContain(id)
+
+    await writeFile(app.filename, yaml.dump([
+      anonymous,
+      { id, name: './config-plugin', config: { tag: 'other', value: 1 } },
+    ]))
+    await app.settle()
+
+    const store = app.include().store
+    expect(store[id]!.options.config).toEqual({ tag: 'other', value: 1 })
+    const anon = Object.values(store).find(entry => entry.options.config?.tag === 'anon')
+    expect(anon?.options.id).toBeTruthy()
+    expect(anon!.options.id).not.toBe(id)
+    expect(store[anon!.options.id]).toBe(anon)
+  }, 10000)
+
+  it('does not reuse an id owned by an explicit patch insert', async () => {
+    const name = 'tmp-sync-patch-insert.yml'
+    const anonymous = { name: './config-plugin', config: { tag: 'anon', value: 1 } }
+    const app = await setup(name, yaml.dump([anonymous]))
+    const [live] = Object.values(app.include().store)
+    const id = live!.options.id
+    expect(await app.text()).not.toContain(id)
+
+    await app.ctx.loader.update(app.id, {
+      config: {
+        path: `./fixtures/${name}`,
+        patches: [{ insert: [{ id, name: './config-plugin', config: { tag: 'other', value: 9 } }] }],
+      },
+    })
+    await app.ctx.loader.await()
+
+    // a byte change forces a reread; the assigned id stays out of the file
+    await writeFile(app.filename, `# reread\n${yaml.dump([anonymous])}`)
+    await app.settle()
+
+    const store = app.include().store
+    expect(store[id]!.options.config).toEqual({ tag: 'other', value: 9 })
+    const anon = Object.values(store).find(entry => entry.options.config?.tag === 'anon')
+    expect(anon?.options.id).toBeTruthy()
+    expect(anon!.options.id).not.toBe(id)
+    expect(store[anon!.options.id]).toBe(anon)
+  }, 10000)
+
   it('keeps runtime changes in memory when the file is read-only', async () => {
     const app = await setup('tmp-sync-readonly.yml', [plugin('a', 1), plugin('b', 1)])
     const text = await app.text()

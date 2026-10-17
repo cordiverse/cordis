@@ -390,47 +390,50 @@ export class Include extends EntryTree {
   /**
    * Entries the file leaves anonymous get an id here, before the loader sees
    * them. One that looks exactly like an entry we named on the previous read
-   * keeps that id, so editing a neighbor does not restart it; anything else
-   * gets a fresh id. Assigned ids stay in memory until the next write.
+   * keeps that id, unless it is already explicitly owned, so editing a
+   * neighbor does not restart it; anything else gets a fresh id. Assigned
+   * ids stay in memory until the next write.
    */
   private _assignIds(data: EntryOptions[]) {
     const used = new Set<string>()
-    const pending: { options: EntryOptions; parent: string | null }[] = []
-    const walk = (entries: EntryOptions[], parent: string | null) => {
+    const collect = (entries: EntryOptions[]) => {
       for (const options of entries) {
-        if (options.id) {
-          used.add(options.id)
-        } else {
-          pending.push({ options, parent })
-        }
-        if (options.group && Array.isArray(options.config)) {
-          walk(options.config, options.id ?? null)
-        }
+        if (options.id) used.add(options.id)
+        if (options.group && Array.isArray(options.config)) collect(options.config)
       }
     }
-    walk(data, null)
+    collect(data)
+    for (const patch of this.config.patches ?? []) {
+      if (patch.insert) collect(patch.insert)
+    }
 
     const previous = this.anonymous
     this.anonymous = new Map()
-    for (const { options, parent } of pending) {
-      let id: string | undefined
-      for (const [candidate, info] of previous) {
-        if (info.parent !== parent || !deepEqual(info.options, options)) continue
-        id = candidate
-        previous.delete(candidate)
-        break
+    const assign = (entries: EntryOptions[], parent: string | null) => {
+      for (const options of entries) {
+        if (!options.id) {
+          let id: string | undefined
+          for (const [candidate, info] of previous) {
+            if (info.parent !== parent || used.has(candidate) || !deepEqual(info.options, options)) continue
+            id = candidate
+            previous.delete(candidate)
+            break
+          }
+          if (!id) {
+            do {
+              id = Math.random().toString(16).slice(2, 10)
+            } while (used.has(id) || this.store[id])
+          }
+          used.add(id)
+          this.anonymous.set(id, { parent, options: structuredClone(options) })
+          const rest = { ...options }
+          for (const key of Object.keys(options)) delete options[key]
+          Object.assign(options, { id }, rest)
+        }
+        if (options.group && Array.isArray(options.config)) assign(options.config, options.id)
       }
-      if (!id) {
-        do {
-          id = Math.random().toString(16).slice(2, 10)
-        } while (used.has(id) || this.store[id])
-      }
-      used.add(id)
-      this.anonymous.set(id, { parent, options: structuredClone(options) })
-      const rest = { ...options }
-      for (const key of Object.keys(options)) delete options[key]
-      Object.assign(options, { id }, rest)
     }
+    assign(data, null)
   }
 
   private _scheduleApply() {
