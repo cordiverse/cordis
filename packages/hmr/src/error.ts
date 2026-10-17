@@ -4,7 +4,10 @@ import { codeFrameColumns } from '@babel/code-frame'
 import { readFileSync } from 'node:fs'
 
 function isBuildFailure(e: any): e is BuildFailure {
-  return Array.isArray(e?.errors) && e.errors.every((error: any) => error.text)
+  // an empty `errors` array is not a build failure: `[].every()` is vacuously true,
+  // so `handleError` would log nothing, and a member without `text` throws when read
+  return Array.isArray(e?.errors) && e.errors.length > 0
+    && e.errors.every((error: any) => error?.text)
 }
 
 export function handleError(ctx: Context, e: any) {
