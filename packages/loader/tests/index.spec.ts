@@ -21,6 +21,62 @@ describe('Loader: disabled js expression', () => {
     await sleep()
     expect(loader.store[id2].disabled).to.equal(true)
   })
+
+  it('treats a throwing expression as disabled and logs the error', async () => {
+    const root = new Context()
+    await root.plugin(MockLoader)
+    const loader = root.loader as any
+    loader.mock('plug', () => {})
+
+    const errors = () => root.logger.buffer.filter((message: any) => message.type === 'error')
+    // the buffer is shared, so sample before reading `disabled`, which itself reports
+    const before = errors().length
+    const id = await loader.create({ id: 'c', name: 'plug', disabled: { __jsExpr: 'thisIsUndefined.foo' } })
+    await sleep()
+    const raised = errors().slice(before)
+    // creation reads `disabled` once, so the failure is reported once
+    expect(raised.length).to.equal(1)
+    expect(raised[0].args[0]).toBeInstanceOf(ReferenceError)
+    // and every further read reports again, so the entry is read, not cached
+    expect(loader.store[id].disabled).to.equal(true)
+    expect(errors().slice(before)).to.have.length(2)
+  })
+
+  // the expression can start throwing after load, e.g. when its service goes away;
+  // the disposal handler reads `disabled` too, where an escaping error strands the entry
+  it('stays consistent when a loaded entry starts throwing on disposal', async () => {
+    const root = new Context()
+    await root.plugin(MockLoader)
+    const loader = root.loader as any
+    loader.mock('plug', () => {})
+
+    const state = { boom: false }
+    ;(globalThis as any).__cordisDisabledProbe = () => {
+      if (state.boom) throw new Error('probe')
+      return false
+    }
+
+    const id = await loader.create({
+      id: 'd',
+      name: 'plug',
+      disabled: { __jsExpr: 'globalThis.__cordisDisabledProbe()' },
+    })
+    await sleep()
+    const entry = loader.store[id]
+    expect(entry.fiber).to.not.be.undefined
+    expect(entry.disabled).to.equal(false)
+
+    state.boom = true
+    loader.changes = []
+    await entry.fiber.dispose()
+    await sleep()
+
+    // the entry now reads as disabled, and nothing is written to the config:
+    // the expression itself keeps disabling it, so there is nothing to persist
+    expect(entry.disabled).to.equal(true)
+    expect(loader.changes).to.have.length(0)
+    delete (globalThis as any).__cordisDisabledProbe
+  })
 })
 
 describe('Loader: basic support', () => {
