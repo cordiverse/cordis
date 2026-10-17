@@ -88,10 +88,12 @@ export class Loader extends EntryTree {
 
     ctx.on('internal/commit', (fiber, config) => {
       if (!fiber.entry || fiber.parent.fiber?.entry === fiber.entry) return
+      // `internal/commit` fires before interpolation, so `config` is the source
+      // config: expressions ride on as written and never get statically baked.
       const unparse = fiber.runtime?.Config?.['simplify']
       const { entry } = fiber
       const legacy = { ...entry.options }
-      entry.options.config = unparse ? unparse(config) : config
+      entry.options.config = unparse ? unparse.call(fiber.runtime!.Config, config) : config
       entry.parent.tree.commit({ id: entry.options.id, group: entry.parent, options: entry.options, legacy })
     })
 
