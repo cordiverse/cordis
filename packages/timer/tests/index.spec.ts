@@ -339,6 +339,25 @@ describe('ctx.timer', () => {
       throttled()
       assert.strictEqual(callback.mock.calls.length, 0)
     }))
+
+    it('keeps a trailing call scheduled by the callback', withContext(async (ctx) => {
+      const callback = mock.fn()
+      let throttled!: () => void
+      const fiber = await ctx.plugin({
+        inject: ['timer'],
+        apply: (ctx) => {
+          throttled = ctx.throttle(() => {
+            callback()
+            throttled()
+          }, 1000)
+        },
+      })
+      throttled()
+      assert.strictEqual(callback.mock.calls.length, 1)
+      await fiber.dispose()
+      await vi.advanceTimersByTimeAsync(2000)
+      assert.strictEqual(callback.mock.calls.length, 1)
+    }))
   })
 
   describe('ctx.debounce()', () => {
