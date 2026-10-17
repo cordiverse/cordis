@@ -130,6 +130,48 @@ describe('Loader: live entry rebind', () => {
     expect('disabled' in loader.store[id]!.options).to.equal(false)
   })
 
+  it.each(['import', 'failed import', 'context patch'])('uses the latest name during a pending %s', async (stage) => {
+    const root = new Context()
+    await root.plugin(MockLoader)
+    const loader = root.loader as MockLoader
+    loader.mock('a', () => {})
+    const b = loader.mock('b', () => {})
+    const c = loader.mock('c', () => {})
+    await loader.read([{ id: 'x', name: 'a' }])
+
+    const entered = Promise.withResolvers<void>()
+    const gate = Promise.withResolvers<void>()
+    const load = loader.import
+    loader.import = async (name) => {
+      if (name === 'b' && stage !== 'context patch') {
+        entered.resolve()
+        await gate.promise
+        if (stage === 'failed import') throw new Error('superseded import')
+      }
+      return load.call(loader, name)
+    }
+    root.on('loader/patch-context', async (entry, next) => {
+      await next()
+      if (entry.options.name !== 'b' || stage !== 'context patch') return
+      entered.resolve()
+      await gate.promise
+    })
+
+    const first = loader.root.update([{ id: 'x', name: 'b' }])
+    await entered.promise
+    const second = loader.root.update([{ id: 'x', name: 'c' }])
+    expect(loader.getTasks().length).to.be.greaterThan(0)
+    gate.resolve()
+    await Promise.all([first, second])
+    await loader.await()
+
+    expect(loader.store.x!.options.name).to.equal('c')
+    expect(b.mock.calls).to.have.length(0)
+    expect(c.mock.calls).to.have.length(1)
+    expect(loader.expectFiber('x').runtime!.callback).to.equal(c)
+    expect('disabled' in loader.store.x!.options).to.equal(false)
+  })
+
   it('does not apply a fiber removed while rebind is disposing', async () => {
     const root = new Context()
     root.provide('foo', { n: 1 })

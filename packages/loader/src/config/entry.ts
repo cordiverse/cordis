@@ -173,18 +173,28 @@ export class Entry {
   }
 
   private async _init() {
-    let exports: any
-    try {
-      exports = await this.parent.tree.import(this.options.name, this.getOuterStack)
-    } catch (error) {
-      this.ctx.logger.error(error)
+    while (true) {
+      if (this.disabled || this.fiber?.uid) return
+      if (this.parent.tree.store[this.options.id] !== this) return
+      const name = this.options.name
+      let exports: any
+      try {
+        exports = await this.parent.tree.import(name, this.getOuterStack)
+      } catch (error) {
+        if (this.options.name !== name) continue
+        this.ctx.logger.error(error)
+        return
+      }
+      // Updates joining this task must not apply a superseded import.
+      if (this.options.name !== name) continue
+      const plugin = this.loader.unwrapExports(exports)
+      await this._patchContext([])
+      if (this.disabled || this.fiber?.uid) return
+      if (this.parent.tree.store[this.options.id] !== this) return
+      if (this.options.name !== name) continue
+      this.loader.showLog(this, 'apply')
+      this.fiber = this.ctx.registry.plugin(plugin, this.options.config, this.getOuterStack)
       return
     }
-    const plugin = this.loader.unwrapExports(exports)
-    await this._patchContext([])
-    if (this.disabled || this.fiber?.uid) return
-    if (this.parent.tree.store[this.options.id] !== this) return
-    this.loader.showLog(this, 'apply')
-    this.fiber = this.ctx.registry.plugin(plugin, this.options.config, this.getOuterStack)
   }
 }
