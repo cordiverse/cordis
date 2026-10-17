@@ -70,6 +70,10 @@ export function applyPatches(data: EntryOptions[], patches: PatchOptions[] | und
           warn('patch insert: entry %C not found', id)
           continue
         }
+        if (name && name !== target.name) {
+          warn('patch insert: name mismatch for %C (expected %C, got %C), skipping', id, target.name, name)
+          continue
+        }
         if (!target.group) {
           warn('patch insert: entry %C is not a group', id)
           continue
