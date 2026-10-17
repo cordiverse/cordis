@@ -216,24 +216,33 @@ export class ReflectService {
       }
       this.store[key] = impl
       this.ctx.fiber.provisions.add(impl)
-      if (this.ctx.fiber.state === FiberState.ACTIVE) {
-        this.notify([name])
-      }
-      return async () => {
+      const dispose = async () => {
         if (this.store[impl.isolate] === impl) delete this.store[impl.isolate]
-        this.ctx.isolate(name, impl.isolate).reflect.notify([name])
-        // Retired bindings cannot gain new dependents. Wait only for their
-        // cleanup, even if a fiber has left the registry or starts a new load.
-        // Yield even without direct dependents so child cleanup can still
-        // access the inherited service before its provision is removed.
-        await new Promise<void>((resolve) => {
-          impl.release = resolve
-          if (!impl.dependents.size) resolve()
-        })
-        impl.release = undefined
-        // ensure self access before dependencies cleanup
-        this.ctx.fiber.provisions.delete(impl)
+        try {
+          this.ctx.isolate(name, impl.isolate).reflect.notify([name])
+        } finally {
+          // Retired bindings cannot gain new dependents. Wait only for their
+          // cleanup, even if a fiber has left the registry or starts a new load.
+          // Yield even without direct dependents so child cleanup can still
+          // access the inherited service before its provision is removed.
+          await new Promise<void>((resolve) => {
+            impl.release = resolve
+            if (!impl.dependents.size) resolve()
+          })
+          impl.release = undefined
+          // ensure self access before dependencies cleanup
+          this.ctx.fiber.provisions.delete(impl)
+        }
       }
+      if (this.ctx.fiber.state === FiberState.ACTIVE) {
+        try {
+          this.notify([name])
+        } catch (error) {
+          dispose().catch((reason) => this.ctx.logger.error(reason))
+          throw error
+        }
+      }
+      return dispose
     }, `ctx.provide(${JSON.stringify(name)})`)
   }
 
