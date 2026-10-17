@@ -380,17 +380,18 @@ export class Fiber {
     this._store[name] = impl
   }
 
-  _refresh() {
+  private _getEpoch() {
     let epoch = `${this._revision}`
     for (const name of Object.keys(this.inject)) {
       const impl = this._store[name]
-      if (!impl) {
-        epoch = INACTIVE
-        break
-      }
+      if (!impl) return INACTIVE
       epoch += ':' + impl.uid
     }
-    this._setEpoch(epoch)
+    return epoch
+  }
+
+  _refresh() {
+    this._setEpoch(this._getEpoch())
   }
 
   private _setEpoch(epoch: string) {
@@ -498,7 +499,18 @@ export class Fiber {
     const fiber = this.ctx.fiber
     fiber.assertActive()
     const loaded = fiber._runner.epoch !== INACTIVE
-    const resolved = loaded ? fiber._resolve(config) : undefined
+    const ready = loaded || fiber._getEpoch() !== INACTIVE
+    // Inactive loads may still own a committed view during cleanup.
+    const committed = fiber.committed
+    const peeked = ready && !loaded ? { ...fiber._store } : undefined
+    if (peeked) fiber.committed = peeked
+    let resolved: any
+    try {
+      resolved = ready ? fiber._resolve(config) : undefined
+    } finally {
+      // Resolution can start a new load; restore only our temporary view.
+      if (peeked && fiber.committed === peeked) fiber.committed = committed
+    }
     if (!noSave) fiber.context.emit('internal/commit', fiber, config)
     fiber.config = config
     fiber._error = undefined

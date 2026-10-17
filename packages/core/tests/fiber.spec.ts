@@ -459,4 +459,114 @@ describe('Fiber: config validation', () => {
       { ok: true, extra: 1, resolved: true },
     ])
   })
+
+  it('validate a failed plugin whose dependency is present', async () => {
+    const root = new Context()
+    ;(root.logger as any).error = mock.fn()
+    const apply = mock.fn(() => { throw new Error('boom') })
+    root.provide('foo')
+    const fiber = root.plugin({ inject: ['foo'], apply, Config }, { ok: true })
+    await fiber.await().catch(() => {})
+    expect(fiber.state).to.equal(FiberState.FAILED)
+
+    const commit = mock.fn()
+    root.on('internal/commit', commit)
+    expect(() => fiber.update({ ok: false })).toThrow('invalid config')
+    expect(fiber.config).to.deep.equal({ ok: true })
+    expect(commit.mock.calls).to.have.length(0)
+    expect(fiber.state).to.equal(FiberState.FAILED)
+  })
+
+  it('defer validation after a failed plugin loses its dependency', async () => {
+    const root = new Context()
+    ;(root.logger as any).error = mock.fn()
+    const apply = mock.fn(() => { throw new Error('boom') })
+    const dispose = root.provide('foo')
+    const fiber = root.plugin({ inject: ['foo'], apply, Config }, { ok: true })
+    await fiber.await().catch(() => {})
+    expect(fiber.state).to.equal(FiberState.FAILED)
+
+    await dispose()
+
+    const commit = mock.fn()
+    root.on('internal/commit', commit)
+    const pending = fiber.update({ ok: false })
+    expect(commit.mock.calls).to.have.length(1)
+    expect(fiber.config).to.deep.equal({ ok: false })
+    await pending
+  })
+
+  it('validate recovery against new dependencies while failed cleanup is pending', async () => {
+    const root = new Context()
+    ;(root.logger as any).error = mock.fn()
+    const dispose = root.provide('foo', 1)
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => release = resolve)
+    const cleaned: number[] = []
+    const applied: number[] = []
+    const fiber = root.plugin({
+      inject: ['foo'],
+      apply(ctx: Context, config: { value: number }) {
+        applied.push(config.value)
+        if (config.value !== 1) return
+        ctx.effect(() => async () => {
+          cleaned.push(ctx.foo)
+          await gate
+          cleaned.push(ctx.foo)
+        })
+        throw new Error('boom')
+      },
+    }, { value: 1 })
+    root.on('internal/config', (target, next) => {
+      const config = next()
+      if (target === fiber.ctx.fiber && config.value !== target.ctx.foo) {
+        throw new Error('invalid config')
+      }
+      return config
+    })
+    await sleep()
+    expect(fiber.state).to.equal(FiberState.UNLOADING)
+
+    const retiring = dispose()
+    root.provide('foo', 2)
+    let pending: ReturnType<typeof fiber.update>
+    try {
+      pending = fiber.update({ value: 2 })
+    } finally {
+      release()
+    }
+    await Promise.all([pending, retiring])
+    expect(fiber.state).to.equal(FiberState.ACTIVE)
+    expect(applied).to.deep.equal([1, 2])
+    expect(cleaned).to.deep.equal([1, 1])
+  })
+
+  it('preserve a recovery started reentrantly during rejected validation', async () => {
+    const root = new Context()
+    ;(root.logger as any).error = mock.fn()
+    const dispose = root.provide('foo', 1)
+    let fail = true
+    const fiber = root.inject(['foo'], (ctx) => {
+      if (fail) throw new Error('boom')
+      expect(ctx.foo).to.equal(1)
+    })
+    await fiber.await().catch(() => {})
+    fail = false
+
+    let recovery = Promise.resolve()
+    root.on('internal/config', (target, next) => {
+      const config = next()
+      if (target === fiber.ctx.fiber && !config.ok) {
+        recovery = Promise.resolve(fiber.update({ ok: true }))
+        throw new Error('invalid config')
+      }
+      return config
+    })
+    expect(() => fiber.update({ ok: false })).toThrow('invalid config')
+    await recovery
+    expect(fiber.config).to.deep.equal({ ok: true })
+    expect(fiber.state).to.equal(FiberState.ACTIVE)
+    await dispose()
+    expect(fiber.state).to.equal(FiberState.PENDING)
+  })
 })
