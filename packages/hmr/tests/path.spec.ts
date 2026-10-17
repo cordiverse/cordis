@@ -2,14 +2,18 @@ import { Context, Fiber } from 'cordis'
 import Loader from '@cordisjs/plugin-loader'
 import Timer from '@cordisjs/plugin-timer'
 import { once } from 'node:events'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join, resolve, sep } from 'node:path'
 import { afterAll, afterEach, describe, expect, it } from 'vitest'
 import { fileURLToPath } from 'node:url'
 import Hmr from '../src/index.ts'
 
 const testDir = dirname(fileURLToPath(import.meta.url))
-const fixture = resolve(testDir, '__ignored__')
+// Outside `testDir`: `index.spec.ts` watches that directory with `root: ['.']`,
+// so chokidar realpaths this fixture while it is being removed.
+const tempDir = mkdtempSync(join(tmpdir(), 'cordis-hmr-'))
+const fixture = join(tempDir, '__ignored__')
 
 describe('Hmr path', () => {
   let fiber: Fiber<Context> | undefined
@@ -20,7 +24,7 @@ describe('Hmr path', () => {
   })
 
   afterAll(() => {
-    rmSync(fixture, { recursive: true, force: true })
+    rmSync(tempDir, { recursive: true, force: true })
   })
 
   async function createContext(config: Partial<Hmr.Config>) {
@@ -67,7 +71,7 @@ describe('Hmr path', () => {
         writeFileSync(resolve(fixture, file), '')
       }
 
-      const ctx = await createContext({ root: ['__ignored__'] })
+      const ctx = await createContext({ base: tempDir + sep, root: ['__ignored__'] })
       const watcher = ctx.hmr['watcher']
       await once(watcher, 'ready')
 
