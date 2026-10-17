@@ -58,10 +58,15 @@ function waitForEvent(ctx: Context, event: string, timeout = 8000): Promise<any[
   })
 }
 
-async function createContext(configFile: string): Promise<{ ctx: Context; fiber: Fiber<Context> }> {
+async function createContext(configFile: string, fresh: string[] = []): Promise<{ ctx: Context; fiber: Fiber<Context> }> {
   const ctx = new Context()
   await ctx.plugin(Logger)
   const fiber = await ctx.plugin(Loader)
+  // Disposing a context does not evict fixture modules from Node's shared cache.
+  const cache = ctx.loader.internal?.loadCache
+  for (const filename of fresh) {
+    if (cache) Map.prototype.delete.call(cache, pathToFileURL(resolve(testDir, filename)).href)
+  }
   await ctx.loader.create({
     name: '@cordisjs/plugin-include',
     config: {
@@ -1049,21 +1054,20 @@ export function apply(ctx: Context) {
     let fiber: Fiber<Context>
     const drainDep = backupFile('drain-dep.ts')
 
-    beforeAll(async () => {
+    beforeEach(async () => {
       drainDep.restore()
-      const result = await createContext('cordis-drain.yml')
+      const result = await createContext('cordis-drain.yml', ['plugin-slow.ts', 'plugin-fast.ts', 'drain-dep.ts'])
       ctx = result.ctx
       fiber = result.fiber
     }, 10000)
 
     afterEach(async () => {
-      drainDep.restore()
-      await new Promise(r => setTimeout(r, SETTLE_MS + 500))
-    })
-
-    afterAll(async () => {
-      fiber?.dispose()
-      await new Promise(r => setTimeout(r, 500))
+      try {
+        await fiber?.dispose()
+      } finally {
+        // Restore only after the watcher and the exclusive resource have closed.
+        drainDep.restore()
+      }
     })
 
     it('should load both plugins', async () => {

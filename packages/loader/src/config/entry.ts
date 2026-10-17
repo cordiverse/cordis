@@ -127,6 +127,19 @@ export class Entry {
         .keys({ ...this.options, ...legacy })
         .filter(key => !deepEqual(this.options[key], legacy[key]))
       if (!diff.length && !force) return
+      if (diff.includes('name') || diff.includes('inject')) {
+        this.context.emit('loader/partial-dispose', this, legacy, true)
+        const fiber = this.fiber!
+        this.fiber = undefined
+        // visible to getTasks() and to an update that arrives before dispose settles
+        this._initTask = fiber.dispose().then(() => {
+          if (this.disabled || this.fiber?.uid) return
+          if (this.parent.tree.store[this.options.id] !== this) return
+          return this._init()
+        })
+        await this.init()
+        return
+      }
       this.context.emit('loader/partial-dispose', this, legacy, true)
       await this._patchContext(diff)
     } else {
@@ -145,10 +158,12 @@ export class Entry {
   }
 
   async init() {
+    const task = this._initTask ??= this._init()
     try {
-      await (this._initTask ??= this._init())
+      await task
     } finally {
-      this._initTask = undefined
+      // a rebind started while this task was settling owns the slot now
+      if (this._initTask === task) this._initTask = undefined
     }
     // failures are already reported by the fiber; we only need it to settle
     this.fiber?.await().catch(() => {}).finally(() => {
@@ -158,16 +173,28 @@ export class Entry {
   }
 
   private async _init() {
-    let exports: any
-    try {
-      exports = await this.parent.tree.import(this.options.name, this.getOuterStack)
-    } catch (error) {
-      this.ctx.logger.error(error)
+    while (true) {
+      if (this.disabled || this.fiber?.uid) return
+      if (this.parent.tree.store[this.options.id] !== this) return
+      const name = this.options.name
+      let exports: any
+      try {
+        exports = await this.parent.tree.import(name, this.getOuterStack)
+      } catch (error) {
+        if (this.options.name !== name) continue
+        this.ctx.logger.error(error)
+        return
+      }
+      // Updates joining this task must not apply a superseded import.
+      if (this.options.name !== name) continue
+      const plugin = this.loader.unwrapExports(exports)
+      await this._patchContext([])
+      if (this.disabled || this.fiber?.uid) return
+      if (this.parent.tree.store[this.options.id] !== this) return
+      if (this.options.name !== name) continue
+      this.loader.showLog(this, 'apply')
+      this.fiber = this.ctx.registry.plugin(plugin, this.options.config, this.getOuterStack)
       return
     }
-    const plugin = this.loader.unwrapExports(exports)
-    await this._patchContext([])
-    this.loader.showLog(this, 'apply')
-    this.fiber = this.ctx.registry.plugin(plugin, this.options.config, this.getOuterStack)
   }
 }
