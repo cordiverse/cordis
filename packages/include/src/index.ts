@@ -8,7 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Document, isAlias, isMap, isNode, isScalar, isSeq, parseDocument, Range, Scalar, ScalarTag, SchemaOptions, stringify, YAMLError } from 'yaml'
 import { stringifyString } from 'yaml/util'
 import { applyJournal, flatten, Journal, merge, reconcile, record } from './journal.ts'
-import { applyPatches, ensureIds, ensureInsertIds, PatchOptions, routeJournal } from './patch.ts'
+import { applyPatches, ensureIds, ensureInsertIds, PatchIndex, PatchOptions, routeJournal } from './patch.ts'
 import type {} from '@cordisjs/plugin-hmr'
 
 // A Windows drive-letter path, e.g. `C:\app\cordis.yml` or `C:/app/cordis.yml`.
@@ -41,8 +41,6 @@ type ConfigStage = 'read' | 'parse' | 'validate'
 interface Snapshot {
   content: string
   data: EntryOptions[]
-  /** Parsed on demand, for locating values in `content`. */
-  document?: Document
 }
 
 export class ConfigFileError extends Error {
@@ -137,6 +135,8 @@ export class Include extends EntryTree {
   private cache?: Snapshot
   /** Tree-side changes that have not reached the file yet. */
   private journal: Journal = new Map()
+  /** Where the entries of the applied tree come from; set alongside it. */
+  private index?: PatchIndex
   /** Ids we assigned to entries the file leaves anonymous. */
   private anonymous = new Map<string, Anonymous>()
 
@@ -294,7 +294,7 @@ export class Include extends EntryTree {
       // unknown tags are only warnings to the parser, but leave the data incomplete
       const errors: YAMLError[] = [...document.errors, ...document.warnings]
       if (errors.length) {
-        const details = errors.flatMap(error => formatIssue(error.message, this._locate(content, error.pos)))
+        const details = errors.map(error => formatIssue(error.message, this._locate(content, error.pos[0])))
         throw new ConfigFileError('parse', this.filename, undefined, details)
       }
       data = document.toJS()
@@ -311,7 +311,7 @@ export class Include extends EntryTree {
       const message = 'config file must be a top-level array'
       const range = document?.contents?.range
       if (!range) throw new ConfigFileError('validate', this.filename, new TypeError(message))
-      throw new ConfigFileError('validate', this.filename, undefined, formatIssue(message, this._locate(content, range)))
+      throw new ConfigFileError('validate', this.filename, undefined, [formatIssue(message, this._locate(content, range[0]))])
     }
 
     this._assignIds(data)
@@ -324,7 +324,7 @@ export class Include extends EntryTree {
       }
     }
 
-    this.cache = { content, data, document }
+    this.cache = { content, data }
     this._scheduleApply()
     // the file changed while tree-side changes were pending: write the merge
     if (this.journal.size) this.dirtyWrite = true
@@ -447,28 +447,29 @@ export class Include extends EntryTree {
   }
 
   getLocation(id: string, path: PropertyKey[]): SourceLocation | undefined {
-    // a pending tree-side change is not in the file yet
-    if (!this.cache || this.journal.has(id)) return
-    const patches = this.config.patches ?? []
-    const index = new PatchIndex(patches)
-    const owner = path.length ? index.key(id, String(path[0])) : index.entry(id)
+    if (!this.cache || !this.index) return
+    // a value the tree has changed no longer corresponds to anything written down
+    const record = this.journal.get(id)
+    if (record?.kind === 'remove') return
+    if (path.length && record && String(path[0]) in record.changes) return
+
+    const owner = path.length ? this.index.key(id, String(path[0])) : this.index.entry(id)
     if (owner.type === 'patch') {
       return this.ctx.fiber.entry?.getLocation(['config', 'patches', owner.index, ...path])
-    } else if (owner.type === 'insert') {
-      const prefix = findEntry(patches[owner.index].insert!, id)
+    } else if (owner.type === 'embedded') {
+      const prefix = findEntry(this.config.patches![owner.index][owner.key], id)
       if (!prefix) return
-      return this.ctx.fiber.entry?.getLocation(['config', 'patches', owner.index, 'insert', ...prefix, ...path])
+      return this.ctx.fiber.entry?.getLocation(['config', 'patches', owner.index, owner.key, ...prefix, ...path])
     }
     const prefix = findEntry(this.cache.data, id)
     if (!prefix) return
     // JSON is parsed as YAML here: only the node ranges are of interest
-    this.cache.document ??= parseDocument(this.cache.content, yamlOptions)
-    const range = seek(this.cache.document, [...prefix, ...path])
-    if (range) return this._locate(this.cache.content, range)
+    const range = seek(parseDocument(this.cache.content, yamlOptions), [...prefix, ...path])
+    if (range) return this._locate(this.cache.content, range[0])
   }
 
-  private _locate(source: string, [start, end]: readonly number[]): SourceLocation {
-    return { filename: this.filename, source, start, end }
+  private _locate(source: string, offset: number): SourceLocation {
+    return { filename: this.filename, source, offset }
   }
 
   /**
@@ -522,8 +523,9 @@ export class Include extends EntryTree {
 
   private _scheduleApply() {
     if (this._disposed || !this.cache) return
-    const { data: tree } = applyPatches(this.cache.data, this.config.patches, this.warn)
-    this._pendingTree = applyJournal(tree, this.journal, undefined, this.warn)
+    const { data, index } = applyPatches(this.cache.data, this.config.patches, this.warn)
+    this.index = index
+    this._pendingTree = applyJournal(data, this.journal, undefined, this.warn)
     this._applyTask ??= (async () => {
       try {
         while (this._pendingTree) {

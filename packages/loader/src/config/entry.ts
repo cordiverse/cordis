@@ -158,7 +158,7 @@ export class Entry {
    * the entry chain is what locates the failure.
    */
   traceValidation(error: ValidationError) {
-    const lines = error.issues.flatMap((issue) => {
+    const lines = error.issues.map((issue) => {
       const path = ValidationError.normalizePath(issue.path)
       const name = path.length ? ValidationError.formatPath(path) : undefined
       return formatIssue(issue.message, this.getLocation(['config', ...path]), name)

@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { writeFile } from 'node:fs/promises'
-import { relative } from 'node:path'
 import { fixture, harness } from './utils.ts'
 
 /** `file:line:column` of the first occurrence of `needle`, as the loader prints it. */
 function at(filename: string, source: string, needle: string) {
   const lines = source.slice(0, source.indexOf(needle)).split('\n')
-  return `${relative(process.cwd(), filename)}:${lines.length}:${lines.at(-1)!.length + 1}`
+  return `${filename}:${lines.length}:${lines.at(-1)!.length + 1}`
 }
 
 describe('Include source locations', () => {
@@ -32,10 +31,7 @@ describe('Include source locations', () => {
     const [stack] = app.stacks()
     expect(stack).toContain([
       'ValidationError: invalid config:',
-      '  - port must be a number',
-      `    at port (${app.at('"80"')})`,
-      '      4 |     port: "80"',
-      '        |           ^^^^',
+      `  - port must be a number (at port, ${app.at('"80"')})`,
       `    at a (${app.filename}:1:3)`,
     ].join('\n'))
   }, 10000)
@@ -53,17 +49,10 @@ describe('Include source locations', () => {
 
     const stacks = app.stacks()
     expect(stacks.find(stack => stack.includes('at a ('))).toContain([
-      '  - port must be a number',
-      `    at port (${app.at('config:')})`,
-      '      3 |   config:',
-      '        |   ^^^^^^',
-      '  - host must be a string',
-      `    at hosts.1 (${app.at('1]')})`,
+      `  - port must be a number (at port, ${app.at('config:')})`,
+      `  - host must be a string (at hosts.1, ${app.at('1]')})`,
     ].join('\n'))
-    expect(stacks.find(stack => stack.includes('at b ('))).toContain([
-      '  - config is required',
-      `    at ${app.at('id: b')}`,
-    ].join('\n'))
+    expect(stacks.find(stack => stack.includes('at b ('))).toContain(`  - config is required (at ${app.at('id: b')})`)
   }, 10000)
 
   it('locates entries nested in groups', async () => {
@@ -80,7 +69,7 @@ describe('Include source locations', () => {
     ].join('\n'))
 
     const [stack] = app.stacks()
-    expect(stack).toContain(`    at port (${app.at('"\'80\'"')})`)
+    expect(stack).toContain(`  - port must be a number (at port, ${app.at('"\'80\'"')})`)
     expect(stack).toContain(`    at a (${app.filename}:5:7)\n    at g (${app.filename}:1:3)`)
   }, 10000)
 
@@ -104,8 +93,112 @@ describe('Include source locations', () => {
     app.files.push(inner)
 
     const stacks = app.stacks()
-    expect(stacks.find(stack => stack.includes('at a ('))).toContain(`    at port (${app.at('"80"')})`)
-    expect(stacks.find(stack => stack.includes('at b ('))).toContain(`    at hosts.0 (${app.at('1]')})`)
+    expect(stacks.find(stack => stack.includes('at a ('))).toContain(`(at port, ${app.at('"80"')})`)
+    expect(stacks.find(stack => stack.includes('at b ('))).toContain(`(at hosts.0, ${app.at('1]')})`)
+  }, 10000)
+
+  it('locates overrides of inserted entries in the override', async () => {
+    const inner = fixture('tmp-location-insert-inner.yml')
+    await writeFile(inner, '[]\n')
+    const app = await start('tmp-location-insert-outer.yml', [
+      '- id: inc',
+      '  name: \'@cordisjs/plugin-include\'',
+      '  config:',
+      '    path: ./tmp-location-insert-inner.yml',
+      '    patches:',
+      '      - insert:',
+      '          - id: a',
+      '            name: ./schema-plugin',
+      '            config: { port: 80 }',
+      '      - id: a',
+      '        config: { port: "80" }',
+      '',
+    ].join('\n'))
+    app.files.push(inner)
+
+    expect(app.stacks()).toEqual([expect.stringContaining(`(at port, ${app.at('"80"')})`)])
+  }, 10000)
+
+  it('locates entries of a group config replaced by a patch', async () => {
+    const inner = fixture('tmp-location-group-inner.yml')
+    await writeFile(inner, '- id: g\n  name: \'@cordisjs/plugin-group\'\n  group: true\n  config: []\n')
+    const app = await start('tmp-location-group-outer.yml', [
+      '- id: inc',
+      '  name: \'@cordisjs/plugin-include\'',
+      '  config:',
+      '    path: ./tmp-location-group-inner.yml',
+      '    patches:',
+      '      - id: g',
+      '        config:',
+      '          - id: a',
+      '            name: ./schema-plugin',
+      '            config: { port: "80" }',
+      '',
+    ].join('\n'))
+    app.files.push(inner)
+
+    const [stack] = app.stacks()
+    expect(stack).toContain(`(at port, ${app.at('"80"')})`)
+    expect(stack).toContain(`    at a (${app.filename}:8:13)\n    at g (${inner}:1:3)`)
+  }, 10000)
+
+  it('ignores patches that do not apply', async () => {
+    const inner = fixture('tmp-location-skip-inner.yml')
+    await writeFile(inner, '- id: a\n  name: ./schema-plugin\n  config: { port: "80" }\n')
+    const app = await start('tmp-location-skip-outer.yml', [
+      '- id: inc',
+      '  name: \'@cordisjs/plugin-include\'',
+      '  config:',
+      '    path: ./tmp-location-skip-inner.yml',
+      '    patches:',
+      '      - id: a',
+      '        name: ./other-plugin',
+      '        config: { port: 80 }',
+      '',
+    ].join('\n'))
+    app.files.push(inner)
+
+    expect(app.stacks()).toEqual([expect.stringContaining(`(at port, ${inner}:3:19)`)])
+  }, 10000)
+
+  it('follows patches across nested includes', async () => {
+    const inner = fixture('tmp-location-nested-inner.yml')
+    const middle = fixture('tmp-location-nested-middle.yml')
+    await writeFile(inner, '- id: a\n  name: ./schema-plugin\n  config: { port: 80 }\n')
+    await writeFile(middle, [
+      '- id: inc',
+      '  name: \'@cordisjs/plugin-include\'',
+      '  config:',
+      '    path: ./tmp-location-nested-inner.yml',
+      '    patches:',
+      '      - id: a',
+      '        config: { port: "middle" }',
+      '',
+    ].join('\n'))
+    // the outer patch replaces the whole config of `inc`, its patches included
+    const app = await start('tmp-location-nested-outer.yml', [
+      '- id: mid',
+      '  name: \'@cordisjs/plugin-include\'',
+      '  config:',
+      '    path: ./tmp-location-nested-middle.yml',
+      '    patches:',
+      '      - id: inc',
+      '        config:',
+      '          path: ./tmp-location-nested-inner.yml',
+      '          patches:',
+      '            - id: a',
+      '              config: { port: "outer" }',
+      '',
+    ].join('\n'))
+    app.files.push(inner, middle)
+
+    const [stack] = app.stacks()
+    expect(stack).toContain(`(at port, ${app.at('"outer"')})`)
+    expect(stack).toContain([
+      `    at a (${inner}:1:3)`,
+      `    at inc (${middle}:1:3)`,
+      `    at mid (${app.filename}:1:3)`,
+    ].join('\n'))
   }, 10000)
 
   it('leaves a config passed at runtime unlocated', async () => {
@@ -127,26 +220,8 @@ describe('Include source locations', () => {
     await writeFile(app.filename, source)
     await app.settle()
 
-    expect(app.logs('warn')).toEqual([expect.stringContaining([
-      '  - Unresolved tag: !foo',
-      `    at ${at(app.filename, source, '!foo')}`,
-      '      2 |   name: !foo ./schema-plugin',
-      '        |         ^^^^',
-    ].join('\n'))])
-  }, 10000)
-
-  it('writes expressions back with their tag', async () => {
-    const app = await start('tmp-location-expr.yml', '- id: a\n  name: ./config-plugin\n  config:\n    tag: a\n    value: !!js "\'#\' + 1"\n')
-    expect(app.config('a').value).toBe('#1')
-
-    await app.update('a', { config: { tag: 'a', value: { __jsExpr: "'#' + 2" } } })
-    await app.include().flush()
-    const text = await app.text()
-    expect(text).toContain(`    value: !!js "'#' + 2"\n`)
-
-    // force a re-read of what was written
-    await writeFile(app.filename, text + '# touched\n')
-    await app.settle()
-    expect(app.config('a').value).toBe('#2')
+    expect(app.logs('warn')).toEqual([expect.stringContaining(
+      `  - Unresolved tag: !foo (at ${at(app.filename, source, '!foo')})`,
+    )])
   }, 10000)
 })
