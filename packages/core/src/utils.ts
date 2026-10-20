@@ -18,6 +18,13 @@ export class DisposableList<T extends WeakKey> {
     return () => this.map.delete(sn)
   }
 
+  unshift(value: T) {
+    const sn = ++this.sn
+    this.map = new Map([[sn, value], ...this.map])
+    this.weak.set(value, sn)
+    return () => this.map.delete(sn)
+  }
+
   delete(value: T) {
     const sn = this.weak.get(value)
     if (!sn) return false
