@@ -1,0 +1,10 @@
+- id: provider
+  name: ./service-plugin
+  config:
+    tag: p
+- id: consumer
+  name: ./consumer-plugin
+  inject:
+    service:
+      tag: !!js env.tag
+  disabled: !!js service.tag === 'off'

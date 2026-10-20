@@ -1,24 +1,15 @@
 import { Context } from 'cordis'
 import { Dict } from 'cosmokit'
 import { Entry } from './entry.ts'
+import { swap } from './utils.ts'
 
 declare module './entry.ts' {
   interface EntryOptions {
-    intercept?: Dict | null
     isolate?: Dict<true | string> | null
   }
 
   interface Entry {
     realm: LocalRealm
-  }
-}
-
-function swap<T extends {}>(target: T, source?: T | null) {
-  for (const key of Reflect.ownKeys(target)) {
-    Reflect.deleteProperty(target, key)
-  }
-  for (const key of Reflect.ownKeys(source || {})) {
-    Reflect.defineProperty(target, key, Reflect.getOwnPropertyDescriptor(source!, key)!)
   }
 }
 
@@ -120,7 +111,9 @@ export default function isolate(ctx: Context) {
     Object.setPrototypeOf(entry.ctx[Context.isolate], entry.parent.ctx[Context.isolate])
     Object.setPrototypeOf(entry.ctx[Context.intercept], entry.parent.ctx[Context.intercept])
     swap(entry.ctx[Context.isolate], newMap)
-    swap(entry.ctx[Context.intercept], entry.options.intercept)
+    // the entry's own `intercept`, evaluated in its injection scope when it
+    // holds expressions, so that the swap keeps the resolved table
+    swap(entry.ctx[Context.intercept], entry.intercept ?? entry.options.intercept)
 
     // step 4: reload fiber
     await next()

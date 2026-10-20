@@ -1,4 +1,4 @@
-import { Context, Fiber, FiberState, Inject, Service, ValidationError } from 'cordis'
+import { Context, Fiber, FiberState, Service, ValidationError } from 'cordis'
 import { Awaitable, defineProperty, isNullable } from 'cosmokit'
 import { ModuleLoader } from './internal.ts'
 import { Entry, EntryOptions } from './config/entry.ts'
@@ -78,7 +78,7 @@ export class Loader extends EntryTree {
     // failures can be traced to the config source. A config passed in at
     // runtime is not written anywhere yet, so its failures are left as is.
     ctx.on('internal/config', (fiber, next) => {
-      if (!fiber.entry || fiber.parent.fiber?.entry === fiber.entry) return next()
+      if (!fiber.entry || (fiber.parent.fiber?.entry === fiber.entry && fiber.parent.fiber?.uid !== fiber.entry.gate?.uid)) return next()
       try {
         return next()
       } catch (error) {
@@ -95,7 +95,7 @@ export class Loader extends EntryTree {
       const config = next()
       // nested plugins inherit `entry` through the context prototype chain;
       // only the entry's own fiber carries the entry config
-      if (!fiber.entry || fiber.parent.fiber?.entry === fiber.entry) return config
+      if (!fiber.entry || (fiber.parent.fiber?.entry === fiber.entry && fiber.parent.fiber?.uid !== fiber.entry.gate?.uid)) return config
       sources.set(fiber, config)
       // a group's config is the entry list itself, which the loader mutates in
       // place and identifies by reference
@@ -104,7 +104,7 @@ export class Loader extends EntryTree {
     })
 
     ctx.on('internal/commit', (fiber, config) => {
-      if (!fiber.entry || fiber.parent.fiber?.entry === fiber.entry) return
+      if (!fiber.entry || (fiber.parent.fiber?.entry === fiber.entry && fiber.parent.fiber?.uid !== fiber.entry.gate?.uid)) return
       const unparse = fiber.runtime?.Config?.['simplify']
       const { entry } = fiber
       const legacy = { ...entry.options }
@@ -113,7 +113,7 @@ export class Loader extends EntryTree {
     })
 
     ctx.on('internal/update', function (config, next) {
-      if (!this.entry || this.parent.fiber?.entry === this.entry) return next()
+      if (!this.entry || (this.parent.fiber?.entry === this.entry && this.parent.fiber?.uid !== this.entry.gate?.uid)) return next()
       self.showLog(this.entry, 'reload')
       return next()
     }, { global: true })
@@ -122,8 +122,8 @@ export class Loader extends EntryTree {
       // 1. set `fiber.entry`
       if (fiber.parent[Entry.key] && !fiber.entry) {
         fiber.entry = fiber.parent[Entry.key]
-        // FIXME merge config
-        Inject.resolve(fiber.entry!.options.inject, fiber.inject)
+        // `entry.inject` holds the values already evaluated in the parent scope
+        Object.assign(fiber.inject, fiber.entry!.inject)
       }
 
       // 2. handle self-dispose
@@ -136,7 +136,7 @@ export class Loader extends EntryTree {
       if (!fiber.entry) return
 
       // case 3: fiber is a child plugin under the entry (not the entry's root fiber)
-      if (fiber.parent.fiber?.entry === fiber.entry) return
+      if (fiber.parent.fiber?.entry === fiber.entry && fiber.parent.fiber?.uid !== fiber.entry.gate?.uid) return
 
       // case 4: fiber is disposed on behalf of plugin deletion (such as plugin hmr)
       // self-dispose: ctx.fiber.dispose() -> fiber / runtime dispose -> delete(plugin)
@@ -157,12 +157,20 @@ export class Loader extends EntryTree {
       // unregisters it before disposing the fiber)
       if (entry.parent.tree.store[entry.options.id] !== entry) return
 
-      // case 8: fiber is disposed by loader behavior
+      // case 8: the loader is taking the fiber down itself (rebuild, disable,
+      // removal, a dependency going away). Only a fiber that disposed itself
+      // writes the option back.
+      if (entry._disposing) return
+
+      // case 9: fiber is disposed by loader behavior
       // such as inject checker, config file update, ancestor group disable
       if (entry.disabled) return
 
       const legacy = { ...entry.options }
       entry.options.disabled = true
+      // the write-back is a verdict too: the cached one would otherwise keep
+      // reporting the entry as enabled after it disabled itself
+      entry._verdict = true
       entry.parent.tree.commit({ id: entry.options.id, group: entry.parent, options: entry.options, legacy })
     })
 

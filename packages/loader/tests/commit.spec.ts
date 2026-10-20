@@ -79,6 +79,29 @@ describe('EntryTree.commit: change reports', () => {
     expect(change.options!.config).to.deep.equal({ a: 5 })
   })
 
+  it('fiber.update from inside the plugin of a gated entry reports a config change', async () => {
+    loader.mock('bar', (ctx: Context) => ctx.provide('bar', {}))
+    await loader.create({ name: 'bar' })
+    const gated = await loader.create({
+      name: 'foo',
+      inject: { bar: true },
+      disabled: { __jsExpr: 'false' },
+      config: { a: 1 },
+    })
+    await sleep()
+
+    // the plugin fiber is the coordinator's child, and the write-back still
+    // has to land on the entry rather than be read as a nested plugin's
+    const fiber = loader.expectFiber(gated)
+    loader.changes = []
+    await fiber.update({ a: 5 })
+
+    expect(loader.changes).to.have.length(1)
+    const [change] = loader.changes
+    expect(change.legacy!.config).to.deep.equal({ a: 1 })
+    expect(change.options!.config).to.deep.equal({ a: 5 })
+  })
+
   it('remove reports the removed entry', async () => {
     await loader.remove(id)
 

@@ -82,7 +82,7 @@ export abstract class EntryTree {
 
   getTasks() {
     return [...this.entries()]
-      .map(entry => entry._initTask || entry.fiber?.inertia)
+      .map(entry => entry._initTask || entry.gate?.inertia || entry.fiber?.inertia)
       .filter(isNonNullable)
   }
 

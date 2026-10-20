@@ -36,6 +36,28 @@ describe('Include source locations', () => {
     ].join('\n'))
   }, 10000)
 
+  it('locates a validation issue in a gated entry', async () => {
+    const app = await start('tmp-location-gated.yml', [
+      '- id: svc',
+      '  name: ./service-plugin',
+      '- id: a',
+      '  name: ./schema-plugin',
+      '  inject:',
+      '    service: true',
+      '  disabled: !!js "false"',
+      '  config:',
+      '    port: "80"',
+      '',
+    ].join('\n'))
+
+    const [stack] = app.stacks()
+    expect(stack).toContain([
+      'ValidationError: invalid config:',
+      `  - port must be a number (at port, ${app.at('"80"')})`,
+      `    at a (${app.filename}:3:3)`,
+    ].join('\n'))
+  }, 10000)
+
   it('points a missing value at the key that should hold it', async () => {
     const app = await start('tmp-location-missing.yml', [
       '- id: a',

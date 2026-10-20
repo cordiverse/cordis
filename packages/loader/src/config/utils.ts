@@ -23,6 +23,26 @@ export function isJsExpr(value: any): value is JsExpr {
   return value instanceof Object && typeof value.__jsExpr === 'string'
 }
 
+/** Whether `value` holds an expression anywhere inside it. */
+export function hasJsExpr(value: any): boolean {
+  if (isJsExpr(value)) return true
+  if (!value || typeof value !== 'object') return false
+  return Object.values(value).some(item => hasJsExpr(item))
+}
+
+/**
+ * Replace every own property of `target` with the ones of `source`, keeping
+ * `target`'s identity so that anything already holding it keeps working.
+ */
+export function swap<T extends {}>(target: T, source?: T | null) {
+  for (const key of Reflect.ownKeys(target)) {
+    Reflect.deleteProperty(target, key)
+  }
+  for (const key of Reflect.ownKeys(source || {})) {
+    Reflect.defineProperty(target, key, Reflect.getOwnPropertyDescriptor(source!, key)!)
+  }
+}
+
 export interface JsExpr {
   __jsExpr: string
 }
