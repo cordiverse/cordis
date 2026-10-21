@@ -26,3 +26,20 @@ export function isJsExpr(value: any): value is JsExpr {
 export interface JsExpr {
   __jsExpr: string
 }
+
+/** 1-based, with columns in UTF-16 code units. */
+export interface SourceLocation {
+  filename: string
+  line: number
+  column: number
+}
+
+export function formatLocation(location: SourceLocation) {
+  return `${location.filename}:${location.line}:${location.column}`
+}
+
+/** `path` locates the value within the entry config. */
+export function formatIssue(message: string, location?: SourceLocation, path?: string) {
+  const where = [path, location && formatLocation(location)].filter(Boolean).join(', ')
+  return where ? `  - ${message} (at ${where})` : `  - ${message}`
+}

@@ -1,9 +1,9 @@
-import { Context, Fiber, Inject } from 'cordis'
+import { Context, Fiber, Inject, ValidationError } from 'cordis'
 import { deepEqual, isNullable } from 'cosmokit'
 import { Loader } from '../index.ts'
 import { EntryGroup } from './group.ts'
 import { EntryTree } from './tree.ts'
-import { evaluate, isJsExpr } from './utils.ts'
+import { evaluate, formatIssue, formatLocation, isJsExpr } from './utils.ts'
 
 export interface EntryOptions {
   id: string
@@ -134,14 +134,34 @@ export class Entry {
     }
   }
 
+  getLocation(path: PropertyKey[] = []) {
+    return this.parent.tree.getLocation(this.options.id, path)
+  }
+
   getOuterStack = () => {
     let entry: Entry | undefined = this
     const result: string[] = []
     do {
-      result.push(`    at ${entry.parent.tree.ctx.baseUrl}#${entry.options.id}`)
+      const location = entry.getLocation()
+      if (location) result.push(`    at ${entry.options.id} (${formatLocation(location)})`)
       entry = entry.parent.ctx.fiber.entry
     } while (entry)
     return result
+  }
+
+  traceValidation(error: ValidationError) {
+    const frames = this.getOuterStack()
+    // an entry outside any source has nothing to point to
+    if (!frames.length) return
+    const lines = error.issues.map((issue) => {
+      // issue paths are relative to the config
+      const path = ValidationError.normalizePath(issue.path)
+      const name = path.length ? ValidationError.formatPath(path) : undefined
+      return formatIssue(issue.message, this.getLocation(['config', ...path]), name)
+    })
+    error.message = `invalid config:\n${lines.join('\n')}`
+    // the entry chain replaces internal frames, which say nothing about the config
+    error.stack = [`${error.name}: ${error.message}`, ...frames].join('\n')
   }
 
   async init() {

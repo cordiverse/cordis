@@ -3,6 +3,7 @@ import { Dict, isNonNullable } from 'cosmokit'
 import { pathToFileURL } from 'node:url'
 import { Entry, EntryOptions } from './entry.ts'
 import { EntryGroup } from './group.ts'
+import { SourceLocation } from './utils.ts'
 import { createResolve } from '../resolve.ts'
 
 // A Windows drive-letter path, e.g. `C:\app\plugin.js` or `C:/app/plugin.js`.
@@ -165,4 +166,12 @@ export abstract class EntryTree {
   }
 
   abstract commit(change: EntryChange): void
+
+  /**
+   * Where a value of the entry options is written. A path that leaves the
+   * source falls back to its deepest written ancestor.
+   */
+  getLocation(_id: string, _path: PropertyKey[]): SourceLocation | undefined {
+    return undefined
+  }
 }
