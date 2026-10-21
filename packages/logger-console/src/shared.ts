@@ -77,12 +77,13 @@ export class ConsoleExporter implements Exporter {
     const code = Logger.code(message.name, this.colors)
     const label = Logger.color(this, code, message.name, ';1')
     const padLength = (this.label?.width ?? 0) + label.length - message.name.length
+    const labelWidth = Math.max(this.label?.width ?? 0, message.name.length)
     if (this.label?.align === 'right') {
       output += label.padStart(padLength) + space + prefix + space
-      indent += (this.label.width ?? 0) + space.length
     } else {
       output += prefix + space + label.padEnd(padLength) + space
     }
+    indent += labelWidth + space.length
     output += Logger.format(this, message).replace(/\n/g, '\n' + ' '.repeat(indent))
     if (this.showDiff && this.timestamp) {
       const diff = message.ts - this.timestamp
