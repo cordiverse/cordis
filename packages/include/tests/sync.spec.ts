@@ -175,6 +175,33 @@ describe('Include sync', () => {
     expect(app.logs('error')).toEqual([])
   }, 10000)
 
+  it('routes changes past a patch that does not apply into the file', async () => {
+    const inner = fixture('tmp-sync-inner-skipped.yml')
+    await writeFile(inner, yaml.dump([plugin('a', 1)]))
+    const app = await setup('tmp-sync-outer-skipped.yml', [{
+      id: 'inc',
+      name: '@cordisjs/plugin-include',
+      config: {
+        path: './tmp-sync-inner-skipped.yml',
+        // the name does not match, so the patch is skipped
+        patches: [{ id: 'a', name: './other-plugin', config: { tag: 'a', value: 2 } }],
+      },
+    }])
+    app.files.push(inner)
+    const innerInclude = () => app.include().store['inc']!.subtree as Include
+    await innerInclude().refresh()
+    expect(app.config('a').value).toBe(1)
+
+    await app.update('inc:a', { config: { tag: 'a', value: 3 } })
+    await innerInclude().refresh()
+    await app.settle()
+
+    expect(app.config('a').value).toBe(3)
+    expect(yaml.load(await readFile(inner, 'utf8'))).toEqual([plugin('a', 3)])
+    const [entry] = await app.read()
+    expect(entry.config.patches).toEqual([{ id: 'a', name: './other-plugin', config: { tag: 'a', value: 2 } }])
+  }, 10000)
+
   it('routes changes to inserted entries into their patch', async () => {
     const inner = fixture('tmp-sync-inner-insert.yml')
     const innerText = yaml.dump([plugin('a', 1)])
@@ -201,6 +228,139 @@ describe('Include sync', () => {
     expect(await readFile(inner, 'utf8')).toBe(innerText)
     const [entry] = await app.read()
     expect(entry.config.patches).toEqual([{ insert: [plugin('x', 2)] }])
+  }, 10000)
+
+  it('routes changes to overridden keys of inserted entries into the override', async () => {
+    const inner = fixture('tmp-sync-inner-insert-override.yml')
+    const innerText = yaml.dump([plugin('a', 1)])
+    await writeFile(inner, innerText)
+    const app = await setup('tmp-sync-outer-insert-override.yml', [{
+      id: 'inc',
+      name: '@cordisjs/plugin-include',
+      config: {
+        path: './tmp-sync-inner-insert-override.yml',
+        patches: [
+          { insert: [plugin('x', 1, { disabled: true })] },
+          { id: 'x', config: { tag: 'x', value: 2 } },
+        ],
+      },
+    }])
+    app.files.push(inner)
+    const innerInclude = () => app.include().store['inc']!.subtree as Include
+
+    // `disabled` belongs to the insert, `config` to the override
+    await app.update('inc:x', { disabled: false, config: { tag: 'x', value: 3 } })
+    await innerInclude().refresh()
+    await app.settle()
+
+    expect(app.config('x').value).toBe(3)
+    expect(await readFile(inner, 'utf8')).toBe(innerText)
+    const [entry] = await app.read()
+    expect(entry.config.patches).toEqual([
+      { insert: [plugin('x', 1, { disabled: false })] },
+      { id: 'x', config: { tag: 'x', value: 3 } },
+    ])
+  }, 10000)
+
+  describe('entries of a group config replaced by a patch', () => {
+    async function start(name: string, config: any[] = [plugin('a', 1)]) {
+      const inner = fixture(`tmp-sync-inner-${name}.yml`)
+      const innerText = yaml.dump([group('g', [plugin('hidden', 1)])])
+      await writeFile(inner, innerText)
+      const app = await setup(`tmp-sync-outer-${name}.yml`, [{
+        id: 'inc',
+        name: '@cordisjs/plugin-include',
+        config: {
+          path: `./tmp-sync-inner-${name}.yml`,
+          patches: [{ id: 'g', config }],
+        },
+      }])
+      app.files.push(inner)
+      const innerInclude = () => app.include().store['inc']!.subtree as Include
+      await innerInclude().refresh()
+      await app.ctx.loader.await()
+      expect(app.config('a').value).toBe(1)
+      expect(app.config('hidden')).toBeUndefined()
+      const settle = async () => {
+        await innerInclude().refresh()
+        await app.settle()
+      }
+      return { ...app, inner, innerText, innerInclude, settle }
+    }
+
+    it('routes changes into the patch', async () => {
+      const app = await start('group-update')
+      await app.update('inc:a', { config: { tag: 'a', value: 2 } })
+      await app.settle()
+
+      expect(app.config('a').value).toBe(2)
+      expect(await readFile(app.inner, 'utf8')).toBe(app.innerText)
+      const [entry] = await app.read()
+      expect(entry.config.patches).toEqual([{ id: 'g', config: [plugin('a', 2)] }])
+    }, 10000)
+
+    it('places new entries into the patch', async () => {
+      const app = await start('group-create')
+      await app.ctx.loader.create({ name: './config-plugin', config: { tag: 'b', value: 1 } }, `${app.id}:inc:g`)
+      await app.settle()
+
+      expect(app.config('b').value).toBe(1)
+      expect(await readFile(app.inner, 'utf8')).toBe(app.innerText)
+      const [entry] = await app.read()
+      expect(entry.config.patches).toEqual([{ id: 'g', config: [plugin('a', 1), expect.objectContaining({ config: { tag: 'b', value: 1 } })] }])
+    }, 10000)
+
+    it('removes entries from the patch', async () => {
+      const app = await start('group-remove')
+      app.ctx.loader.remove(`${app.id}:inc:a`)
+      await app.settle()
+
+      expect(app.config('a')).toBeUndefined()
+      expect(await readFile(app.inner, 'utf8')).toBe(app.innerText)
+      const [entry] = await app.read()
+      expect(entry.config.patches).toEqual([{ id: 'g', config: [] }])
+    }, 10000)
+
+    it('keeps anonymous entries across file edits', async () => {
+      const app = await start('group-anon', [{ name: './config-plugin', config: { tag: 'a', value: 1 } }])
+      const find = () => Object.values(app.innerInclude().store).find(entry => entry.options.config?.tag === 'a')
+      const before = find()
+
+      await writeFile(app.inner, '# touched\n' + app.innerText)
+      await app.settle()
+      expect(find()).toBe(before)
+    }, 10000)
+  })
+
+  it('routes an edit to an entry whose group moved in the same batch', async () => {
+    const inner = fixture('tmp-sync-inner-batch-move.yml')
+    await writeFile(inner, yaml.dump([group('h', [])]))
+    const app = await setup('tmp-sync-outer-batch-move.yml', [{
+      id: 'inc',
+      name: '@cordisjs/plugin-include',
+      config: {
+        path: './tmp-sync-inner-batch-move.yml',
+        patches: [{ insert: [group('g', [plugin('x', 1)])] }],
+      },
+    }])
+    app.files.push(inner)
+    const innerInclude = () => app.include().store['inc']!.subtree as Include
+    await innerInclude().refresh()
+    await app.ctx.loader.await()
+
+    // both changes are reported before either is written
+    await Promise.all([
+      app.ctx.loader.update(`${app.id}:inc:g`, {}, `${app.id}:inc:h`),
+      app.update('inc:x', { config: { tag: 'x', value: 2 } }),
+    ])
+    await innerInclude().flush()
+    await app.settle()
+
+    expect(app.config('x').value).toBe(2)
+    expect(app.logs('error')).toEqual([])
+    expect(yaml.load(await readFile(inner, 'utf8'))).toEqual([group('h', [group('g', [plugin('x', 2)])])])
+    const [entry] = await app.read()
+    expect(entry.config.patches).toEqual([{ insert: [] }])
   }, 10000)
 
   it('keeps anonymous entries stable across reloads without writing', async () => {
