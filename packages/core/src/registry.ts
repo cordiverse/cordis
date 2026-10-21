@@ -194,7 +194,7 @@ export class RegistryService {
     // check if it's a valid plugin
     const callback = this.resolve(plugin)
     if (!callback) throw new Error('invalid plugin, expect function or object with an "apply" method, received ' + typeof plugin)
-    this.ctx.fiber.assertActive()
+    this.ctx.fiber.assertRegistrable()
 
     let runtime = this._internal.get(callback)
     if (!runtime) {
