@@ -342,8 +342,9 @@ describe('Include source locations', () => {
       expect(stacks).toHaveLength(2)
       const a = stacks.find(stack => stack.includes('at a ('))!
       // the loader's own parent and Node's resolver frames are dropped
-      expect(a).toMatch(new RegExp(`^ModuleNotFoundError: Cannot find module '\\S+missing-plugin' \\(at name, ${app.at('./missing')}\\)\n`))
-      expect(a).toContain(`\n    at a (${app.filename}:1:3)`)
+      // a Windows path holds backslashes, so the location is not part of the pattern
+      expect(a).toMatch(/^ModuleNotFoundError: Cannot find module '\S+missing-plugin' \(at name, /)
+      expect(a).toContain(`missing-plugin' (at name, ${app.at('./missing')})\n    at a (${app.filename}:1:3)`)
       expect(a).not.toContain('imported from')
       expect(a).not.toContain('node:internal')
       const b = stacks.find(stack => stack.includes('at b ('))!
