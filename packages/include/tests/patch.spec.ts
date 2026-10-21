@@ -2,6 +2,7 @@ import { Context, Fiber } from 'cordis'
 import Loader from '@cordisjs/plugin-loader'
 import LoggerConsole from '@cordisjs/plugin-logger-console'
 import { expect, describe, it, afterEach } from 'vitest'
+import { applyPatches } from '../src/patch.ts'
 
 function waitFor(condFn: () => any, timeout = 5000, interval = 100): Promise<void> {
   return new Promise<void>((resolve, reject) => {
@@ -168,6 +169,31 @@ describe('Include patches', () => {
     await waitFor(() => ctx.bail('test/get-extra'))
     expect(ctx.bail('test/get-extra')).to.equal('extra')
   }, 10000)
+
+  it('should warn on a name mismatch when inserting, and skip the insert', () => {
+    const warnings: any[][] = []
+    const out = applyPatches([
+      { id: 'group', name: '@cordisjs/plugin-group', group: true, config: [] },
+    ], [
+      { id: 'group', name: 'wrong-name', insert: [{ id: 'added', name: './extra-plugin' }] },
+    ], (format, ...args) => warnings.push([format, ...args]))
+
+    expect(out[0].config).to.deep.equal([])
+    expect(warnings).to.deep.equal([[
+      'patch insert: name mismatch for %C (expected %C, got %C), skipping',
+      'group', '@cordisjs/plugin-group', 'wrong-name',
+    ]])
+  })
+
+  it('should insert when the name matches', () => {
+    const out = applyPatches([
+      { id: 'group', name: '@cordisjs/plugin-group', group: true, config: [] },
+    ], [
+      { id: 'group', name: '@cordisjs/plugin-group', insert: [{ id: 'added', name: './extra-plugin' }] },
+    ], () => {})
+
+    expect(out[0].config).to.deep.equal([{ id: 'added', name: './extra-plugin' }])
+  })
 
   it('should warn when inserting into a non-group entry', async () => {
     ctx = new Context()
