@@ -1,32 +1,20 @@
-/** A point in a config file, as a character offset into its source text. */
+/** A point in a config file. Both are 1-based; columns count UTF-16 code units. */
 export interface SourceLocation {
   filename: string
-  source: string
-  offset: number
-}
-
-/** 1-based line and column of an offset. */
-function getPosition(source: string, offset: number) {
-  let line = 1
-  let lineStart = 0
-  for (let index = source.indexOf('\n'); index !== -1 && index < offset; index = source.indexOf('\n', index + 1)) {
-    line += 1
-    lineStart = index + 1
-  }
-  return { line, column: offset - lineStart + 1 }
+  line: number
+  column: number
 }
 
 /** `file:line:column`, which terminals and editors open at the position. */
 export function formatLocation(location: SourceLocation) {
-  const { line, column } = getPosition(location.source, location.offset)
-  return `${location.filename}:${line}:${column}`
+  return `${location.filename}:${location.line}:${location.column}`
 }
 
 /**
- * One line of a config failure: what is wrong, and where it is written down.
- * `name` is the path of the offending value within the entry, if any.
+ * One line of a failed config validation: what is wrong, and where it is
+ * written down. `path` locates the offending value within the entry config.
  */
-export function formatIssue(message: string, location?: SourceLocation, name?: string) {
-  const where = [name, location && formatLocation(location)].filter(Boolean).join(', ')
+export function formatIssue(message: string, location?: SourceLocation, path?: string) {
+  const where = [path, location && formatLocation(location)].filter(Boolean).join(', ')
   return where ? `  - ${message} (at ${where})` : `  - ${message}`
 }

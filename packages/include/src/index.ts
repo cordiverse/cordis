@@ -1,11 +1,14 @@
-import { EntryChange, EntryOptions, EntryTree, formatIssue, isJsExpr, SourceLocation } from '@cordisjs/plugin-loader'
+import { EntryChange, EntryOptions, EntryTree, isJsExpr, SourceLocation } from '@cordisjs/plugin-loader'
 import { Context, Service } from 'cordis'
 import { deepEqual } from 'cosmokit'
 import { basename, dirname, extname, join } from 'node:path'
 import { access, constants, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { Document, isAlias, isMap, isNode, isScalar, isSeq, parseDocument, Range, Scalar, ScalarTag, SchemaOptions, stringify, YAMLError } from 'yaml'
+import {
+  Document, isAlias, isMap, isNode, isScalar, isSeq, LineCounter, parseDocument,
+  Range, Scalar, ScalarTag, SchemaOptions, stringify, YAMLError,
+} from 'yaml'
 import { stringifyString } from 'yaml/util'
 import { applyJournal, flatten, Journal, merge, reconcile, record } from './journal.ts'
 import { applyPatches, ensureIds, ensureInsertIds, PatchIndex, PatchOptions, routeJournal } from './patch.ts'
@@ -38,22 +41,42 @@ const types: Record<string, string> = {
 
 type ConfigStage = 'read' | 'parse' | 'validate'
 
+/** A config source parsed as YAML (which JSON also is), for its node ranges and line breaks. */
+interface Syntax {
+  document: Document
+  lines: LineCounter
+}
+
+function parseSyntax(content: string): Syntax {
+  const lines = new LineCounter()
+  const document = parseDocument(content, { ...yamlOptions, prettyErrors: false, lineCounter: lines })
+  return { document, lines }
+}
+
 interface Snapshot {
   content: string
   data: EntryOptions[]
-  /** Syntax tree of `content`, parsed when first needed to locate a value. */
-  document?: Document
+  /** Syntax of `content`, parsed when first needed to locate a value. */
+  syntax?: Syntax
 }
 
 // V8 ends a JSON syntax error with the offset, e.g. `at position 17 (line 2 column 16)`
 const jsonPosition = /\s+at position (\d+)(?: \(line \d+ column \d+\))?$/
 
+export interface ConfigIssue {
+  message: string
+  location: SourceLocation
+}
+
 export class ConfigFileError extends Error {
   name = 'ConfigFileError'
 
-  /** `details` lists the issues found in the file, which then take the place of `cause`. */
-  constructor(public stage: ConfigStage, path: string, cause: unknown, details: string[] = []) {
-    super([`failed to ${stage} config file ${path}`, ...details].join('\n'), { cause })
+  /** `issues` are what was found wrong in the file, in place of a `cause`. */
+  constructor(public stage: ConfigStage, path: string, cause: unknown, public issues: ConfigIssue[] = []) {
+    super([`failed to ${stage} config file ${path}`, ...issues.map(({ message, location }) => {
+      // `file:line:column`, which terminals and editors open at the position
+      return `  - ${message} (at ${location.filename}:${location.line}:${location.column})`
+    })].join('\n'), { cause })
   }
 }
 
@@ -293,14 +316,15 @@ export class Include extends EntryTree {
     if (content === this.cache?.content) return
 
     let data: any
-    let document: Document | undefined
+    let syntax: Syntax | undefined
     if (this.type === 'application/yaml') {
-      document = parseDocument(content, { ...yamlOptions, prettyErrors: false })
+      syntax = parseSyntax(content)
+      const { document, lines } = syntax
       // unknown tags are only warnings to the parser, but leave the data incomplete
       const errors: YAMLError[] = [...document.errors, ...document.warnings]
       if (errors.length) {
-        const details = errors.map(error => formatIssue(error.message, this._locate(content, error.pos[0])))
-        throw new ConfigFileError('parse', this.filename, undefined, details)
+        const issues = errors.map(error => ({ message: error.message, location: this._locate(lines, error.pos[0]) }))
+        throw new ConfigFileError('parse', this.filename, undefined, issues)
       }
       data = document.toJS()
     } else {
@@ -310,17 +334,18 @@ export class Include extends EntryTree {
         const match = error instanceof SyntaxError && error.message.match(jsonPosition)
         if (!match) throw new ConfigFileError('parse', this.filename, error)
         const message = error.message.slice(0, match.index)
-        throw new ConfigFileError('parse', this.filename, undefined, [formatIssue(message, this._locate(content, +match[1]))])
+        const location = this._locate(parseSyntax(content).lines, +match[1])
+        throw new ConfigFileError('parse', this.filename, undefined, [{ message, location }])
       }
     }
     // An empty or truncated file (routine mid-edit) parses to `undefined`, so
     // every non-array shape is rejected here as one "invalid file" signal.
     if (!Array.isArray(data)) {
       const message = 'config file must be a top-level array'
-      // JSON is parsed as YAML for its node ranges, which are all we need here
-      const range = (document ?? parseDocument(content, yamlOptions)).contents?.range
+      const { document, lines } = syntax ?? parseSyntax(content)
+      const range = document.contents?.range
       if (!range) throw new ConfigFileError('validate', this.filename, new TypeError(message))
-      throw new ConfigFileError('validate', this.filename, undefined, [formatIssue(message, this._locate(content, range[0]))])
+      throw new ConfigFileError('validate', this.filename, undefined, [{ message, location: this._locate(lines, range[0]) }])
     }
 
     this._assignIds(data)
@@ -333,7 +358,7 @@ export class Include extends EntryTree {
       }
     }
 
-    this.cache = { content, data, document }
+    this.cache = { content, data, syntax }
     this._scheduleApply()
     // the file changed while tree-side changes were pending: write the merge
     if (this.journal.size) this.dirtyWrite = true
@@ -472,14 +497,14 @@ export class Include extends EntryTree {
     }
     const prefix = findEntry(this.cache.data, id)
     if (!prefix) return
-    // JSON is parsed as YAML here: only the node ranges are of interest
-    const document = this.cache.document ??= parseDocument(this.cache.content, yamlOptions)
+    const { document, lines } = this.cache.syntax ??= parseSyntax(this.cache.content)
     const range = seek(document, [...prefix, ...path])
-    if (range) return this._locate(this.cache.content, range[0])
+    if (range) return this._locate(lines, range[0])
   }
 
-  private _locate(source: string, offset: number): SourceLocation {
-    return { filename: this.filename, source, offset }
+  private _locate(lines: LineCounter, offset: number): SourceLocation {
+    const { line, col } = lines.linePos(offset)
+    return { filename: this.filename, line, column: col }
   }
 
   /**

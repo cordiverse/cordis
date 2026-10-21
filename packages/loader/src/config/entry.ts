@@ -159,6 +159,7 @@ export class Entry {
    */
   traceValidation(error: ValidationError) {
     const lines = error.issues.map((issue) => {
+      // the issue path is relative to the config, the location path to the entry options
       const path = ValidationError.normalizePath(issue.path)
       const name = path.length ? ValidationError.formatPath(path) : undefined
       return formatIssue(issue.message, this.getLocation(['config', ...path]), name)
