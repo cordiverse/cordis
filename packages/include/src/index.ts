@@ -41,7 +41,12 @@ type ConfigStage = 'read' | 'parse' | 'validate'
 interface Snapshot {
   content: string
   data: EntryOptions[]
+  /** Syntax tree of `content`, parsed when first needed to locate a value. */
+  document?: Document
 }
+
+// V8 ends a JSON syntax error with the offset, e.g. `at position 17 (line 2 column 16)`
+const jsonPosition = /\s+at position (\d+)(?: \(line \d+ column \d+\))?$/
 
 export class ConfigFileError extends Error {
   name = 'ConfigFileError'
@@ -302,14 +307,18 @@ export class Include extends EntryTree {
       try {
         data = JSON.parse(content)
       } catch (error) {
-        throw new ConfigFileError('parse', this.filename, error)
+        const match = error instanceof SyntaxError && error.message.match(jsonPosition)
+        if (!match) throw new ConfigFileError('parse', this.filename, error)
+        const message = error.message.slice(0, match.index)
+        throw new ConfigFileError('parse', this.filename, undefined, [formatIssue(message, this._locate(content, +match[1]))])
       }
     }
     // An empty or truncated file (routine mid-edit) parses to `undefined`, so
     // every non-array shape is rejected here as one "invalid file" signal.
     if (!Array.isArray(data)) {
       const message = 'config file must be a top-level array'
-      const range = document?.contents?.range
+      // JSON is parsed as YAML for its node ranges, which are all we need here
+      const range = (document ?? parseDocument(content, yamlOptions)).contents?.range
       if (!range) throw new ConfigFileError('validate', this.filename, new TypeError(message))
       throw new ConfigFileError('validate', this.filename, undefined, [formatIssue(message, this._locate(content, range[0]))])
     }
@@ -324,7 +333,7 @@ export class Include extends EntryTree {
       }
     }
 
-    this.cache = { content, data }
+    this.cache = { content, data, document }
     this._scheduleApply()
     // the file changed while tree-side changes were pending: write the merge
     if (this.journal.size) this.dirtyWrite = true
@@ -464,7 +473,8 @@ export class Include extends EntryTree {
     const prefix = findEntry(this.cache.data, id)
     if (!prefix) return
     // JSON is parsed as YAML here: only the node ranges are of interest
-    const range = seek(parseDocument(this.cache.content, yamlOptions), [...prefix, ...path])
+    const document = this.cache.document ??= parseDocument(this.cache.content, yamlOptions)
+    const range = seek(document, [...prefix, ...path])
     if (range) return this._locate(this.cache.content, range[0])
   }
 

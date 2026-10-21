@@ -224,4 +224,41 @@ describe('Include source locations', () => {
       `  - Unresolved tag: !foo (at ${at(app.filename, source, '!foo')})`,
     )])
   }, 10000)
+
+  describe('JSON', () => {
+    it('points a validation issue at the value in the file', async () => {
+      const app = await start('tmp-location-value.json', JSON.stringify([
+        { id: 'a', name: './schema-plugin', config: { port: '80' } },
+      ], null, 2))
+
+      const [stack] = app.stacks()
+      expect(stack).toContain([
+        'ValidationError: invalid config:',
+        `  - port must be a number (at port, ${app.at('"80"')})`,
+        `    at a (${app.at('{\n    "id"')})`,
+      ].join('\n'))
+    }, 10000)
+
+    it('points syntax errors at the source', async () => {
+      const app = await start('tmp-location-syntax.json', '[]\n')
+      const source = '[\n  { "id": "a", }\n]\n'
+      await writeFile(app.filename, source)
+      await app.settle()
+
+      const [message] = app.logs('warn')
+      expect(message).toContain(`(at ${at(app.filename, source, '}\n]')})`)
+      expect(message).not.toContain('at position')
+    }, 10000)
+
+    it('points a non-array file at its value', async () => {
+      const app = await start('tmp-location-shape.json', '[]\n')
+      const source = '\n{ "id": "a" }\n'
+      await writeFile(app.filename, source)
+      await app.settle()
+
+      expect(app.logs('warn')).toEqual([expect.stringContaining(
+        `  - config file must be a top-level array (at ${at(app.filename, source, '{')})`,
+      )])
+    }, 10000)
+  })
 })
