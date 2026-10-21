@@ -117,6 +117,9 @@ export class Fiber {
 
   private _error: any
   private _revision = 0
+  private _pendingCommits: { key: any; commit: () => void }[] = []
+  private _resolvedConfig: any
+  private _updateTasks = 0
   private _runner: EffectRunner<string>
   private _store: Dict<Impl> = Object.create(null)
   private _release: (() => void) | undefined
@@ -494,6 +497,40 @@ export class Fiber {
     await fiber.await()
   }
 
+  /**
+   * The callback runs once every update task of this fiber has settled, and
+   * only while `config` is the latest one. It takes the config because a
+   * handler that resumes after a newer update cannot tell from the fiber
+   * which config it was invoked with.
+   */
+  whenStable(config: any, commit: () => void) {
+    // `uid` is cleared as soon as disposal starts, so a commit registered
+    // from a handler that resumes past it is dropped rather than fired
+    if (this.uid === null) return
+    // nothing is in flight, so the config this commit waits for is either the
+    // stored one already or one a newer update has replaced: it settles now,
+    // rather than waiting for an update that may never come
+    if (!this._updateTasks) return this._commit({ key: config, commit })
+    this._pendingCommits.push({ key: config, commit })
+  }
+
+  private _commit(entry: { key: any; commit: () => void }) {
+    if (this.uid === null || entry.key !== this._resolvedConfig) return
+    try {
+      entry.commit()
+    } catch (error) {
+      this.ctx.logger.error(error)
+    }
+  }
+
+  private _flushCommits() {
+    if (this._updateTasks > 0) return
+    const pending = this._pendingCommits
+    if (!pending.length) return
+    this._pendingCommits = []
+    for (const entry of pending) this._commit(entry)
+  }
+
   update(config: any, noSave = false): Awaitable<void> {
     const fiber = this.ctx.fiber
     fiber.assertActive()
@@ -502,17 +539,34 @@ export class Fiber {
     if (!noSave) fiber.context.emit('internal/commit', fiber, config)
     fiber.config = config
     fiber._error = undefined
+    if (loaded) fiber._resolvedConfig = resolved
     const restart = () => fiber.restart()
-    const result = loaded
-      ? fiber.context.waterfall(fiber, 'internal/update', resolved, restart)
-      : restart()
+    fiber._updateTasks++
+    let result: Awaitable<void>
+    try {
+      result = loaded
+        ? fiber.context.waterfall(fiber, 'internal/update', resolved, restart)
+        : restart()
+    } catch (error) {
+      fiber._updateTasks--
+      throw error
+    }
     // a listener may veto the restart, in which case there is nothing to await
-    if (result === undefined) return
+    if (result === undefined) {
+      fiber._updateTasks--
+      fiber._flushCommits()
+      return
+    }
     const task = Promise.resolve(result)
     // the failure is already reported by the fiber, so mark it handled here:
     // a caller that drops the result cannot turn it into an unhandled
     // rejection, while `await update()` still observes it
     task.catch(() => {})
+    const settle = () => {
+      fiber._updateTasks--
+      if (!fiber._updateTasks) fiber._flushCommits()
+    }
+    task.then(settle, settle)
     return task
   }
 }
