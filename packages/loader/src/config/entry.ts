@@ -143,15 +143,16 @@ export class Entry {
     const result: string[] = []
     do {
       const location = entry.getLocation()
-      result.push(location
-        ? `    at ${entry.options.id} (${formatLocation(location)})`
-        : `    at ${entry.parent.tree.ctx.baseUrl}#${entry.options.id}`)
+      if (location) result.push(`    at ${entry.options.id} (${formatLocation(location)})`)
       entry = entry.parent.ctx.fiber.entry
     } while (entry)
     return result
   }
 
   traceValidation(error: ValidationError) {
+    const frames = this.getOuterStack()
+    // an entry outside any source has nothing to point to
+    if (!frames.length) return
     const lines = error.issues.map((issue) => {
       // issue paths are relative to the config
       const path = ValidationError.normalizePath(issue.path)
@@ -160,7 +161,7 @@ export class Entry {
     })
     error.message = `invalid config:\n${lines.join('\n')}`
     // the entry chain replaces internal frames, which say nothing about the config
-    error.stack = [`${error.name}: ${error.message}`, ...this.getOuterStack()].join('\n')
+    error.stack = [`${error.name}: ${error.message}`, ...frames].join('\n')
   }
 
   async init() {

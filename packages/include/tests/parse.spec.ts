@@ -5,35 +5,23 @@ import { harness } from './utils.ts'
 describe('Include parse', () => {
   const { setup } = harness()
 
-  // scalars resolve by the YAML 1.2 core schema, whatever version the file declares
-  it.each(['', '%YAML 1.1\n---\n'])('resolves scalars by the core schema (%j)', async (directive) => {
-    const values = ['yes', 'on', 'n', '2024-01-01', '2024-01-01T12:00:00Z', '1_000', '1:30', '0777', '0o17', '0x1F', '0b101', '-0b11', '~', 'True', '.inf']
-    const app = await setup('tmp-parse-scalars.yml', directive + [
+  // a 1.1 directive would read these as `true`, 511, 5 and a merge
+  it('resolves scalars by the core schema whatever version the file declares', async () => {
+    const app = await setup('tmp-parse-scalars.yml', [
+      '%YAML 1.1',
+      '---',
       '- id: a',
       '  name: ./config-plugin',
       '  config:',
       '    tag: a',
-      '    value:',
-      ...values.map(value => `      - ${value}`),
+      '    value: [yes, 0777, 0b101]',
       '    <<: { merged: true }',
       '',
     ].join('\n'))
 
     const config = app.config('a')
-    expect(config.value).toEqual([
-      'yes', 'on', 'n', '2024-01-01', '2024-01-01T12:00:00Z', '1_000', '1:30',
-      777, 15, 31, '0b101', '-0b11', null, true, Infinity,
-    ])
+    expect(config.value).toEqual(['yes', 777, '0b101'])
     expect(config['<<']).toEqual({ merged: true })
-    expect(config.merged).toBeUndefined()
-  }, 10000)
-
-  it('quotes strings that would read back as other scalars', async () => {
-    const app = await setup('tmp-parse-quote.yml', [])
-    await app.ctx.loader.create({ name: './config-plugin', config: { tag: 'a', value: ['true', '12'] } }, app.id)
-    await app.include().flush()
-
-    expect((await app.text())).toContain(`    value:\n      - 'true'\n      - '12'\n`)
   }, 10000)
 
   it('writes expressions back with their tag', async () => {

@@ -207,11 +207,13 @@ describe('Include source locations', () => {
     expect(() => fiber.update({ port: 'runtime' })).toThrow(/^invalid config:\n {2}- port must be a number \(at port\)$/)
   }, 10000)
 
-  it('keeps the plain format for entries outside any file', async () => {
+  it('leaves entries outside any file untraced', async () => {
     const app = await start('tmp-location-memory.yml', '[]\n')
     await app.ctx.loader.create({ name: './fixtures/schema-plugin', config: { port: '80' } })
     await app.ctx.loader.await()
-    expect(app.stacks()).toEqual([expect.stringContaining('invalid config:\n  - port must be a number (at port)\n    at file:')])
+    const [stack] = app.stacks()
+    expect(stack).toMatch(/^ValidationError: invalid config:\n {2}- port must be a number \(at port\)\n {4}at /)
+    expect(stack).not.toContain('#')
   }, 10000)
 
   it('points parse errors at the source', async () => {
