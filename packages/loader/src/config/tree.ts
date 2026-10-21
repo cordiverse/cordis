@@ -1,13 +1,40 @@
 import { composeError, Context } from 'cordis'
 import { Dict, isNonNullable } from 'cosmokit'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Entry, EntryOptions } from './entry.ts'
 import { EntryGroup } from './group.ts'
-import { SourceLocation } from './utils.ts'
+import { EntryValidationError, SourceLocation, validateOptions } from './utils.ts'
 import { createResolve } from '../resolve.ts'
 
 // A Windows drive-letter path, e.g. `C:\app\plugin.js` or `C:/app/plugin.js`.
 const driveLetter = /^[A-Za-z]:[\\/]/
+
+// Node names the modules only in the message:
+// `Cannot find (module|package) '<target>' imported from <parent>`
+function parseNotFound(error: any) {
+  if (error?.code !== 'ERR_MODULE_NOT_FOUND' || typeof error.message !== 'string') return
+  // later lines are hints, e.g. `Did you mean to import ...?`
+  const [first, ...hints] = error.message.split('\n') as string[]
+  const match = first.match(/^(Cannot find (?:module|package) '.*') imported from (.*)$/)
+  if (match) return { description: match[1], parent: match[2], hints }
+}
+
+function toPath(url: string) {
+  try {
+    return url.startsWith('file:') ? fileURLToPath(url) : url
+  } catch {
+    return url
+  }
+}
+
+export class ModuleNotFoundError extends Error {
+  name = 'ModuleNotFoundError'
+  code = 'ERR_MODULE_NOT_FOUND'
+
+  constructor(public specifier: string, message: string) {
+    super(message)
+  }
+}
 
 /**
  * One tree-side mutation, reported to `EntryTree.commit()` synchronously after
@@ -72,9 +99,6 @@ export abstract class EntryTree {
       do {
         options.id = Math.random().toString(16).slice(2, 10)
       } while (this.store[options.id])
-    } else if (options.id.includes(EntryTree.sep)) {
-      // IDs containing the tree separator cannot be resolved by resolve().
-      throw new Error(`entry id must not contain "${EntryTree.sep}": ${options.id}`)
     }
     return options.id!
   }
@@ -101,6 +125,8 @@ export abstract class EntryTree {
 
   async create(options: Omit<EntryOptions, 'id'>, parent: string | null = null, position = Infinity) {
     const group = this.resolveGroup(parent)
+    const issues = validateOptions(options, EntryTree.sep, true)
+    if (issues.length) throw new EntryValidationError(issues)
     const id = group.tree.ensureId(options)
     group.data.splice(position, 0, options as EntryOptions)
     group.tree.commit({ id, group, options: options as EntryOptions })
@@ -119,6 +145,8 @@ export abstract class EntryTree {
     const entry = this.resolve(id)
     const source = entry.parent
     const legacy = { ...entry.options }
+    const issues = validateOptions(Entry.merge({ ...legacy }, options), EntryTree.sep, true)
+    if (issues.length) throw new EntryValidationError(issues)
     if (parent !== undefined) {
       const target = this.resolveGroup(parent)
       source.unlink(entry.options)
@@ -144,14 +172,20 @@ export abstract class EntryTree {
     if (process.platform === 'win32' && driveLetter.test(name)) {
       name = pathToFileURL(name).href
     }
+    // to tell `name` apart from a module it imports
+    let parent: string | undefined
+    // the helper resolves `name` only
+    let unresolved: unknown
     return composeError(async (info) => {
       // ModuleJob.run
       // onImport.tracePromise.__proto__
       // internal.import
       info.offset += 3
       if (this.ctx.loader.internal) {
-        return await this.ctx.loader.internal.import(name, this.ctx.baseUrl!, {})
+        parent = this.ctx.baseUrl!
+        return await this.ctx.loader.internal.import(name, parent, {})
       } else if (name.startsWith('.')) {
+        parent = import.meta.url
         return await import(/* @vite-ignore */ new URL(name, this.ctx.baseUrl).href)
       } else {
         // An `import()` written here anchors on this file, reaching the loader's
@@ -159,10 +193,28 @@ export abstract class EntryTree {
         // that project as the anchor; the plain import applies when no project
         // can be located.
         const resolve = await createResolve(this.ctx.baseUrl)
-        const url = resolve ? resolve(name) : name
+        let url = name
+        if (resolve) {
+          try {
+            url = resolve(name)
+          } catch (error) {
+            unresolved = error
+            throw error
+          }
+        }
+        parent = import.meta.url
         return await import(/* @vite-ignore */ url)
       }
-    }, getOuterStack)
+    }, getOuterStack).catch((error: unknown) => {
+      const notFound = parseNotFound(error)
+      if (!notFound) throw error
+      if (error !== unresolved && (!parent || notFound.parent !== toPath(parent))) throw error
+      const result = new ModuleNotFoundError(name, [notFound.description, ...notFound.hints].join('\n'))
+      const frames = getOuterStack?.() ?? []
+      // Node's frames are those of its resolver
+      if (frames.length) result.stack = [`${result.name}: ${result.message}`, ...frames].join('\n')
+      throw result
+    })
   }
 
   abstract commit(change: EntryChange): void

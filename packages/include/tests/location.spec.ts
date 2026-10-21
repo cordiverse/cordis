@@ -216,6 +216,206 @@ describe('Include source locations', () => {
     expect(stack).not.toContain('#')
   }, 10000)
 
+  describe('entry fields', () => {
+    it('points invalid fields at their values', async () => {
+      const app = await start('tmp-location-fields.yml', [
+        '- id: a',
+        '  name: ./test-plugin',
+        '  disabled: "no"',
+        '  inject: [loader, 1]',
+        '- id: b',
+        '  group: true',
+        '',
+      ].join('\n'))
+
+      const stacks = app.stacks()
+      expect(stacks).toHaveLength(2)
+      expect(stacks.find(stack => stack.includes('at a ('))).toBe([
+        'EntryValidationError: invalid entry options:',
+        `  - disabled must be a boolean (at disabled, ${app.at('"no"')})`,
+        `  - inject.1 must be a string (at inject.1, ${app.at('1]')})`,
+        `    at a (${app.filename}:1:3)`,
+      ].join('\n'))
+      // a missing field falls back to the entry
+      expect(stacks.find(stack => stack.includes('at b ('))).toContain([
+        `  - name is required (at name, ${app.at('id: b')})`,
+        `  - config is required (at config, ${app.at('id: b')})`,
+      ].join('\n'))
+      expect(app.include().store['a']).toBeUndefined()
+    }, 10000)
+
+    it('accepts an expression for disabled only', async () => {
+      const app = await start('tmp-location-expr.yml', [
+        '- id: a',
+        '  name: ./test-plugin',
+        '  disabled: !!js "false"',
+        '- id: b',
+        '  name: !!js "\'./test-plugin\'"',
+        '',
+      ].join('\n'))
+
+      expect(app.stacks()).toEqual([expect.stringContaining(`  - name must be a string (at name, ${app.at('"\'./')})`)])
+      expect(app.include().store['a']!.fiber).toBeTruthy()
+    }, 10000)
+
+    it('unloads an entry that turns invalid, without writing to the file', async () => {
+      const source = '- id: a\n  name: ./test-plugin\n'
+      const app = await start('tmp-location-turn.yml', source)
+      const fiber = app.include().store['a']!.fiber!
+
+      const invalid = '- id: a\n  name: ./test-plugin\n  group: 1\n'
+      await writeFile(app.filename, invalid)
+      await app.settle()
+      expect(app.stacks()).toEqual([expect.stringContaining(`(at group, ${at(app.filename, invalid, '1\n')})`)])
+      expect(app.include().store['a']).toBeUndefined()
+      expect(fiber.uid).toBeNull()
+      expect(await app.text()).toBe(invalid)
+
+      await writeFile(app.filename, source)
+      await app.settle()
+      expect(app.include().store['a']!.fiber!.uid).toBeTruthy()
+    }, 10000)
+
+    it('locates entries nested in groups', async () => {
+      const app = await start('tmp-location-fields-group.yml', [
+        '- id: g',
+        '  name: \'@cordisjs/plugin-group\'',
+        '  group: true',
+        '  config:',
+        '    - id: a',
+        '      name: [./test-plugin]',
+        '',
+      ].join('\n'))
+
+      expect(app.stacks()).toEqual([[
+        'EntryValidationError: invalid entry options:',
+        `  - name must be a string (at name, ${app.at('name: [')})`,
+        `    at a (${app.filename}:5:7)`,
+        `    at g (${app.filename}:1:3)`,
+      ].join('\n')])
+    }, 10000)
+
+    it('rejects a file with an entry that is not an object', async () => {
+      const source = '- id: a\n  name: ./test-plugin\n'
+      const app = await start('tmp-location-entry.yml', source)
+      const invalid = [
+        '- id: a',
+        '  name: ./test-plugin',
+        '- ./test-plugin',
+        '- id: g',
+        '  name: \'@cordisjs/plugin-group\'',
+        '  group: true',
+        '  config: [null]',
+        '',
+      ].join('\n')
+      await writeFile(app.filename, invalid)
+      await app.settle()
+
+      expect(app.logs('warn')).toEqual([expect.stringContaining([
+        `  - entry must be an object (at ${app.filename}:3:3)`,
+        `  - entry must be an object (at ${at(app.filename, invalid, 'null')})`,
+      ].join('\n'))])
+      // the previous tree stays as it was
+      expect(app.include().store['a']!.fiber!.uid).toBeTruthy()
+      expect(app.include().store['g']).toBeUndefined()
+    }, 10000)
+
+    it('leaves invalid options passed at runtime unlocated', async () => {
+      const app = await start('tmp-location-fields-runtime.yml', '- id: a\n  name: ./test-plugin\n')
+      await expect(app.update('a', { disabled: 'yes' })).rejects.toThrow(
+        /^invalid entry options:\n {2}- disabled must be a boolean \(at disabled\)$/,
+      )
+    }, 10000)
+  })
+
+  describe('plugin import', () => {
+    it('points a plugin that cannot be found at its name', async () => {
+      const app = await start('tmp-location-import.yml', [
+        '- id: a',
+        '  name: ./missing-plugin',
+        '- id: b',
+        '  name: missing-package',
+        '',
+      ].join('\n'))
+
+      const stacks = app.stacks()
+      expect(stacks).toHaveLength(2)
+      const a = stacks.find(stack => stack.includes('at a ('))!
+      // the loader's own parent and Node's resolver frames are dropped
+      // a Windows path holds backslashes, so the location is not part of the pattern
+      expect(a).toMatch(/^ModuleNotFoundError: Cannot find module '\S+missing-plugin' \(at name, /)
+      expect(a).toContain(`missing-plugin' (at name, ${app.at('./missing')})\n    at a (${app.filename}:1:3)`)
+      expect(a).not.toContain('imported from')
+      expect(a).not.toContain('node:internal')
+      const b = stacks.find(stack => stack.includes('at b ('))!
+      expect(b).toBe([
+        `ModuleNotFoundError: Cannot find package 'missing-package' (at name, ${app.at('missing-package')})`,
+        `    at b (${app.filename}:3:3)`,
+      ].join('\n'))
+      const errors = app.messages.filter(message => message.type === 'error').map(message => message.args[0])
+      expect(errors.map(error => [error.code, error.specifier])).toEqual(expect.arrayContaining([
+        ['ERR_MODULE_NOT_FOUND', './missing-plugin'],
+        ['ERR_MODULE_NOT_FOUND', 'missing-package'],
+      ]))
+    }, 10000)
+
+    it('leaves a module the plugin imports to the plugin', async () => {
+      const app = await start('tmp-location-dep.yml', '- id: a\n  name: ./missing-dep-plugin\n')
+
+      const [stack] = app.stacks()
+      expect(stack).toMatch(/^Error \[ERR_MODULE_NOT_FOUND\]: Cannot find package 'missing-dependency' imported from .+missing-dep-plugin\.ts\n/)
+      expect(stack).not.toContain('(at name')
+    }, 10000)
+
+    it('tells the two apart without the internal loader', async () => {
+      const app = await start('tmp-location-native.yml', '[]\n')
+      const { loader } = app.ctx
+      const internal = loader.internal
+      loader.internal = undefined
+      try {
+        const source = [
+          '- id: a',
+          '  name: ./missing-plugin',
+          '- id: b',
+          '  name: missing-package',
+          '- id: c',
+          '  name: ./missing-dep-plugin',
+          '',
+        ].join('\n')
+        await writeFile(app.filename, source)
+        await app.settle()
+
+        const stacks = app.stacks()
+        expect(stacks).toHaveLength(3)
+        expect(stacks.find(stack => stack.includes('at a ('))).toContain(`(at name, ${at(app.filename, source, './missing-plugin')})`)
+        expect(stacks.find(stack => stack.includes('at b ('))).toContain(`(at name, ${at(app.filename, source, 'missing-package')})`)
+        const dependency = stacks.find(stack => stack.includes('missing-dependency'))
+        expect(dependency).toMatch(/^Error \[ERR_MODULE_NOT_FOUND\]: /)
+        expect(dependency).not.toContain('(at name')
+      } finally {
+        loader.internal = internal
+      }
+    }, 10000)
+
+    it('leaves other import errors to point into the plugin', async () => {
+      const app = await start('tmp-location-throw.yml', '- id: a\n  name: ./throw-plugin\n')
+
+      const [stack] = app.stacks()
+      expect(stack).toMatch(/^Error: failed to evaluate\n/)
+      expect(stack).toContain('throw-plugin.ts')
+      expect(stack).not.toContain('(at name')
+    }, 10000)
+
+    it('leaves entries outside any file untraced', async () => {
+      const app = await start('tmp-location-import-memory.yml', '[]\n')
+      await app.ctx.loader.create({ name: './fixtures/missing-plugin' })
+      await app.ctx.loader.await()
+      const [stack] = app.stacks()
+      expect(stack).toMatch(/^ModuleNotFoundError: Cannot find module '\S+missing-plugin'\n/)
+      expect(stack).not.toContain('(at name')
+    }, 10000)
+  })
+
   it('points parse errors at the source', async () => {
     const app = await start('tmp-location-parse.yml', '[]\n')
     const source = '- id: a\n  name: !foo ./schema-plugin\n'
