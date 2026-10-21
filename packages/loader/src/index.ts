@@ -10,7 +10,6 @@ import { interpolate } from './config/utils.ts'
 export * from './config/entry.ts'
 export * from './config/group.ts'
 export * from './config/isolate.ts'
-export type { SourceLocation } from './config/source.ts'
 export * from './config/tree.ts'
 export * from './config/utils.ts'
 export * from './internal.ts'
@@ -77,10 +76,9 @@ export class Loader extends EntryTree {
     // the source config each entry fiber last resolved
     const sources = new WeakMap<Fiber, any>()
 
-    // Registered in front of the built-in validation listener, so that it
-    // receives validation failures and can trace them to the config source.
-    // A config passed in at runtime is not written anywhere yet, so its
-    // failures are left as is.
+    // Registered before the built-in validation listener, so validation
+    // failures can be traced to the config source. A config passed in at
+    // runtime is not written anywhere yet, so its failures are left as is.
     ctx.on('internal/config', (fiber, next) => {
       if (!fiber.entry || fiber.parent.fiber?.entry === fiber.entry) return next()
       try {

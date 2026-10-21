@@ -2,9 +2,8 @@ import { Context, Fiber, Inject, ValidationError } from 'cordis'
 import { deepEqual, isNullable } from 'cosmokit'
 import { Loader } from '../index.ts'
 import { EntryGroup } from './group.ts'
-import { formatIssue, formatLocation } from './source.ts'
 import { EntryTree } from './tree.ts'
-import { evaluate, isJsExpr } from './utils.ts'
+import { evaluate, formatIssue, formatLocation, isJsExpr } from './utils.ts'
 
 export interface EntryOptions {
   id: string
@@ -152,19 +151,15 @@ export class Entry {
     return result
   }
 
-  /**
-   * Point every issue of a failed config validation at the place in the
-   * config source it comes from. Internal frames are dropped from the stack:
-   * the entry chain is what locates the failure.
-   */
   traceValidation(error: ValidationError) {
     const lines = error.issues.map((issue) => {
-      // the issue path is relative to the config, the location path to the entry options
+      // issue paths are relative to the config
       const path = ValidationError.normalizePath(issue.path)
       const name = path.length ? ValidationError.formatPath(path) : undefined
       return formatIssue(issue.message, this.getLocation(['config', ...path]), name)
     })
     error.message = `invalid config:\n${lines.join('\n')}`
+    // the entry chain replaces internal frames, which say nothing about the config
     error.stack = [`${error.name}: ${error.message}`, ...this.getOuterStack()].join('\n')
   }
 

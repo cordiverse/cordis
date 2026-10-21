@@ -21,7 +21,7 @@ const JsExpr: ScalarTag = {
   tag: 'tag:yaml.org,2002:js',
   identify: isJsExpr,
   resolve: (source) => ({ __jsExpr: source }),
-  // the expression is quoted like any other string, behind the tag
+  // quoted like any other string
   stringify: (item, ctx, onComment, onChompKeep) => {
     const scalar = new Scalar((item.value as any).__jsExpr)
     return stringifyString(Object.assign(scalar, { type: item.type }), ctx, onComment, onChompKeep)
@@ -41,7 +41,7 @@ const types: Record<string, string> = {
 
 type ConfigStage = 'read' | 'parse' | 'validate'
 
-/** A config source parsed as YAML (which JSON also is), for its node ranges and line breaks. */
+/** JSON is parsed as YAML too, for node ranges and line positions. */
 interface Syntax {
   document: Document
   lines: LineCounter
@@ -56,11 +56,11 @@ function parseSyntax(content: string): Syntax {
 interface Snapshot {
   content: string
   data: EntryOptions[]
-  /** Syntax of `content`, parsed when first needed to locate a value. */
+  /** Parsed on first use. */
   syntax?: Syntax
 }
 
-// V8 ends a JSON syntax error with the offset, e.g. `at position 17 (line 2 column 16)`
+// e.g. `at position 17 (line 2 column 16)`
 const jsonPosition = /\s+at position (\d+)(?: \(line \d+ column \d+\))?$/
 
 export interface ConfigIssue {
@@ -71,10 +71,8 @@ export interface ConfigIssue {
 export class ConfigFileError extends Error {
   name = 'ConfigFileError'
 
-  /** `issues` are what was found wrong in the file, in place of a `cause`. */
   constructor(public stage: ConfigStage, path: string, cause: unknown, public issues: ConfigIssue[] = []) {
     super([`failed to ${stage} config file ${path}`, ...issues.map(({ message, location }) => {
-      // `file:line:column`, which terminals and editors open at the position
       return `  - ${message} (at ${location.filename}:${location.line}:${location.column})`
     })].join('\n'), { cause })
   }
@@ -128,8 +126,8 @@ function findEntry(entries: EntryOptions[], id: string): PropertyKey[] | undefin
 }
 
 /**
- * Range of the node at `path`, or of its deepest ancestor in the document.
- * A collection may span many lines, so the key that holds it stands for it.
+ * Range of the node at `path`, or of its deepest ancestor. A collection is
+ * represented by the key that holds it.
  */
 function seek(document: Document, path: PropertyKey[]): Range | null | undefined {
   let node: unknown = document.contents
@@ -163,7 +161,7 @@ export class Include extends EntryTree {
   private cache?: Snapshot
   /** Tree-side changes that have not reached the file yet. */
   private journal: Journal = new Map()
-  /** Where the entries of the applied tree come from; set alongside it. */
+  /** Where the entries of the applied tree come from. */
   private index?: PatchIndex
   /** Ids we assigned to entries the file leaves anonymous. */
   private anonymous = new Map<string, Anonymous>()
@@ -482,7 +480,7 @@ export class Include extends EntryTree {
 
   getLocation(id: string, path: PropertyKey[]): SourceLocation | undefined {
     if (!this.cache || !this.index) return
-    // a value the tree has changed no longer corresponds to anything written down
+    // values changed at runtime are not written anywhere yet
     const record = this.journal.get(id)
     if (record?.kind === 'remove') return
     if (path.length && record && String(path[0]) in record.changes) return
