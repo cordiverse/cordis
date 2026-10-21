@@ -20,12 +20,7 @@ export function interpolate(ctx: object, value: any) {
 }
 
 export function isJsExpr(value: any): value is JsExpr {
-  return value instanceof Object && '__jsExpr' in value
-}
-
-// `isJsExpr` alone would also accept `{ __jsExpr: 1 }`
-function isExpression(value: any): value is JsExpr {
-  return isJsExpr(value) && typeof value.__jsExpr === 'string'
+  return value instanceof Object && typeof value.__jsExpr === 'string'
 }
 
 export interface JsExpr {
@@ -111,7 +106,7 @@ export function validateOptions(options: unknown, sep: string): Issue[] {
   check('name', 'a string', value => typeof value === 'string', true)
   check('group', 'a boolean', value => typeof value === 'boolean')
   // an expression is evaluated to a boolean, so it is not worth a mention
-  check('disabled', 'a boolean', value => typeof value === 'boolean' || isExpression(value))
+  check('disabled', 'a boolean', value => typeof value === 'boolean' || isJsExpr(value))
   // a group's config is its entry list
   if (options.group === true) check('config', 'an array', Array.isArray, true)
 
