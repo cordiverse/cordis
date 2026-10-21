@@ -124,7 +124,9 @@ export class Logger {
       if (args.length === 1 && args[0] instanceof Error) {
         if (args[0].cause) {
           this[type](args[0].cause)
-        } else if (isAggregateError(args[0])) {
+        } else if (isAggregateError(args[0]) && args[0].errors.length) {
+          // An aggregate with no sub-errors would otherwise log nothing at all;
+          // fall through and report the aggregate itself.
           args[0].errors.forEach(error => this[type](error))
           return
         }

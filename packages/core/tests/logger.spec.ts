@@ -52,6 +52,12 @@ describe('Logger', () => {
     expect(second).toHaveLength(1)
   })
 
+  it('reports an aggregate error with no sub-errors', () => {
+    const { ctx, captured } = setup()
+    ctx.logger.warn(new AggregateError([]))
+    expect(captured).to.have.length(1)
+  })
+
   it('uses fiber name when called from outside any service', () => {
     const { ctx, captured } = setup()
     ctx.logger.debug('hello')
