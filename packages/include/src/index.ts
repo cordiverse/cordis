@@ -7,7 +7,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import * as yaml from 'js-yaml'
 import { applyJournal, flatten, Journal, merge, reconcile, record } from './journal.ts'
-import { applyPatches, ensureIds, ensureInsertIds, PatchIndex, PatchOptions, routeJournal } from './patch.ts'
+import { applyPatches, ensureIds, ensureInsertIds, PatchOptions, routeJournal } from './patch.ts'
 import type {} from '@cordisjs/plugin-hmr'
 
 // A Windows drive-letter path, e.g. `C:\app\cordis.yml` or `C:/app/cordis.yml`.
@@ -258,7 +258,7 @@ export class Include extends EntryTree {
     this._assignIds(data)
 
     if (this.cache) {
-      const index = new PatchIndex(this.config.patches ?? [])
+      const { index } = applyPatches(data, this.config.patches)
       const conflicts = reconcile(this.journal, flatten(this.cache.data), flatten(data), (id, key) => index.fileOwned(id, key))
       for (const { id, reason } of conflicts) {
         this.ctx.logger.error('config conflict in %C: entry %C %s; file wins', this.filename, id, reason)
@@ -438,7 +438,7 @@ export class Include extends EntryTree {
 
   private _scheduleApply() {
     if (this._disposed || !this.cache) return
-    const tree = applyPatches(this.cache.data, this.config.patches, this.warn)
+    const { data: tree } = applyPatches(this.cache.data, this.config.patches, this.warn)
     this._pendingTree = applyJournal(tree, this.journal, undefined, this.warn)
     this._applyTask ??= (async () => {
       try {
