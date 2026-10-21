@@ -188,6 +188,9 @@ export interface Events {
   'internal/plugin'(fiber: Fiber): void
   'internal/status'(fiber: Fiber, oldValue: FiberState): void
   'internal/service'(this: Context, name: string, value: any): void
+  // Accepts a configuration change without necessarily restarting the plugin: a newer update
+  // replays the whole chain against the stored config, so a listener must be re-playable:
+  // a cordis resource follows the fiber, an effect leaving the context fires once per run.
   'internal/update'(this: Fiber, resolvedConfig: any, next: () => Awaitable<void>): Awaitable<void>
   'internal/commit'(fiber: Fiber, originalConfig: any): void
   'internal/config'(fiber: Fiber, next: () => any): any
