@@ -125,6 +125,15 @@ function findEntry(entries: EntryOptions[], id: string): PropertyKey[] | undefin
   }
 }
 
+/** Index paths of the entries, nested in groups too, that are not objects. */
+function findInvalidEntries(entries: unknown[], prefix: PropertyKey[] = []): PropertyKey[][] {
+  return entries.flatMap((options: any, index) => {
+    if (!options || typeof options !== 'object' || Array.isArray(options)) return [[...prefix, index]]
+    if (!options.group || !Array.isArray(options.config)) return []
+    return findInvalidEntries(options.config, [...prefix, index, 'config'])
+  })
+}
+
 /**
  * Range of the node at `path`, or of its deepest ancestor. A collection is
  * represented by the key that holds it.
@@ -344,6 +353,17 @@ export class Include extends EntryTree {
       const range = document.contents?.range
       if (!range) throw new ConfigFileError('validate', this.filename, new TypeError(message))
       throw new ConfigFileError('validate', this.filename, undefined, [{ message, location: this._locate(lines, range[0]) }])
+    }
+    // ids, patches and the journal all need an entry to be an object; the
+    // loader validates the fields of each entry on its own
+    const invalid = findInvalidEntries(data)
+    if (invalid.length) {
+      const { document, lines } = syntax ?? parseSyntax(content)
+      const issues = invalid.map((path) => {
+        const range = seek(document, path)
+        return { message: 'entry must be an object', location: this._locate(lines, range?.[0] ?? 0) }
+      })
+      throw new ConfigFileError('validate', this.filename, undefined, issues)
     }
 
     this._assignIds(data)

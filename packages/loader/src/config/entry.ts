@@ -2,8 +2,8 @@ import { Context, Fiber, Inject, ValidationError } from 'cordis'
 import { deepEqual, isNullable } from 'cosmokit'
 import { Loader } from '../index.ts'
 import { EntryGroup } from './group.ts'
-import { EntryTree } from './tree.ts'
-import { evaluate, formatIssue, formatLocation, isJsExpr } from './utils.ts'
+import { EntryTree, ModuleNotFoundError } from './tree.ts'
+import { evaluate, formatIssues, formatLocation, isJsExpr, relocate } from './utils.ts'
 
 export interface EntryOptions {
   id: string
@@ -47,6 +47,18 @@ export class Entry {
   constructor(public loader: Loader) {
     this.ctx = loader.ctx.extend({ [Entry.key]: this })
     this.context.emit('loader/entry-init', this)
+  }
+
+  /** Apply a partial update in place; a nullish value removes its key. */
+  static merge(target: Partial<EntryOptions>, options: Partial<EntryOptions>) {
+    for (const [key, value] of Object.entries(options)) {
+      if (isNullable(value)) {
+        delete target[key]
+      } else {
+        target[key] = value
+      }
+    }
+    return target
   }
 
   get context(): Context {
@@ -105,13 +117,7 @@ export class Entry {
     if (create) {
       this.options = options as EntryOptions
     } else {
-      for (const [key, value] of Object.entries(options)) {
-        if (isNullable(value)) {
-          delete this.options[key]
-        } else {
-          this.options[key] = value
-        }
-      }
+      Entry.merge(this.options, options)
     }
     sortKeys(this.options)
 
@@ -138,30 +144,25 @@ export class Entry {
     return this.parent.tree.getLocation(this.options.id, path)
   }
 
-  getOuterStack = () => {
-    let entry: Entry | undefined = this
-    const result: string[] = []
-    do {
-      const location = entry.getLocation()
-      if (location) result.push(`    at ${entry.options.id} (${formatLocation(location)})`)
-      entry = entry.parent.ctx.fiber.entry
-    } while (entry)
-    return result
-  }
+  getOuterStack = () => this.parent.getOuterStack(this.options.id)
 
   traceValidation(error: ValidationError) {
     const frames = this.getOuterStack()
     // an entry outside any source has nothing to point to
     if (!frames.length) return
-    const lines = error.issues.map((issue) => {
-      // issue paths are relative to the config
-      const path = ValidationError.normalizePath(issue.path)
-      const name = path.length ? ValidationError.formatPath(path) : undefined
-      return formatIssue(issue.message, this.getLocation(['config', ...path]), name)
-    })
-    error.message = `invalid config:\n${lines.join('\n')}`
-    // the entry chain replaces internal frames, which say nothing about the config
-    error.stack = [`${error.name}: ${error.message}`, ...frames].join('\n')
+    // issue paths are relative to the config
+    const issues = error.issues.map(({ message, path }) => ({ message, path: ValidationError.normalizePath(path) }))
+    const locate = (path: PropertyKey[]) => this.getLocation(['config', ...path])
+    relocate(error, formatIssues('invalid config', issues, locate), frames)
+  }
+
+  private _reportImport(error: unknown) {
+    // a plugin that cannot be found is the fault of `name`
+    if (error instanceof ModuleNotFoundError) {
+      const location = this.getLocation(['name'])
+      if (location) relocate(error, `${error.message} (at name, ${formatLocation(location)})`, this.getOuterStack())
+    }
+    this.ctx.logger.error(error)
   }
 
   async init() {
@@ -182,7 +183,7 @@ export class Entry {
     try {
       exports = await this.parent.tree.import(this.options.name, this.getOuterStack)
     } catch (error) {
-      this.ctx.logger.error(error)
+      this._reportImport(error)
       return
     }
     const plugin = this.loader.unwrapExports(exports)
