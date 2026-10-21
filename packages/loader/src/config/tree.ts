@@ -139,14 +139,15 @@ export abstract class EntryTree {
     if (name.startsWith('cordis:')) {
       return this.ctx.loader.builtins[name.slice(7)]
     }
+    // On Windows, a drive-letter path is converted with `pathToFileURL`.
+    if (process.platform === 'win32' && driveLetter.test(name)) {
+      name = pathToFileURL(name).href
+    }
     return composeError(async (info) => {
       // ModuleJob.run
       // onImport.tracePromise.__proto__
       // internal.import
       info.offset += 3
-      if (process.platform === 'win32' && driveLetter.test(name)) {
-        name = pathToFileURL(name).href
-      }
       if (this.ctx.loader.internal) {
         return await this.ctx.loader.internal.import(name, this.ctx.baseUrl!, {})
       } else if (name.startsWith('.')) {
