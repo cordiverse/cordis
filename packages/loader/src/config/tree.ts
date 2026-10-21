@@ -9,18 +9,16 @@ import { createResolve } from '../resolve.ts'
 // A Windows drive-letter path, e.g. `C:\app\plugin.js` or `C:/app/plugin.js`.
 const driveLetter = /^[A-Za-z]:[\\/]/
 
-/**
- * Node's `ERR_MODULE_NOT_FOUND` names the modules involved only in its message
- * (`url` is set for a missing file, but not for a missing package):
- * `Cannot find (module|package) '<target>' imported from <parent>`.
- */
+// Node names the modules only in the message:
+// `Cannot find (module|package) '<target>' imported from <parent>`
 function parseNotFound(error: any) {
   if (error?.code !== 'ERR_MODULE_NOT_FOUND' || typeof error.message !== 'string') return
-  const match = error.message.match(/^(Cannot find (?:module|package) '.*') imported from (.*)$/s)
-  if (match) return { description: match[1] as string, parent: match[2] as string }
+  // later lines are hints, e.g. `Did you mean to import ...?`
+  const [first, ...hints] = error.message.split('\n') as string[]
+  const match = first.match(/^(Cannot find (?:module|package) '.*') imported from (.*)$/)
+  if (match) return { description: match[1], parent: match[2], hints }
 }
 
-/** A parent as Node prints it: file URLs as paths. */
 function toPath(url: string) {
   try {
     return url.startsWith('file:') ? fileURLToPath(url) : url
@@ -29,11 +27,6 @@ function toPath(url: string) {
   }
 }
 
-/**
- * The module an entry name refers to cannot be found. A module that the
- * plugin imports in turn is reported by Node's own error instead, which points
- * into the plugin.
- */
 export class ModuleNotFoundError extends Error {
   name = 'ModuleNotFoundError'
   code = 'ERR_MODULE_NOT_FOUND'
@@ -101,7 +94,6 @@ export abstract class EntryTree {
     }
   }
 
-  /** Assign an id to anonymous options; `validateOptions` checks a given one. */
   ensureId(options: Partial<EntryOptions>) {
     if (!options.id) {
       do {
@@ -133,9 +125,7 @@ export abstract class EntryTree {
 
   async create(options: Omit<EntryOptions, 'id'>, parent: string | null = null, position = Infinity) {
     const group = this.resolveGroup(parent)
-    // Options passed in at runtime are checked before they reach the tree or
-    // its source. They are not written anywhere yet, so they are not located.
-    const issues = validateOptions(options, EntryTree.sep)
+    const issues = validateOptions(options, EntryTree.sep, true)
     if (issues.length) throw new EntryValidationError(issues)
     const id = group.tree.ensureId(options)
     group.data.splice(position, 0, options as EntryOptions)
@@ -155,7 +145,7 @@ export abstract class EntryTree {
     const entry = this.resolve(id)
     const source = entry.parent
     const legacy = { ...entry.options }
-    const issues = validateOptions(Entry.merge({ ...legacy }, options), EntryTree.sep)
+    const issues = validateOptions(Entry.merge({ ...legacy }, options), EntryTree.sep, true)
     if (issues.length) throw new EntryValidationError(issues)
     if (parent !== undefined) {
       const target = this.resolveGroup(parent)
@@ -182,10 +172,9 @@ export abstract class EntryTree {
     if (process.platform === 'win32' && driveLetter.test(name)) {
       name = pathToFileURL(name).href
     }
-    // the module `name` is resolved against, to tell its own resolution apart
-    // from that of a module it imports in turn
+    // to tell `name` apart from a module it imports
     let parent: string | undefined
-    // the helper resolves nothing but `name`, so whatever it cannot find is `name`
+    // the helper resolves `name` only
     let unresolved: unknown
     return composeError(async (info) => {
       // ModuleJob.run
@@ -220,8 +209,7 @@ export abstract class EntryTree {
       const notFound = parseNotFound(error)
       if (!notFound) throw error
       if (error !== unresolved && (!parent || notFound.parent !== toPath(parent))) throw error
-      // the parent is internal to the loader, and says nothing about the entry
-      const result = new ModuleNotFoundError(name, notFound.description)
+      const result = new ModuleNotFoundError(name, [notFound.description, ...notFound.hints].join('\n'))
       const frames = getOuterStack?.() ?? []
       // Node's frames are those of its resolver
       if (frames.length) result.stack = [`${result.name}: ${result.message}`, ...frames].join('\n')

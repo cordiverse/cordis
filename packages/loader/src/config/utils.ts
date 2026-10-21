@@ -38,7 +38,6 @@ export function formatLocation(location: SourceLocation) {
   return `${location.filename}:${location.line}:${location.column}`
 }
 
-/** `path` names the value, relative to the config or the entry options. */
 export function formatIssue(message: string, location?: SourceLocation, path?: string) {
   const where = [path, location && formatLocation(location)].filter(Boolean).join(', ')
   return where ? `  - ${message} (at ${where})` : `  - ${message}`
@@ -51,7 +50,6 @@ export interface Issue {
 
 export type Locate = (path: PropertyKey[]) => SourceLocation | undefined
 
-/** `title:` followed by one line per issue, located by `locate` if given. */
 export function formatIssues(title: string, issues: readonly Issue[], locate?: Locate) {
   const lines = issues.map(({ message, path }) => {
     return formatIssue(message, locate?.(path), path.length ? path.map(String).join('.') : undefined)
@@ -59,10 +57,6 @@ export function formatIssues(title: string, issues: readonly Issue[], locate?: L
   return `${title}:\n${lines.join('\n')}`
 }
 
-/**
- * Give `error` a new message, and replace its stack frames with the entry
- * frames, which say more about the source than internal frames do.
- */
 export function relocate(error: Error, message: string, frames: string[]) {
   error.message = message
   error.stack = [`${error.name}: ${message}`, ...frames].join('\n')
@@ -76,17 +70,12 @@ export class EntryValidationError extends TypeError {
   }
 }
 
-// an expression is an object too, but no field other than `disabled` is interpolated
+// only `disabled` takes an expression
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value) && !isJsExpr(value)
 }
 
-/**
- * Type issues of the entry options, with paths relative to the options. Only
- * `disabled` accepts an expression; other fields are not interpolated. An
- * absent `id` is fine, as the tree assigns one.
- */
-export function validateOptions(options: unknown, sep: string): Issue[] {
+export function validateOptions(options: unknown, sep: string, deep = false): Issue[] {
   if (!isPlainObject(options)) return [{ message: 'entry must be an object', path: [] }]
   const issues: Issue[] = []
   const check = (key: string, expected: string, valid: (value: any) => boolean, required = false) => {
@@ -100,12 +89,10 @@ export function validateOptions(options: unknown, sep: string): Issue[] {
 
   check('id', 'a string', value => typeof value === 'string')
   if (typeof options.id === 'string' && options.id.includes(sep)) {
-    // the tree separator would make the id unresolvable
     issues.push({ message: `id must not contain "${sep}"`, path: ['id'] })
   }
   check('name', 'a string', value => typeof value === 'string', true)
   check('group', 'a boolean', value => typeof value === 'boolean')
-  // an expression is evaluated to a boolean, so it is not worth a mention
   check('disabled', 'a boolean', value => typeof value === 'boolean' || isJsExpr(value))
   // a group's config is its entry list
   if (options.group === true) check('config', 'an array', Array.isArray, true)
@@ -124,6 +111,14 @@ export function validateOptions(options: unknown, sep: string): Issue[] {
       if (label === true || typeof label === 'string') continue
       issues.push({ message: `isolate.${name} must be true or a string`, path: ['isolate', name] })
     }
+  }
+  // from a source, each entry is checked as its group creates it
+  if (deep && options.group === true && Array.isArray(options.config)) {
+    options.config.forEach((child, index) => {
+      for (const { message, path } of validateOptions(child, sep, true)) {
+        issues.push({ message, path: ['config', index, ...path] })
+      }
+    })
   }
   return issues
 }

@@ -49,7 +49,6 @@ export class Entry {
     this.context.emit('loader/entry-init', this)
   }
 
-  /** Apply a partial update in place; a nullish value removes its key. */
   static merge(target: Partial<EntryOptions>, options: Partial<EntryOptions>) {
     for (const [key, value] of Object.entries(options)) {
       if (isNullable(value)) {
@@ -150,17 +149,19 @@ export class Entry {
     const frames = this.getOuterStack()
     // an entry outside any source has nothing to point to
     if (!frames.length) return
-    // issue paths are relative to the config
     const issues = error.issues.map(({ message, path }) => ({ message, path: ValidationError.normalizePath(path) }))
     const locate = (path: PropertyKey[]) => this.getLocation(['config', ...path])
     relocate(error, formatIssues('invalid config', issues, locate), frames)
   }
 
   private _reportImport(error: unknown) {
-    // a plugin that cannot be found is the fault of `name`
     if (error instanceof ModuleNotFoundError) {
       const location = this.getLocation(['name'])
-      if (location) relocate(error, `${error.message} (at name, ${formatLocation(location)})`, this.getOuterStack())
+      if (location) {
+        // before Node's hints
+        const [first, ...hints] = error.message.split('\n')
+        relocate(error, [`${first} (at name, ${formatLocation(location)})`, ...hints].join('\n'), this.getOuterStack())
+      }
     }
     this.ctx.logger.error(error)
   }

@@ -68,6 +68,31 @@ describe('Loader: entry options validation', () => {
     expect(loader.expectFiber(id).state).to.equal(FiberState.ACTIVE)
   })
 
+  it('check the entries of a group passed at runtime as a whole', async () => {
+    const root = new Context()
+    await root.plugin(MockLoader)
+    const loader = root.loader as unknown as MockLoader
+    loader.mock('foo', () => {})
+
+    const config = [null, { id: 'child', name: 'foo' }, { name: 'foo', inject: [1] }]
+    await expect(loader.create({ name: '@cordisjs/plugin-group', group: true, config } as any)).rejects.toThrow([
+      'invalid entry options:',
+      '  - entry must be an object (at config.0)',
+      '  - inject.0 must be a string (at config.2.inject.0)',
+    ].join('\n'))
+    expect(loader.changes).to.deep.equal([])
+    expect(loader.store['child']).to.be.undefined
+
+    const id = await loader.create({ name: '@cordisjs/plugin-group', group: true, config: [] })
+    loader.changes.splice(0)
+    await expect(loader.update(id, { config: [{ id: 'child' }] })).rejects.toThrow('name is required (at config.0.name)')
+    expect(loader.changes).to.deep.equal([])
+    expect(loader.store[id]!.options.config).to.deep.equal([])
+
+    // a source hands its entries over one at a time
+    expect(validate({ name: 'group', group: true, config: [null] })).to.deep.equal([])
+  })
+
   it('unload an entry whose options turn invalid, and reload it once fixed', async () => {
     const root = new Context()
     await root.plugin(MockLoader)

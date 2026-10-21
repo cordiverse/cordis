@@ -125,7 +125,6 @@ function findEntry(entries: EntryOptions[], id: string): PropertyKey[] | undefin
   }
 }
 
-/** Index paths of the entries, nested in groups too, that are not objects. */
 function findInvalidEntries(entries: unknown[], prefix: PropertyKey[] = []): PropertyKey[][] {
   return entries.flatMap((options: any, index) => {
     if (!options || typeof options !== 'object' || Array.isArray(options)) return [[...prefix, index]]
@@ -354,8 +353,7 @@ export class Include extends EntryTree {
       if (!range) throw new ConfigFileError('validate', this.filename, new TypeError(message))
       throw new ConfigFileError('validate', this.filename, undefined, [{ message, location: this._locate(lines, range[0]) }])
     }
-    // ids, patches and the journal all need an entry to be an object; the
-    // loader validates the fields of each entry on its own
+    // ids, patches and the journal all assume an entry is an object
     const invalid = findInvalidEntries(data)
     if (invalid.length) {
       const { document, lines } = syntax ?? parseSyntax(content)

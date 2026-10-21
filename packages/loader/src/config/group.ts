@@ -31,7 +31,6 @@ export class EntryGroup {
     return entry.id
   }
 
-  /** Stack frames of the entry `id` in this group and of the entries enclosing it. */
   getOuterStack(id: string): string[] {
     const location = this.tree.getLocation(id, [])
     const frames = location ? [`    at ${id} (${formatLocation(location)})`] : []
@@ -42,8 +41,7 @@ export class EntryGroup {
     const error = new EntryValidationError(issues)
     const id = options?.id
     if (isNullable(id)) return error
-    // an entry whose options turn invalid is unloaded; unregistered first, so
-    // the loader does not take the disposal for a self-dispose
+    // unregistered first, so the disposal is not taken for a self-dispose
     const entry = this.tree.store[id]
     if (entry) {
       delete this.tree.store[id]
@@ -51,7 +49,6 @@ export class EntryGroup {
       this.context.emit('loader/partial-dispose', entry, entry.options, false)
     }
     const frames = this.getOuterStack(id)
-    // an entry outside any source has nothing to point to
     if (!frames.length) return error
     const locate = (path: PropertyKey[]) => this.tree.getLocation(id, path)
     relocate(error, formatIssues('invalid entry options', issues, locate), frames)
@@ -84,7 +81,7 @@ export class EntryGroup {
     const oldConfig = this.data as EntryOptions[]
     this.data = config
     const oldMap = Object.fromEntries(oldConfig.map(options => [options?.id, options]))
-    // invalid options, even a non-object, are rejected by `create`
+    // non-objects are rejected by `create`
     const newMap = Object.fromEntries(config.map(options => [options?.id ?? Symbol('anonymous'), options]))
 
     // update inner plugins
