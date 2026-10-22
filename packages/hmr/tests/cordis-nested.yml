@@ -1,7 +1,9 @@
 - id: hmr
   name: '@cordisjs/plugin-hmr'
   config:
-    debounce: 50
+    watch:
+      enabled: true
+      debounce: 50
 - id: fs
   name: '@cordisjs/plugin-fs'
 - id: tree

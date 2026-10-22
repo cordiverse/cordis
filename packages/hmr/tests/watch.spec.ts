@@ -77,12 +77,12 @@ describe('Hmr with fs', () => {
     TestLoader.exits = 0
   })
 
-  async function setup(config: Partial<Hmr.Config> = {}, fs = true) {
+  async function setup(config: Partial<Hmr.WatchConfig> = {}, fs = true) {
     ctx = new Context()
     ctx.baseUrl = import.meta.url
     fiber = await ctx.plugin(TestLoader)
     if (fs) await ctx.plugin(FakeFs)
-    await ctx.plugin(Hmr, { debounce: 50, ...config })
+    await ctx.plugin(Hmr, { watch: { enabled: true, debounce: 50, ...config } })
   }
 
   async function load(name: string, content: string) {

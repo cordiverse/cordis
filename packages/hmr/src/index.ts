@@ -9,8 +9,6 @@ import { handleError } from './error.ts'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
 import picomatch from 'picomatch'
-import enUS from './locales/en-US.yml'
-import zhCN from './locales/zh-CN.yml'
 import z from 'schemastery'
 
 declare module 'cordis' {
@@ -125,8 +123,8 @@ class Hmr extends Service {
   // Changes are collected over the debounce window. A batch that can only be
   // applied by restarting the process calls `ctx.loader.exit()`.
   private _watch(ctx: Context) {
-    const { root, debounce } = this.config
-    if (!root.length) return
+    const { enabled, root, ignored, debounce } = this.config.watch
+    if (!enabled || !root.length) return
     this.ctx.logger.info('watching %o', root)
 
     const stashed = new Set<string>()
@@ -154,7 +152,7 @@ class Hmr extends Service {
       }
     }
 
-    const match = picomatch(this.config.ignored)
+    const match = picomatch(ignored)
     for (const path of root) {
       ctx.fs.watch(resolve(this.baseDir, path), (filename) => {
         this.ctx.logger.debug('change detected at %C', relative(this.baseDir, filename))
@@ -562,24 +560,29 @@ class Hmr extends Service {
 }
 
 namespace Hmr {
-  export interface Config {
+  export interface WatchConfig {
+    enabled: boolean
     root: string[]
     ignored: string[]
     debounce: number
   }
 
+  export interface Config {
+    watch: WatchConfig
+  }
+
   export const Config: z<Config> = z.object({
-    root: z.array(String).role('table').default(['.']),
-    ignored: z.array(String).role('table').default([
-      '**/node_modules',
-      '**/.*',
-      'cache',
-      'data',
-    ]),
-    debounce: z.natural().role('ms').default(100),
-  }).i18n({
-    'en-US': enUS,
-    'zh-CN': zhCN,
+    watch: z.object({
+      enabled: z.boolean().default(false).description('Reload on file changes. Requires the `fs` service.'),
+      root: z.array(String).role('table').default(['.']).description('Files or directories to watch, relative to the context.'),
+      ignored: z.array(String).role('table').default([
+        '**/node_modules',
+        '**/.*',
+        'cache',
+        'data',
+      ]).description('Files or directories not to watch, in glob patterns.'),
+      debounce: z.natural().role('ms').default(100).description('Debounce changes before reloading, in milliseconds.'),
+    }).description('Watch'),
   })
 
   export interface ReconcileOptions {

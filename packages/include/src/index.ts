@@ -284,14 +284,14 @@ export class Include extends EntryTree {
     ensureInsertIds(config.patches, id => !!this.store[id])
 
     ctx.on('internal/update', (config, next) => {
-      if (config.path !== this.config.path || (config.watch ?? true) !== (this.config.watch ?? true)) return next()
+      if (config.path !== this.config.path || !config.watch !== !this.config.watch) return next()
       this.config = config
       ensureInsertIds(config.patches, id => !!this.store[id])
       this._scheduleApply()
       return this._applyTask
     })
 
-    if (config.watch ?? true) {
+    if (config.watch) {
       ctx.inject(['fs'], (ctx) => {
         ctx.fs.watch(this.filename, () => this.refresh())
       })

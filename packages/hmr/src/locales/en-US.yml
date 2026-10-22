@@ -1,3 +1,0 @@
-root: Files or directories to watch through the `fs` service, relative to the config file.
-ignored: Files or directories not to watch. Supports [Glob Patterns](https://github.com/micromatch/micromatch) syntax.
-debounce: Debounce changes before reloading, in milliseconds.

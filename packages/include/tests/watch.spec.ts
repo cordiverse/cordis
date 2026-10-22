@@ -41,18 +41,18 @@ describe('Include watch', () => {
     return { ctx, id }
   }
 
-  it('watches the config file by default', async () => {
+  it('does not watch the config file by default', async () => {
     await setup()
-    expect(FakeFs.paths).to.deep.equal([filename])
-  })
-
-  it('does not watch the config file with `watch: false`', async () => {
-    await setup({ watch: false })
     expect(FakeFs.paths).to.deep.equal([])
   })
 
+  it('watches the config file with `watch: true`', async () => {
+    await setup({ watch: true })
+    expect(FakeFs.paths).to.deep.equal([filename])
+  })
+
   it('restarts when `watch` is toggled', async () => {
-    const { ctx, id } = await setup({ watch: false })
+    const { ctx, id } = await setup()
     await ctx.loader.update(id, { config: { path: './fixtures/watch.yml', watch: true } })
     await ctx.loader.store[id]!.innerFiber!.await()
     expect(FakeFs.paths).to.deep.equal([filename])

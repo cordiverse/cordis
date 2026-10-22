@@ -1,3 +1,0 @@
-root: 通过 `fs` 服务监听的文件或目录，相对于配置文件。
-ignored: 不监听的文件或目录。支持 [Glob Patterns](https://github.com/micromatch/micromatch) 语法。
-debounce: 变更触发重载前的等待时间。

@@ -68,6 +68,7 @@ async function createContext(configFile: string): Promise<{ ctx: Context; fiber:
     name: '@cordisjs/plugin-include',
     config: {
       path: pathToFileURL(resolve(testDir, configFile)).href,
+      watch: true,
     },
   })
   await waitFor(() => ctx.hmr && ctx.fs, 5000)
@@ -530,7 +531,9 @@ export function apply(ctx: Context) {
     const configWith = (value: string) => `- id: hmr
   name: '@cordisjs/plugin-hmr'
   config:
-    debounce: 50
+    watch:
+      enabled: true
+      debounce: 50
 - id: fs
   name: '@cordisjs/plugin-fs'
 - id: cfg
@@ -635,7 +638,9 @@ export default MyService
       writeFileSync(configPath, `- id: hmr
   name: '@cordisjs/plugin-hmr'
   config:
-    debounce: 50
+    watch:
+      enabled: true
+      debounce: 50
 - id: fs
   name: '@cordisjs/plugin-fs'
 - id: my-service
@@ -1253,12 +1258,13 @@ export function apply(ctx: Context) {
       })
       // HMR reads the internals itself; the loader does not share them.
       const spy = vi.spyOn(ModuleLoader, 'fromInternal').mockReturnValue(undefined)
-      await ctx.plugin(Hmr, { root: [testDir] })
+      await ctx.plugin(Hmr, { watch: { enabled: true, root: [testDir] } })
       spy.mockRestore()
       await ctx.loader.create({
         name: '@cordisjs/plugin-include',
         config: {
           path: pathToFileURL(configPath).href,
+          watch: true,
         },
       })
       await waitFor(() => ctx.fs, 5000)
