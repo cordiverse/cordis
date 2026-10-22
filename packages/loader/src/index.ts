@@ -130,14 +130,7 @@ export class Loader extends EntryTree {
       // 1. set `fiber.entry`
       // the inner fiber, not the outer one, is the entry's root
       if (fiber.parent[Entry.key] && !fiber.entry && !Entry.isOuter(fiber)) {
-        const entry: Entry = fiber.entry = fiber.parent[Entry.key]
-        // services the plugin declares itself are located here, not at the outer fiber
-        if (fiber.parent.fiber?.entry !== entry) {
-          for (const key of Object.keys(fiber.inject)) {
-            if (isNullable(entry.inject[key])) continue
-            fiber.inject[key] = entry.inject[key]
-          }
-        }
+        fiber.entry = fiber.parent[Entry.key]
       }
 
       // 2. handle self-dispose
@@ -171,12 +164,9 @@ export class Loader extends EntryTree {
       // unregisters it before disposing the fiber)
       if (entry.parent.tree.store[entry.options.id] !== entry) return
 
-      // case 8: fiber is disposed by `entry.dispose()`, e.g. rebuild on inject change
+      // case 8: fiber is disposed by loader behavior through `entry.dispose()`,
+      // such as config file update, ancestor group disable, rebuild
       if (entry._disposing) return
-
-      // case 9: fiber is disposed by loader behavior
-      // such as inject checker, config file update, ancestor group disable
-      if (entry.disabled) return
 
       const legacy = { ...entry.options }
       entry.options.disabled = true

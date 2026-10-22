@@ -157,8 +157,8 @@ describe('Loader: entry evaluation context', () => {
     expect(worker.mock.calls).to.have.length(0)
   })
 
-  it('carries an inject value to a service the plugin declares itself', async () => {
-    const own = Object.assign(loader.mock('own', () => {}), { inject: ['settings'] })
+  it('keeps an inject value on the outer fiber when the plugin declares the service itself', async () => {
+    const own = Object.assign(loader.mock('own', () => {}), { inject: { settings: { own: 1 } } })
     await loader.read([settings({}), {
       id: 'own',
       name: 'own',
@@ -167,7 +167,9 @@ describe('Loader: entry evaluation context', () => {
 
     const entry = loader.store.own
     expect(own.mock.calls).to.have.length(1)
-    expect(entry.innerFiber!.inject).to.deep.equal({ settings: { namespace: 'ns' } })
+    expect(entry.outerFiber!.inject).to.deep.equal({ settings: { namespace: 'ns' } })
+    // the plugin keeps its own declaration; the entry configures it through `intercept`
+    expect(entry.innerFiber!.inject).to.deep.equal({ settings: { own: 1 } })
   })
 
   it('evaluates intercept with the entry inject, for the plugin only', async () => {
