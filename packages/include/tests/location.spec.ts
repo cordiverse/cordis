@@ -119,6 +119,76 @@ describe('Include source locations', () => {
     expect(app.stacks()).toEqual([expect.stringContaining(`(at port, ${app.at('"80"')})`)])
   }, 10000)
 
+  describe('aliases', () => {
+    it('locates a config value at its anchor', async () => {
+      const app = await start('tmp-location-alias-config.yml', [
+        '- id: a',
+        '  name: ./schema-plugin',
+        '  config: &c',
+        '    port: &p "80"',
+        '- id: b',
+        '  name: ./schema-plugin',
+        '  config: *c',
+        '- id: c',
+        '  name: ./schema-plugin',
+        '  config:',
+        '    port: *p',
+        '',
+      ].join('\n'))
+
+      const stacks = app.stacks()
+      expect(stacks).toHaveLength(3)
+      for (const id of ['a', 'b', 'c']) {
+        expect(stacks.find(stack => stack.includes(`at ${id} (`))).toContain(`(at port, ${app.at('"80"')})`)
+      }
+    }, 10000)
+
+    it('points a missing value under an alias at the key that holds it', async () => {
+      const app = await start('tmp-location-alias-missing.yml', [
+        '- id: a',
+        '  name: ./test-plugin',
+        '  intercept: &c {}',
+        '- id: b',
+        '  name: ./schema-plugin',
+        '  config: *c',
+        '',
+      ].join('\n'))
+
+      expect(app.stacks()).toEqual([expect.stringContaining(`(at port, ${app.at('config: *c')})`)])
+    }, 10000)
+
+    it('locates an entry option at its anchor', async () => {
+      const app = await start('tmp-location-alias-fields.yml', [
+        '- id: a',
+        '  name: ./test-plugin',
+        '  isolate: { x: &g 1 }',
+        '- id: b',
+        '  name: ./test-plugin',
+        '  group: *g',
+        '',
+      ].join('\n'))
+
+      expect(app.stacks().find(stack => stack.includes('at b ('))).toContain(`(at group, ${app.at('1 }')})`)
+    }, 10000)
+
+    it('locates an expression at its anchor', async () => {
+      const app = await start('tmp-location-alias-expr.yml', [
+        '- id: a',
+        '  name: ./test-plugin',
+        '  intercept: { x: &x !!js "1 + foo" }',
+        '- id: b',
+        '  name: ./test-plugin',
+        '  disabled: *x',
+        '',
+      ].join('\n'))
+
+      expect(app.stacks().find(stack => stack.includes('at b ('))).toBe([
+        'ReferenceError: foo is not defined',
+        `    at disabled (${app.at('foo')})`,
+        `    at b (${app.filename}:4:3)`,
+      ].join('\n'))
+    }, 10000)
+  })
   it('locates entries of a group config replaced by a patch', async () => {
     const inner = fixture('tmp-location-group-inner.yml')
     await writeFile(inner, '- id: g\n  name: \'@cordisjs/plugin-group\'\n  group: true\n  config: []\n')
@@ -203,7 +273,7 @@ describe('Include source locations', () => {
 
   it('leaves a config passed at runtime unlocated', async () => {
     const app = await start('tmp-location-runtime.yml', '- id: a\n  name: ./schema-plugin\n  config:\n    port: 80\n')
-    const fiber = app.include().store['a']!.fiber!
+    const fiber = app.include().store['a']!.innerFiber!
     expect(() => fiber.update({ port: 'runtime' })).toThrow(/^invalid config:\n {2}- port must be a number \(at port\)$/)
   }, 10000)
 
@@ -255,13 +325,13 @@ describe('Include source locations', () => {
       ].join('\n'))
 
       expect(app.stacks()).toEqual([expect.stringContaining(`  - name must be a string (at name, ${app.at('"\'./')})`)])
-      expect(app.include().store['a']!.fiber).toBeTruthy()
+      expect(app.include().store['a']!.innerFiber).toBeTruthy()
     }, 10000)
 
     it('unloads an entry that turns invalid, without writing to the file', async () => {
       const source = '- id: a\n  name: ./test-plugin\n'
       const app = await start('tmp-location-turn.yml', source)
-      const fiber = app.include().store['a']!.fiber!
+      const fiber = app.include().store['a']!.innerFiber!
 
       const invalid = '- id: a\n  name: ./test-plugin\n  group: 1\n'
       await writeFile(app.filename, invalid)
@@ -273,7 +343,7 @@ describe('Include source locations', () => {
 
       await writeFile(app.filename, source)
       await app.settle()
-      expect(app.include().store['a']!.fiber!.uid).toBeTruthy()
+      expect(app.include().store['a']!.innerFiber!.uid).toBeTruthy()
     }, 10000)
 
     it('locates entries nested in groups', async () => {
@@ -316,7 +386,7 @@ describe('Include source locations', () => {
         `  - entry must be an object (at ${at(app.filename, invalid, 'null')})`,
       ].join('\n'))])
       // the previous tree stays as it was
-      expect(app.include().store['a']!.fiber!.uid).toBeTruthy()
+      expect(app.include().store['a']!.innerFiber!.uid).toBeTruthy()
       expect(app.include().store['g']).toBeUndefined()
     }, 10000)
 
@@ -416,6 +486,172 @@ describe('Include source locations', () => {
     }, 10000)
   })
 
+  describe('expressions', () => {
+    it.each([
+      ['inject', '  inject:\n    loader: !!js "1 + foo"', 'inject.loader'],
+      ['disabled', '  disabled: !!js "1 + foo"', 'disabled'],
+      ['intercept', '  intercept:\n    loader: { await: !!js "1 + foo" }', 'intercept.loader.await'],
+      ['config', '  config:\n    port: !!js "1 + foo"', 'config.port'],
+    ])('points a failure in %s at the expression', async (field, lines, label) => {
+      const app = await start(`tmp-location-expr-${field}.yml`, [
+        '- id: a',
+        '  name: ./schema-plugin',
+        lines,
+        '',
+      ].join('\n'))
+
+      expect(app.stacks()).toEqual([[
+        'ReferenceError: foo is not defined',
+        `    at ${label} (${app.at('foo')})`,
+        `    at a (${app.filename}:1:3)`,
+      ].join('\n')])
+    }, 10000)
+
+    it('maps positions across lines and escapes', async () => {
+      const app = await start('tmp-location-expr-block.yml', [
+        '- id: a',
+        '  name: ./test-plugin',
+        '  disabled: !!js |',
+        '    [1].map(function check() {',
+        '      throw new Error("boom")',
+        '    })',
+        '- id: b',
+        '  name: ./test-plugin',
+        '  disabled: !!js "\\"it\'s\\" + \\u0020 foo"',
+        '- id: c',
+        '  name: ./test-plugin',
+        '  disabled: !!js \'"it\'\'s" + bar\'',
+        '',
+      ].join('\n'))
+
+      const stacks = app.stacks()
+      expect(stacks).toHaveLength(3)
+      expect(stacks.find(stack => stack.includes('at a ('))).toBe([
+        'Error: boom',
+        `    at check (${app.at('new Error')})`,
+        '    at Array.map (<anonymous>)',
+        `    at disabled (${app.at('map(')})`,
+        `    at a (${app.filename}:1:3)`,
+      ].join('\n'))
+      expect(stacks.find(stack => stack.includes('at b ('))).toContain(`    at disabled (${app.at('foo')})\n`)
+      expect(stacks.find(stack => stack.includes('at c ('))).toContain(`    at disabled (${app.at('bar')})\n`)
+    }, 10000)
+
+    it('names the anonymous functions of an expression by their location', async () => {
+      const app = await start('tmp-location-expr-arrow.yml', [
+        '- id: a',
+        '  name: ./test-plugin',
+        '  disabled: !!js "(() => { throw new Error(\'boom\') })()"',
+        '',
+      ].join('\n'))
+
+      expect(app.stacks()).toEqual([[
+        'Error: boom',
+        `    at ${app.at('new Error')}`,
+        `    at disabled (${app.at('()"')})`,
+        `    at a (${app.filename}:1:3)`,
+      ].join('\n')])
+    }, 10000)
+
+    it('keeps the frames of what the expression calls', async () => {
+      const app = await start('tmp-location-expr-call.yml', [
+        '- id: a',
+        '  name: ./test-plugin',
+        '  disabled: !!js "loader.resolve(\'missing\')"',
+        '',
+      ].join('\n'))
+
+      const [stack] = app.stacks()
+      expect(stack).toMatch(/^Error: cannot resolve entry missing\n {4}at \S*resolve .+tree\.ts/)
+      expect(stack).toMatch(new RegExp(`\n {4}at disabled \\(.+\\)\n {4}at a \\(.+\\)$`))
+      expect(stack).toContain(`    at disabled (${app.at('resolve(')})`)
+      expect(stack).not.toContain('<cordis:')
+    }, 10000)
+
+    it('points an expression that does not parse at its start', async () => {
+      const app = await start('tmp-location-expr-syntax.yml', [
+        '- id: a',
+        '  name: ./test-plugin',
+        '  disabled: !!js "foo bar"',
+        '',
+      ].join('\n'))
+
+      expect(app.stacks()).toEqual([[
+        'SyntaxError: Unexpected identifier \'bar\'',
+        `    at disabled (${app.at('foo bar')})`,
+        `    at a (${app.filename}:1:3)`,
+      ].join('\n')])
+    }, 10000)
+
+    it('locates entries nested in groups', async () => {
+      const app = await start('tmp-location-expr-group.yml', [
+        '- id: g',
+        '  name: \'@cordisjs/plugin-group\'',
+        '  group: true',
+        '  config:',
+        '    - id: a',
+        '      name: ./test-plugin',
+        '      disabled: !!js "foo"',
+        '',
+      ].join('\n'))
+
+      expect(app.stacks()).toEqual([[
+        'ReferenceError: foo is not defined',
+        `    at disabled (${app.at('foo')})`,
+        `    at a (${app.filename}:5:7)`,
+        `    at g (${app.filename}:1:3)`,
+      ].join('\n')])
+    }, 10000)
+
+    it('locates an expression written as an object in JSON', async () => {
+      const app = await start('tmp-location-expr.json', JSON.stringify([
+        { id: 'a', name: './test-plugin', disabled: { __jsExpr: '1 + foo' } },
+      ], null, 2))
+
+      expect(app.stacks()).toEqual([[
+        'ReferenceError: foo is not defined',
+        `    at disabled (${app.at('foo')})`,
+        `    at a (${app.at('{\n    "id"')})`,
+      ].join('\n')])
+    }, 10000)
+
+    it('points a failure on update at the new expression', async () => {
+      const app = await start('tmp-location-expr-update.yml', '- id: a\n  name: ./schema-plugin\n  config:\n    port: 80\n')
+      const fiber = app.include().store['a']!.innerFiber!
+      const source = '- id: a\n  name: ./schema-plugin\n  config:\n    port: !!js "1 + foo"\n'
+      await writeFile(app.filename, source)
+      await app.settle()
+
+      expect(app.stacks()).toEqual([[
+        'ReferenceError: foo is not defined',
+        `    at config.port (${at(app.filename, source, 'foo')})`,
+        `    at a (${app.filename}:1:3)`,
+      ].join('\n')])
+      // the update is rejected, and the plugin keeps running
+      expect(app.include().store['a']!.innerFiber).toBe(fiber)
+      expect(fiber.uid).toBeTruthy()
+    }, 10000)
+
+    it('leaves an expression changed at runtime unlocated', async () => {
+      const app = await start('tmp-location-expr-runtime.yml', '- id: a\n  name: ./test-plugin\n')
+      await app.update('a', { disabled: { __jsExpr: 'foo' } })
+
+      expect(app.stacks()).toEqual([expect.stringMatching(new RegExp([
+        '^ReferenceError: foo is not defined',
+        ' {4}at disabled \\(<cordis:expression#\\d+>:1:1\\)',
+        ` {4}at a \\(${app.filename.replace(/[\\.]/g, '\\$&')}:1:3\\)$`,
+      ].join('\n')))])
+    }, 10000)
+
+    it('leaves entries outside any file untraced', async () => {
+      const app = await start('tmp-location-expr-memory.yml', '[]\n')
+      await app.ctx.loader.create({ name: './fixtures/test-plugin', disabled: { __jsExpr: 'foo' } as any })
+      await app.ctx.loader.await()
+
+      const [stack] = app.stacks()
+      expect(stack).toMatch(/^ReferenceError: foo is not defined\n {4}at eval \(<cordis:expression#\d+>:1:1\)\n {4}at eval \(<cordis:evaluate>:/)
+    }, 10000)
+  })
   it('points parse errors at the source', async () => {
     const app = await start('tmp-location-parse.yml', '[]\n')
     const source = '- id: a\n  name: !foo ./schema-plugin\n'

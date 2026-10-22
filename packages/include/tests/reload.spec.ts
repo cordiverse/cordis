@@ -80,6 +80,19 @@ describe('Include reload', () => {
     expect(app.ctx.bail('test/get-value')).to.be.undefined
   }, 10000)
 
+  it('rebuilds an entry whose name changes in the file', async () => {
+    const app = await setup('tmp-reload-rename.yml', INNER)
+    await waitFor(() => app.ctx.bail('test/get-value'))
+
+    await writeFile(app.filename, '- id: inner\n  name: ./extra-plugin\n')
+    await app.include().refresh()
+
+    await waitFor(() => app.ctx.bail('test/get-extra'))
+    expect(app.ctx.bail('test/get-value')).to.be.undefined
+    // the old plugin is not taken for a self-dispose
+    expect(await readFile(app.filename, 'utf8')).to.equal('- id: inner\n  name: ./extra-plugin\n')
+  }, 10000)
+
   it('reverts an entry when its patch is removed', async () => {
     const app = await setup('tmp-reload-revert.yml', INNER, {
       patches: [

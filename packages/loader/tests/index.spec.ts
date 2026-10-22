@@ -146,9 +146,6 @@ describe('Loader: intercept config', () => {
     qux = await loader.create({
       name: 'qux',
       inject: {
-        loader: true,
-      },
-      intercept: {
         loader: {
           await: true,
         },
@@ -158,7 +155,8 @@ describe('Loader: intercept config', () => {
     await sleep()
     expect(loader.expectFiber(foo).state).to.equal(FiberState.LOADING)
     expect(loader.expectFiber(bar).state).to.equal(FiberState.PENDING)
-    expect(loader.expectFiber(qux).state).to.equal(FiberState.PENDING)
+    expect(loader.store[qux].outerFiber?.state).to.equal(FiberState.PENDING)
+    expect(loader.store[qux].innerFiber).to.be.undefined
   })
 
   it('resolved', async () => {
@@ -255,7 +253,8 @@ describe('Loader: config interpolation', () => {
     }])
     await sleep()
 
-    expect(loader.expectFiber('1').state).to.equal(FiberState.PENDING)
+    expect(loader.store['1'].outerFiber?.state).to.equal(FiberState.PENDING)
+    expect(loader.store['1'].innerFiber).to.be.undefined
     expect(consumer.mock.calls).to.have.length(0)
   })
 
@@ -378,11 +377,11 @@ describe('Loader: pending entry update', () => {
     await root.plugin(MockLoader)
     loader = root.loader as any
 
-    loader.mock('foo', () => {})
+    Object.assign(loader.mock('foo', () => {}), { inject: ['never'] })
   })
 
   it('persist an update to a pending fiber', async () => {
-    await loader.read([{ id: '1', name: 'foo', inject: ['never'] }])
+    await loader.read([{ id: '1', name: 'foo' }])
     await sleep()
     expect(loader.expectFiber('1').state).to.equal(FiberState.PENDING)
 
@@ -392,7 +391,6 @@ describe('Loader: pending entry update', () => {
     expect(loader.data).to.deep.equal([{
       id: '1',
       name: 'foo',
-      inject: ['never'],
       config: { a: 3 },
     }])
   })
@@ -440,7 +438,7 @@ describe('Loader: parent teardown', () => {
     await loader.read([{ id: '1', name: 'tree' }])
     await sleep()
     expect(loader.expectFiber('1').state).to.equal(FiberState.ACTIVE)
-    expect(loader.resolve('1:a').fiber?.state).to.equal(FiberState.ACTIVE)
+    expect(loader.resolve('1:a').innerFiber?.state).to.equal(FiberState.ACTIVE)
 
     dispose()
     await loader.await()

@@ -1,24 +1,15 @@
 import { Context } from 'cordis'
 import { Dict } from 'cosmokit'
 import { Entry } from './entry.ts'
+import { swap } from './utils.ts'
 
 declare module './entry.ts' {
   interface EntryOptions {
-    intercept?: Dict | null
     isolate?: Dict<true | string> | null
   }
 
   interface Entry {
     realm: LocalRealm
-  }
-}
-
-function swap<T extends {}>(target: T, source?: T | null) {
-  for (const key of Reflect.ownKeys(target)) {
-    Reflect.deleteProperty(target, key)
-  }
-  for (const key of Reflect.ownKeys(source || {})) {
-    Reflect.defineProperty(target, key, Reflect.getOwnPropertyDescriptor(source!, key)!)
   }
 }
 
@@ -85,7 +76,6 @@ export default function isolate(ctx: Context) {
   }
 
   ctx.on('loader/entry-init', (entry) => {
-    entry.ctx[Context.intercept] = Object.create(entry.ctx[Context.intercept])
     entry.ctx[Context.isolate] = Object.create(entry.ctx[Context.isolate])
   })
 
@@ -118,9 +108,7 @@ export default function isolate(ctx: Context) {
 
     // step 3: set prototype for transferred context
     Object.setPrototypeOf(entry.ctx[Context.isolate], entry.parent.ctx[Context.isolate])
-    Object.setPrototypeOf(entry.ctx[Context.intercept], entry.parent.ctx[Context.intercept])
     swap(entry.ctx[Context.isolate], newMap)
-    swap(entry.ctx[Context.intercept], entry.options.intercept)
 
     // step 4: reload fiber
     await next()

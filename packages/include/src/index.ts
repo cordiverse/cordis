@@ -1,4 +1,4 @@
-import { EntryChange, EntryOptions, EntryTree, isJsExpr, SourceLocation } from '@cordisjs/plugin-loader'
+import { Entry, EntryChange, EntryOptions, EntryTree, isJsExpr, SourceLocation } from '@cordisjs/plugin-loader'
 import { Context, Service } from 'cordis'
 import { deepEqual } from 'cosmokit'
 import { basename, dirname, extname, join } from 'node:path'
@@ -135,30 +135,111 @@ function findInvalidEntries(entries: unknown[], prefix: PropertyKey[] = []): Pro
   })
 }
 
-/**
- * Range of the node at `path`, or of its deepest ancestor. A collection is
- * represented by the key that holds it.
- */
-function seek(document: Document, path: PropertyKey[]): Range | null | undefined {
+function walk(document: Document, path: PropertyKey[]) {
   let node: unknown = document.contents
   let anchor = isNode(node) ? node.range : undefined
+  let complete = true
   for (const key of path) {
     if (isAlias(node)) node = node.resolve(document)
     if (isMap(node)) {
       const pair = node.items.find(pair => String(isScalar(pair.key) ? pair.key.value : pair.key) === String(key))
-      if (!pair) break
+      if (!pair) {
+        complete = false
+        break
+      }
       node = pair.value
       if (isNode(pair.key)) anchor = pair.key.range
     } else if (isSeq(node)) {
       const item = node.items[key as number]
-      if (!isNode(item)) break
+      if (!isNode(item)) {
+        complete = false
+        break
+      }
       node = item
       anchor = item.range
     } else {
+      complete = false
       break
     }
   }
-  return isScalar(node) ? node.range : anchor
+  // a value written through an alias is located at its anchor
+  if (isAlias(node)) node = node.resolve(document)
+  if (isScalar(node)) anchor = node.range
+  return { node, anchor, complete }
+}
+
+function seek(document: Document, path: PropertyKey[]): Range | null | undefined {
+  return walk(document, path).anchor
+}
+
+const isBlank = (char: string) => char === ' ' || char === '\t' || char === '\n' || char === '\r'
+
+const escapes: Record<string, string> = Object.fromEntries([
+  '0\0', 'a\x07', 'b\b', 't\t', '\t\t', 'n\n', 'v\v', 'f\f', 'r\r', 'e\x1b',
+  '  ', '""', '//', '\\\\', 'N\x85', '_\xa0', 'L\u2028', 'P\u2029',
+].map(([key, value]) => [key, value]))
+
+const hexLengths: Record<string, number> = { x: 2, u: 4, U: 8 }
+
+function scanScalar(content: string, node: Scalar) {
+  const [start, end] = node.range!
+  const units: number[] = []
+  let index = start
+  let stop = end
+  if (node.type === Scalar.BLOCK_LITERAL || node.type === Scalar.BLOCK_FOLDED) {
+    index = content.indexOf('\n', start)
+    if (index === -1) return units
+  } else if (node.type === Scalar.QUOTE_DOUBLE || node.type === Scalar.QUOTE_SINGLE) {
+    index += 1
+    stop -= 1
+  }
+  while (index < stop) {
+    const char = content[index]
+    if (node.type === Scalar.QUOTE_DOUBLE && char === '\\') {
+      const next = content[index + 1]
+      const length = hexLengths[next]
+      let decoded = ''
+      if (length) {
+        decoded = String.fromCodePoint(parseInt(content.slice(index + 2, index + 2 + length), 16))
+      } else if (next in escapes) {
+        decoded = escapes[next]
+      }
+      for (const unit of decoded.split('')) {
+        if (!isBlank(unit)) units.push(index)
+      }
+      index += 2 + (length ?? 0)
+    } else if (node.type === Scalar.QUOTE_SINGLE && char === '\'' && content[index + 1] === '\'') {
+      units.push(index)
+      index += 2
+    } else {
+      if (!isBlank(char)) units.push(index)
+      index += 1
+    }
+  }
+  return units
+}
+
+function seekExpr(content: string, document: Document, path: PropertyKey[], expr: string, offset: number) {
+  const { complete, ...rest } = walk(document, path)
+  let { node } = rest
+  // JSON has no tags
+  if (complete && isMap(node)) {
+    const pair = node.items.find(pair => isScalar(pair.key) && pair.key.value === '__jsExpr')
+    if (isScalar(pair?.value)) node = pair.value
+  }
+  if (!complete || !isScalar(node) || !node.range) return
+  const value = isJsExpr(node.value) ? node.value.__jsExpr : node.value
+  if (value !== expr) return
+  let rank = 0
+  let total = 0
+  for (let index = 0; index < value.length; index++) {
+    if (isBlank(value[index])) continue
+    if (index < offset) rank += 1
+    total += 1
+  }
+  const units = scanScalar(content, node)
+  if (units.length !== total || rank >= total) return node.range[0]
+  return units[rank]
 }
 
 export class Include extends EntryTree {
@@ -501,6 +582,24 @@ export class Include extends EntryTree {
   }
 
   getLocation(id: string, path: PropertyKey[]): SourceLocation | undefined {
+    const route = this._route(id, path)
+    if (!route) return
+    if (route.entry) return route.entry.getLocation(route.path)
+    const { document, lines } = this.cache!.syntax ??= parseSyntax(this.cache!.content)
+    const range = seek(document, route.path)
+    if (range) return this._locate(lines, range[0])
+  }
+
+  locateExpr(id: string, path: PropertyKey[], expr: string, offset: number): SourceLocation | undefined {
+    const route = this._route(id, path)
+    if (!route) return
+    if (route.entry) return route.entry.locateExpr(route.path, expr, offset)
+    const { document, lines } = this.cache!.syntax ??= parseSyntax(this.cache!.content)
+    const position = seekExpr(this.cache!.content, document, route.path, expr, offset)
+    if (position !== undefined) return this._locate(lines, position)
+  }
+
+  private _route(id: string, path: PropertyKey[]): { entry?: Entry; path: PropertyKey[] } | undefined {
     if (!this.cache || !this.index) return
     // values changed at runtime are not written anywhere yet
     const record = this.journal.get(id)
@@ -508,18 +607,18 @@ export class Include extends EntryTree {
     if (path.length && record && String(path[0]) in record.changes) return
 
     const owner = path.length ? this.index.key(id, String(path[0])) : this.index.entry(id)
+    const { entry } = this.ctx.fiber
     if (owner.type === 'patch') {
-      return this.ctx.fiber.entry?.getLocation(['config', 'patches', owner.index, ...path])
+      if (!entry) return
+      return { entry, path: ['config', 'patches', owner.index, ...path] }
     } else if (owner.type === 'embedded') {
       const prefix = findEntry(this.config.patches![owner.index][owner.key], id)
-      if (!prefix) return
-      return this.ctx.fiber.entry?.getLocation(['config', 'patches', owner.index, owner.key, ...prefix, ...path])
+      if (!prefix || !entry) return
+      return { entry, path: ['config', 'patches', owner.index, owner.key, ...prefix, ...path] }
     }
     const prefix = findEntry(this.cache.data, id)
     if (!prefix) return
-    const { document, lines } = this.cache.syntax ??= parseSyntax(this.cache.content)
-    const range = seek(document, [...prefix, ...path])
-    if (range) return this._locate(lines, range[0])
+    return { path: [...prefix, ...path] }
   }
 
   private _locate(lines: LineCounter, offset: number): SourceLocation {

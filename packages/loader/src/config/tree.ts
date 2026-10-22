@@ -82,7 +82,7 @@ export abstract class EntryTree {
 
   getTasks() {
     return [...this.entries()]
-      .map(entry => entry._initTask || entry.fiber?.inertia)
+      .flatMap(entry => entry._initTask || [entry.outerFiber?.inertia, entry.innerFiber?.inertia])
       .filter(isNonNullable)
   }
 
@@ -221,6 +221,10 @@ export abstract class EntryTree {
    * source falls back to its deepest written ancestor.
    */
   getLocation(_id: string, _path: PropertyKey[]): SourceLocation | undefined {
+    return undefined
+  }
+
+  locateExpr(_id: string, _path: PropertyKey[], _expr: string, _offset: number): SourceLocation | undefined {
     return undefined
   }
 }
