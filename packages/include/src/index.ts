@@ -160,6 +160,8 @@ function walk(document: Document, path: PropertyKey[]) {
       break
     }
   }
+  // a value written through an alias is located at its anchor
+  if (isAlias(node)) node = node.resolve(document)
   if (isScalar(node)) anchor = node.range
   return { node, anchor, complete }
 }
