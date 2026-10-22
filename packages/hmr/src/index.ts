@@ -21,6 +21,9 @@ declare module 'cordis' {
   }
 }
 
+// A Windows drive-letter path, e.g. `C:\app\cordis.yml` or `C:/app/cordis.yml`.
+const driveLetter = /^[A-Za-z]:[\\/]/
+
 function isExcluded(url: string) {
   return url.startsWith('node:') || url.includes('/node_modules/')
 }
@@ -87,7 +90,7 @@ function toUrl(file: string | URL) {
 }
 
 class Hmr extends Service {
-  // `root` and logged paths are relative to it
+  // `watch.root` and logged paths are relative to it
   public baseDir: string
 
   // `undefined` when Node's loader internals are unavailable, in which case
@@ -109,7 +112,15 @@ class Hmr extends Service {
 
   constructor(ctx: Context, public config: Hmr.Config) {
     super(ctx, 'hmr')
-    this.baseDir = ctx.baseUrl ? fileURLToPath(new URL('.', ctx.baseUrl)) : process.cwd()
+    // On Windows, a drive-letter path is converted with `pathToFileURL`.
+    // `new URL()` would read its `C:` as a URL scheme, which `fileURLToPath` rejects.
+    // Without a `baseUrl`, file URLs are still decoded as URLs; ordinary
+    // paths are resolved against the working directory.
+    this.baseDir = process.platform === 'win32' && config.base && driveLetter.test(config.base)
+      ? fileURLToPath(pathToFileURL(config.base))
+      : ctx.baseUrl || config.base?.startsWith('file:')
+        ? fileURLToPath(new URL(config.base || '.', ctx.baseUrl))
+        : resolve(config.base || '.')
 
     // Both services are optional. `reconcile()` depends on neither; they only
     // drive reloads from fs changes and the restarts those require.
@@ -125,7 +136,11 @@ class Hmr extends Service {
   private _watch(ctx: Context) {
     const { enabled, root, ignored, debounce } = this.config.watch
     if (!enabled || !root.length) return
-    this.ctx.logger.info('watching %o', root)
+    if (!this.config.base) {
+      this.ctx.logger.info('watching %o', root)
+    } else {
+      this.ctx.logger.info('watching %o in %s', root, this.baseDir)
+    }
 
     const stashed = new Set<string>()
     let timer: NodeJS.Timeout | undefined
@@ -568,13 +583,15 @@ namespace Hmr {
   }
 
   export interface Config {
+    base?: string
     watch: WatchConfig
   }
 
   export const Config: z<Config> = z.object({
+    base: z.string().description('The directory that logged paths and `watch.root` are relative to, defaults to the context directory.'),
     watch: z.object({
       enabled: z.boolean().default(false).description('Reload on file changes. Requires the `fs` service.'),
-      root: z.array(String).role('table').default(['.']).description('Files or directories to watch, relative to the context.'),
+      root: z.array(String).role('table').default(['.']).description('Files or directories to watch, relative to `base`.'),
       ignored: z.array(String).role('table').default([
         '**/node_modules',
         '**/.*',

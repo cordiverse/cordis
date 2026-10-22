@@ -2,7 +2,7 @@ import { Context, Fiber, Service } from 'cordis'
 import Loader from '@cordisjs/plugin-loader'
 import type { WatchCallback, WatchOptions } from '@cordisjs/plugin-fs'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { dirname, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import Hmr from '../src/index.ts'
@@ -77,12 +77,12 @@ describe('Hmr with fs', () => {
     TestLoader.exits = 0
   })
 
-  async function setup(config: Partial<Hmr.WatchConfig> = {}, fs = true) {
+  async function setup(config: Partial<Hmr.WatchConfig> = {}, fs = true, base?: string) {
     ctx = new Context()
     ctx.baseUrl = import.meta.url
     fiber = await ctx.plugin(TestLoader)
     if (fs) await ctx.plugin(FakeFs)
-    await ctx.plugin(Hmr, { watch: { enabled: true, debounce: 50, ...config } })
+    await ctx.plugin(Hmr, { base, watch: { enabled: true, debounce: 50, ...config } })
   }
 
   async function load(name: string, content: string) {
@@ -101,6 +101,48 @@ describe('Hmr with fs', () => {
       })
     })
   }
+
+  // Only `baseDir` is asserted, so nothing is watched.
+  describe('base', () => {
+    async function create(base?: string, baseUrl: string | null = import.meta.url) {
+      ctx = new Context()
+      ctx.baseUrl = baseUrl ?? undefined
+      fiber = await ctx.plugin(Hmr, { base })
+      return ctx.hmr.baseDir
+    }
+
+    // An absolute `base` is a legal configuration, but `new URL()` reads a Windows
+    // drive letter as a URL scheme (`c:`) and `fileURLToPath` rejects that scheme.
+    it.runIf(process.platform === 'win32')('accepts a drive-letter base', async () => {
+      expect(await create(testDir + sep)).to.equal(testDir + sep)
+    })
+
+    it('resolves a relative base against the context', async () => {
+      expect(await create('..')).to.equal(dirname(testDir) + sep)
+    })
+
+    it('defaults to the context directory', async () => {
+      expect(await create()).to.equal(testDir + sep)
+    })
+
+    it('defaults to the working directory without a context directory', async () => {
+      expect(await create(undefined, null)).to.equal(process.cwd())
+    })
+
+    const basePath = resolve(testDir, 'base with spaces # %')
+    it.each([
+      ['relative path', '../hmr base', resolve('../hmr base')],
+      ['absolute path', basePath, basePath],
+      ['file URL', pathToFileURL(basePath).href, basePath],
+    ])('accepts a %s without a context directory', async (_, base, expected) => {
+      expect(await create(base, null)).to.equal(expected)
+    })
+  })
+
+  it('watches each root relative to `base`', async () => {
+    await setup({}, true, '__watch__')
+    expect(FakeFs.watches.map(watch => watch.path)).to.deep.equal([fixtureDir])
+  })
 
   it('watches each root relative to the context', async () => {
     await setup({ root: ['.', '__watch__'] })
