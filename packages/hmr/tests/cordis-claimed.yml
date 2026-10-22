@@ -1,0 +1,12 @@
+- id: timer
+  name: '@cordisjs/plugin-timer'
+- id: hmr
+  name: '@cordisjs/plugin-hmr'
+  config:
+    # Only this file: the suite's other fixtures are written by other test
+    # files, and watching the whole directory made the two race.
+    root:
+      - plugin-claimed.ts
+    debounce: 100
+- id: test
+  name: ./plugin-claimed
