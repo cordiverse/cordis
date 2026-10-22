@@ -1,11 +1,13 @@
 import { Context, Fiber, Message } from 'cordis'
-import Loader from '@cordisjs/plugin-loader'
+import Loader, { ModuleLoader } from '@cordisjs/plugin-loader'
 import Logger from '@cordisjs/plugin-logger-console'
 import type { Include } from '@cordisjs/plugin-include'
+import type {} from '@cordisjs/plugin-fs'
 import { writeFileSync, readFileSync, unlinkSync } from 'node:fs'
-import { basename, dirname, resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import { expect, describe, it, beforeAll, afterAll, afterEach, beforeEach, vi } from 'vitest'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import Hmr from '../src/index.ts'
 
 const testDir = dirname(fileURLToPath(import.meta.url))
 
@@ -66,9 +68,10 @@ async function createContext(configFile: string): Promise<{ ctx: Context; fiber:
     name: '@cordisjs/plugin-include',
     config: {
       path: pathToFileURL(resolve(testDir, configFile)).href,
+      watch: true,
     },
   })
-  await waitFor(() => ctx.hmr, 5000)
+  await waitFor(() => ctx.hmr && ctx.fs, 5000)
   await new Promise(r => setTimeout(r, 500))
   return { ctx, fiber }
 }
@@ -204,13 +207,10 @@ describe('HMR', () => {
       const reloadPromise = waitForEvent(ctx, 'hmr/reload')
       plugin.modify(c => c.replace("value = 'initial'", "value = 'event-test'"))
 
-      const [reloads] = await reloadPromise
-      expect(reloads).to.be.instanceOf(Map)
-      expect(reloads.size).to.be.greaterThan(0)
-
-      for (const [, reload] of reloads) {
-        expect(reload).to.have.property('filename')
-      }
+      const [result] = await reloadPromise
+      expect(result.replaced).to.have.length(1)
+      expect(result.failed).to.deep.equal([])
+      expect(result.aborted).to.be.undefined
     }, 10000)
 
     it('should properly dispose old plugin effects on reload', async () => {
@@ -528,14 +528,14 @@ export function apply(ctx: Context) {
     const configPath = resolve(testDir, 'cordis-atomic.yml')
     const messages: Message[] = []
 
-    const configWith = (value: string) => `- id: timer
-  name: '@cordisjs/plugin-timer'
-- id: hmr
+    const configWith = (value: string) => `- id: hmr
   name: '@cordisjs/plugin-hmr'
   config:
-    root:
-      - .
-    debounce: 50
+    watch:
+      enabled: true
+      debounce: 50
+- id: fs
+  name: '@cordisjs/plugin-fs'
 - id: cfg
   name: ./plugin-config
   config:
@@ -635,14 +635,14 @@ export default MyService
 
     beforeAll(() => {
       writeFileSync(pluginPath, servicePluginContent)
-      writeFileSync(configPath, `- id: timer
-  name: '@cordisjs/plugin-timer'
-- id: hmr
+      writeFileSync(configPath, `- id: hmr
   name: '@cordisjs/plugin-hmr'
   config:
-    root:
-      - .
-    debounce: 50
+    watch:
+      enabled: true
+      debounce: 50
+- id: fs
+  name: '@cordisjs/plugin-fs'
 - id: my-service
   name: ./plugin-service
 `)
@@ -1029,7 +1029,9 @@ export function apply(ctx: Context) {
 
       // batch 2 arrives while the host is still stalled, so the nested entry's
       // direct parent is very much alive; only walking up to the host itself
-      // reveals that the subtree is going away
+      // reveals that the subtree is going away. Batch 1 waits for the host to
+      // finish initializing, so batch 2 is queued behind it; this pins that
+      // the queue keeps the two from overlapping.
       stats.stallTreeInit = 0
       treeDep.write(treeDep.original.replace("version = 'tree-v1'", "version = 'tree-v3'"))
       // wait on the host, not the nested entry: the host only comes back after
@@ -1234,73 +1236,6 @@ export function apply(ctx: Context) {
     }, 15000)
   })
 
-  describe('hmr.watch', () => {
-    let ctx: Context
-    let fiber: Fiber<Context>
-    const plugin = backupFile('plugin.ts')
-    // matches the default `ignored` patterns, so only an explicit claim can
-    // bring it into the watch set
-    const dotPath = resolve(testDir, '.claimed.yml')
-    // released in `afterEach`, so that a failing test cannot leave a watcher
-    // behind for the next one
-    const disposables: (() => any)[] = []
-
-    beforeAll(async () => {
-      plugin.restore()
-      writeFileSync(dotPath, 'v0')
-      const result = await createContext('cordis.yml')
-      ctx = result.ctx
-      fiber = result.fiber
-    }, 10000)
-
-    afterEach(async () => {
-      disposables.splice(0).forEach(dispose => dispose())
-      await new Promise(r => setTimeout(r, SETTLE_MS))
-    })
-
-    afterAll(async () => {
-      fiber?.dispose()
-      try { unlinkSync(dotPath) } catch {}
-      await new Promise(r => setTimeout(r, 200))
-    })
-
-    // What happens to a watched file that is *also* part of the module graph
-    // is deliberately left unpinned: both of these use a file no module
-    // imports. The config-file suites above cover a watched file in `root`
-    // end to end, through include.
-
-    it('watches a path that `ignored` would skip', async () => {
-      let calls = 0
-      disposables.push(ctx.hmr.watch(dotPath, () => { calls++ }))
-      await new Promise(r => setTimeout(r, SETTLE_MS))
-
-      writeFileSync(dotPath, 'v1')
-      await waitFor(() => calls > 0)
-    }, 15000)
-
-    it('runs every callback registered for the same path', async () => {
-      const seen: string[] = []
-      disposables.push(ctx.hmr.watch(dotPath, () => { seen.push('a') }))
-      disposables.push(ctx.hmr.watch(dotPath, () => { seen.push('b') }))
-      await new Promise(r => setTimeout(r, SETTLE_MS))
-
-      writeFileSync(dotPath, 'v2')
-      await waitFor(() => seen.length >= 2)
-      expect([...seen].sort()).to.deep.equal(['a', 'b'])
-    }, 15000)
-
-    it.runIf(process.platform === 'win32')('matches paths that differ in case on Windows', async () => {
-      let calls = 0
-      // drive letter and directories alike
-      const dir = dirname(dotPath).replace(/[a-z]/gi, c => c === c.toUpperCase() ? c.toLowerCase() : c.toUpperCase())
-      disposables.push(ctx.hmr.watch(resolve(dir, basename(dotPath)), () => { calls++ }))
-      await new Promise(r => setTimeout(r, SETTLE_MS))
-
-      writeFileSync(dotPath, 'v3')
-      await waitFor(() => calls > 0)
-    }, 15000)
-  })
-
   // ===== Without loader internals =====
   describe('without loader internals', () => {
     let ctx: Context
@@ -1316,20 +1251,23 @@ export function apply(ctx: Context) {
       ctx = new Context()
       await ctx.plugin(Logger)
       fiber = await ctx.plugin(Loader)
-      // the loader only exposes the internals; nothing else reads them
-      ctx.loader.internal = undefined
       ctx.logger.exporter({
         export(message) {
           if (message.type === 'warn') warnings.push(message.args[0])
         },
       })
+      // HMR reads the internals itself; the loader does not share them.
+      const spy = vi.spyOn(ModuleLoader, 'fromInternal').mockReturnValue(undefined)
+      await ctx.plugin(Hmr, { watch: { enabled: true, root: [testDir] } })
+      spy.mockRestore()
       await ctx.loader.create({
         name: '@cordisjs/plugin-include',
         config: {
           path: pathToFileURL(configPath).href,
+          watch: true,
         },
       })
-      await waitFor(() => ctx.hmr, 5000)
+      await waitFor(() => ctx.fs, 5000)
       await waitFor(() => ctx.bail('hmr-test/get-value') === 'initial', 5000)
     }, 10000)
 
@@ -1348,12 +1286,13 @@ export function apply(ctx: Context) {
       expect(warnings.filter(w => w.includes('source code HMR is disabled'))).to.have.length(1)
     })
 
-    it('should emit hmr/change for a source file instead of reloading it', async () => {
-      const changePromise = waitForEvent(ctx, 'hmr/change')
+    it('should report a source file as pending instead of reloading it', async () => {
       plugin.modify(c => c.replace("value = 'initial'", "value = 'no-internal'"))
+      const result = await ctx.hmr.reconcile({ files: [plugin.path] })
+      expect(result.pending).to.deep.equal([{ url: pathToFileURL(plugin.path).href, reason: 'cache-unavailable' }])
+      expect(result.replaced).to.deep.equal([])
 
-      const [url] = await changePromise
-      expect(url).to.equal(pathToFileURL(plugin.path).href)
+      // nor does an fs change reload it
       await new Promise(r => setTimeout(r, SETTLE_MS))
       expect(ctx.bail('hmr-test/get-value')).to.equal('initial')
     }, 10000)
