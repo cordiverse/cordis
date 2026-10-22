@@ -615,3 +615,155 @@ describe('Loader: entry evaluation context', () => {
     }
   })
 })
+
+describe('Loader: entry evaluation boundaries', () => {
+  const root = new Context()
+
+  let loader!: MockLoader
+  let worker!: any
+  let seen: { intercept?: any; config?: any } = {}
+
+  beforeAll(async () => {
+    await root.plugin(MockLoader)
+    loader = root.loader as any
+    loader.mock('settings', (ctx: Context, config: any) => {
+      ctx.provide('settings', { ...config })
+    })
+    loader.mock('env', (ctx: Context, config: any) => {
+      ctx.provide('env', { ...config })
+    })
+    worker = loader.mock('worker', (ctx: Context, config: any) => {
+      seen = { intercept: ctx[Context.intercept], config }
+    })
+  })
+
+  beforeEach(async () => {
+    await loader.read([])
+    worker.mock.resetCalls()
+    seen = {}
+  })
+
+  const settings = (config: any) => ({ id: 'settings', name: 'settings', config })
+  const proxy = (expr: string) => ({ http: { proxy: { __jsExpr: expr } } })
+
+  it('does not start the plugin when intercept cannot be evaluated', async () => {
+    await loader.read([settings({}), {
+      id: 'worker',
+      name: 'worker',
+      inject: ['settings'],
+      intercept: proxy('settings.missing.value'),
+    }])
+
+    expect(loader.store.worker.disabled).to.equal(true)
+    expect(worker.mock.calls).to.have.length(0)
+  })
+
+  it('disposes the plugin when intercept stops evaluating on an update', async () => {
+    await loader.read([settings({ proxy: 'p1' }), {
+      id: 'worker',
+      name: 'worker',
+      inject: ['settings'],
+      intercept: proxy('settings.proxy'),
+    }])
+    const entry = loader.store.worker
+    expect(seen.intercept.http).to.deep.equal({ proxy: 'p1' })
+
+    await loader.update('worker', { intercept: proxy('settings.missing.value') })
+    await loader.await()
+    expect(entry.disabled).to.equal(true)
+    expect(entry.innerFiber!.uid).to.equal(null)
+
+    // a later update does not restart the plugin with the previous table
+    await loader.update('worker', { config: { tag: 'v2' } })
+    await loader.await()
+    expect(entry.innerFiber!.uid).to.equal(null)
+    expect(worker.mock.calls).to.have.length(1)
+
+    await loader.update('worker', { intercept: proxy('settings.proxy') })
+    await loader.await()
+    expect(entry.disabled).to.equal(false)
+    expect(entry.innerFiber?.state).to.equal(FiberState.ACTIVE)
+    expect(worker.mock.calls).to.have.length(2)
+  })
+
+  it('stops a group whose intercept stops evaluating on an update', async () => {
+    await loader.read([settings({ proxy: 'p1' }), {
+      id: 'group',
+      name: '@cordisjs/plugin-group',
+      group: true,
+      inject: ['settings'],
+      intercept: proxy('settings.proxy'),
+      config: [{ id: 'worker', name: 'worker' }],
+    }])
+    const group = loader.store.group
+    // an expression on a group reaches the plugins of its children
+    expect(seen.intercept.http).to.deep.equal({ proxy: 'p1' })
+
+    await loader.update('group', { intercept: proxy('settings.missing.value') })
+    await loader.await()
+    expect(group.innerFiber!.uid).to.equal(null)
+    expect(loader.store.worker).to.be.undefined
+  })
+
+  it('does not evaluate intercept while disabled', async () => {
+    await loader.read([settings({ count: 0 }), {
+      id: 'worker',
+      name: 'worker',
+      inject: ['settings'],
+      disabled: { __jsExpr: 'true' },
+      intercept: { http: { count: { __jsExpr: 'settings.count++' } } },
+    }])
+
+    expect(root.get('settings').count).to.equal(0)
+    expect(worker.mock.calls).to.have.length(0)
+  })
+
+  it('cannot read a service outside the parent context and the entry inject in disabled', async () => {
+    await loader.read([settings({ enabled: true }), { id: 'env', name: 'env' }, {
+      id: 'worker',
+      name: 'worker',
+      inject: ['env'],
+      disabled: { __jsExpr: '!settings.enabled' },
+    }])
+
+    expect(loader.store.worker.outerFiber?.state).to.equal(FiberState.ACTIVE)
+    expect(loader.store.worker.disabled).to.equal(true)
+    expect(worker.mock.calls).to.have.length(0)
+  })
+
+  it('cannot read a service provided by a sibling in an inject value', async () => {
+    await loader.read([{ id: 'env', name: 'env', config: { namespace: 'ns' } }, settings({}), {
+      id: 'worker',
+      name: 'worker',
+      inject: { settings: { namespace: { __jsExpr: 'env.namespace' } } },
+    }])
+
+    expect(loader.store.worker.outerFiber).to.be.undefined
+    expect(worker.mock.calls).to.have.length(0)
+  })
+
+  it('evaluates config with the plugin inject', async () => {
+    const own = Object.assign(loader.mock('own', (_: Context, config: any) => {
+      seen = { config }
+    }), { inject: ['settings'] })
+    await loader.read([settings({ value: 1 }), {
+      id: 'own',
+      name: 'own',
+      config: { value: { __jsExpr: 'settings.value' } },
+    }])
+
+    expect(own.mock.calls).to.have.length(1)
+    expect(seen.config).to.deep.equal({ value: 1 })
+  })
+
+  it('cannot read a service outside every inject in config', async () => {
+    await loader.read([settings({ value: 1 }), {
+      id: 'worker',
+      name: 'worker',
+      config: { value: { __jsExpr: 'settings.value' } },
+    }])
+
+    expect(loader.store.worker.innerFiber?.state).to.equal(FiberState.FAILED)
+    expect(worker.mock.calls).to.have.length(0)
+  })
+})

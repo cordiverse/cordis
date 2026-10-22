@@ -172,6 +172,8 @@ export class Entry {
       return true
     } catch (error) {
       this.ctx.logger.error(error)
+      // the plugin does not run with an intercept that cannot be evaluated
+      this._verdict = true
       return false
     }
   }
@@ -197,11 +199,10 @@ export class Entry {
       return
     }
     this._resolveDisabled(ctx)
-    if (this.disabled) {
+    if (this.disabled || !this._applyIntercept(ctx)) {
       this._dispose(this.innerFiber)
       return
     }
-    this._applyIntercept(ctx)
     if (diff.includes('config') || this.options.group) {
       await this.innerFiber!.update(this.options.config, true)
     }
@@ -354,11 +355,7 @@ export class Entry {
     if (!this._registered()) return
     // a group still starts; its verdict only reaches its children
     this._resolveDisabled(ctx)
-    if (this.disabled) return
-    if (!this._applyIntercept(ctx)) {
-      this._verdict = true
-      return
-    }
+    if (this.disabled || !this._applyIntercept(ctx)) return
     this.loader.showLog(this, 'apply')
     const innerContext = ctx.extend({ [Context.intercept]: this._intercept })
     this.innerFiber = innerContext.registry.plugin(plugin, this.options.config, this.getOuterStack)
