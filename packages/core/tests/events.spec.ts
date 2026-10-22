@@ -100,6 +100,35 @@ describe('Events', () => {
     expect(callback.mock.calls).to.have.length(1)
   })
 
+  it('ctx.once() runs once when an earlier listener emits recursively', () => {
+    const { root } = setup()
+    let nested = false
+    root.on(event, () => {
+      if (nested) return
+      nested = true
+      root.emit(event)
+    })
+    const callback = mock.fn()
+    root.once(event, callback)
+
+    root.emit(event)
+    expect(callback.mock.calls).to.have.length(1)
+  })
+
+  it('ctx.once() runs once across concurrent serial dispatches', async () => {
+    const { root } = setup()
+    const barrier = Promise.withResolvers<void>()
+    root.on(event, () => barrier.promise)
+    const callback = mock.fn()
+    root.once(event, callback)
+
+    const first = root.serial(event)
+    const second = root.serial(event)
+    barrier.resolve()
+    await Promise.all([first, second])
+    expect(callback.mock.calls).to.have.length(1)
+  })
+
   it('ctx.parallel()', async () => {
     const { root } = setup()
     await root.parallel(event)

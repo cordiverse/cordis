@@ -175,7 +175,10 @@ export class EventsService {
   }
 
   once(name: string | symbol, listener: (...args: any) => any, options?: boolean | EventOptions) {
+    let fired = false
     const dispose = this.on(name, function (...args: any[]) {
+      if (fired) return
+      fired = true
       dispose()
       return listener.apply(this, args)
     }, options)
