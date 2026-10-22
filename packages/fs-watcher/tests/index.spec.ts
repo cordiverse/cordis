@@ -1,11 +1,10 @@
-import { Context, Fiber, Service } from 'cordis'
+import { Context, Fiber } from 'cordis'
 import { once } from 'node:events'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import type Hmr from '@cordisjs/plugin-hmr'
-import Watcher from '../src/index.ts'
+import FsWatcher from '../src/index.ts'
 
 const testDir = dirname(fileURLToPath(import.meta.url))
 const fixture = resolve(testDir, '__fixtures__')
@@ -25,39 +24,7 @@ function waitFor(condFn: () => any, timeout = 8000, interval = 50): Promise<void
   })
 }
 
-class FakeHmr extends Service {
-  static instance: FakeHmr
-
-  calls: string[][] = []
-  result: Hmr.Result = { replaced: [], failed: [], pending: [] }
-
-  constructor(ctx: Context) {
-    super(ctx, 'hmr')
-    FakeHmr.instance = this
-  }
-
-  async reconcile(options: Hmr.ReconcileOptions) {
-    this.calls.push([...options.files] as string[])
-    return this.result
-  }
-}
-
-class FakeLoader extends Service {
-  static instance: FakeLoader
-
-  exits = 0
-
-  constructor(ctx: Context) {
-    super(ctx, 'loader')
-    FakeLoader.instance = this
-  }
-
-  exit() {
-    this.exits++
-  }
-}
-
-describe('Watcher', () => {
+describe('FsWatcher', () => {
   let fiber: Fiber<Context> | undefined
 
   beforeAll(() => {
@@ -74,15 +41,12 @@ describe('Watcher', () => {
     rmSync(fixture, { recursive: true, force: true })
   })
 
-  async function createContext(config: Partial<Watcher.Config>, services: any[] = []) {
+  async function createContext(config: Partial<FsWatcher.Config>) {
     const ctx = new Context()
     ctx.baseUrl = import.meta.url
-    for (const service of services) {
-      await ctx.plugin(service)
-    }
-    fiber = await ctx.plugin(Watcher, config)
+    fiber = await ctx.plugin(FsWatcher, config)
     // chokidar never gets ready without anything to watch
-    if (config.root?.length) await once(ctx.watcher['_watcher'], 'ready')
+    if (config.root?.length) await once(ctx.fsWatcher['_watcher'], 'ready')
     return { ctx }
   }
 
@@ -94,20 +58,20 @@ describe('Watcher', () => {
       const base = testDir + sep
       const { ctx } = await createContext({ base, root: [] })
 
-      expect(ctx.watcher.baseDir).to.equal(base)
+      expect(ctx.fsWatcher.baseDir).to.equal(base)
     })
 
     it('resolves a relative base against the context', async () => {
       const { ctx } = await createContext({ base: '..', root: [] })
 
-      expect(ctx.watcher.baseDir).to.equal(dirname(testDir) + sep)
+      expect(ctx.fsWatcher.baseDir).to.equal(dirname(testDir) + sep)
     })
 
     it('defaults to the working directory without a context directory', async () => {
       const ctx = new Context()
-      fiber = await ctx.plugin(Watcher, { root: [] })
+      fiber = await ctx.plugin(FsWatcher, { root: [] })
 
-      expect(ctx.watcher.baseDir).to.equal(process.cwd())
+      expect(ctx.fsWatcher.baseDir).to.equal(process.cwd())
     })
 
     const basePath = resolve(testDir, 'base with spaces # %')
@@ -117,15 +81,15 @@ describe('Watcher', () => {
       ['file URL', pathToFileURL(basePath).href, basePath],
     ])('accepts a %s without a context directory', async (_, base, expected) => {
       const ctx = new Context()
-      fiber = await ctx.plugin(Watcher, { base, root: [] })
+      fiber = await ctx.plugin(FsWatcher, { base, root: [] })
 
-      expect(ctx.watcher.baseDir).to.equal(expected)
+      expect(ctx.fsWatcher.baseDir).to.equal(expected)
     })
 
     it('defaults to the context directory', async () => {
       const { ctx } = await createContext({ root: [] })
 
-      expect(ctx.watcher.baseDir).to.equal(testDir + sep)
+      expect(ctx.fsWatcher.baseDir).to.equal(testDir + sep)
     })
   })
 
@@ -141,7 +105,7 @@ describe('Watcher', () => {
       }
 
       const { ctx } = await createContext({ root: ['__fixtures__/ignored'] })
-      const watched = Object.entries(ctx.watcher['_watcher'].getWatched())
+      const watched = Object.entries(ctx.fsWatcher['_watcher'].getWatched())
         .flatMap(([dir, names]) => names.map(name => join(dir, name)))
       expect(watched).to.include(join('__fixtures__', 'ignored', 'src', 'index.js'))
       expect(watched.filter(path => path.includes('node_modules'))).to.deep.equal([])
@@ -160,7 +124,7 @@ describe('Watcher', () => {
     it('watches a path that `ignored` would skip', async () => {
       const { ctx } = await createContext({ root: ['__fixtures__'] })
       let calls = 0
-      ctx.watcher.watch(dotPath, () => { calls++ })
+      ctx.fsWatcher.watch(dotPath, () => { calls++ })
       await new Promise(r => setTimeout(r, 200))
 
       writeFileSync(dotPath, 'v1')
@@ -170,8 +134,8 @@ describe('Watcher', () => {
     it('runs every callback registered for the same path', async () => {
       const { ctx } = await createContext({ root: [] })
       const seen: string[] = []
-      ctx.watcher.watch(dotPath, () => { seen.push('a') })
-      ctx.watcher.watch(dotPath, () => { seen.push('b') })
+      ctx.fsWatcher.watch(dotPath, () => { seen.push('a') })
+      ctx.fsWatcher.watch(dotPath, () => { seen.push('b') })
       await new Promise(r => setTimeout(r, 200))
 
       writeFileSync(dotPath, 'v2')
@@ -180,11 +144,11 @@ describe('Watcher', () => {
     }, 15000)
 
     it('stops calling a callback once it is disposed', async () => {
-      const { ctx } = await createContext({ root: [], debounce: 0 })
+      const { ctx } = await createContext({ root: [] })
       let calls = 0
-      const dispose = ctx.watcher.watch(dotPath, () => { calls++ })
+      const dispose = ctx.fsWatcher.watch(dotPath, () => { calls++ })
       let others = 0
-      ctx.watcher.watch(dotPath, () => { others++ })
+      ctx.fsWatcher.watch(dotPath, () => { others++ })
       await new Promise(r => setTimeout(r, 200))
       dispose()
 
@@ -198,7 +162,7 @@ describe('Watcher', () => {
       let calls = 0
       // drive letter and directories alike
       const dir = dirname(dotPath).replace(/[a-z]/gi, c => c === c.toUpperCase() ? c.toLowerCase() : c.toUpperCase())
-      ctx.watcher.watch(resolve(dir, basename(dotPath)), () => { calls++ })
+      ctx.fsWatcher.watch(resolve(dir, basename(dotPath)), () => { calls++ })
       await new Promise(r => setTimeout(r, 200))
 
       writeFileSync(dotPath, 'v4')
@@ -206,37 +170,27 @@ describe('Watcher', () => {
     }, 15000)
   })
 
-  describe('hmr', () => {
+  describe('change event', () => {
     const source = resolve(fixture, 'source.ts')
 
     beforeAll(() => {
       writeFileSync(source, 'export {}\n')
     })
 
-    it('passes a batch of changes to hmr after the callbacks', async () => {
-      const { ctx } = await createContext({ root: ['__fixtures__'], debounce: 50 }, [FakeHmr])
-      const hmr = FakeHmr.instance
+    it('emits fs-watcher/change after the callbacks of the file', async () => {
+      const { ctx } = await createContext({ root: ['__fixtures__'] })
       const order: string[] = []
-      ctx.watcher.watch(source, async () => {
+      ctx.fsWatcher.watch(source, async () => {
         await new Promise(r => setTimeout(r, 100))
-        order.push(`callback:${hmr.calls.length}`)
+        order.push('callback')
+      })
+      ctx.on('fs-watcher/change', (filename) => {
+        order.push(`change:${filename}`)
       })
 
       writeFileSync(source, 'export const a = 1\n')
-      await waitFor(() => hmr.calls.length > 0)
-      expect(order).to.deep.equal(['callback:0'])
-      expect(hmr.calls).to.deep.equal([[source]])
-    }, 15000)
-
-    it('calls loader.exit() when a restart is required', async () => {
-      await createContext({ root: ['__fixtures__'], debounce: 50 }, [FakeHmr, FakeLoader])
-      const hmr = FakeHmr.instance
-      const loader = FakeLoader.instance
-      hmr.result = { replaced: [], failed: [], pending: [], restartReason: 'host module changed' }
-
-      writeFileSync(source, 'export const b = 1\n')
-      await waitFor(() => loader.exits > 0)
-      expect(loader.exits).to.equal(1)
+      await waitFor(() => order.length >= 2)
+      expect(order).to.deep.equal(['callback', `change:${source}`])
     }, 15000)
   })
 })

@@ -1,0 +1,1 @@
+debounce: Debounce file system changes before reloading, in milliseconds. Only used with a file system watcher.

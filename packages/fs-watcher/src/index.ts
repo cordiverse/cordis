@@ -3,8 +3,6 @@ import { Awaitable } from 'cosmokit'
 import { ChokidarOptions, FSWatcher, watch } from 'chokidar'
 import { relative, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import type Hmr from '@cordisjs/plugin-hmr'
-import type Loader from '@cordisjs/plugin-loader'
 import picomatch from 'picomatch'
 import enUS from './locales/en-US.yml'
 import zhCN from './locales/zh-CN.yml'
@@ -15,21 +13,23 @@ const driveLetter = /^[A-Za-z]:[\\/]/
 
 declare module 'cordis' {
   interface Context {
-    watcher: Watcher
+    fsWatcher: FsWatcher
+  }
+
+  interface Events {
+    'fs-watcher/change'(filename: string): void
   }
 }
 
 export type WatchCallback = () => Awaitable<void>
 
 /**
- * Watch files and hand their changes to HMR.
+ * Watch the file system.
  *
  * On a change, the callbacks registered for the file through `watch()` run
- * first. The changed files are then collected over the debounce window and
- * passed to `ctx.hmr.reconcile()` if HMR is available. A batch that can only be
- * applied by restarting the process calls `ctx.loader.exit()`.
+ * first, and `fs-watcher/change` is emitted once they have settled.
  */
-class Watcher extends Service {
+class FsWatcher extends Service {
   public baseDir: string
 
   private _watcher!: FSWatcher
@@ -37,15 +37,8 @@ class Watcher extends Service {
   /** Callbacks registered through `watch()`, keyed by absolute path. */
   private _callbacks = new Map<string, Set<WatchCallback>>()
 
-  /** Changed files waiting for the debounce window to end. */
-  private _stashed = new Set<string>()
-  private _timer?: NodeJS.Timeout
-
-  private _hmr?: Hmr
-  private _loader?: Loader
-
-  constructor(ctx: Context, public config: Watcher.Config) {
-    super(ctx, 'watcher')
+  constructor(ctx: Context, public config: FsWatcher.Config) {
+    super(ctx, 'fsWatcher')
     // On Windows, a drive-letter path is converted with `pathToFileURL`.
     // `new URL()` would read its `C:` as a URL scheme, which `fileURLToPath` rejects.
     // Without a `baseUrl`, file URLs are still decoded as URLs; ordinary
@@ -55,24 +48,10 @@ class Watcher extends Service {
       : ctx.baseUrl || config.base?.startsWith('file:')
         ? fileURLToPath(new URL(config.base || '.', ctx.baseUrl))
         : resolve(config.base || '.')
-
-    // Both services are optional: without HMR, only the callbacks registered
-    // through `watch()` run; without the loader, a restart is only reported.
-    ctx.inject(['hmr'], (ctx) => {
-      this._hmr = ctx.hmr
-      ctx.effect(() => () => this._hmr = undefined)
-    })
-    ctx.inject(['loader'], (ctx) => {
-      this._loader = ctx.loader
-      ctx.effect(() => () => this._loader = undefined)
-    })
   }
 
   async* [Service.init]() {
-    yield () => {
-      clearTimeout(this._timer)
-      return this._watcher?.close()
-    }
+    yield () => this._watcher?.close()
 
     const { root, ignored } = this.config
     if (!this.config.base) {
@@ -94,8 +73,8 @@ class Watcher extends Service {
       this.ctx.logger.debug('change detected at %C', path)
       const filename = resolve(this.baseDir, path)
 
-      // Awaited before the steps below, so that within one change a callback
-      // is settled by the time the file reaches HMR.
+      // Awaited before the event, so that within one change a callback is
+      // settled by the time listeners such as HMR see the file.
       const callbacks = this._callbacks.get(filename)
       if (callbacks?.size) {
         await Promise.all([...callbacks].map(async (callback) => {
@@ -107,9 +86,7 @@ class Watcher extends Service {
         }))
       }
 
-      this._stashed.add(filename)
-      clearTimeout(this._timer)
-      this._timer = setTimeout(() => this._flush(), this.config.debounce)
+      this.ctx.emit('fs-watcher/change', filename)
     })
   }
 
@@ -140,39 +117,14 @@ class Watcher extends Service {
         callbacks.delete(callback)
         if (!callbacks.size) this._callbacks.delete(filename)
       }
-    }, 'ctx.watcher.watch()')
-  }
-
-  private async _flush() {
-    const files = [...this._stashed]
-    this._stashed.clear()
-    // Captured before the first `await`; the service may go away meanwhile.
-    const hmr = this._hmr
-    if (!hmr) return
-    try {
-      // HMR runs one transaction at a time, so this waits behind a running one.
-      const result = await hmr.reconcile({ files })
-      for (const { url, reason } of result.pending) {
-        this.ctx.logger.debug('change at %C not applied (%s)', url, reason)
-      }
-      if (!result.restartReason) return
-      if (!this._loader) {
-        this.ctx.logger.warn('%s, restart required', result.restartReason)
-        return
-      }
-      this.ctx.logger.info('%s, restarting', result.restartReason)
-      await this._loader.exit()
-    } catch (error) {
-      this.ctx.logger.warn(error)
-    }
+    }, 'ctx.fsWatcher.watch()')
   }
 }
 
-namespace Watcher {
+namespace FsWatcher {
   export interface Config extends ChokidarOptions {
     base?: string
     root: string[]
-    debounce: number
     ignored: string[]
   }
 
@@ -185,11 +137,10 @@ namespace Watcher {
       'cache',
       'data',
     ]),
-    debounce: z.natural().role('ms').default(100),
   }).i18n({
     'en-US': enUS,
     'zh-CN': zhCN,
   })
 }
 
-export default Watcher
+export default FsWatcher

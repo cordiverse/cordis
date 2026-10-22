@@ -1,11 +1,16 @@
 import { Context, Fiber, Plugin, Service } from 'cordis'
 import { Dict } from 'cosmokit'
 import { ModuleJob, ModuleLoader, unwrapExports } from '@cordisjs/plugin-loader'
+import type Loader from '@cordisjs/plugin-loader'
+import type {} from '@cordisjs/plugin-fs-watcher'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { relative, resolve } from 'node:path'
 import { handleError } from './error.ts'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
+import enUS from './locales/en-US.yml'
+import zhCN from './locales/zh-CN.yml'
+import z from 'schemastery'
 
 declare module 'cordis' {
   interface Context {
@@ -105,9 +110,54 @@ class Hmr extends Service {
   private _current?: symbol
   private _storage = new AsyncLocalStorage<symbol>()
 
-  constructor(ctx: Context) {
+  private _loader?: Loader
+
+  constructor(ctx: Context, public config: Hmr.Config) {
     super(ctx, 'hmr')
     this.baseDir = ctx.baseUrl ? fileURLToPath(new URL('.', ctx.baseUrl)) : process.cwd()
+
+    // Both services are optional. `reconcile()` depends on neither; they only
+    // drive reloads from file system changes and the restarts those require.
+    ctx.inject(['fsWatcher'], ctx => this._watch(ctx))
+    ctx.inject(['loader'], (ctx) => {
+      this._loader = ctx.loader
+      ctx.effect(() => () => this._loader = undefined)
+    })
+  }
+
+  /**
+   * Reconcile file system changes. They are collected over the debounce
+   * window; a batch that can only be applied by restarting the process calls
+   * `ctx.loader.exit()`.
+   */
+  private _watch(ctx: Context) {
+    const stashed = new Set<string>()
+    let timer: NodeJS.Timeout | undefined
+    ctx.effect(() => () => clearTimeout(timer))
+    ctx.on('fs-watcher/change', (filename) => {
+      stashed.add(filename)
+      clearTimeout(timer)
+      timer = setTimeout(async () => {
+        const files = [...stashed]
+        stashed.clear()
+        try {
+          // This waits behind a running transaction.
+          const result = await this.reconcile({ files })
+          for (const { url, reason } of result.pending) {
+            this.ctx.logger.debug('change at %C not applied (%s)', url, reason)
+          }
+          if (!result.restartReason) return
+          if (!this._loader) {
+            this.ctx.logger.warn('%s, restart required', result.restartReason)
+            return
+          }
+          this.ctx.logger.info('%s, restarting', result.restartReason)
+          await this._loader.exit()
+        } catch (error) {
+          this.ctx.logger.warn(error)
+        }
+      }, this.config.debounce)
+    })
   }
 
   async* [Service.init]() {
@@ -514,6 +564,17 @@ class Hmr extends Service {
 }
 
 namespace Hmr {
+  export interface Config {
+    debounce: number
+  }
+
+  export const Config: z<Config> = z.object({
+    debounce: z.natural().role('ms').default(100),
+  }).i18n({
+    'en-US': enUS,
+    'zh-CN': zhCN,
+  })
+
   export interface ReconcileOptions {
     /** Changed files, as absolute paths or `file:` URLs. */
     files: Iterable<string | URL>

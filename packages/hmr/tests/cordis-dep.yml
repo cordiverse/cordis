@@ -1,11 +1,12 @@
 - id: hmr
   name: '@cordisjs/plugin-hmr'
-- id: watcher
-  name: '@cordisjs/plugin-watcher'
+  config:
+    debounce: 50
+- id: fs-watcher
+  name: '@cordisjs/plugin-fs-watcher'
   config:
     root:
       - .
-    debounce: 50
 - id: test-dep
   name: ./plugin-dep
 - id: test-dep-sibling

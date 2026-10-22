@@ -12,7 +12,7 @@ import {
 import { stringifyString } from 'yaml/util'
 import { applyJournal, flatten, Journal, merge, reconcile, record } from './journal.ts'
 import { applyPatches, ensureIds, ensureInsertIds, PatchIndex, PatchOptions, routeJournal } from './patch.ts'
-import type {} from '@cordisjs/plugin-watcher'
+import type {} from '@cordisjs/plugin-fs-watcher'
 
 // A Windows drive-letter path, e.g. `C:\app\cordis.yml` or `C:/app/cordis.yml`.
 const driveLetter = /^[A-Za-z]:[\\/]/
@@ -112,7 +112,7 @@ export namespace Include {
     initial?: any[]
     patches?: PatchOptions[]
     enableLogs?: boolean
-    /** Reload the tree when the file changes. Requires the `watcher` service. */
+    /** Reload the tree when the file changes. Requires the `fsWatcher` service. */
     watch?: boolean
   }
 }
@@ -212,8 +212,8 @@ export class Include extends EntryTree {
     })
 
     if (config.watch ?? true) {
-      ctx.inject(['watcher'], (ctx) => {
-        ctx.watcher.watch(this.filename, () => this.refresh())
+      ctx.inject(['fsWatcher'], (ctx) => {
+        ctx.fsWatcher.watch(this.filename, () => this.refresh())
       })
     }
   }

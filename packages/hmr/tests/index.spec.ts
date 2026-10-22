@@ -2,7 +2,7 @@ import { Context, Fiber, Message } from 'cordis'
 import Loader, { ModuleLoader } from '@cordisjs/plugin-loader'
 import Logger from '@cordisjs/plugin-logger-console'
 import type { Include } from '@cordisjs/plugin-include'
-import type {} from '@cordisjs/plugin-watcher'
+import type {} from '@cordisjs/plugin-fs-watcher'
 import { writeFileSync, readFileSync, unlinkSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { expect, describe, it, beforeAll, afterAll, afterEach, beforeEach, vi } from 'vitest'
@@ -70,7 +70,7 @@ async function createContext(configFile: string): Promise<{ ctx: Context; fiber:
       path: pathToFileURL(resolve(testDir, configFile)).href,
     },
   })
-  await waitFor(() => ctx.hmr && ctx.watcher, 5000)
+  await waitFor(() => ctx.hmr && ctx.fsWatcher, 5000)
   await new Promise(r => setTimeout(r, 500))
   return { ctx, fiber }
 }
@@ -529,12 +529,13 @@ export function apply(ctx: Context) {
 
     const configWith = (value: string) => `- id: hmr
   name: '@cordisjs/plugin-hmr'
-- id: watcher
-  name: '@cordisjs/plugin-watcher'
+  config:
+    debounce: 50
+- id: fs-watcher
+  name: '@cordisjs/plugin-fs-watcher'
   config:
     root:
       - .
-    debounce: 50
 - id: cfg
   name: ./plugin-config
   config:
@@ -636,12 +637,13 @@ export default MyService
       writeFileSync(pluginPath, servicePluginContent)
       writeFileSync(configPath, `- id: hmr
   name: '@cordisjs/plugin-hmr'
-- id: watcher
-  name: '@cordisjs/plugin-watcher'
+  config:
+    debounce: 50
+- id: fs-watcher
+  name: '@cordisjs/plugin-fs-watcher'
   config:
     root:
       - .
-    debounce: 50
 - id: my-service
   name: ./plugin-service
 `)
@@ -1029,8 +1031,8 @@ export function apply(ctx: Context) {
       // batch 2 arrives while the host is still stalled, so the nested entry's
       // direct parent is very much alive; only walking up to the host itself
       // reveals that the subtree is going away. Batch 1 waits for the host to
-      // finish initializing, so through the watcher, batch 2 is queued behind
-      // it; this pins that the queue keeps the two from overlapping.
+      // finish initializing, so batch 2 is queued behind it; this pins that
+      // the queue keeps the two from overlapping.
       stats.stallTreeInit = 0
       treeDep.write(treeDep.original.replace("version = 'tree-v1'", "version = 'tree-v3'"))
       // wait on the host, not the nested entry: the host only comes back after
@@ -1265,7 +1267,7 @@ export function apply(ctx: Context) {
           path: pathToFileURL(configPath).href,
         },
       })
-      await waitFor(() => ctx.watcher, 5000)
+      await waitFor(() => ctx.fsWatcher, 5000)
       await waitFor(() => ctx.bail('hmr-test/get-value') === 'initial', 5000)
     }, 10000)
 
@@ -1290,7 +1292,7 @@ export function apply(ctx: Context) {
       expect(result.pending).to.deep.equal([{ url: pathToFileURL(plugin.path).href, reason: 'cache-unavailable' }])
       expect(result.replaced).to.deep.equal([])
 
-      // nor does the watcher reload it
+      // nor does a file system change reload it
       await new Promise(r => setTimeout(r, SETTLE_MS))
       expect(ctx.bail('hmr-test/get-value')).to.equal('initial')
     }, 10000)

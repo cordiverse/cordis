@@ -1,8 +1,7 @@
-- id: watcher
-  name: '@cordisjs/plugin-watcher'
+- id: fs-watcher
+  name: '@cordisjs/plugin-fs-watcher'
   config:
     root:
       - .
-    debounce: 50
 - id: test
   name: ./plugin
