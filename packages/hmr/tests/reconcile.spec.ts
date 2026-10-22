@@ -61,7 +61,7 @@ describe('Hmr.reconcile', () => {
   async function load(name: string, content: string) {
     const path = fixture(name, content)
     const id = await ctx.loader.create({ name: `./__reconcile__/${name}` })
-    await ctx.loader.store[id]!.fiber!.await().catch(() => {})
+    await ctx.loader.store[id]!.innerFiber!.await().catch(() => {})
     return path
   }
 
@@ -82,6 +82,28 @@ describe('Hmr.reconcile', () => {
     expect(result.restartReason).to.be.undefined
     expect(reloaded).to.deep.equal([result])
     expect(ctx.bail('reconcile/entry' as any)).to.equal('v2')
+  })
+
+  it('replaces the inner fiber of an entry with an injection scope', async () => {
+    await setup()
+    ctx.provide('reconcileScope', {})
+    const path = fixture('scoped.ts', plugin('scoped', 'v1'))
+    const id = await ctx.loader.create({ name: './__reconcile__/scoped.ts', inject: ['reconcileScope'] })
+    const entry = ctx.loader.store[id]!
+    await ctx.loader.await()
+    const outer = entry.outerFiber!
+    expect(outer).to.be.ok
+    expect(ctx.bail('reconcile/scoped' as any)).to.equal('v1')
+
+    writeFileSync(path, plugin('scoped', 'v2'))
+    const result = await ctx.hmr.reconcile({ files: [path] })
+
+    expect(result.replaced).to.have.length(1)
+    // the outer fiber is kept, and the new fiber takes the place of the inner one
+    expect(entry.outerFiber === outer).to.equal(true)
+    expect(entry.innerFiber!.uid).to.equal(result.replaced[0].uid)
+    expect(result.replaced[0].parent.fiber.uid).to.equal(outer.uid)
+    expect(ctx.bail('reconcile/scoped' as any)).to.equal('v2')
   })
 
   it('accepts a file URL', async () => {

@@ -37,7 +37,7 @@ describe('Include watch', () => {
       name: '@cordisjs/plugin-include',
       config: { path: './fixtures/watch.yml', ...config },
     })
-    await ctx.loader.store[id]!.fiber!.await()
+    await ctx.loader.store[id]!.innerFiber!.await()
     return { ctx, id }
   }
 
@@ -54,7 +54,7 @@ describe('Include watch', () => {
   it('restarts when `watch` is toggled', async () => {
     const { ctx, id } = await setup({ watch: false })
     await ctx.loader.update(id, { config: { path: './fixtures/watch.yml', watch: true } })
-    await ctx.loader.store[id]!.fiber!.await()
+    await ctx.loader.store[id]!.innerFiber!.await()
     expect(FakeFs.paths).to.deep.equal([filename])
   })
 })

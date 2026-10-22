@@ -89,7 +89,7 @@ describe('Hmr with fs', () => {
     const path = resolve(fixtureDir, name)
     writeFileSync(path, content)
     const id = await ctx.loader.create({ name: `./__watch__/${name}` })
-    await ctx.loader.store[id]!.fiber!.await()
+    await ctx.loader.store[id]!.innerFiber!.await()
     return path
   }
 
