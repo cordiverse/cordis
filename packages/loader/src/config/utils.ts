@@ -1,22 +1,98 @@
 import { valueMap } from 'cosmokit'
 
+// frames above the wrapper belong to the expression
+const WRAPPER = '<cordis:evaluate>'
+
 // eslint-disable-next-line no-new-func
-export const evaluate = new Function('ctx', 'expr', `
+const wrapper = new Function('ctx', 'expr', `
   with (ctx) {
     return eval(expr)
   }
-`) as ((ctx: object, expr: string) => any)
+//# sourceURL=${WRAPPER}`) as ((ctx: object, expr: string) => any)
 
-export function interpolate(ctx: object, value: any) {
+let counter = 0
+
+export interface ExprTrace {
+  label: string
+  locate: (expr: string, offset: number) => SourceLocation | undefined
+  getOuterStack: () => string[]
+}
+
+export function evaluate(ctx: object, expr: string, trace?: ExprTrace) {
+  if (!trace) return wrapper(ctx, expr)
+  // unique, to tell nested evaluations apart
+  const marker = `<cordis:expression#${++counter}>`
+  try {
+    return wrapper(ctx, `${expr}\n//# sourceURL=${marker}`)
+  } catch (error) {
+    traceEvaluation(error, expr, marker, trace)
+    throw error
+  }
+}
+
+export function interpolate(ctx: object, value: any, getTrace?: (path: PropertyKey[]) => ExprTrace, path: PropertyKey[] = []) {
   if (isJsExpr(value)) {
-    return evaluate(ctx, value.__jsExpr)
+    return evaluate(ctx, value.__jsExpr, getTrace?.(path))
   } else if (!value || typeof value !== 'object') {
     return value
   } else if (Array.isArray(value)) {
-    return value.map(item => interpolate(ctx, item))
+    return value.map((item, index) => interpolate(ctx, item, getTrace, [...path, index]))
   } else {
-    return valueMap(value, item => interpolate(ctx, item))
+    return valueMap(value, (item, key) => interpolate(ctx, item, getTrace, [...path, key]))
   }
+}
+
+const framePattern = /^(\s+at )(?:(.+) \((.+):(\d+):(\d+)\)|(.+):(\d+):(\d+))$/
+
+function parseFrame(line: string) {
+  const match = line.match(framePattern)
+  if (!match) return
+  const [, prefix, name, file = match[6], row = match[7], column = match[8]] = match
+  return { prefix, name, file, line: +row, column: +column }
+}
+
+function toOffset(source: string, line: number, column: number) {
+  const pattern = /\r\n?|[\n\u2028\u2029]/g
+  let start = 0
+  for (let i = 1; i < line; i++) {
+    if (!pattern.exec(source)) return
+    start = pattern.lastIndex
+  }
+  return start + column - 1
+}
+
+function traceEvaluation(error: any, expr: string, marker: string, trace: ExprTrace) {
+  if (typeof error?.stack !== 'string') return
+  const outer = trace.getOuterStack()
+  const start = trace.locate(expr, 0)
+  if (!outer.length && !start) return
+
+  const lines: string[] = error.stack.split('\n')
+  const head = lines.findIndex(line => parseFrame(line))
+  if (head === -1) return
+  let last = -1
+  for (let i = head; i < lines.length; i++) {
+    if (parseFrame(lines[i])?.file === marker) last = i
+  }
+  const cut = lines.findIndex((line, index) => index >= head && index > last && parseFrame(line)?.file === WRAPPER)
+  // the stack may be cut short by `Error.stackTraceLimit`
+  if (cut === -1) return
+
+  const frames = lines.slice(head, cut).map((line, index) => {
+    const frame = parseFrame(line)
+    if (frame?.file !== marker) return line
+    const offset = toOffset(expr, frame.line, frame.column)
+    const location = offset === undefined ? undefined : trace.locate(expr, offset)
+    const where = location ? formatLocation(location) : `${frame.file}:${frame.line}:${frame.column}`
+    // V8 names both the expression and its anonymous functions `eval`
+    const name = head + index === cut - 1 ? trace.label : frame.name === 'eval' ? undefined : frame.name
+    return name ? `${frame.prefix}${name} (${where})` : `${frame.prefix}${where}`
+  })
+  // a syntax error has no frame of its own
+  if (last !== cut - 1) {
+    frames.push(start ? `    at ${trace.label} (${formatLocation(start)})` : `    at ${trace.label}`)
+  }
+  error.stack = [...lines.slice(0, head), ...frames, ...outer].join('\n')
 }
 
 export function isJsExpr(value: any): value is JsExpr {

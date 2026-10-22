@@ -223,4 +223,8 @@ export abstract class EntryTree {
   getLocation(_id: string, _path: PropertyKey[]): SourceLocation | undefined {
     return undefined
   }
+
+  locateExpr(_id: string, _path: PropertyKey[], _expr: string, _offset: number): SourceLocation | undefined {
+    return undefined
+  }
 }

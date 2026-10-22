@@ -100,7 +100,7 @@ export class Loader extends EntryTree {
       // a group's config is the entry list itself, which the loader mutates in
       // place and identifies by reference
       if (fiber.runtime!.callback[EntryGroup.key]) return config
-      return interpolate(fiber.ctx, config)
+      return interpolate(fiber.ctx, config, fiber.entry.trace, ['config'])
     })
 
     ctx.on('internal/commit', (fiber, config) => {
