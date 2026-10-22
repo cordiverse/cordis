@@ -533,9 +533,6 @@ export function apply(ctx: Context) {
     debounce: 50
 - id: fs
   name: '@cordisjs/plugin-fs'
-  config:
-    root:
-      - .
 - id: cfg
   name: ./plugin-config
   config:
@@ -641,9 +638,6 @@ export default MyService
     debounce: 50
 - id: fs
   name: '@cordisjs/plugin-fs'
-  config:
-    root:
-      - .
 - id: my-service
   name: ./plugin-service
 `)
@@ -1259,7 +1253,7 @@ export function apply(ctx: Context) {
       })
       // HMR reads the internals itself; the loader does not share them.
       const spy = vi.spyOn(ModuleLoader, 'fromInternal').mockReturnValue(undefined)
-      await ctx.plugin(Hmr)
+      await ctx.plugin(Hmr, { root: [testDir] })
       spy.mockRestore()
       await ctx.loader.create({
         name: '@cordisjs/plugin-include',
@@ -1292,7 +1286,7 @@ export function apply(ctx: Context) {
       expect(result.pending).to.deep.equal([{ url: pathToFileURL(plugin.path).href, reason: 'cache-unavailable' }])
       expect(result.replaced).to.deep.equal([])
 
-      // nor does a file system change reload it
+      // nor does an fs change reload it
       await new Promise(r => setTimeout(r, SETTLE_MS))
       expect(ctx.bail('hmr-test/get-value')).to.equal('initial')
     }, 10000)

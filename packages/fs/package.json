@@ -36,13 +36,10 @@
     "cordis": "^4.0.0-rc.12"
   },
   "devDependencies": {
-    "@types/picomatch": "^3.0.2",
     "cordis": "^4.0.0-rc.12"
   },
   "dependencies": {
     "chokidar": "^4.0.3",
-    "cosmokit": "^1.8.1",
-    "picomatch": "^4.0.3",
-    "schemastery": "^3.18.0"
+    "cosmokit": "^1.8.1"
   }
 }

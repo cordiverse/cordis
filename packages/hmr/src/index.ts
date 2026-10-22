@@ -4,10 +4,11 @@ import { ModuleJob, ModuleLoader, unwrapExports } from '@cordisjs/plugin-loader'
 import type Loader from '@cordisjs/plugin-loader'
 import type {} from '@cordisjs/plugin-fs'
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { relative, resolve } from 'node:path'
+import { relative, resolve, sep } from 'node:path'
 import { handleError } from './error.ts'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
+import picomatch from 'picomatch'
 import enUS from './locales/en-US.yml'
 import zhCN from './locales/zh-CN.yml'
 import z from 'schemastery'
@@ -43,13 +44,13 @@ async function loadDependencies(job: ModuleJob, ignored = new Set<string>()) {
   return dependencies
 }
 
-/** A registered plugin whose module has changed. */
+// A registered plugin whose module has changed.
 interface StalePlugin {
-  /** the module to take the replacement from */
+  // the module to take the replacement from
   url: string
-  /** every module that exports the plugin */
+  // every module that exports the plugin
   urls: string[]
-  /** the plugin before the change */
+  // the plugin before the change
   plugin: Plugin
 }
 
@@ -88,25 +89,21 @@ function toUrl(file: string | URL) {
 }
 
 class Hmr extends Service {
-  /** The directory that logged paths are relative to. */
+  // `root` and logged paths are relative to it
   public baseDir: string
 
-  /**
-   * The Node module loader, or `undefined` when its internals are unavailable.
-   * Without it, no module can be replaced.
-   */
+  // `undefined` when Node's loader internals are unavailable, in which case
+  // no module can be replaced
   public internal: ModuleLoader | undefined = ModuleLoader.fromInternal()
 
-  /**
-   * Modules of the host process: the dependency tree of the main entry point.
-   * A change to any of them requires a restart.
-   */
+  // the dependency tree of the main entry point; a change to any of these
+  // modules requires a restart
   public hosts = new Set<string>()
 
-  /** The tail of the transaction queue. */
+  // the tail of the transaction queue
   private _queue: Promise<unknown> = Promise.resolve()
 
-  /** The running transaction, matched against the async context of a call. */
+  // the running transaction, matched against the async context of a call
   private _current?: symbol
   private _storage = new AsyncLocalStorage<symbol>()
 
@@ -117,7 +114,7 @@ class Hmr extends Service {
     this.baseDir = ctx.baseUrl ? fileURLToPath(new URL('.', ctx.baseUrl)) : process.cwd()
 
     // Both services are optional. `reconcile()` depends on neither; they only
-    // drive reloads from file system changes and the restarts those require.
+    // drive reloads from fs changes and the restarts those require.
     ctx.inject(['fs'], ctx => this._watch(ctx))
     ctx.inject(['loader'], (ctx) => {
       this._loader = ctx.loader
@@ -125,39 +122,50 @@ class Hmr extends Service {
     })
   }
 
-  /**
-   * Reconcile file system changes. They are collected over the debounce
-   * window; a batch that can only be applied by restarting the process calls
-   * `ctx.loader.exit()`.
-   */
+  // Changes are collected over the debounce window. A batch that can only be
+  // applied by restarting the process calls `ctx.loader.exit()`.
   private _watch(ctx: Context) {
+    const { root, debounce } = this.config
+    if (!root.length) return
+    this.ctx.logger.info('watching %o', root)
+
     const stashed = new Set<string>()
     let timer: NodeJS.Timeout | undefined
     ctx.effect(() => () => clearTimeout(timer))
-    ctx.on('fs/change', (filename) => {
-      stashed.add(filename)
-      clearTimeout(timer)
-      timer = setTimeout(async () => {
-        const files = [...stashed]
-        stashed.clear()
-        try {
-          // This waits behind a running transaction.
-          const result = await this.reconcile({ files })
-          for (const { url, reason } of result.pending) {
-            this.ctx.logger.debug('change at %C not applied (%s)', url, reason)
-          }
-          if (!result.restartReason) return
-          if (!this._loader) {
-            this.ctx.logger.warn('%s, restart required', result.restartReason)
-            return
-          }
-          this.ctx.logger.info('%s, restarting', result.restartReason)
-          await this._loader.exit()
-        } catch (error) {
-          this.ctx.logger.warn(error)
+
+    const flush = async () => {
+      const files = [...stashed]
+      stashed.clear()
+      try {
+        // This waits behind a running transaction.
+        const result = await this.reconcile({ files })
+        for (const { url, reason } of result.pending) {
+          this.ctx.logger.debug('change at %C not applied (%s)', url, reason)
         }
-      }, this.config.debounce)
-    })
+        if (!result.restartReason) return
+        if (!this._loader) {
+          this.ctx.logger.warn('%s, restart required', result.restartReason)
+          return
+        }
+        this.ctx.logger.info('%s, restarting', result.restartReason)
+        await this._loader.exit()
+      } catch (error) {
+        this.ctx.logger.warn(error)
+      }
+    }
+
+    const match = picomatch(this.config.ignored)
+    for (const path of root) {
+      ctx.fs.watch(resolve(this.baseDir, path), (filename) => {
+        this.ctx.logger.debug('change detected at %C', relative(this.baseDir, filename))
+        stashed.add(filename)
+        clearTimeout(timer)
+        timer = setTimeout(flush, debounce)
+      }, {
+        // picomatch only splits on `/`, so a Windows path is converted before matching.
+        ignored: filename => match(relative(this.baseDir, filename).split(sep).join('/')),
+      })
+    }
   }
 
   async* [Service.init]() {
@@ -187,14 +195,10 @@ class Hmr extends Service {
     return Array.prototype.map.call(linked, (job: ModuleJob) => job.url) as string[]
   }
 
-  /**
-   * Replace the plugins affected by changed module files.
-   *
-   * Transactions run one at a time: a call made while another transaction is
-   * running waits for it to finish. A call made from within the running
-   * transaction itself, such as from a plugin it applies, would wait for
-   * itself and is rejected instead.
-   */
+  // Transactions run one at a time: a call made while another transaction is
+  // running waits for it to finish. A call made from within the running
+  // transaction itself, such as from a plugin it applies, would wait for
+  // itself and is rejected instead.
   reconcile(options: Hmr.ReconcileOptions): Promise<Hmr.Result> {
     const current = this._storage.getStore()
     if (current && current === this._current) {
@@ -219,14 +223,10 @@ class Hmr extends Service {
     }
   }
 
-  /**
-   * Classify the modules reachable from changed files into accepted (should
-   * reload) and declined (should not).
-   *
-   * A file is accepted if it's directly changed or if any of its
-   * dependencies are accepted. A file is declined if none of its
-   * dependencies are accepted or if it's a host module.
-   */
+  // Classify the modules reachable from changed files into accepted (should
+  // reload) and declined (should not). A file is accepted if it's directly
+  // changed or if any of its dependencies are accepted. A file is declined if
+  // none of its dependencies are accepted or if it's a host module.
   private async _analyze(changed: Set<string>) {
     const pending: string[] = []
     const accepted = new Set(changed)
@@ -281,11 +281,9 @@ class Hmr extends Service {
     return { accepted, declined }
   }
 
-  /**
-   * Find every loaded module that exports a registered plugin. The modules of
-   * a plugin form an atomic reload unit: when anything in their dependency
-   * trees changes, they are imported again and the plugin is replaced.
-   */
+  // Find every loaded module that exports a registered plugin. The modules of
+  // a plugin form an atomic reload unit: when anything in their dependency
+  // trees changes, they are imported again and the plugin is replaced.
   private _discover(declined: Set<string>) {
     const internal = this.internal!
     const candidates = new Map<ModuleJob, Plugin>()
@@ -565,10 +563,19 @@ class Hmr extends Service {
 
 namespace Hmr {
   export interface Config {
+    root: string[]
+    ignored: string[]
     debounce: number
   }
 
   export const Config: z<Config> = z.object({
+    root: z.array(String).role('table').default(['.']),
+    ignored: z.array(String).role('table').default([
+      '**/node_modules',
+      '**/.*',
+      'cache',
+      'data',
+    ]),
     debounce: z.natural().role('ms').default(100),
   }).i18n({
     'en-US': enUS,
@@ -576,20 +583,20 @@ namespace Hmr {
   })
 
   export interface ReconcileOptions {
-    /** Changed files, as absolute paths or `file:` URLs. */
+    // absolute paths or `file:` URLs
     files: Iterable<string | URL>
   }
 
   export type PendingReason =
-    /** The module cache is not accessible, so no module can be replaced. */
+    // the module cache is not accessible, so no module can be replaced
     | 'cache-unavailable'
-    /** The file is a host module. A restart is required to apply it. */
+    // the file is a host module, which requires a restart
     | 'host-module'
-    /** The batch contains a host module, so nothing else is applied either. */
+    // another file in the batch is a host module, so nothing is applied
     | 'restart-required'
-    /** No module has been loaded from the file. */
+    // no module has been loaded from the file
     | 'not-loaded'
-    /** The module is loaded, but no registered plugin depends on it. */
+    // the module is loaded, but no registered plugin depends on it
     | 'no-plugin'
 
   export interface Pending {
@@ -598,21 +605,19 @@ namespace Hmr {
   }
 
   export interface Failure {
-    /** The fiber that failed, left FAILED as on a cold start. */
+    // left FAILED, as on a cold start
     fiber: Fiber
     error: unknown
   }
 
   export interface Result {
-    /** Fibers rebuilt from the new modules. */
     replaced: Fiber[]
-    /** Fibers that could not be rebuilt. */
     failed: Failure[]
-    /** Set when the new modules failed to import; nothing has been replaced. */
+    // set when the new modules failed to import; nothing has been replaced
     aborted?: { error: unknown }
-    /** Changed files that have not been applied. */
+    // changed files that have not been applied
     pending: Pending[]
-    /** Set when the batch can only be applied by restarting the process. */
+    // set when the batch can only be applied by restarting the process
     restartReason?: string
   }
 }

@@ -112,7 +112,7 @@ export namespace Include {
     initial?: any[]
     patches?: PatchOptions[]
     enableLogs?: boolean
-    /** Reload the tree when the file changes. Requires the `fs` service. */
+    // reload the tree when the file changes; requires the `fs` service
     watch?: boolean
   }
 }

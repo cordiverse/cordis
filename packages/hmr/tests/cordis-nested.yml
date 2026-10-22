@@ -4,8 +4,5 @@
     debounce: 50
 - id: fs
   name: '@cordisjs/plugin-fs'
-  config:
-    root:
-      - .
 - id: tree
   name: ./plugin-tree

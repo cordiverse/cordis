@@ -201,7 +201,7 @@ export class Loader extends EntryTree {
   }
 }
 
-/** Get the plugin exported by a module namespace. */
+// get the plugin exported by a module namespace
 export function unwrapExports(exports: any) {
   if (isNullable(exports)) return exports
   exports = exports.default ?? exports

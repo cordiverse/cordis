@@ -4,9 +4,6 @@
     debounce: 50
 - id: fs
   name: '@cordisjs/plugin-fs'
-  config:
-    root:
-      - .
 - id: multi-a
   name: ./plugin-multi
   config:

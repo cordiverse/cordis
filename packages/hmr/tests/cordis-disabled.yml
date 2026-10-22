@@ -4,8 +4,5 @@
     debounce: 50
 - id: fs
   name: '@cordisjs/plugin-fs'
-  config:
-    root:
-      - .
 - id: live
   name: ./plugin-disabled-hmr

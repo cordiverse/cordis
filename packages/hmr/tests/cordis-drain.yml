@@ -4,9 +4,6 @@
     debounce: 50
 - id: fs
   name: '@cordisjs/plugin-fs'
-  config:
-    root:
-      - .
 - id: test-slow
   name: ./plugin-slow
 - id: test-fast

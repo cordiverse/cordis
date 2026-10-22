@@ -1,10 +1,9 @@
 import { Context, Fiber } from 'cordis'
-import { once } from 'node:events'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { basename, dirname, join, resolve, sep } from 'node:path'
+import { basename, dirname, relative, resolve } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import FileSystem from '../src/index.ts'
+import Fs from '../src/index.ts'
 
 const testDir = dirname(fileURLToPath(import.meta.url))
 const fixture = resolve(testDir, '__fixtures__')
@@ -24,7 +23,25 @@ function waitFor(condFn: () => any, timeout = 8000, interval = 50): Promise<void
   })
 }
 
-describe('FileSystem', () => {
+// The OS may not deliver events until a while after the watch is set up,
+// especially for the first watch in a process, so the file is written until
+// the change is seen.
+async function touch(paths: string | string[], condFn: () => any) {
+  for (let i = 0; !condFn(); i++) {
+    if (i >= 80) throw new Error('touch timed out')
+    for (const path of [paths].flat()) writeFileSync(path, `v${i}`)
+    await new Promise(r => setTimeout(r, 100))
+  }
+}
+
+function write(name: string, content = '') {
+  const path = resolve(fixture, name)
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, content)
+  return path
+}
+
+describe('Fs', () => {
   let fiber: Fiber<Context> | undefined
 
   beforeAll(() => {
@@ -33,6 +50,7 @@ describe('FileSystem', () => {
   })
 
   afterEach(async () => {
+    // watches end with the plugins that inject `fs`
     await fiber?.dispose()
     fiber = undefined
   })
@@ -41,156 +59,108 @@ describe('FileSystem', () => {
     rmSync(fixture, { recursive: true, force: true })
   })
 
-  async function createContext(config: Partial<FileSystem.Config>) {
-    const ctx = new Context()
-    ctx.baseUrl = import.meta.url
-    fiber = await ctx.plugin(FileSystem, config)
-    // chokidar never gets ready without anything to watch
-    if (config.root?.length) await once(ctx.fs['_watcher'], 'ready')
-    return { ctx }
+  async function setup(baseUrl: string | null = import.meta.url) {
+    const root = new Context()
+    root.baseUrl = baseUrl ?? undefined
+    fiber = await root.plugin(Fs)
+    let ctx!: Context
+    await root.inject(['fs'], (inner) => { ctx = inner })
+    return ctx
   }
 
-  // Only `baseDir` is asserted, so nothing is watched.
-  describe('base', () => {
-    // An absolute `base` is a legal configuration, but `new URL()` reads a Windows
-    // drive letter as a URL scheme (`c:`) and `fileURLToPath` rejects that scheme.
-    it.runIf(process.platform === 'win32')('accepts a drive-letter base', async () => {
-      const base = testDir + sep
-      const { ctx } = await createContext({ base, root: [] })
-
-      expect(ctx.fs.baseDir).to.equal(base)
-    })
-
-    it('resolves a relative base against the context', async () => {
-      const { ctx } = await createContext({ base: '..', root: [] })
-
-      expect(ctx.fs.baseDir).to.equal(dirname(testDir) + sep)
-    })
-
-    it('defaults to the working directory without a context directory', async () => {
-      const ctx = new Context()
-      fiber = await ctx.plugin(FileSystem, { root: [] })
-
-      expect(ctx.fs.baseDir).to.equal(process.cwd())
-    })
-
-    const basePath = resolve(testDir, 'base with spaces # %')
-    it.each([
-      ['relative path', '../watcher base', resolve('../watcher base')],
-      ['absolute path', basePath, basePath],
-      ['file URL', pathToFileURL(basePath).href, basePath],
-    ])('accepts a %s without a context directory', async (_, base, expected) => {
-      const ctx = new Context()
-      fiber = await ctx.plugin(FileSystem, { base, root: [] })
-
-      expect(ctx.fs.baseDir).to.equal(expected)
-    })
-
-    it('defaults to the context directory', async () => {
-      const { ctx } = await createContext({ root: [] })
-
-      expect(ctx.fs.baseDir).to.equal(testDir + sep)
-    })
-  })
-
-  describe('ignored', () => {
-    // `ignored` is matched against `path.relative()`, which is backslash-separated
-    // on Windows. Only a top-level entry carries no separator, so a nested
-    // `node_modules` was not ignored there and chokidar descended into it.
-    it('does not watch a nested ignored directory', async () => {
-      const root = resolve(fixture, 'ignored')
-      for (const file of ['src/index.js', 'packages/core/node_modules/dep/index.js']) {
-        mkdirSync(dirname(resolve(root, file)), { recursive: true })
-        writeFileSync(resolve(root, file), '')
-      }
-
-      const { ctx } = await createContext({ root: ['__fixtures__/ignored'] })
-      const watched = Object.entries(ctx.fs['_watcher'].getWatched())
-        .flatMap(([dir, names]) => names.map(name => join(dir, name)))
-      expect(watched).to.include(join('__fixtures__', 'ignored', 'src', 'index.js'))
-      expect(watched.filter(path => path.includes('node_modules'))).to.deep.equal([])
-    }, 10000)
-  })
-
-  describe('watch', () => {
-    // matches the default `ignored` patterns, so only an explicit claim can
-    // bring it into the watch set
-    const dotPath = resolve(fixture, '.claimed.yml')
-
-    beforeAll(() => {
-      writeFileSync(dotPath, 'v0')
-    })
-
-    it('watches a path that `ignored` would skip', async () => {
-      const { ctx } = await createContext({ root: ['__fixtures__'] })
-      let calls = 0
-      ctx.fs.watch(dotPath, () => { calls++ })
-      await new Promise(r => setTimeout(r, 200))
-
-      writeFileSync(dotPath, 'v1')
-      await waitFor(() => calls > 0)
-    }, 15000)
-
-    it('runs every callback registered for the same path', async () => {
-      const { ctx } = await createContext({ root: [] })
+  describe('path', () => {
+    it('resolves a relative path against the calling context', async () => {
+      const path = write('base with spaces # %/relative.txt')
+      const ctx = await setup()
       const seen: string[] = []
-      ctx.fs.watch(dotPath, () => { seen.push('a') })
-      ctx.fs.watch(dotPath, () => { seen.push('b') })
-      await new Promise(r => setTimeout(r, 200))
+      await ctx.fs.watch('__fixtures__/base with spaces # %/relative.txt', (filename) => { seen.push(filename) })
 
-      writeFileSync(dotPath, 'v2')
-      await waitFor(() => seen.length >= 2)
-      expect([...seen].sort()).to.deep.equal(['a', 'b'])
+      await touch(path, () => seen.length)
+      expect([...new Set(seen)]).to.deep.equal([path])
     }, 15000)
 
-    it('stops calling a callback once it is disposed', async () => {
-      const { ctx } = await createContext({ root: [] })
-      let calls = 0
-      const dispose = ctx.fs.watch(dotPath, () => { calls++ })
-      let others = 0
-      ctx.fs.watch(dotPath, () => { others++ })
-      await new Promise(r => setTimeout(r, 200))
-      dispose()
+    it('resolves a relative path against the working directory without a context directory', async () => {
+      const path = write('cwd.txt')
+      const ctx = await setup(null)
+      const seen: string[] = []
+      await ctx.fs.watch(relative(process.cwd(), path), (filename) => { seen.push(filename) })
 
-      writeFileSync(dotPath, 'v3')
-      await waitFor(() => others > 0)
-      expect(calls).to.equal(0)
+      await touch(path, () => seen.length)
+      expect([...new Set(seen)]).to.deep.equal([path])
+    }, 15000)
+
+    it('accepts a file URL', async () => {
+      const path = write('base with spaces # %/url.txt')
+      const ctx = await setup()
+      const seen: string[] = []
+      await ctx.fs.watch(pathToFileURL(path).href, (filename) => { seen.push(filename) })
+
+      await touch(path, () => seen.length)
+      expect([...new Set(seen)]).to.deep.equal([path])
     }, 15000)
 
     it.runIf(process.platform === 'win32')('matches paths that differ in case on Windows', async () => {
-      const { ctx } = await createContext({ root: [] })
+      const path = write('case.txt')
+      const ctx = await setup()
       let calls = 0
       // drive letter and directories alike
-      const dir = dirname(dotPath).replace(/[a-z]/gi, c => c === c.toUpperCase() ? c.toLowerCase() : c.toUpperCase())
-      ctx.fs.watch(resolve(dir, basename(dotPath)), () => { calls++ })
-      await new Promise(r => setTimeout(r, 200))
+      const dir = dirname(path).replace(/[a-z]/gi, c => c === c.toUpperCase() ? c.toLowerCase() : c.toUpperCase())
+      await ctx.fs.watch(resolve(dir, basename(path)), () => { calls++ })
 
-      writeFileSync(dotPath, 'v4')
-      await waitFor(() => calls > 0)
+      await touch(path, () => calls > 0)
     }, 15000)
   })
 
-  describe('change event', () => {
-    const source = resolve(fixture, 'source.ts')
+  describe('watch', () => {
+    it('reports the changed file of a watched directory', async () => {
+      const path = write('dir/nested/file.txt')
+      const ctx = await setup()
+      const seen: string[] = []
+      await ctx.fs.watch(resolve(fixture, 'dir'), (filename) => { seen.push(filename) })
 
-    beforeAll(() => {
-      writeFileSync(source, 'export {}\n')
-    })
+      await touch(path, () => seen.length)
+      expect([...new Set(seen)]).to.deep.equal([path])
+    }, 15000)
 
-    it('emits fs/change after the callbacks of the file', async () => {
-      const { ctx } = await createContext({ root: ['__fixtures__'] })
-      const order: string[] = []
-      ctx.fs.watch(source, async () => {
-        await new Promise(r => setTimeout(r, 100))
-        order.push('callback')
+    it('applies `ignored` to each watch on its own', async () => {
+      const kept = write('ignored/kept.txt')
+      const claimed = write('ignored/.claimed.yml')
+      const ctx = await setup()
+      const fromDir: string[] = []
+      const fromFile: string[] = []
+      await ctx.fs.watch(resolve(fixture, 'ignored'), (filename) => { fromDir.push(filename) }, {
+        ignored: filename => basename(filename).startsWith('.'),
       })
-      ctx.on('fs/change', (filename) => {
-        order.push(`change:${filename}`)
-      })
+      await ctx.fs.watch(claimed, (filename) => { fromFile.push(filename) })
 
-      writeFileSync(source, 'export const a = 1\n')
-      await waitFor(() => order.length >= 2)
-      expect(order).to.deep.equal(['callback', `change:${source}`])
+      await touch([claimed, kept], () => fromDir.length && fromFile.length)
+      await new Promise(r => setTimeout(r, 200))
+      expect([...new Set(fromDir)]).to.deep.equal([kept])
+      expect([...new Set(fromFile)]).to.deep.equal([claimed])
+    }, 15000)
+
+    it('runs every callback registered for the same path', async () => {
+      const path = write('shared.txt')
+      const ctx = await setup()
+      const seen: string[] = []
+      await ctx.fs.watch(path, () => { seen.push('a') })
+      await ctx.fs.watch(path, () => { seen.push('b') })
+
+      await touch(path, () => seen.length >= 2)
+      expect([...new Set(seen)].sort()).to.deep.equal(['a', 'b'])
+    }, 15000)
+
+    it('stops calling a callback once it is disposed', async () => {
+      const path = write('dispose.txt')
+      const ctx = await setup()
+      let calls = 0
+      let others = 0
+      const dispose = await ctx.fs.watch(path, () => { calls++ })
+      await ctx.fs.watch(path, () => { others++ })
+      await dispose()
+
+      await touch(path, () => others > 0)
+      expect(calls).to.equal(0)
     }, 15000)
   })
 })
