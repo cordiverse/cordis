@@ -1,6 +1,7 @@
-import { expect, describe, it } from 'vitest'
+import { expect, describe, it, vi } from 'vitest'
 import { mock } from 'node:test'
-import { Context } from '../src/index.ts'
+import { Context, FiberState } from '../src/index.ts'
+import { sleep } from './utils.ts'
 
 describe('Reflect', () => {
   it('Context.is()', () => {
@@ -62,5 +63,63 @@ describe('Reflect', () => {
     expect(fiber.ctx.foo).to.be.ok
     await fiber.dispose()
     expect(() => fiber.ctx.foo).to.throw('cannot get required service "foo" in inactive context')
+  })
+
+  it('does not apply a dependent when publication throws', async () => {
+    const root = new Context()
+    const applied: any[] = []
+    const fiber = root.inject(['foo'], (ctx) => {
+      applied.push(ctx.foo)
+    })
+    expect(fiber.state).to.equal(FiberState.PENDING)
+
+    const off = root.on('internal/service', (_name, value) => {
+      if (value !== undefined) throw new Error('svc')
+    })
+
+    expect(() => root.provide('foo', { n: 1 })).to.throw('svc')
+    await sleep()
+    expect(applied).to.have.length(0)
+    expect(fiber.state).to.equal(FiberState.PENDING)
+    expect(root.foo).to.equal(undefined)
+
+    off()
+    root.provide('foo', { n: 2 })
+    await sleep()
+    expect(applied).to.deep.equal([{ n: 2 }])
+  })
+
+  it('keeps the original error when retraction throws', async () => {
+    const root = new Context()
+    const applied: any[] = []
+    const fiber = root.inject(['foo'], (ctx) => {
+      applied.push(ctx.foo)
+    })
+    const retract = new Error('retract')
+    root.on('internal/service', (_name, value) => {
+      throw value !== undefined ? new Error('publish') : retract
+    })
+    const log = vi.spyOn(root.logger, 'error').mockImplementation(() => {})
+    try {
+      expect(() => root.provide('foo', { n: 1 })).to.throw('publish')
+      await sleep()
+      expect(log).toHaveBeenCalledWith(retract)
+      expect([...root.fiber.provisions].some((impl) => impl.name === 'foo')).to.equal(false)
+      expect(root.foo).to.equal(undefined)
+      expect(applied).to.have.length(0)
+      expect(fiber.state).to.equal(FiberState.PENDING)
+    } finally {
+      log.mockRestore()
+    }
+  })
+
+  it('removes the provision when disposal notification throws', async () => {
+    const root = new Context()
+    const dispose = root.provide('foo', { n: 1 })
+    root.on('internal/service', () => {
+      throw new Error('later')
+    })
+    await expect(dispose()).rejects.toThrow('later')
+    expect([...root.fiber.provisions].some((impl) => impl.name === 'foo')).to.equal(false)
   })
 })
