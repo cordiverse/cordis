@@ -2,7 +2,7 @@ import { Context, Fiber, Message } from 'cordis'
 import Loader, { ModuleLoader } from '@cordisjs/plugin-loader'
 import Logger from '@cordisjs/plugin-logger-console'
 import type { Include } from '@cordisjs/plugin-include'
-import type {} from '@cordisjs/plugin-fs-watcher'
+import type {} from '@cordisjs/plugin-fs'
 import { writeFileSync, readFileSync, unlinkSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { expect, describe, it, beforeAll, afterAll, afterEach, beforeEach, vi } from 'vitest'
@@ -70,7 +70,7 @@ async function createContext(configFile: string): Promise<{ ctx: Context; fiber:
       path: pathToFileURL(resolve(testDir, configFile)).href,
     },
   })
-  await waitFor(() => ctx.hmr && ctx.fsWatcher, 5000)
+  await waitFor(() => ctx.hmr && ctx.fs, 5000)
   await new Promise(r => setTimeout(r, 500))
   return { ctx, fiber }
 }
@@ -531,8 +531,8 @@ export function apply(ctx: Context) {
   name: '@cordisjs/plugin-hmr'
   config:
     debounce: 50
-- id: fs-watcher
-  name: '@cordisjs/plugin-fs-watcher'
+- id: fs
+  name: '@cordisjs/plugin-fs'
   config:
     root:
       - .
@@ -639,8 +639,8 @@ export default MyService
   name: '@cordisjs/plugin-hmr'
   config:
     debounce: 50
-- id: fs-watcher
-  name: '@cordisjs/plugin-fs-watcher'
+- id: fs
+  name: '@cordisjs/plugin-fs'
   config:
     root:
       - .
@@ -1267,7 +1267,7 @@ export function apply(ctx: Context) {
           path: pathToFileURL(configPath).href,
         },
       })
-      await waitFor(() => ctx.fsWatcher, 5000)
+      await waitFor(() => ctx.fs, 5000)
       await waitFor(() => ctx.bail('hmr-test/get-value') === 'initial', 5000)
     }, 10000)
 

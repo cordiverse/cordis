@@ -1,7 +1,7 @@
 {
-  "name": "@cordisjs/plugin-fs-watcher",
-  "description": "File System Watcher for Cordis",
-  "version": "1.0.0",
+  "name": "@cordisjs/plugin-fs",
+  "description": "File System Service for Cordis",
+  "version": "0.1.0",
   "type": "module",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
@@ -13,7 +13,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/cordiverse/cordis.git",
-    "directory": "packages/fs-watcher"
+    "directory": "packages/fs"
   },
   "bugs": {
     "url": "https://github.com/cordiverse/cordis/issues"
@@ -23,14 +23,13 @@
     "cordis",
     "plugin",
     "fs",
-    "watch",
-    "watcher",
-    "development"
+    "file",
+    "watch"
   ],
   "cordis": {
     "description": {
-      "en": "File System Watcher",
-      "zh": "文件系统监听"
+      "en": "File System",
+      "zh": "文件系统"
     }
   },
   "peerDependencies": {

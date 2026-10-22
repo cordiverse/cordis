@@ -13,23 +13,24 @@ const driveLetter = /^[A-Za-z]:[\\/]/
 
 declare module 'cordis' {
   interface Context {
-    fsWatcher: FsWatcher
+    fs: FileSystem
   }
 
   interface Events {
-    'fs-watcher/change'(filename: string): void
+    'fs/change'(filename: string): void
   }
 }
 
 export type WatchCallback = () => Awaitable<void>
 
 /**
- * Watch the file system.
+ * The file system service. For now it only watches files, backed by
+ * `node:fs` through chokidar.
  *
  * On a change, the callbacks registered for the file through `watch()` run
- * first, and `fs-watcher/change` is emitted once they have settled.
+ * first, and `fs/change` is emitted once they have settled.
  */
-class FsWatcher extends Service {
+class FileSystem extends Service {
   public baseDir: string
 
   private _watcher!: FSWatcher
@@ -37,8 +38,8 @@ class FsWatcher extends Service {
   /** Callbacks registered through `watch()`, keyed by absolute path. */
   private _callbacks = new Map<string, Set<WatchCallback>>()
 
-  constructor(ctx: Context, public config: FsWatcher.Config) {
-    super(ctx, 'fsWatcher')
+  constructor(ctx: Context, public config: FileSystem.Config) {
+    super(ctx, 'fs')
     // On Windows, a drive-letter path is converted with `pathToFileURL`.
     // `new URL()` would read its `C:` as a URL scheme, which `fileURLToPath` rejects.
     // Without a `baseUrl`, file URLs are still decoded as URLs; ordinary
@@ -86,7 +87,7 @@ class FsWatcher extends Service {
         }))
       }
 
-      this.ctx.emit('fs-watcher/change', filename)
+      this.ctx.emit('fs/change', filename)
     })
   }
 
@@ -117,11 +118,11 @@ class FsWatcher extends Service {
         callbacks.delete(callback)
         if (!callbacks.size) this._callbacks.delete(filename)
       }
-    }, 'ctx.fsWatcher.watch()')
+    }, 'ctx.fs.watch()')
   }
 }
 
-namespace FsWatcher {
+namespace FileSystem {
   export interface Config extends ChokidarOptions {
     base?: string
     root: string[]
@@ -143,4 +144,4 @@ namespace FsWatcher {
   })
 }
 
-export default FsWatcher
+export default FileSystem

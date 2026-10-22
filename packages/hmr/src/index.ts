@@ -2,7 +2,7 @@ import { Context, Fiber, Plugin, Service } from 'cordis'
 import { Dict } from 'cosmokit'
 import { ModuleJob, ModuleLoader, unwrapExports } from '@cordisjs/plugin-loader'
 import type Loader from '@cordisjs/plugin-loader'
-import type {} from '@cordisjs/plugin-fs-watcher'
+import type {} from '@cordisjs/plugin-fs'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { relative, resolve } from 'node:path'
 import { handleError } from './error.ts'
@@ -118,7 +118,7 @@ class Hmr extends Service {
 
     // Both services are optional. `reconcile()` depends on neither; they only
     // drive reloads from file system changes and the restarts those require.
-    ctx.inject(['fsWatcher'], ctx => this._watch(ctx))
+    ctx.inject(['fs'], ctx => this._watch(ctx))
     ctx.inject(['loader'], (ctx) => {
       this._loader = ctx.loader
       ctx.effect(() => () => this._loader = undefined)
@@ -134,7 +134,7 @@ class Hmr extends Service {
     const stashed = new Set<string>()
     let timer: NodeJS.Timeout | undefined
     ctx.effect(() => () => clearTimeout(timer))
-    ctx.on('fs-watcher/change', (filename) => {
+    ctx.on('fs/change', (filename) => {
       stashed.add(filename)
       clearTimeout(timer)
       timer = setTimeout(async () => {

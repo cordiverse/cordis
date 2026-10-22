@@ -23,7 +23,7 @@
     "cordis": "^4.0.0-rc.12"
   },
   "devDependencies": {
-    "@cordisjs/plugin-fs-watcher": "^1.0.0",
+    "@cordisjs/plugin-fs": "^0.1.0",
     "@cordisjs/plugin-loader": "^1.0.0-rc.9",
     "@cordisjs/plugin-logger-console": "^1.0.0",
     "cordis": "^4.0.0-rc.12"

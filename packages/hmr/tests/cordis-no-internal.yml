@@ -1,5 +1,5 @@
-- id: fs-watcher
-  name: '@cordisjs/plugin-fs-watcher'
+- id: fs
+  name: '@cordisjs/plugin-fs'
   config:
     root:
       - .

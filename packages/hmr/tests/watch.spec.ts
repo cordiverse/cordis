@@ -21,10 +21,10 @@ export function apply(ctx: Context) {
 `
 }
 
-/** Stands in for `@cordisjs/plugin-fs-watcher`; changes are emitted by hand. */
-class FakeFsWatcher extends Service {
+/** Stands in for `@cordisjs/plugin-fs`; changes are emitted by hand. */
+class FakeFs extends Service {
   constructor(ctx: Context) {
-    super(ctx, 'fsWatcher')
+    super(ctx, 'fs')
   }
 }
 
@@ -58,7 +58,7 @@ describe('Hmr with a file system watcher', () => {
   async function setup(watcher = true) {
     ctx = new Context()
     fiber = await ctx.plugin(TestLoader, { baseUrl: import.meta.url })
-    if (watcher) await ctx.plugin(FakeFsWatcher)
+    if (watcher) await ctx.plugin(FakeFs)
     await ctx.plugin(Hmr, { debounce: 50 })
   }
 
@@ -89,8 +89,8 @@ describe('Hmr with a file system watcher', () => {
     const reloaded = nextReload()
     writeFileSync(a, plugin('a', 'v2'))
     writeFileSync(b, plugin('b', 'v2'))
-    ctx.emit('fs-watcher/change', a)
-    ctx.emit('fs-watcher/change', b)
+    ctx.emit('fs/change', a)
+    ctx.emit('fs/change', b)
     const result = await reloaded
 
     expect(result.replaced).to.have.length(2)
@@ -105,7 +105,7 @@ describe('Hmr with a file system watcher', () => {
     const path = await load('host.ts', plugin('host', 'v1'))
     ctx.hmr.hosts.add(pathToFileURL(path).href)
 
-    ctx.emit('fs-watcher/change', path)
+    ctx.emit('fs/change', path)
     await new Promise(r => setTimeout(r, 200))
 
     expect(TestLoader.exits).to.equal(1)
@@ -117,7 +117,7 @@ describe('Hmr with a file system watcher', () => {
     const path = await load('unwatched.ts', plugin('unwatched', 'v1'))
 
     writeFileSync(path, plugin('unwatched', 'v2'))
-    ctx.emit('fs-watcher/change', path)
+    ctx.emit('fs/change', path)
     await new Promise(r => setTimeout(r, 200))
 
     expect(ctx.bail('hmr-watch/unwatched' as any)).to.equal('v1')

@@ -4,7 +4,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import FsWatcher from '../src/index.ts'
+import FileSystem from '../src/index.ts'
 
 const testDir = dirname(fileURLToPath(import.meta.url))
 const fixture = resolve(testDir, '__fixtures__')
@@ -24,7 +24,7 @@ function waitFor(condFn: () => any, timeout = 8000, interval = 50): Promise<void
   })
 }
 
-describe('FsWatcher', () => {
+describe('FileSystem', () => {
   let fiber: Fiber<Context> | undefined
 
   beforeAll(() => {
@@ -41,12 +41,12 @@ describe('FsWatcher', () => {
     rmSync(fixture, { recursive: true, force: true })
   })
 
-  async function createContext(config: Partial<FsWatcher.Config>) {
+  async function createContext(config: Partial<FileSystem.Config>) {
     const ctx = new Context()
     ctx.baseUrl = import.meta.url
-    fiber = await ctx.plugin(FsWatcher, config)
+    fiber = await ctx.plugin(FileSystem, config)
     // chokidar never gets ready without anything to watch
-    if (config.root?.length) await once(ctx.fsWatcher['_watcher'], 'ready')
+    if (config.root?.length) await once(ctx.fs['_watcher'], 'ready')
     return { ctx }
   }
 
@@ -58,20 +58,20 @@ describe('FsWatcher', () => {
       const base = testDir + sep
       const { ctx } = await createContext({ base, root: [] })
 
-      expect(ctx.fsWatcher.baseDir).to.equal(base)
+      expect(ctx.fs.baseDir).to.equal(base)
     })
 
     it('resolves a relative base against the context', async () => {
       const { ctx } = await createContext({ base: '..', root: [] })
 
-      expect(ctx.fsWatcher.baseDir).to.equal(dirname(testDir) + sep)
+      expect(ctx.fs.baseDir).to.equal(dirname(testDir) + sep)
     })
 
     it('defaults to the working directory without a context directory', async () => {
       const ctx = new Context()
-      fiber = await ctx.plugin(FsWatcher, { root: [] })
+      fiber = await ctx.plugin(FileSystem, { root: [] })
 
-      expect(ctx.fsWatcher.baseDir).to.equal(process.cwd())
+      expect(ctx.fs.baseDir).to.equal(process.cwd())
     })
 
     const basePath = resolve(testDir, 'base with spaces # %')
@@ -81,15 +81,15 @@ describe('FsWatcher', () => {
       ['file URL', pathToFileURL(basePath).href, basePath],
     ])('accepts a %s without a context directory', async (_, base, expected) => {
       const ctx = new Context()
-      fiber = await ctx.plugin(FsWatcher, { base, root: [] })
+      fiber = await ctx.plugin(FileSystem, { base, root: [] })
 
-      expect(ctx.fsWatcher.baseDir).to.equal(expected)
+      expect(ctx.fs.baseDir).to.equal(expected)
     })
 
     it('defaults to the context directory', async () => {
       const { ctx } = await createContext({ root: [] })
 
-      expect(ctx.fsWatcher.baseDir).to.equal(testDir + sep)
+      expect(ctx.fs.baseDir).to.equal(testDir + sep)
     })
   })
 
@@ -105,7 +105,7 @@ describe('FsWatcher', () => {
       }
 
       const { ctx } = await createContext({ root: ['__fixtures__/ignored'] })
-      const watched = Object.entries(ctx.fsWatcher['_watcher'].getWatched())
+      const watched = Object.entries(ctx.fs['_watcher'].getWatched())
         .flatMap(([dir, names]) => names.map(name => join(dir, name)))
       expect(watched).to.include(join('__fixtures__', 'ignored', 'src', 'index.js'))
       expect(watched.filter(path => path.includes('node_modules'))).to.deep.equal([])
@@ -124,7 +124,7 @@ describe('FsWatcher', () => {
     it('watches a path that `ignored` would skip', async () => {
       const { ctx } = await createContext({ root: ['__fixtures__'] })
       let calls = 0
-      ctx.fsWatcher.watch(dotPath, () => { calls++ })
+      ctx.fs.watch(dotPath, () => { calls++ })
       await new Promise(r => setTimeout(r, 200))
 
       writeFileSync(dotPath, 'v1')
@@ -134,8 +134,8 @@ describe('FsWatcher', () => {
     it('runs every callback registered for the same path', async () => {
       const { ctx } = await createContext({ root: [] })
       const seen: string[] = []
-      ctx.fsWatcher.watch(dotPath, () => { seen.push('a') })
-      ctx.fsWatcher.watch(dotPath, () => { seen.push('b') })
+      ctx.fs.watch(dotPath, () => { seen.push('a') })
+      ctx.fs.watch(dotPath, () => { seen.push('b') })
       await new Promise(r => setTimeout(r, 200))
 
       writeFileSync(dotPath, 'v2')
@@ -146,9 +146,9 @@ describe('FsWatcher', () => {
     it('stops calling a callback once it is disposed', async () => {
       const { ctx } = await createContext({ root: [] })
       let calls = 0
-      const dispose = ctx.fsWatcher.watch(dotPath, () => { calls++ })
+      const dispose = ctx.fs.watch(dotPath, () => { calls++ })
       let others = 0
-      ctx.fsWatcher.watch(dotPath, () => { others++ })
+      ctx.fs.watch(dotPath, () => { others++ })
       await new Promise(r => setTimeout(r, 200))
       dispose()
 
@@ -162,7 +162,7 @@ describe('FsWatcher', () => {
       let calls = 0
       // drive letter and directories alike
       const dir = dirname(dotPath).replace(/[a-z]/gi, c => c === c.toUpperCase() ? c.toLowerCase() : c.toUpperCase())
-      ctx.fsWatcher.watch(resolve(dir, basename(dotPath)), () => { calls++ })
+      ctx.fs.watch(resolve(dir, basename(dotPath)), () => { calls++ })
       await new Promise(r => setTimeout(r, 200))
 
       writeFileSync(dotPath, 'v4')
@@ -177,14 +177,14 @@ describe('FsWatcher', () => {
       writeFileSync(source, 'export {}\n')
     })
 
-    it('emits fs-watcher/change after the callbacks of the file', async () => {
+    it('emits fs/change after the callbacks of the file', async () => {
       const { ctx } = await createContext({ root: ['__fixtures__'] })
       const order: string[] = []
-      ctx.fsWatcher.watch(source, async () => {
+      ctx.fs.watch(source, async () => {
         await new Promise(r => setTimeout(r, 100))
         order.push('callback')
       })
-      ctx.on('fs-watcher/change', (filename) => {
+      ctx.on('fs/change', (filename) => {
         order.push(`change:${filename}`)
       })
 
