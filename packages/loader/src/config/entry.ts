@@ -3,7 +3,7 @@ import { deepEqual, Dict, isNullable } from 'cosmokit'
 import { Loader } from '../index.ts'
 import { EntryGroup } from './group.ts'
 import { EntryTree, ModuleNotFoundError } from './tree.ts'
-import { evaluate, formatIssues, formatLocation, interpolate, isJsExpr, relocate, swap } from './utils.ts'
+import { evaluate, ExprTrace, formatIssues, formatLocation, interpolate, isJsExpr, relocate, swap } from './utils.ts'
 
 export interface EntryOptions {
   id: string
@@ -104,7 +104,7 @@ export class Entry {
   private _resolveDisabled(ctx: Context) {
     const { disabled } = this.options
     try {
-      this._verdict = isJsExpr(disabled) ? !!evaluate(ctx, disabled.__jsExpr) : !!disabled
+      this._verdict = isJsExpr(disabled) ? !!evaluate(ctx, disabled.__jsExpr, this.trace(['disabled'])) : !!disabled
     } catch (error) {
       this.ctx.logger.error(error)
       this._verdict = true
@@ -152,7 +152,7 @@ export class Entry {
     try {
       inject = Inject.resolve(this.options.inject)
       for (const key of Object.keys(inject)) {
-        inject[key] = interpolate(this.parent.ctx, inject[key])
+        inject[key] = interpolate(this.parent.ctx, inject[key], this.trace, ['inject', key])
       }
     } catch (error) {
       this.ctx.logger.error(error)
@@ -168,7 +168,7 @@ export class Entry {
 
   private _applyIntercept(ctx: Context) {
     try {
-      swap(this._intercept, interpolate(ctx, this.options.intercept))
+      swap(this._intercept, interpolate(ctx, this.options.intercept, this.trace, ['intercept']))
       return true
     } catch (error) {
       this.ctx.logger.error(error)
@@ -275,7 +275,17 @@ export class Entry {
     return this.parent.tree.getLocation(this.options.id, path)
   }
 
+  locateExpr(path: PropertyKey[], expr: string, offset: number) {
+    return this.parent.tree.locateExpr(this.options.id, path, expr, offset)
+  }
+
   getOuterStack = () => this.parent.getOuterStack(this.options.id)
+
+  trace = (path: PropertyKey[]): ExprTrace => ({
+    label: path.map(String).join('.'),
+    locate: (expr, offset) => this.locateExpr(path, expr, offset),
+    getOuterStack: this.getOuterStack,
+  })
 
   traceValidation(error: ValidationError) {
     const frames = this.getOuterStack()
