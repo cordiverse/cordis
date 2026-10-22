@@ -327,6 +327,30 @@ describe('Events', () => {
       expect(calls).to.deep.equal([])
     })
 
+    it('prepend runs a local listener first and can be released', async () => {
+      const { root } = setup()
+      const order: string[] = []
+      let dispose!: () => boolean
+      const fiber = root.plugin((ctx: Context, _: { n: number }) => {
+        ctx.on('internal/update', (config, next) => {
+          order.push('normal')
+          return next()
+        })
+        dispose = ctx.on('internal/update', (config, next) => {
+          order.push('prepend')
+          return next()
+        }, { prepend: true })
+      }, { n: 0 })
+
+      await fiber
+      await fiber.update({ n: 1 })
+      expect(order).to.deep.equal(['prepend', 'normal'])
+      dispose()
+      order.length = 0
+      await fiber.update({ n: 2 })
+      expect(order).to.deep.equal(['normal'])
+    })
+
     it('global listeners are not tied to a child fiber reload', async () => {
       const { root } = setup()
       const globalCalls: number[] = []
