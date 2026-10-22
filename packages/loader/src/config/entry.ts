@@ -1,4 +1,4 @@
-import { Context, Fiber, FiberState, Inject, ValidationError } from 'cordis'
+import { Context, Fiber, FiberState, Inject, Plugin, ValidationError } from 'cordis'
 import { deepEqual, Dict, isNullable } from 'cosmokit'
 import { Loader } from '../index.ts'
 import { EntryGroup } from './group.ts'
@@ -64,6 +64,7 @@ export class Entry {
 
   _initTask?: Promise<void> | undefined
   _disposing = false
+  _verdict?: boolean
   private _intercept: Dict = Object.create(null)
 
   constructor(public loader: Loader) {
@@ -100,29 +101,26 @@ export class Entry {
     if (this.outerFiber.committed) return this.outerFiber.ctx
   }
 
-  private _resolveDisabled() {
+  private _resolveDisabled(scope: Context) {
     const { disabled } = this.options
-    if (!isJsExpr(disabled)) return !!disabled
-    const scope = this._scope()
-    if (!scope) return true
     try {
-      return !!evaluate(scope, disabled.__jsExpr)
+      this._verdict = isJsExpr(disabled) ? !!evaluate(scope, disabled.__jsExpr) : !!disabled
     } catch (error) {
       this.ctx.logger.error(error)
-      return true
+      this._verdict = true
     }
   }
 
   get disabled() {
     // group is always enabled
     if (this.options.group) return false
-    return this._resolveDisabled() || this._parentDisabled()
+    return this._verdict !== false || this._parentDisabled()
   }
 
   private _parentDisabled() {
     let entry = this.parent.ctx.fiber.entry
     while (entry) {
-      if (entry._resolveDisabled()) return true
+      if (entry._verdict !== false) return true
       entry = entry.parent.ctx.fiber.entry
     }
     return false
@@ -130,9 +128,12 @@ export class Entry {
 
   private _blocked() {
     if (this.options.group) return false
-    // an expression is evaluated after the context is patched
-    if (isJsExpr(this.options.disabled)) return this._parentDisabled()
-    return this.disabled
+    // an expression waits for the patched context
+    if (!isJsExpr(this.options.disabled) && this.options.disabled) {
+      this._verdict = true
+      return true
+    }
+    return this._parentDisabled()
   }
 
   evaluate(expr: string) {
@@ -156,6 +157,7 @@ export class Entry {
     } catch (error) {
       this.ctx.logger.error(error)
       this.inject = Object.create(null)
+      this._verdict = true
       return
     }
     // strict: `null` and a missing key differ
@@ -164,9 +166,7 @@ export class Entry {
     return changed
   }
 
-  private _applyIntercept() {
-    const scope = this._scope()
-    if (!scope) return false
+  private _applyIntercept(scope: Context) {
     try {
       swap(this._intercept, interpolate(scope, this.options.intercept))
       return true
@@ -183,23 +183,28 @@ export class Entry {
 
       if (this.outerFiber) {
         if (this.outerFiber.state !== FiberState.ACTIVE) return
-        const running = !!this.innerFiber?.uid
-        if (running === (!this.options.group && this._resolveDisabled())) {
-          await this.outerFiber.restart()
-          return
-        }
-      }
-
-      if (!this.innerFiber?.uid) return
-      if (!this.outerFiber && !this.options.group && this._resolveDisabled()) {
-        this.dispose()
-        return
-      }
-      this._applyIntercept()
-      if (diff.includes('config') || this.options.group) {
-        await this.innerFiber.update(this.options.config, true)
+        await this._reconcile(this.outerFiber.ctx, diff)
+      } else if (this.innerFiber?.uid) {
+        await this._reconcile(this.ctx, diff)
       }
     })
+  }
+
+  private async _reconcile(scope: Context, diff: string[]) {
+    if (!this.innerFiber?.uid) {
+      // the reactivation evaluates `disabled`
+      await this.outerFiber?.restart()
+      return
+    }
+    this._resolveDisabled(scope)
+    if (this.disabled) {
+      this._dispose(this.innerFiber)
+      return
+    }
+    this._applyIntercept(scope)
+    if (diff.includes('config') || this.options.group) {
+      await this.innerFiber!.update(this.options.config, true)
+    }
   }
 
   async refresh() {
@@ -252,6 +257,10 @@ export class Entry {
   dispose() {
     const fiber = this.outerFiber ?? this.innerFiber
     this.outerFiber = undefined
+    return this._dispose(fiber)
+  }
+
+  private _dispose(fiber?: Fiber) {
     this._disposing = true
     try {
       return fiber?.dispose()
@@ -314,9 +323,11 @@ export class Entry {
   }
 
   private async _init() {
+    this._verdict = undefined
     const exports = await this._import()
-    if (!exports) return
+    if (!exports || !this._live() || this._blocked()) return
     await this._patchContext([])
+    if (!this._live() || this._blocked()) return
     if (this._hasOuter()) {
       this.outerFiber = this.ctx.registry.plugin({ ...outer, inject: this.inject }, undefined, this.getOuterStack)
     } else {
@@ -324,15 +335,25 @@ export class Entry {
     }
   }
 
-  _activate(parent: Context, plugin: any) {
-    if (!this.options.group && this._resolveDisabled()) return
-    this._start(parent, plugin)
+  private _live() {
+    return this.parent.tree.store[this.options.id] === this
   }
 
-  private _start(parent: Context, plugin: any) {
-    if (!this._applyIntercept()) return
+  _activate(scope: Context, plugin: Plugin) {
+    if (!this._live()) return
+    // a group still starts; its verdict only reaches its children
+    this._resolveDisabled(scope)
+    if (this.disabled) return
+    this._start(scope, plugin)
+  }
+
+  private _start(scope: Context, plugin: Plugin) {
+    if (!this._applyIntercept(scope)) {
+      this._verdict = true
+      return
+    }
     this.loader.showLog(this, 'apply')
-    const ctx = parent.extend({ [Context.intercept]: this._intercept })
+    const ctx = scope.extend({ [Context.intercept]: this._intercept })
     this.innerFiber = ctx.registry.plugin(plugin, this.options.config, this.getOuterStack)
   }
 }

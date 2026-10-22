@@ -385,6 +385,231 @@ describe('Loader: entry evaluation scope', () => {
     await loader.await()
 
     expect(loader.store.worker.innerFiber).to.be.undefined
+    expect(loader.store.worker.disabled).to.equal(true)
     expect(worker.mock.calls).to.have.length(0)
+  })
+
+  it.each([false, true])('caches the verdict independently of reads and service mutations (group=%s)', async (group) => {
+    await loader.read([settings({ enabled: true })])
+    let reads = 0
+    let enabled = true
+    Object.defineProperty(root.get('settings'), 'enabled', {
+      get() { reads++; return enabled },
+    })
+    await loader.create({
+      id: 'owner',
+      name: group ? '@cordisjs/plugin-group' : 'worker',
+      group,
+      inject: ['settings'],
+      disabled: { __jsExpr: '!settings.enabled' },
+      config: group ? [{ id: 'child', name: 'worker' }, { id: 'sibling', name: 'worker' }] : undefined,
+    })
+    await loader.await()
+    const owner = loader.store.owner
+    const entry = group ? loader.store.child : owner
+    expect(reads).to.equal(1)
+
+    enabled = false
+    for (let i = 0; i < 3; i++) expect(entry.disabled).to.equal(false)
+    expect(reads).to.equal(1)
+    expect(entry.innerFiber?.state).to.equal(FiberState.ACTIVE)
+
+    // an explicit update re-evaluates; the group itself still runs
+    await loader.update('owner', { config: owner.options.config })
+    await loader.await()
+    expect(entry.disabled).to.equal(true)
+    expect(entry.innerFiber?.uid).to.equal(null)
+    if (group) expect(owner.innerFiber?.state).to.equal(FiberState.ACTIVE)
+  })
+
+  it('does not repeat a failing disabled expression when its verdict is read', async () => {
+    await loader.read([settings({ attempts: 0 }), {
+      id: 'worker',
+      name: 'worker',
+      inject: ['settings'],
+      disabled: { __jsExpr: '(settings.attempts++, settings.missing.value)' },
+    }])
+    for (let i = 0; i < 3; i++) expect(loader.store.worker.disabled).to.equal(true)
+    expect(root.get('settings').attempts).to.equal(1)
+  })
+
+  it('evaluates a changed disabled expression once in either direction', async () => {
+    await loader.read([settings({ count: 0 }), {
+      id: 'worker',
+      name: 'worker',
+      inject: ['settings'],
+      disabled: { __jsExpr: '(settings.count++, false)' },
+    }])
+    const state = root.get('settings')
+    const entry = loader.store.worker
+    expect(state.count).to.equal(1)
+
+    // a failing expression disables the plugin and is reported once
+    await loader.update('worker', { disabled: { __jsExpr: '(settings.count++, settings.missing.value)' } })
+    await loader.await()
+    expect(state.count).to.equal(2)
+    expect(entry.innerFiber!.uid).to.equal(null)
+
+    await loader.update('worker', { disabled: { __jsExpr: '(settings.count++, false)' } })
+    await loader.await()
+    expect(state.count).to.equal(3)
+    expect(entry.innerFiber?.state).to.equal(FiberState.ACTIVE)
+    expect(worker.mock.calls).to.have.length(2)
+  })
+
+  it('invalidates the verdict before asynchronous dependency teardown', async () => {
+    const entered = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    let disabledDuringTeardown: boolean | undefined
+    loader.mock('held', (ctx: Context) => () => {
+      disabledDuringTeardown = ctx.fiber.entry!.disabled
+      entered.resolve()
+      return release.promise
+    })
+    await loader.read([settings({ enabled: true }), {
+      id: 'held', name: 'held', inject: ['settings'], disabled: { __jsExpr: '!settings.enabled' },
+    }])
+    const entry = loader.store.held
+    const outer = entry.outerFiber
+    try {
+      loader.remove('settings')
+      await entered.promise
+      expect(entry.disabled).to.equal(true)
+      expect(disabledDuringTeardown).to.equal(true)
+      expect(entry.outerFiber).to.equal(outer)
+      expect(entry.options.disabled).to.deep.equal({ __jsExpr: '!settings.enabled' })
+    } finally {
+      release.resolve()
+      await loader.await()
+    }
+    // an update while pending keeps the outer fiber
+    await loader.update('held', { config: { value: 1 } })
+    expect(entry.outerFiber).to.equal(outer)
+    await loader.create(settings({ enabled: true }))
+    await loader.await()
+    expect(entry.disabled).to.equal(false)
+    expect(entry.innerFiber?.state).to.equal(FiberState.ACTIVE)
+  })
+
+  it('keeps a disabled group verdict undecided when its dependency disappears', async () => {
+    await loader.read([settings({ enabled: false }), {
+      id: 'owner', name: '@cordisjs/plugin-group', group: true, inject: ['settings'],
+      disabled: { __jsExpr: '!settings.enabled' }, config: [{ id: 'child', name: 'worker' }],
+    }])
+    const owner = loader.store.owner
+    loader.remove('settings')
+    await loader.await()
+    expect(owner._verdict).to.be.undefined
+    expect(owner.disabled).to.equal(false)
+    expect(owner.options.disabled).to.deep.equal({ __jsExpr: '!settings.enabled' })
+    await loader.create(settings({ enabled: true }))
+    await loader.await()
+    expect(loader.store.child.disabled).to.equal(false)
+    expect(worker.mock.calls).to.have.length(1)
+  })
+
+  it.each(['disabled', 'inject'])('re-evaluates %s in the new parent scope after a move', async (field) => {
+    const child: any = { id: 'worker', name: 'worker' }
+    if (field === 'disabled') {
+      child.disabled = { __jsExpr: '!env.enabled' }
+    } else {
+      child.inject = { settings: { namespace: { __jsExpr: 'env.namespace' } } }
+      child.disabled = { __jsExpr: 'false' }
+    }
+    await loader.read([settings({}), ...['a', 'b'].map(id => ({
+      id, name: '@cordisjs/plugin-group', group: true, inject: ['env'], isolate: { env: id },
+      config: id === 'a' ? [child] : [],
+    })), ...['a', 'b'].map(id => ({
+      id: `env-${id}`, name: 'env', isolate: { env: id }, config: { enabled: id === 'a', namespace: id },
+    }))])
+    const entry = loader.store.worker
+    await loader.update('worker', {}, 'b')
+    await loader.await()
+    if (field === 'disabled') {
+      expect(entry.disabled).to.equal(true)
+      expect(entry.innerFiber?.uid).to.equal(null)
+    } else {
+      expect(entry.inject.settings).to.deep.equal({ namespace: 'b' })
+      expect(entry.outerFiber?.inject.settings).to.deep.equal({ namespace: 'b' })
+      expect(entry.innerFiber?.state).to.equal(FiberState.ACTIVE)
+    }
+  })
+
+  it('re-evaluates the verdict after changing the entry isolation', async () => {
+    await loader.read(['a', 'b'].map(id => ({
+      id, name: 'settings', isolate: { settings: id }, config: { enabled: id === 'a' },
+    })))
+    await loader.create({
+      id: 'worker', name: 'worker', inject: ['settings'], isolate: { settings: 'a' },
+      disabled: { __jsExpr: '!settings.enabled' },
+    })
+    await loader.await()
+    const entry = loader.store.worker
+    expect(entry.disabled).to.equal(false)
+    await loader.update('worker', { isolate: { settings: 'b' } })
+    await loader.await()
+    expect(entry.disabled).to.equal(true)
+    expect(entry.innerFiber?.uid).to.equal(null)
+    expect(entry.options.disabled).to.deep.equal({ __jsExpr: '!settings.enabled' })
+  })
+
+  it.each(['import', 'patch'])('drops entries removed or disabled during %s', async (window) => {
+    await loader.read([settings({})])
+    const original = loader.import
+    try {
+      for (const inject of [undefined, ['settings']]) {
+        for (const action of ['remove', 'disable']) {
+          const entered = Promise.withResolvers<void>()
+          const release = Promise.withResolvers<void>()
+          let stop: (() => void) | undefined
+          if (window === 'import') {
+            loader.import = async (name: string) => {
+              if (name === 'worker') {
+                entered.resolve()
+                await release.promise
+              }
+              return original.call(loader, name)
+            }
+          } else {
+            stop = root.on('loader/patch-context', async (entry, next) => {
+              if (entry.options.id === 'worker') {
+                entered.resolve()
+                await release.promise
+              }
+              await next()
+            })
+          }
+          const creating = loader.create({ id: 'worker', name: 'worker', inject })
+          let entry!: Entry
+          try {
+            await entered.promise
+            entry = loader.store.worker
+            if (action === 'remove') loader.remove('worker')
+            else await loader.update('worker', { disabled: true })
+          } finally {
+            release.resolve()
+            await creating
+            loader.import = original
+            stop?.()
+          }
+          await loader.await()
+          expect(entry.outerFiber).to.be.undefined
+          expect(entry.innerFiber).to.be.undefined
+          expect(worker.mock.calls).to.have.length(0)
+
+          // a dropped init does not block a later create or re-enable
+          if (action === 'remove') await loader.create({ id: 'worker', name: 'worker', inject })
+          else await loader.update('worker', { disabled: false })
+          await loader.await()
+          expect(loader.store.worker.innerFiber?.state).to.equal(FiberState.ACTIVE)
+          expect(worker.mock.calls).to.have.length(1)
+          loader.remove('worker')
+          await loader.await()
+          worker.mock.resetCalls()
+        }
+      }
+    } finally {
+      loader.import = original
+    }
   })
 })

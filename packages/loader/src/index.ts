@@ -118,6 +118,14 @@ export class Loader extends EntryTree {
       return next()
     }, { global: true })
 
+    ctx.on('internal/status', (fiber) => {
+      if (!Entry.isOuter(fiber) || fiber.state !== FiberState.UNLOADING) return
+      const entry: Entry = fiber.parent[Entry.key]
+      // dependency loss unloads the outer fiber without `entry.dispose()`;
+      // the uid check skips an outer fiber that has been replaced
+      if (entry.outerFiber?.uid === fiber.uid) entry._verdict = undefined
+    })
+
     ctx.on('internal/plugin', (fiber) => {
       // 1. set `fiber.entry`
       // the inner fiber, not the outer one, is the entry's root
@@ -172,6 +180,7 @@ export class Loader extends EntryTree {
 
       const legacy = { ...entry.options }
       entry.options.disabled = true
+      entry._verdict = true
       entry.parent.tree.commit({ id: entry.options.id, group: entry.parent, options: entry.options, legacy })
       if (entry.outerFiber) entry.dispose()
     })
