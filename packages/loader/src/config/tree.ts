@@ -165,9 +165,6 @@ export abstract class EntryTree {
   }
 
   import(name: string, getOuterStack?: () => string[]) {
-    if (name.startsWith('cordis:')) {
-      return this.ctx.loader.builtins[name.slice(7)]
-    }
     // On Windows, a drive-letter path is converted with `pathToFileURL`.
     if (process.platform === 'win32' && driveLetter.test(name)) {
       name = pathToFileURL(name).href

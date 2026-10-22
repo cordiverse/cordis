@@ -1,5 +1,5 @@
 import { Context, Fiber, FiberState, Inject, Service, ValidationError } from 'cordis'
-import { Awaitable, defineProperty, Dict, isNullable } from 'cosmokit'
+import { Awaitable, defineProperty, isNullable } from 'cosmokit'
 import { ModuleLoader } from './internal.ts'
 import { Entry, EntryOptions } from './config/entry.ts'
 import { EntryGroup } from './config/group.ts'
@@ -55,8 +55,6 @@ export class Loader extends EntryTree {
 
   public name = 'loader'
   public internal = ModuleLoader.fromInternal()
-
-  public builtins: Dict<any> = Object.create(null)
 
   constructor(ctx: Context, public config: Loader.Config = {}) {
     super(ctx)
