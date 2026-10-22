@@ -41,7 +41,7 @@ const outer = {
     const exports = await entry._import()
     // stops here if a dependency was lost during the import
     yield () => {}
-    if (exports) entry._activate(ctx, exports.plugin)
+    if (exports) entry._start(ctx, exports.plugin)
   },
 }
 
@@ -96,15 +96,15 @@ export class Entry {
   }
 
   // undefined while the outer fiber is pending
-  private _scope(): Context | undefined {
+  private _evaluationContext(): Context | undefined {
     if (!this.outerFiber) return this.ctx
     if (this.outerFiber.committed) return this.outerFiber.ctx
   }
 
-  private _resolveDisabled(scope: Context) {
+  private _resolveDisabled(ctx: Context) {
     const { disabled } = this.options
     try {
-      this._verdict = isJsExpr(disabled) ? !!evaluate(scope, disabled.__jsExpr) : !!disabled
+      this._verdict = isJsExpr(disabled) ? !!evaluate(ctx, disabled.__jsExpr) : !!disabled
     } catch (error) {
       this.ctx.logger.error(error)
       this._verdict = true
@@ -137,9 +137,9 @@ export class Entry {
   }
 
   evaluate(expr: string) {
-    const scope = this._scope()
-    if (!scope) throw new Error(`entry ${this.id} is waiting for its dependencies`)
-    return evaluate(scope, expr)
+    const ctx = this._evaluationContext()
+    if (!ctx) throw new Error(`entry ${this.id} is waiting for its dependencies`)
+    return evaluate(ctx, expr)
   }
 
   private _hasOuter() {
@@ -166,9 +166,9 @@ export class Entry {
     return changed
   }
 
-  private _applyIntercept(scope: Context) {
+  private _applyIntercept(ctx: Context) {
     try {
-      swap(this._intercept, interpolate(scope, this.options.intercept))
+      swap(this._intercept, interpolate(ctx, this.options.intercept))
       return true
     } catch (error) {
       this.ctx.logger.error(error)
@@ -190,18 +190,18 @@ export class Entry {
     })
   }
 
-  private async _reconcile(scope: Context, diff: string[]) {
+  private async _reconcile(ctx: Context, diff: string[]) {
     if (!this.innerFiber?.uid) {
       // the reactivation evaluates `disabled`
       await this.outerFiber?.restart()
       return
     }
-    this._resolveDisabled(scope)
+    this._resolveDisabled(ctx)
     if (this.disabled) {
       this._dispose(this.innerFiber)
       return
     }
-    this._applyIntercept(scope)
+    this._applyIntercept(ctx)
     if (diff.includes('config') || this.options.group) {
       await this.innerFiber!.update(this.options.config, true)
     }
@@ -226,8 +226,8 @@ export class Entry {
     sortKeys(this.options)
 
     // step 2: resolve inject
-    const rebuild = this._resolveInject()
-    if (rebuild === undefined) {
+    const changed = this._resolveInject()
+    if (changed === undefined) {
       this.dispose()
       return
     }
@@ -238,10 +238,11 @@ export class Entry {
       return
     }
 
+    // the plugin and the outer fiber are bound when they are created
+    const rebuild = changed || this.options.name !== legacy.name
     if (rebuild || (!this.outerFiber && !this.innerFiber?.uid)) {
-      // avoid an await before `init()` sets `_initTask`
-      if (this.outerFiber || this.innerFiber?.uid) await this.dispose()
-      await this.init()
+      // the disposal is part of the init task, so a concurrent update joins it
+      await this.init(this.outerFiber || this.innerFiber?.uid ? this.dispose() : undefined)
       return
     }
 
@@ -296,11 +297,13 @@ export class Entry {
     this.ctx.logger.error(error)
   }
 
-  async init() {
+  async init(disposeTask?: Promise<void>) {
+    const task = this._initTask ??= this._init(disposeTask)
     try {
-      await (this._initTask ??= this._init())
+      await task
     } finally {
-      this._initTask = undefined
+      // `_init()` releases the task before creating fibers, whose apply may start another
+      if (this._initTask === task) this._initTask = undefined
     }
     // failures are already reported by the fiber; we only need it to settle
     Promise.resolve()
@@ -322,38 +325,42 @@ export class Entry {
     }
   }
 
-  private async _init() {
+  private async _init(disposeTask?: Promise<void>): Promise<void> {
+    await disposeTask
+    // a later update has already rebuilt the entry
+    if (this.outerFiber || this.innerFiber?.uid) return
     this._verdict = undefined
+    const { name } = this.options
     const exports = await this._import()
-    if (!exports || !this._live() || this._blocked()) return
+    // the name may change while the module is imported
+    if (name !== this.options.name) return this._init()
+    if (!exports || !this._registered() || this._blocked()) return
     await this._patchContext([])
-    if (!this._live() || this._blocked()) return
+    if (name !== this.options.name) return this._init()
+    if (!this._registered() || this._blocked()) return
+    this._initTask = undefined
     if (this._hasOuter()) {
       this.outerFiber = this.ctx.registry.plugin({ ...outer, inject: this.inject }, undefined, this.getOuterStack)
     } else {
-      this._activate(this.ctx, exports.plugin)
+      this._start(this.ctx, exports.plugin)
     }
   }
 
-  private _live() {
+  private _registered() {
     return this.parent.tree.store[this.options.id] === this
   }
 
-  _activate(scope: Context, plugin: Plugin) {
-    if (!this._live()) return
+  _start(ctx: Context, plugin: Plugin) {
+    if (!this._registered()) return
     // a group still starts; its verdict only reaches its children
-    this._resolveDisabled(scope)
+    this._resolveDisabled(ctx)
     if (this.disabled) return
-    this._start(scope, plugin)
-  }
-
-  private _start(scope: Context, plugin: Plugin) {
-    if (!this._applyIntercept(scope)) {
+    if (!this._applyIntercept(ctx)) {
       this._verdict = true
       return
     }
     this.loader.showLog(this, 'apply')
-    const ctx = scope.extend({ [Context.intercept]: this._intercept })
-    this.innerFiber = ctx.registry.plugin(plugin, this.options.config, this.getOuterStack)
+    const innerContext = ctx.extend({ [Context.intercept]: this._intercept })
+    this.innerFiber = innerContext.registry.plugin(plugin, this.options.config, this.getOuterStack)
   }
 }

@@ -3,7 +3,7 @@ import { Context, FiberState } from 'cordis'
 import { Entry } from '../src/index.ts'
 import MockLoader from './utils.ts'
 
-describe('Loader: entry evaluation scope', () => {
+describe('Loader: entry evaluation context', () => {
   const root = new Context()
 
   let loader!: MockLoader
@@ -127,7 +127,7 @@ describe('Loader: entry evaluation scope', () => {
     expect(worker.mock.calls).to.have.length(0)
   })
 
-  it('evaluates inject values in the parent scope', async () => {
+  it('evaluates inject values in the parent context', async () => {
     const inject = { settings: { namespace: { __jsExpr: 'env.namespace' } } }
     await loader.read([{ id: 'env', name: 'env', config: { namespace: 'ns' } }, settings({}), {
       id: 'group',
@@ -347,23 +347,23 @@ describe('Loader: entry evaluation scope', () => {
     expect(worker.mock.calls).to.have.length(2)
   })
 
-  it('drops an activation whose dependency is lost during the fetch', async () => {
+  it('drops an activation whose dependency is lost during the import', async () => {
     await loader.read([settings({})])
     const { promise, resolve } = Promise.withResolvers<void>()
-    const fetching = Promise.withResolvers<void>()
+    const importing = Promise.withResolvers<void>()
     const original = loader.import
     let count = 0
     loader.import = async (name: string) => {
       // the second import is the outer fiber's
       if (name === 'worker' && ++count === 2) {
-        fetching.resolve()
+        importing.resolve()
         await promise
       }
       return original.call(loader, name)
     }
     try {
       await loader.create({ id: 'worker', name: 'worker', inject: ['settings'] })
-      await fetching.promise
+      await importing.promise
       loader.remove('settings')
       resolve()
       await loader.await()
@@ -457,12 +457,12 @@ describe('Loader: entry evaluation scope', () => {
     expect(worker.mock.calls).to.have.length(2)
   })
 
-  it('invalidates the verdict before asynchronous dependency teardown', async () => {
+  it('invalidates the verdict before an asynchronous dependency unload', async () => {
     const entered = Promise.withResolvers<void>()
     const release = Promise.withResolvers<void>()
-    let disabledDuringTeardown: boolean | undefined
+    let disabledDuringUnload: boolean | undefined
     loader.mock('held', (ctx: Context) => () => {
-      disabledDuringTeardown = ctx.fiber.entry!.disabled
+      disabledDuringUnload = ctx.fiber.entry!.disabled
       entered.resolve()
       return release.promise
     })
@@ -475,7 +475,7 @@ describe('Loader: entry evaluation scope', () => {
       loader.remove('settings')
       await entered.promise
       expect(entry.disabled).to.equal(true)
-      expect(disabledDuringTeardown).to.equal(true)
+      expect(disabledDuringUnload).to.equal(true)
       expect(entry.outerFiber).to.equal(outer)
       expect(entry.options.disabled).to.deep.equal({ __jsExpr: '!settings.enabled' })
     } finally {
@@ -508,7 +508,7 @@ describe('Loader: entry evaluation scope', () => {
     expect(worker.mock.calls).to.have.length(1)
   })
 
-  it.each(['disabled', 'inject'])('re-evaluates %s in the new parent scope after a move', async (field) => {
+  it.each(['disabled', 'inject'])('re-evaluates %s in the new parent context after a move', async (field) => {
     const child: any = { id: 'worker', name: 'worker' }
     if (field === 'disabled') {
       child.disabled = { __jsExpr: '!env.enabled' }
