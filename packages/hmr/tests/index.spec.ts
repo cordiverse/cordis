@@ -720,7 +720,7 @@ export default MyService
       for (const entry of ctx.loader.entries()) {
         if (entry.id === entryId) {
           found = true
-          expect(entry.fiber).to.be.ok
+          expect(entry.innerFiber).to.be.ok
           break
         }
       }
@@ -1426,7 +1426,7 @@ export function apply(ctx: Context) {
 
     it('does not rebuild an entry disabled during unload', async () => {
       const entry = findEntry(ctx, 'live')
-      const previous = entry.fiber!
+      const previous = entry.innerFiber!
       const inside = arm(gate)
       // hmr/reload is emitted whether or not stage 3 installs a fiber
       const reloaded = waitForEvent(ctx, 'hmr/reload')
@@ -1438,7 +1438,7 @@ export function apply(ctx: Context) {
       await reloaded
 
       expect(entry.disabled).to.equal(true)
-      expect(entry.fiber).to.equal(previous)
+      expect(entry.innerFiber).to.equal(previous)
       expect(previous.uid).to.equal(null)
       expect(ctx.bail('hmr-test/get-value')).to.equal(undefined)
       expect(gate.applies).to.equal(0)
@@ -1447,7 +1447,7 @@ export function apply(ctx: Context) {
 
     it('does not rebuild an entry removed during unload', async () => {
       const entry = findEntry(ctx, 'live')
-      const previous = entry.fiber!
+      const previous = entry.innerFiber!
       const inside = arm(gate)
       const reloaded = waitForEvent(ctx, 'hmr/reload')
       plugin.modify(content => content.replace("value = 'initial'", "value = 'removed-value'"))
@@ -1459,7 +1459,7 @@ export function apply(ctx: Context) {
       gate.release?.()
       await reloaded
 
-      expect(entry.fiber).to.equal(previous)
+      expect(entry.innerFiber).to.equal(previous)
       expect(previous.uid).to.equal(null)
       expect(ctx.bail('hmr-test/get-value')).to.equal(undefined)
       expect(gate.applies).to.equal(0)
@@ -1468,7 +1468,7 @@ export function apply(ctx: Context) {
 
     it('waits for a second re-enable init before deciding whether to rebuild', async () => {
       const entry = findEntry(ctx, 'live')
-      const previous = entry.fiber!
+      const previous = entry.innerFiber!
       const inside = arm(gate)
       const reloaded = waitForEvent(ctx, 'hmr/reload')
       plugin.modify(content => content.replace("value = 'initial'", "value = 'second-init'"))
@@ -1497,7 +1497,7 @@ export function apply(ctx: Context) {
         await waitFor(() => patches === 1)
         // Joining through init() observes its completion before the outer update().
         reenabled = entry.init().then(() => {
-          firstInstalled = entry.fiber
+          firstInstalled = entry.innerFiber
           void entry.update({ disabled: true })
           return entry.update({ disabled: false })
         })
@@ -1516,7 +1516,7 @@ export function apply(ctx: Context) {
         expect(ctx.bail('hmr-test/get-value')).to.equal('second-init')
         // one per re-enable, none from HMR
         expect(gate.applies).to.equal(2)
-        expect(liveUids(gate)).to.deep.equal([entry.fiber!.uid])
+        expect(liveUids(gate)).to.deep.equal([entry.innerFiber!.uid])
       } finally {
         releaseFirst()
         releaseSecond()
@@ -1524,17 +1524,17 @@ export function apply(ctx: Context) {
         stop()
         await Promise.allSettled([updating, reenabled, reloaded])
         // Remove any duplicate produced by a failing implementation before cleanup reloads.
-        const current = entry.fiber && Object.getPrototypeOf(entry.fiber)
+        const current = entry.innerFiber && Object.getPrototypeOf(entry.innerFiber)
         await Promise.all(gate.fibers.filter(fiber => fiber !== current).map(fiber => fiber.dispose()))
       }
     }, 15000)
 
     it('rebuilds a child of an active host that reused the plugin', async () => {
       const entry = findEntry(ctx, 'live')
-      const previous = entry.fiber!
+      const previous = entry.innerFiber!
       await configTree(ctx).create({ id: 'host', name: './plugin-host' })
       const host = findEntry(ctx, 'host')
-      const hostRoot = host.fiber!
+      const hostRoot = host.innerFiber!
       await waitFor(() => liveUids(gate).length === 2)
       const appliesBefore = gate.applies
 
@@ -1549,15 +1549,15 @@ export function apply(ctx: Context) {
 
       // both the entry root and the child of the host are rebuilt
       expect(gate.applies - appliesBefore).to.equal(2)
-      expect(entry.fiber).to.not.equal(previous)
+      expect(entry.innerFiber).to.not.equal(previous)
       expect(liveUids(gate)).to.have.length(2)
       // rebuilding the child does not take over the host's entry root
-      expect(host.fiber).to.equal(hostRoot)
+      expect(host.innerFiber).to.equal(hostRoot)
 
       await host.update({ disabled: true })
       await hostRoot.await()
       expect(hostRoot.uid).to.equal(null)
-      expect(liveUids(gate)).to.deep.equal([entry.fiber!.uid])
+      expect(liveUids(gate)).to.deep.equal([entry.innerFiber!.uid])
     }, 15000)
 
     it('skips a child whose host is replaced during unload', async () => {
@@ -1571,7 +1571,7 @@ export function apply(ctx: Context) {
       try {
         await configTree(ctx).create({ id: 'host', name: './plugin-host' })
         host = findEntry(ctx, 'host')
-        const hostRoot = host.fiber!
+        const hostRoot = host.innerFiber!
         await waitFor(() => liveUids(gate).length === 2)
 
         const inside = arm(gate)
@@ -1583,7 +1583,7 @@ export function apply(ctx: Context) {
         await host.update({ disabled: true })
         await host.update({ disabled: false })
         expect(hostRoot.uid).to.equal(null)
-        expect(host.fiber?.uid ?? null).to.not.equal(null)
+        expect(host.innerFiber?.uid ?? null).to.not.equal(null)
 
         gate.release?.()
         await reloaded

@@ -1,4 +1,4 @@
-import { Context, Fiber, FiberState, Inject, Service, ValidationError } from 'cordis'
+import { Context, Fiber, FiberState, Service, ValidationError } from 'cordis'
 import { Awaitable, defineProperty, isNullable } from 'cosmokit'
 import { ModuleLoader } from './internal.ts'
 import { Entry, EntryOptions } from './config/entry.ts'
@@ -120,10 +120,16 @@ export class Loader extends EntryTree {
 
     ctx.on('internal/plugin', (fiber) => {
       // 1. set `fiber.entry`
-      if (fiber.parent[Entry.key] && !fiber.entry) {
-        fiber.entry = fiber.parent[Entry.key]
-        // FIXME merge config
-        Inject.resolve(fiber.entry!.options.inject, fiber.inject)
+      // the inner fiber, not the outer one, is the entry's root
+      if (fiber.parent[Entry.key] && !fiber.entry && !Entry.isOuter(fiber)) {
+        const entry: Entry = fiber.entry = fiber.parent[Entry.key]
+        // services the plugin declares itself are located here, not at the outer fiber
+        if (fiber.parent.fiber?.entry !== entry) {
+          for (const key of Object.keys(fiber.inject)) {
+            if (isNullable(entry.inject[key])) continue
+            fiber.inject[key] = entry.inject[key]
+          }
+        }
       }
 
       // 2. handle self-dispose
@@ -157,13 +163,17 @@ export class Loader extends EntryTree {
       // unregisters it before disposing the fiber)
       if (entry.parent.tree.store[entry.options.id] !== entry) return
 
-      // case 8: fiber is disposed by loader behavior
+      // case 8: fiber is disposed by `entry.dispose()`, e.g. rebuild on inject change
+      if (entry._disposing) return
+
+      // case 9: fiber is disposed by loader behavior
       // such as inject checker, config file update, ancestor group disable
       if (entry.disabled) return
 
       const legacy = { ...entry.options }
       entry.options.disabled = true
       entry.parent.tree.commit({ id: entry.options.id, group: entry.parent, options: entry.options, legacy })
+      if (entry.outerFiber) entry.dispose()
     })
 
     ctx.plugin(isolate)

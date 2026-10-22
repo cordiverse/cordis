@@ -52,7 +52,7 @@ export function harness() {
       name: '@cordisjs/plugin-include',
       config: { path: `./fixtures/${name}`, ...config },
     })
-    await ctx.loader.store[id]!.fiber!.await()
+    await ctx.loader.store[id]!.innerFiber!.await()
 
     const include = () => ctx.loader.store[id]!.subtree as Include
     // what hmr does on a change event; `refresh` also waits for any write

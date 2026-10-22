@@ -41,7 +41,7 @@ async function boot(plugins: Record<string, (ctx: Context, config?: any) => void
 }
 
 async function started(loader: MockLoader, id: string) {
-  const fiber = loader.store[id]?.fiber
+  const fiber = loader.store[id]?.innerFiber
   expect(fiber).to.be.ok
   await fiber!.await()
   return fiber!
@@ -134,7 +134,7 @@ describe('Service Isolation: provide migration', () => {
     const other = slots(root, 'svc').find(slot => slot.tag === 'other')
     expect(other?.key).to.equal(before[0]!.key)
 
-    await loader.store[id]!.fiber!.dispose()
+    await loader.store[id]!.innerFiber!.dispose()
     const left = slots(root, 'svc')
     expect(left.some(slot => slot.impl === before[0]!.impl)).to.equal(false)
     expect(left.some(slot => slot.impl === other!.impl)).to.equal(true)
@@ -235,7 +235,7 @@ describe('Service Isolation: provide migration', () => {
     const atC = slots(root, 'svc').find(slot => slot.impl === original)
     expect(atC?.description).to.equal('svc@C')
 
-    await loader.store[id]!.fiber!.dispose()
+    await loader.store[id]!.innerFiber!.dispose()
     const left = slots(root, 'svc')
     expect(left.some(slot => slot.impl === original)).to.equal(false)
     expect(left.some(slot => slot.impl === rootUser!.impl)).to.equal(true)
@@ -271,7 +271,7 @@ describe('Service Isolation: provide migration', () => {
     expect(moved?.key).to.not.equal(move.key)
     expect(stayAfter?.key).to.equal(stay.key)
 
-    await loader.store[moveId]!.fiber!.dispose()
+    await loader.store[moveId]!.innerFiber!.dispose()
     const left = slots(root, 'svc')
     expect(left.some(slot => slot.impl === stay.impl)).to.equal(true)
     expect(left.some(slot => slot.impl === move.impl)).to.equal(false)

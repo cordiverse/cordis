@@ -1,9 +1,9 @@
-import { Context, Fiber, Inject, ValidationError } from 'cordis'
-import { deepEqual, isNullable } from 'cosmokit'
+import { Context, Fiber, FiberState, Inject, ValidationError } from 'cordis'
+import { deepEqual, Dict, isNullable } from 'cosmokit'
 import { Loader } from '../index.ts'
 import { EntryGroup } from './group.ts'
 import { EntryTree, ModuleNotFoundError } from './tree.ts'
-import { evaluate, formatIssues, formatLocation, isJsExpr, relocate } from './utils.ts'
+import { evaluate, formatIssues, formatLocation, interpolate, isJsExpr, relocate, swap } from './utils.ts'
 
 export interface EntryOptions {
   id: string
@@ -12,6 +12,7 @@ export interface EntryOptions {
   group?: boolean | null
   disabled?: boolean | null
   inject?: Inject | null
+  intercept?: Dict | null
 }
 
 function takeEntries(object: {}, keys: string[]) {
@@ -31,18 +32,39 @@ function sortKeys<T extends {}>(object: T, prepend = ['id', 'name'], append = ['
   return Object.assign(object, Object.fromEntries([...part1, ...rest, ...part2]))
 }
 
+// holds the entry's `inject` and creates the inner fiber as its child
+const outer = {
+  name: 'loader:outer',
+  async* apply(ctx: Context) {
+    const entry: Entry = ctx[Entry.key]
+    // re-imported so that a module reloaded by HMR in between is used
+    const exports = await entry._import()
+    // stops here if a dependency was lost during the import
+    yield () => {}
+    if (exports) entry._activate(ctx, exports.plugin)
+  },
+}
+
 export class Entry {
   static readonly key = Symbol.for('cordis.entry')
 
+  static isOuter(fiber: Fiber) {
+    return fiber.runtime?.callback === outer.apply
+  }
+
   public ctx: Context
-  public fiber?: Fiber
+  public outerFiber?: Fiber
+  public innerFiber?: Fiber
   public parent!: EntryGroup
   // safety: call `entry.update()` immediately after creating an entry
   public options = {} as EntryOptions
   public subgroup?: EntryGroup
   public subtree?: EntryTree
+  public inject: Dict = Object.create(null)
 
   _initTask?: Promise<void> | undefined
+  _disposing = false
+  private _intercept: Dict = Object.create(null)
 
   constructor(public loader: Loader) {
     this.ctx = loader.ctx.extend({ [Entry.key]: this })
@@ -72,40 +94,118 @@ export class Entry {
     return id
   }
 
-  private _resolveDisabled(options: EntryOptions): boolean {
-    return isJsExpr(options.disabled)
-      ? Boolean(this.evaluate(options.disabled.__jsExpr))
-      : Boolean(options.disabled)
+  // undefined while the outer fiber is pending
+  private _scope(): Context | undefined {
+    if (!this.outerFiber) return this.ctx
+    if (this.outerFiber.committed) return this.outerFiber.ctx
+  }
+
+  private _resolveDisabled() {
+    const { disabled } = this.options
+    if (!isJsExpr(disabled)) return !!disabled
+    const scope = this._scope()
+    if (!scope) return true
+    try {
+      return !!evaluate(scope, disabled.__jsExpr)
+    } catch (error) {
+      this.ctx.logger.error(error)
+      return true
+    }
   }
 
   get disabled() {
     // group is always enabled
     if (this.options.group) return false
-    let entry: Entry | undefined = this
-    do {
-      if (this._resolveDisabled(entry.options)) return true
+    return this._resolveDisabled() || this._parentDisabled()
+  }
+
+  private _parentDisabled() {
+    let entry = this.parent.ctx.fiber.entry
+    while (entry) {
+      if (entry._resolveDisabled()) return true
       entry = entry.parent.ctx.fiber.entry
-    } while (entry)
+    }
     return false
   }
 
+  private _blocked() {
+    if (this.options.group) return false
+    // an expression is evaluated after the context is patched
+    if (isJsExpr(this.options.disabled)) return this._parentDisabled()
+    return this.disabled
+  }
+
   evaluate(expr: string) {
-    return evaluate(this.ctx, expr)
+    const scope = this._scope()
+    if (!scope) throw new Error(`entry ${this.id} is waiting for its dependencies`)
+    return evaluate(scope, expr)
+  }
+
+  private _hasOuter() {
+    return Object.keys(this.inject).length > 0
+  }
+
+  // returns whether `inject` changed, or undefined on failure
+  private _resolveInject(): boolean | undefined {
+    let inject: Dict
+    try {
+      inject = Inject.resolve(this.options.inject)
+      for (const key of Object.keys(inject)) {
+        inject[key] = interpolate(this.parent.ctx, inject[key])
+      }
+    } catch (error) {
+      this.ctx.logger.error(error)
+      this.inject = Object.create(null)
+      return
+    }
+    // strict: `null` and a missing key differ
+    const changed = !deepEqual(inject, this.inject, true)
+    this.inject = inject
+    return changed
+  }
+
+  private _applyIntercept() {
+    const scope = this._scope()
+    if (!scope) return false
+    try {
+      swap(this._intercept, interpolate(scope, this.options.intercept))
+      return true
+    } catch (error) {
+      this.ctx.logger.error(error)
+      return false
+    }
   }
 
   private async _patchContext(diff: string[]) {
     await this.context.waterfall('loader/patch-context', this, async () => {
       Object.setPrototypeOf(this.ctx, this.parent.ctx)
+      Object.setPrototypeOf(this._intercept, this.parent.ctx[Context.intercept])
 
-      if (this.fiber?.uid && (diff.includes('config') || this.options.group)) {
-        await this.fiber.update(this.options.config, true)
+      if (this.outerFiber) {
+        if (this.outerFiber.state !== FiberState.ACTIVE) return
+        const running = !!this.innerFiber?.uid
+        if (running === (!this.options.group && this._resolveDisabled())) {
+          await this.outerFiber.restart()
+          return
+        }
+      }
+
+      if (!this.innerFiber?.uid) return
+      if (!this.outerFiber && !this.options.group && this._resolveDisabled()) {
+        this.dispose()
+        return
+      }
+      this._applyIntercept()
+      if (diff.includes('config') || this.options.group) {
+        await this.innerFiber.update(this.options.config, true)
       }
     })
   }
 
   async refresh() {
-    if (this.fiber) return
-    if (this.disabled) return
+    if (this.outerFiber || this.innerFiber) return
+    if (this._resolveInject() === undefined) return
+    if (this._blocked()) return
     await this.init()
   }
 
@@ -120,22 +220,43 @@ export class Entry {
     }
     sortKeys(this.options)
 
-    // step 2: execute
-    if (this.disabled) {
-      this.fiber?.dispose()
+    // step 2: resolve inject
+    const rebuild = this._resolveInject()
+    if (rebuild === undefined) {
+      this.dispose()
       return
     }
 
-    // step 3: check if options are changed
-    if (this.fiber?.uid) {
-      const diff = Object
-        .keys({ ...this.options, ...legacy })
-        .filter(key => !deepEqual(this.options[key], legacy[key]))
-      if (!diff.length && !force) return
-      this.context.emit('loader/partial-dispose', this, legacy, true)
-      await this._patchContext(diff)
-    } else {
+    // step 3: execute
+    if (this._blocked()) {
+      this.dispose()
+      return
+    }
+
+    if (rebuild || (!this.outerFiber && !this.innerFiber?.uid)) {
+      // avoid an await before `init()` sets `_initTask`
+      if (this.outerFiber || this.innerFiber?.uid) await this.dispose()
       await this.init()
+      return
+    }
+
+    // step 4: check if options are changed
+    const diff = Object
+      .keys({ ...this.options, ...legacy })
+      .filter(key => !deepEqual(this.options[key], legacy[key]))
+    if (!diff.length && !force) return
+    this.context.emit('loader/partial-dispose', this, legacy, true)
+    await this._patchContext(diff)
+  }
+
+  dispose() {
+    const fiber = this.outerFiber ?? this.innerFiber
+    this.outerFiber = undefined
+    this._disposing = true
+    try {
+      return fiber?.dispose()
+    } finally {
+      this._disposing = false
     }
   }
 
@@ -173,23 +294,45 @@ export class Entry {
       this._initTask = undefined
     }
     // failures are already reported by the fiber; we only need it to settle
-    this.fiber?.await().catch(() => {}).finally(() => {
-      if (this.loader.getTasks().length) return
-      this.ctx.reflect.notify(['loader'])
-    })
+    Promise.resolve()
+      .then(() => this.outerFiber?.await())
+      .then(() => this.innerFiber?.await())
+      .catch(() => {})
+      .finally(() => {
+        if (this.loader.getTasks().length) return
+        this.ctx.reflect.notify(['loader'])
+      })
+  }
+
+  async _import() {
+    try {
+      const exports = await this.parent.tree.import(this.options.name, this.getOuterStack)
+      return { plugin: this.loader.unwrapExports(exports) }
+    } catch (error) {
+      this._reportImport(error)
+    }
   }
 
   private async _init() {
-    let exports: any
-    try {
-      exports = await this.parent.tree.import(this.options.name, this.getOuterStack)
-    } catch (error) {
-      this._reportImport(error)
-      return
-    }
-    const plugin = this.loader.unwrapExports(exports)
+    const exports = await this._import()
+    if (!exports) return
     await this._patchContext([])
+    if (this._hasOuter()) {
+      this.outerFiber = this.ctx.registry.plugin({ ...outer, inject: this.inject }, undefined, this.getOuterStack)
+    } else {
+      this._activate(this.ctx, exports.plugin)
+    }
+  }
+
+  _activate(parent: Context, plugin: any) {
+    if (!this.options.group && this._resolveDisabled()) return
+    this._start(parent, plugin)
+  }
+
+  private _start(parent: Context, plugin: any) {
+    if (!this._applyIntercept()) return
     this.loader.showLog(this, 'apply')
-    this.fiber = this.ctx.registry.plugin(plugin, this.options.config, this.getOuterStack)
+    const ctx = parent.extend({ [Context.intercept]: this._intercept })
+    this.innerFiber = ctx.registry.plugin(plugin, this.options.config, this.getOuterStack)
   }
 }

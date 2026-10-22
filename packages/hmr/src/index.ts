@@ -478,8 +478,8 @@ class Hmr extends Service {
         const removed = !!entry && entry.parent.tree.store[entry.options.id] !== entry
         // A nested fiber shares the host entry. Only the entry root can already be live.
         const isEntryRoot = !!entry && fiber.parent.fiber?.entry !== entry
-        // `fiber` itself is disposed, so a live `entry.fiber` is a replacement.
-        const replaced = isEntryRoot && entry.fiber?.uid != null
+        // `fiber` itself is disposed, so a live `entry.innerFiber` is a replacement.
+        const replaced = isEntryRoot && entry.innerFiber?.uid != null
         if (entry?.disabled || removed || replaced) {
           const reason = entry?.disabled ? 'disabled' : removed ? 'removed' : 'live fiber'
           this.ctx.logger.debug(`skip plugin at %C (${reason})`, path)
@@ -488,7 +488,7 @@ class Hmr extends Service {
 
         const newFiber = fiber.parent.registry.plugin(replacement, fiber.config, this.getOuterStack)
         newFiber.entry = fiber.entry
-        if (isEntryRoot) entry.fiber = newFiber
+        if (isEntryRoot) entry.innerFiber = newFiber
         if (!logged.has(path)) {
           logged.add(path)
           this.ctx.logger.info('reload plugin at %C', path)

@@ -64,8 +64,8 @@ export default class MockLoader extends Loader {
   }
 
   expectFiber(id: string) {
-    expect(this.store[id]?.fiber).to.be.ok
-    return this.store[id]!.fiber!
+    expect(this.store[id]?.innerFiber).to.be.ok
+    return this.store[id]!.innerFiber!
   }
 }
 
