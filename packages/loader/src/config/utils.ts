@@ -23,6 +23,15 @@ export function isJsExpr(value: any): value is JsExpr {
   return value instanceof Object && typeof value.__jsExpr === 'string'
 }
 
+export function swap<T extends {}>(target: T, source?: T | null) {
+  for (const key of Reflect.ownKeys(target)) {
+    Reflect.deleteProperty(target, key)
+  }
+  for (const key of Reflect.ownKeys(source || {})) {
+    Reflect.defineProperty(target, key, Reflect.getOwnPropertyDescriptor(source!, key)!)
+  }
+}
+
 export interface JsExpr {
   __jsExpr: string
 }

@@ -203,7 +203,7 @@ describe('Include source locations', () => {
 
   it('leaves a config passed at runtime unlocated', async () => {
     const app = await start('tmp-location-runtime.yml', '- id: a\n  name: ./schema-plugin\n  config:\n    port: 80\n')
-    const fiber = app.include().store['a']!.fiber!
+    const fiber = app.include().store['a']!.innerFiber!
     expect(() => fiber.update({ port: 'runtime' })).toThrow(/^invalid config:\n {2}- port must be a number \(at port\)$/)
   }, 10000)
 
@@ -255,13 +255,13 @@ describe('Include source locations', () => {
       ].join('\n'))
 
       expect(app.stacks()).toEqual([expect.stringContaining(`  - name must be a string (at name, ${app.at('"\'./')})`)])
-      expect(app.include().store['a']!.fiber).toBeTruthy()
+      expect(app.include().store['a']!.innerFiber).toBeTruthy()
     }, 10000)
 
     it('unloads an entry that turns invalid, without writing to the file', async () => {
       const source = '- id: a\n  name: ./test-plugin\n'
       const app = await start('tmp-location-turn.yml', source)
-      const fiber = app.include().store['a']!.fiber!
+      const fiber = app.include().store['a']!.innerFiber!
 
       const invalid = '- id: a\n  name: ./test-plugin\n  group: 1\n'
       await writeFile(app.filename, invalid)
@@ -273,7 +273,7 @@ describe('Include source locations', () => {
 
       await writeFile(app.filename, source)
       await app.settle()
-      expect(app.include().store['a']!.fiber!.uid).toBeTruthy()
+      expect(app.include().store['a']!.innerFiber!.uid).toBeTruthy()
     }, 10000)
 
     it('locates entries nested in groups', async () => {
@@ -316,7 +316,7 @@ describe('Include source locations', () => {
         `  - entry must be an object (at ${at(app.filename, invalid, 'null')})`,
       ].join('\n'))])
       // the previous tree stays as it was
-      expect(app.include().store['a']!.fiber!.uid).toBeTruthy()
+      expect(app.include().store['a']!.innerFiber!.uid).toBeTruthy()
       expect(app.include().store['g']).toBeUndefined()
     }, 10000)
 
