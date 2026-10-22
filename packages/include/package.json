@@ -23,9 +23,9 @@
     "cordis": "^4.0.0-rc.12"
   },
   "devDependencies": {
-    "@cordisjs/plugin-hmr": "^1.1.2",
     "@cordisjs/plugin-loader": "^1.0.0-rc.9",
     "@cordisjs/plugin-logger-console": "^1.0.0",
+    "@cordisjs/plugin-watcher": "^1.0.0",
     "cordis": "^4.0.0-rc.12"
   },
   "dependencies": {

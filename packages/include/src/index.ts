@@ -12,7 +12,7 @@ import {
 import { stringifyString } from 'yaml/util'
 import { applyJournal, flatten, Journal, merge, reconcile, record } from './journal.ts'
 import { applyPatches, ensureIds, ensureInsertIds, PatchIndex, PatchOptions, routeJournal } from './patch.ts'
-import type {} from '@cordisjs/plugin-hmr'
+import type {} from '@cordisjs/plugin-watcher'
 
 // A Windows drive-letter path, e.g. `C:\app\cordis.yml` or `C:/app/cordis.yml`.
 const driveLetter = /^[A-Za-z]:[\\/]/
@@ -112,6 +112,8 @@ export namespace Include {
     initial?: any[]
     patches?: PatchOptions[]
     enableLogs?: boolean
+    /** Reload the tree when the file changes. Requires the `watcher` service. */
+    watch?: boolean
   }
 }
 
@@ -202,16 +204,18 @@ export class Include extends EntryTree {
     ensureInsertIds(config.patches, id => !!this.store[id])
 
     ctx.on('internal/update', (config, next) => {
-      if (config.path !== this.config.path) return next()
+      if (config.path !== this.config.path || (config.watch ?? true) !== (this.config.watch ?? true)) return next()
       this.config = config
       ensureInsertIds(config.patches, id => !!this.store[id])
       this._scheduleApply()
       return this._applyTask
     })
 
-    ctx.inject(['hmr'], (ctx) => {
-      ctx.hmr.watch(this.filename, () => this.refresh())
-    })
+    if (config.watch ?? true) {
+      ctx.inject(['watcher'], (ctx) => {
+        ctx.watcher.watch(this.filename, () => this.refresh())
+      })
+    }
   }
 
   private warn = (format: string, ...args: any[]) => {

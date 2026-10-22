@@ -1,7 +1,5 @@
-- id: timer
-  name: '@cordisjs/plugin-timer'
-- id: hmr
-  name: '@cordisjs/plugin-hmr'
+- id: watcher
+  name: '@cordisjs/plugin-watcher'
   config:
     root:
       - .

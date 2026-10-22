@@ -55,7 +55,7 @@ export function harness() {
     await ctx.loader.store[id]!.fiber!.await()
 
     const include = () => ctx.loader.store[id]!.subtree as Include
-    // what hmr does on a change event; `refresh` also waits for any write
+    // what the watcher does on a change event; `refresh` also waits for any write
     const settle = async () => {
       await include().refresh()
       await ctx.loader.await()

@@ -1,0 +1,51 @@
+{
+  "name": "@cordisjs/plugin-watcher",
+  "description": "File Watcher for Cordis",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "lib/index.js",
+  "typings": "lib/index.d.ts",
+  "files": [
+    "lib"
+  ],
+  "author": "Shigma <shigma10826@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cordiverse/cordis.git",
+    "directory": "packages/watcher"
+  },
+  "bugs": {
+    "url": "https://github.com/cordiverse/cordis/issues"
+  },
+  "homepage": "https://cordis.io/",
+  "keywords": [
+    "cordis",
+    "plugin",
+    "watch",
+    "watcher",
+    "hmr",
+    "development"
+  ],
+  "cordis": {
+    "description": {
+      "en": "File Watcher",
+      "zh": "文件监听"
+    }
+  },
+  "peerDependencies": {
+    "cordis": "^4.0.0-rc.12"
+  },
+  "devDependencies": {
+    "@cordisjs/plugin-hmr": "^1.1.2",
+    "@cordisjs/plugin-loader": "^1.0.0-rc.9",
+    "@types/picomatch": "^3.0.2",
+    "cordis": "^4.0.0-rc.12"
+  },
+  "dependencies": {
+    "chokidar": "^4.0.3",
+    "cosmokit": "^1.8.1",
+    "picomatch": "^4.0.3",
+    "schemastery": "^3.18.0"
+  }
+}
