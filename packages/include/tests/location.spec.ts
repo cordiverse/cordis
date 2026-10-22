@@ -119,6 +119,76 @@ describe('Include source locations', () => {
     expect(app.stacks()).toEqual([expect.stringContaining(`(at port, ${app.at('"80"')})`)])
   }, 10000)
 
+  describe('aliases', () => {
+    it('locates a config value at its anchor', async () => {
+      const app = await start('tmp-location-alias-config.yml', [
+        '- id: a',
+        '  name: ./schema-plugin',
+        '  config: &c',
+        '    port: &p "80"',
+        '- id: b',
+        '  name: ./schema-plugin',
+        '  config: *c',
+        '- id: c',
+        '  name: ./schema-plugin',
+        '  config:',
+        '    port: *p',
+        '',
+      ].join('\n'))
+
+      const stacks = app.stacks()
+      expect(stacks).toHaveLength(3)
+      for (const id of ['a', 'b', 'c']) {
+        expect(stacks.find(stack => stack.includes(`at ${id} (`))).toContain(`(at port, ${app.at('"80"')})`)
+      }
+    }, 10000)
+
+    it('points a missing value under an alias at the key that holds it', async () => {
+      const app = await start('tmp-location-alias-missing.yml', [
+        '- id: a',
+        '  name: ./test-plugin',
+        '  intercept: &c {}',
+        '- id: b',
+        '  name: ./schema-plugin',
+        '  config: *c',
+        '',
+      ].join('\n'))
+
+      expect(app.stacks()).toEqual([expect.stringContaining(`(at port, ${app.at('config: *c')})`)])
+    }, 10000)
+
+    it('locates an entry option at its anchor', async () => {
+      const app = await start('tmp-location-alias-fields.yml', [
+        '- id: a',
+        '  name: ./test-plugin',
+        '  isolate: { x: &g 1 }',
+        '- id: b',
+        '  name: ./test-plugin',
+        '  group: *g',
+        '',
+      ].join('\n'))
+
+      expect(app.stacks().find(stack => stack.includes('at b ('))).toContain(`(at group, ${app.at('1 }')})`)
+    }, 10000)
+
+    it('locates an expression at its anchor', async () => {
+      const app = await start('tmp-location-alias-expr.yml', [
+        '- id: a',
+        '  name: ./test-plugin',
+        '  intercept: { x: &x !!js "1 + foo" }',
+        '- id: b',
+        '  name: ./test-plugin',
+        '  disabled: *x',
+        '',
+      ].join('\n'))
+
+      expect(app.stacks().find(stack => stack.includes('at b ('))).toBe([
+        'ReferenceError: foo is not defined',
+        `    at disabled (${app.at('foo')})`,
+        `    at b (${app.filename}:4:3)`,
+      ].join('\n'))
+    }, 10000)
+  })
   it('locates entries of a group config replaced by a patch', async () => {
     const inner = fixture('tmp-location-group-inner.yml')
     await writeFile(inner, '- id: g\n  name: \'@cordisjs/plugin-group\'\n  group: true\n  config: []\n')
