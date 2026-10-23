@@ -1,4 +1,4 @@
-import { Context, Fiber, FiberState, Service, ValidationError } from 'cordis'
+import { Context, Fiber, FiberState, Inject, Service, ValidationError } from 'cordis'
 import { Awaitable, defineProperty, isNullable } from 'cosmokit'
 import { ModuleLoader } from './internal.ts'
 import { Entry, EntryOptions } from './config/entry.ts'
@@ -126,6 +126,16 @@ export class Loader extends EntryTree {
       if (entry.outerFiber?.uid === fiber.uid) entry._verdict = undefined
     })
 
+    // the outer fiber is created with the entry's own `inject`; a replacement
+    // installs the inject the new plugin declares instead, so the entry's own
+    // has to be merged back on top of it
+    ctx.on('internal/replace', (fiber) => {
+      if (!Entry.isOuter(fiber)) return
+      const entry: Entry | undefined = fiber.parent[Entry.key]
+      if (!entry) return
+      Inject.resolve(entry.options.inject, fiber.inject)
+    })
+
     ctx.on('internal/plugin', (fiber) => {
       // 1. set `fiber.entry`
       // the inner fiber, not the outer one, is the entry's root
@@ -144,11 +154,6 @@ export class Loader extends EntryTree {
 
       // case 3: fiber is a child plugin under the entry (not the entry's root fiber)
       if (fiber.parent.fiber?.entry === fiber.entry) return
-
-      // case 4: fiber is disposed on behalf of plugin deletion (such as plugin hmr)
-      // self-dispose: ctx.fiber.dispose() -> fiber / runtime dispose -> delete(plugin)
-      // plugin hmr: delete(plugin) -> runtime dispose -> fiber dispose
-      if (!ctx.registry.has(fiber.runtime!.callback)) return
 
       // case 5: the entry's tree is being disposed
       if (!fiber.entry.parent.tree.ctx.fiber.uid) return
