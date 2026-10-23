@@ -1,18 +1,65 @@
-import { expect, describe, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { writeFile } from 'node:fs/promises'
 import { createRequire, syncBuiltinESMExports } from 'node:module'
-import * as yaml from 'js-yaml'
-import { group, harness, plugin } from './utils'
-import { applyJournal, Journal } from '../src/journal'
+import * as yaml from 'yaml'
+import { group, harness, plugin } from './utils.ts'
+import { applyJournal, Journal } from '../src/journal.ts'
 
 describe('Include same-parent order', () => {
   const { setup } = harness()
 
+  for (const key of ['insert', 'config'] as const) {
+    it(`persists sibling order in patch ${key} without losing key overrides`, async () => {
+      const app = await setup(`tmp-order-embedded-${key}.yml`, [group('g', [])], {
+        patches: [
+          { id: 'g', [key]: [plugin('a', 1), plugin('b', 1), plugin('c', 1)] },
+          { id: 'a', config: { tag: 'a', value: 7 } },
+        ],
+      })
+
+      await app.include().update('a', { config: { tag: 'a', value: 8 } }, 'g', 2)
+      await app.settle()
+
+      expect(await app.read()).toEqual([group('g', [])])
+      expect(app.include().config.patches).toEqual([
+        { id: 'g', [key]: [plugin('b', 1), plugin('c', 1), plugin('a', 1)] },
+        { id: 'a', config: { tag: 'a', value: 8 } },
+      ])
+      expect(app.include().store.g.subgroup.data.map(entry => entry.id)).toEqual(['b', 'c', 'a'])
+      expect(app.config('a').value).toBe(8)
+      expect(app.logs('error')).toEqual([])
+    }, 10000)
+
+    it(`preserves patch ${key} ownership when a move precedes a sibling reorder`, async () => {
+      const app = await setup(`tmp-order-move-embedded-${key}.yml`, [plugin('a', 1), group('g', [])], {
+        patches: [{ id: 'g', [key]: [plugin('x', 1), plugin('y', 1), plugin('z', 1)] }],
+      })
+
+      const first = app.include().update('y', {}, 'g', 0)
+      const second = app.include().update('a', {}, 'g', 1)
+      const third = app.include().update('y', {}, 'g', 3)
+      await Promise.all([first, second, third])
+      await app.settle()
+
+      expect(await app.read()).toEqual([group('g', key === 'insert' ? [plugin('a', 1)] : [])])
+      const siblings = [plugin('x', 1), plugin('z', 1), plugin('y', 1)]
+      expect(app.include().config.patches).toEqual([
+        { id: 'g', [key]: key === 'insert' ? siblings : [plugin('a', 1), ...siblings] },
+      ])
+      expect(app.include().store.g.subgroup.data.map(entry => entry.id)).toEqual(['a', 'x', 'z', 'y'])
+      expect(app.logs('error')).toEqual([])
+    }, 10000)
+  }
+
   it('preserves distinct options for repeated sibling ids', () => {
     const data = [plugin('a', 1), plugin('a', 2), plugin('b', 3)]
     const journal: Journal = new Map([['a', {
-      kind: 'upsert', created: false, parent: null, position: 1,
-      order: ['b', 'a', 'a'], changes: {},
+      kind: 'upsert',
+      created: false,
+      parent: null,
+      position: 1,
+      order: ['b', 'a', 'a'],
+      changes: {},
     }]])
     applyJournal(data, journal)
     expect(data).toEqual([plugin('b', 3), plugin('a', 1), plugin('a', 2)])
@@ -20,7 +67,7 @@ describe('Include same-parent order', () => {
 
   it('preserves file ordering of siblings untouched at runtime', async () => {
     const app = await setup('tmp-order-independent.yml', ['a', 'b', 'c', 'd'].map(id => plugin(id, 1)))
-    await writeFile(app.filename, yaml.dump(['a', 'c', 'b', 'd'].map(id => plugin(id, 1))))
+    await writeFile(app.filename, yaml.stringify(['a', 'c', 'b', 'd'].map(id => plugin(id, 1))))
     await app.include().update('a', {}, null, 3)
     await app.settle()
     expect((await app.read()).map(entry => entry.id)).toEqual(['c', 'b', 'd', 'a'])
@@ -30,7 +77,7 @@ describe('Include same-parent order', () => {
 
   it('keeps runtime ordering across an independent file insertion', async () => {
     const app = await setup('tmp-order-insertion.yml', ['a', 'b', 'c'].map(id => plugin(id, 1)))
-    await writeFile(app.filename, yaml.dump(['x', 'a', 'b', 'c'].map(id => plugin(id, 1))))
+    await writeFile(app.filename, yaml.stringify(['x', 'a', 'b', 'c'].map(id => plugin(id, 1))))
     await app.include().update('a', {}, null, 2)
     await app.settle()
     expect((await app.read()).map(entry => entry.id)).toEqual(['x', 'b', 'c', 'a'])
@@ -124,7 +171,7 @@ describe('Include same-parent order', () => {
   it('lets the file win when both sides reorder the same entry', async () => {
     const app = await setup('tmp-order-conflict.yml', [plugin('a', 1), plugin('b', 1), plugin('c', 1)])
 
-    await writeFile(app.filename, yaml.dump([plugin('b', 1), plugin('a', 1), plugin('c', 1)]))
+    await writeFile(app.filename, yaml.stringify([plugin('b', 1), plugin('a', 1), plugin('c', 1)]))
     await app.include().update('a', {}, null, 2)
     await app.settle()
 
@@ -152,7 +199,7 @@ describe('Include same-parent order', () => {
   it('keeps a runtime reorder across a non-order file edit', async () => {
     const app = await setup('tmp-order-merge.yml', [plugin('a', 1), plugin('b', 1), plugin('c', 1)])
 
-    await writeFile(app.filename, yaml.dump([plugin('a', 9), plugin('b', 1), plugin('c', 1)]))
+    await writeFile(app.filename, yaml.stringify([plugin('a', 9), plugin('b', 1), plugin('c', 1)]))
     await app.include().update('a', {}, null, 2)
     await app.settle()
 
@@ -219,7 +266,7 @@ describe('Include same-parent order', () => {
   it('lets the file win when both sides move an entry into the same group', async () => {
     const app = await setup('tmp-order-both-group.yml', [plugin('a', 1), group('g', [plugin('x', 1)])])
 
-    await writeFile(app.filename, yaml.dump([group('g', [plugin('x', 1), plugin('a', 1)])]))
+    await writeFile(app.filename, yaml.stringify([group('g', [plugin('x', 1), plugin('a', 1)])]))
     await app.include().update('a', {}, 'g', 0)
     await app.settle()
 
@@ -237,19 +284,19 @@ describe('Include same-parent order', () => {
   it('does not replay the runtime index when a key change survives that conflict', async () => {
     const app = await setup('tmp-order-both-group-key.yml', [plugin('a', 1), group('g', [plugin('x', 1)])])
 
-    await writeFile(app.filename, yaml.dump([group('g', [plugin('x', 1), plugin('a', 1)])]))
+    await writeFile(app.filename, yaml.stringify([group('g', [plugin('x', 1), plugin('a', 1)])]))
     await app.include().update('a', { disabled: true }, 'g', 0)
     await app.settle()
 
     const [entry] = await app.read()
-    expect(entry.config.map((child: { id: string, disabled?: boolean }) => [child.id, child.disabled])).toEqual([['x', undefined], ['a', true]])
+    expect(entry.config.map((child: { id: string; disabled?: boolean }) => [child.id, child.disabled])).toEqual([['x', undefined], ['a', true]])
     expect(app.logs('error').some(line => line.includes('moved both'))).toBe(true)
   }, 10000)
 
   it('does not conflict when both sides place an entry at the same index', async () => {
     const app = await setup('tmp-order-both-group-same.yml', [plugin('a', 1), group('g', [plugin('x', 1)])])
 
-    await writeFile(app.filename, yaml.dump([group('g', [plugin('a', 1), plugin('x', 1)])]))
+    await writeFile(app.filename, yaml.stringify([group('g', [plugin('a', 1), plugin('x', 1)])]))
     await app.include().update('a', {}, 'g', 0)
     await app.settle()
 
@@ -281,7 +328,7 @@ describe('Include same-parent order', () => {
   it('conflicts when a later reorder changes the cross-parent index the file already chose', async () => {
     const app = await setup('tmp-order-cross-conflict.yml', [plugin('a', 1), group('g', [plugin('x', 1), plugin('y', 1)])])
 
-    await writeFile(app.filename, yaml.dump([group('g', [plugin('a', 1), plugin('y', 1), plugin('x', 1)])]))
+    await writeFile(app.filename, yaml.stringify([group('g', [plugin('a', 1), plugin('y', 1), plugin('x', 1)])]))
     const first = app.include().update('a', {}, 'g', 0)
     const second = app.include().update('y', {}, 'g', 0)
     await first
@@ -300,7 +347,7 @@ describe('Include same-parent order', () => {
   it('keeps a same-parent reorder when a later cross-parent move conflicts', async () => {
     const app = await setup('tmp-order-sibling-survives.yml', [plugin('a', 1), group('g', [plugin('x', 1), plugin('y', 1)])])
 
-    await writeFile(app.filename, yaml.dump([group('g', [plugin('x', 1), plugin('y', 1), plugin('a', 1)])]))
+    await writeFile(app.filename, yaml.stringify([group('g', [plugin('x', 1), plugin('y', 1), plugin('a', 1)])]))
     const first = app.include().update('y', {}, 'g', 0)
     const second = app.include().update('a', {}, 'g', 0)
     await first
@@ -316,7 +363,7 @@ describe('Include same-parent order', () => {
   it('logs a conflict when the file order disagrees with a shared snapshot', async () => {
     const app = await setup('tmp-order-snapshot-conflict.yml', [plugin('a', 1), plugin('b', 1), plugin('c', 1), plugin('d', 1)])
 
-    await writeFile(app.filename, yaml.dump([plugin('a', 1), plugin('c', 1), plugin('b', 1), plugin('d', 1)]))
+    await writeFile(app.filename, yaml.stringify([plugin('a', 1), plugin('c', 1), plugin('b', 1), plugin('d', 1)]))
     const first = app.include().update('a', {}, null, 3)
     const second = app.include().update('b', {}, null, 2)
     const third = app.include().update('a', {}, null, 0)
@@ -336,7 +383,7 @@ describe('Include same-parent order', () => {
   it('keeps a sibling reorder when only the other entry conflicts', async () => {
     const app = await setup('tmp-order-partial-conflict.yml', [plugin('a', 1), plugin('b', 1), plugin('c', 1), plugin('d', 1)])
 
-    await writeFile(app.filename, yaml.dump([plugin('d', 1), plugin('a', 1), plugin('c', 1), plugin('b', 1)]))
+    await writeFile(app.filename, yaml.stringify([plugin('d', 1), plugin('a', 1), plugin('c', 1), plugin('b', 1)]))
     const first = app.include().update('c', {}, null, 0)
     const second = app.include().update('d', {}, null, 1)
     await first

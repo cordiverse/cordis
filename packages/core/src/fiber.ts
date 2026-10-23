@@ -1,11 +1,11 @@
 import { Awaitable, defineProperty, Dict, isNullable } from 'cosmokit'
-import { Context } from './context'
-import { Plugin } from './registry'
-import { buildOuterStack, composeError, DisposableList, getTraceable, isConstructor, isObject, symbols } from './utils'
-import { Impl } from './reflect'
+import { Context } from './context.ts'
+import { Plugin } from './registry.ts'
+import { buildOuterStack, composeError, DisposableList, getTraceable, isConstructor, isObject, symbols } from './utils.ts'
+import { Impl } from './reflect.ts'
 import { StandardSchemaV1 } from '@standard-schema/spec'
 
-declare module './context' {
+declare module './context.ts' {
   export interface Context extends Pick<Fiber, 'effect'> {
     fiber: Fiber
   }
@@ -16,14 +16,26 @@ const kValidationError = Symbol.for('ValidationError')
 export class ValidationError extends TypeError {
   name = 'ValidationError'
 
-  constructor(issues: readonly StandardSchemaV1.Issue[]) {
+  constructor(public issues: readonly StandardSchemaV1.Issue[]) {
     super(`invalid config:\n` + issues.map(issue => {
-      if (issue.path) {
-        return `  - ${issue.message} (at ${issue.path.join('.')})`
+      if (issue.path?.length) {
+        return `  - ${issue.message} (at ${ValidationError.formatPath(issue.path)})`
       } else {
         return `  - ${issue.message}`
       }
     }).join('\n'))
+  }
+
+  static is(error: unknown): error is ValidationError {
+    return !!error?.[kValidationError]
+  }
+
+  static normalizePath(path: StandardSchemaV1.Issue['path'] = []) {
+    return path.map(segment => typeof segment === 'object' ? segment.key : segment)
+  }
+
+  static formatPath(path: StandardSchemaV1.Issue['path']) {
+    return ValidationError.normalizePath(path).map(String).join('.')
   }
 }
 
@@ -105,7 +117,8 @@ export class Fiber {
   public readonly ctx: Context
   public state = FiberState.PENDING
   public readonly dispose: () => Promise<void>
-  public store: Dict<Impl> | undefined
+  public committed: Readonly<Dict<Impl>> | undefined
+  public readonly provisions = new Set<Impl>()
   public inertia: Promise<void> | undefined
 
   public readonly _hooks: Dict<DisposableList<Function>> = Object.create(null)
@@ -118,6 +131,7 @@ export class Fiber {
   private _revision = 0
   private _runner: EffectRunner<string>
   private _store: Dict<Impl> = Object.create(null)
+  private _release: (() => void) | undefined
 
   constructor(
     public parent: Context,
@@ -133,15 +147,6 @@ export class Fiber {
     if (runtime) {
       this.uid = parent.registry.counter
       this.ctx = this.context = parent.extend({ fiber: this })
-
-      const injectEntries = Object.entries(this.inject)
-      if (injectEntries.length) {
-        this.ctx[Context.intercept] = Object.create(parent[Context.intercept])
-        for (const [name, config] of injectEntries) {
-          if (isNullable(config)) continue
-          this.ctx[Context.intercept][name] = config
-        }
-      }
 
       this._runner = {
         epoch: INACTIVE,
@@ -186,22 +191,23 @@ export class Fiber {
             }
           }
           this._setEpoch(INACTIVE)
-          // `this.inertia` itself should never reject — both `_reload` and
-          // `_unload` swallow their own work errors via `ctx.logger.error`.
-          // If it *does* reject, the only remaining cause is the logger
-          // itself failing, which we can't recover from in this exact spot
-          // (calling the logger again is what just failed). Let the
-          // rejection propagate; process-level crash is the honest outcome.
+          // `inertia` never rejects: `_reload` and `_unload` both log their
+          // own work errors. A rejection here would mean the logger itself
+          // failed, so let it propagate.
           while (this.inertia) {
             await this.inertia
           }
+          // `_setEpoch()` above returns early for a fiber that was not ACTIVE,
+          // so the cached state is not refreshed. Re-derive it now that
+          // `uid` is null; the empty callback falls through to `_getState()`.
+          this._updateState(() => {})
         }
       }, 'ctx.plugin()')
     } else {
       this.uid = 0
       this.ctx = this.context = parent
       this.state = FiberState.ACTIVE
-      this.store = Object.create(null)
+      this.committed = Object.create(null)
       this._runner = {
         epoch: '0',
         getOuterStack,
@@ -367,8 +373,8 @@ export class Fiber {
     if (oldState !== FiberState.ACTIVE && this.state !== FiberState.ACTIVE) return
     for (const key of Reflect.ownKeys(this.ctx.reflect.store)) {
       const impl = this.ctx.reflect.store[key as symbol]
-      if (impl.fiber !== this) continue
-      this.ctx.reflect.notify([impl.name])
+      if (impl.ctx.fiber !== this) continue
+      this.ctx.isolate(impl.name, impl.isolate).reflect.notify([impl.name])
     }
   }
 
@@ -380,7 +386,7 @@ export class Fiber {
         return delete this._store[name]
       }
     } catch (error) {
-      impl.fiber.ctx.logger.error(error)
+      impl.ctx.logger.error(error)
       return delete this._store[name]
     }
     this._store[name] = impl
@@ -394,7 +400,7 @@ export class Fiber {
         epoch = INACTIVE
         break
       }
-      epoch += ':' + impl.fiber.uid
+      epoch += ':' + impl.uid
     }
     this._setEpoch(epoch)
   }
@@ -418,7 +424,11 @@ export class Fiber {
   }
 
   private async _reload() {
-    this.store = { ...this._store }
+    this.committed = { ...this._store }
+    for (const impl of Object.values(this.committed)) {
+      if (impl.ctx.fiber === this) continue
+      impl.dependents.add(this)
+    }
     const oldEpoch = this._runner.epoch
     try {
       await Promise.resolve()
@@ -445,6 +455,13 @@ export class Fiber {
   }
 
   private async _unload() {
+    // Dependents are notified when this fiber leaves ACTIVE, but may still
+    // access its services during their own teardown, so the effects of this
+    // fiber are only disposed after every dependent has unloaded.
+    while ([...this.provisions].some(impl => impl.dependents.size)) {
+      await new Promise<void>((resolve) => this._release = resolve)
+    }
+    this._release = undefined
     await Promise.all(this._disposables.clear().map(async (dispose) => {
       try {
         await composeError(async (info) => {
@@ -456,7 +473,13 @@ export class Fiber {
         this.ctx.logger.error(reason)
       }
     }))
-    this.store = undefined
+    // release the providers waiting for this fiber to unload
+    for (const impl of Object.values(this.committed ?? {})) {
+      if (!impl.dependents.delete(this) || impl.dependents.size) continue
+      impl.release?.()
+      impl.ctx.fiber._release?.()
+    }
+    this.committed = undefined
     this._updateState(() => {
       if (this._runner.epoch === INACTIVE) {
         this.inertia = undefined

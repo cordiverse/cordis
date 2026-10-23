@@ -1,6 +1,6 @@
 import { expect, describe, it } from 'vitest'
 import { mock } from 'node:test'
-import { Context } from '../src'
+import { Context } from '../src/index.ts'
 
 describe('Reflect', () => {
   it('Context.is()', () => {
@@ -39,8 +39,8 @@ describe('Reflect', () => {
     expect(root.get('foo')).to.be.ok
     // bar is a mixin
     expect(root.get('bar')).to.be.undefined
-    // root is a property
-    expect(root.get('root')).to.be.undefined
+    // baseUrl is a property
+    expect(root.get('baseUrl')).to.be.undefined
 
     root.inject(['foo'], (ctx) => {
       warn.mock.resetCalls()

@@ -1,4 +1,4 @@
-import { Context, Service } from '../src'
+import { Context, Service } from '../src/index.ts'
 import { expect, describe, it } from 'vitest'
 
 describe('Association', () => {

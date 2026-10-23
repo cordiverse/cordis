@@ -1,7 +1,27 @@
 import { expect, describe, it, beforeAll } from 'vitest'
-import { Context, FiberState } from 'cordis'
-import MockLoader, { sleep } from './utils'
+import { Context, FiberState, Service } from 'cordis'
+import { EntryChange, EntryTree } from '../src/index.ts'
+import MockLoader, { sleep } from './utils.ts'
 import { Mock, mock } from 'node:test'
+
+describe('Loader: disabled js expression', () => {
+  // `disabled: !!js <expr>` parses to an expression node, which is truthy as an
+  // object — reading it as a value disables the entry whatever it says
+  it('evaluates the expression instead of treating the node as truthy', async () => {
+    const root = new Context()
+    await root.plugin(MockLoader)
+    const loader = root.loader as any
+    loader.mock('plug', () => {})
+
+    const id = await loader.create({ id: 'a', name: 'plug', disabled: { __jsExpr: 'false' } })
+    await sleep()
+    expect(loader.store[id].disabled).to.equal(false)
+
+    const id2 = await loader.create({ id: 'b', name: 'plug', disabled: { __jsExpr: 'true' } })
+    await sleep()
+    expect(loader.store[id2].disabled).to.equal(true)
+  })
+})
 
 describe('Loader: basic support', () => {
   const root = new Context()
@@ -126,9 +146,6 @@ describe('Loader: intercept config', () => {
     qux = await loader.create({
       name: 'qux',
       inject: {
-        loader: true,
-      },
-      intercept: {
         loader: {
           await: true,
         },
@@ -138,7 +155,8 @@ describe('Loader: intercept config', () => {
     await sleep()
     expect(loader.expectFiber(foo).state).to.equal(FiberState.LOADING)
     expect(loader.expectFiber(bar).state).to.equal(FiberState.PENDING)
-    expect(loader.expectFiber(qux).state).to.equal(FiberState.PENDING)
+    expect(loader.store[qux].outerFiber?.state).to.equal(FiberState.PENDING)
+    expect(loader.store[qux].innerFiber).to.be.undefined
   })
 
   it('resolved', async () => {
@@ -235,7 +253,8 @@ describe('Loader: config interpolation', () => {
     }])
     await sleep()
 
-    expect(loader.expectFiber('1').state).to.equal(FiberState.PENDING)
+    expect(loader.store['1'].outerFiber?.state).to.equal(FiberState.PENDING)
+    expect(loader.store['1'].innerFiber).to.be.undefined
     expect(consumer.mock.calls).to.have.length(0)
   })
 
@@ -300,7 +319,7 @@ describe('Loader: nested plugin config', () => {
   })
 })
 
-// resolution reads services through `fiber.store`, which a failed fiber no
+// resolution reads services through `fiber.committed`, which a failed fiber no
 // longer has, so recovery must not depend on resolving the new config first
 describe('Loader: failed entry recovery', () => {
   const root = new Context()
@@ -335,7 +354,7 @@ describe('Loader: failed entry recovery', () => {
     await sleep()
 
     expect(loader.expectFiber('1').state).to.equal(FiberState.FAILED)
-    expect(loader.expectFiber('1').store).to.equal(undefined)
+    expect(loader.expectFiber('1').committed).to.equal(undefined)
   })
 
   it('recover through update', async () => {
@@ -358,11 +377,11 @@ describe('Loader: pending entry update', () => {
     await root.plugin(MockLoader)
     loader = root.loader as any
 
-    loader.mock('foo', () => {})
+    Object.assign(loader.mock('foo', () => {}), { inject: ['never'] })
   })
 
   it('persist an update to a pending fiber', async () => {
-    await loader.read([{ id: '1', name: 'foo', inject: ['never'] }])
+    await loader.read([{ id: '1', name: 'foo' }])
     await sleep()
     expect(loader.expectFiber('1').state).to.equal(FiberState.PENDING)
 
@@ -372,8 +391,58 @@ describe('Loader: pending entry update', () => {
     expect(loader.data).to.deep.equal([{
       id: '1',
       name: 'foo',
-      inject: ['never'],
       config: { a: 3 },
     }])
+  })
+})
+
+// an entry disposed by the teardown of its parent has not disposed itself,
+// even when the parent is still registered
+describe('Loader: parent teardown', () => {
+  const root = new Context()
+
+  let loader!: MockLoader
+  const changes: EntryChange[] = []
+
+  class Tree extends EntryTree {
+    static inject = ['foo']
+
+    commit(change: EntryChange) {
+      changes.push(change)
+    }
+
+    import(name: string) {
+      return loader.import(name)
+    }
+
+    async* [Service.init]() {
+      yield async () => {
+        // the children are disposed before they are unregistered
+        await sleep()
+        this.root.stop()
+      }
+      await this.root.update([{ id: 'a', name: 'bar' }])
+    }
+  }
+
+  beforeAll(async () => {
+    await root.plugin(MockLoader)
+    loader = root.loader as any
+
+    loader.mock('bar', () => {})
+    loader.modules['tree'] = Tree as any
+  })
+
+  it('keep children enabled when the parent loses a dependency', async () => {
+    const dispose = root.provide('foo', {})
+    await loader.read([{ id: '1', name: 'tree' }])
+    await sleep()
+    expect(loader.expectFiber('1').state).to.equal(FiberState.ACTIVE)
+    expect(loader.resolve('1:a').innerFiber?.state).to.equal(FiberState.ACTIVE)
+
+    dispose()
+    await loader.await()
+    expect(loader.expectFiber('1').state).to.equal(FiberState.PENDING)
+    expect(changes).to.deep.equal([])
   })
 })

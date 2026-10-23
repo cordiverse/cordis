@@ -2,7 +2,7 @@ import { Context, Fiber, Inject, Plugin, Service } from 'cordis'
 import { Awaitable, Dict } from 'cosmokit'
 import { ModuleJob, ModuleLoader, ResolveResult } from '@cordisjs/plugin-loader'
 import { ChokidarOptions, FSWatcher, watch } from 'chokidar'
-import { relative, resolve } from 'node:path'
+import { relative, resolve, sep } from 'node:path'
 import { handleError } from './error.ts'
 import type {} from '@cordisjs/plugin-timer'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -11,6 +11,9 @@ import picomatch from 'picomatch'
 import enUS from './locales/en-US.yml'
 import zhCN from './locales/zh-CN.yml'
 import z from 'schemastery'
+
+// A Windows drive-letter path, e.g. `C:\app\cordis.yml` or `C:/app/cordis.yml`.
+const driveLetter = /^[A-Za-z]:[\\/]/
 
 declare module 'cordis' {
   interface Context {
@@ -112,7 +115,11 @@ class Hmr extends Service {
   constructor(ctx: Context, public config: Hmr.Config) {
     super(ctx, 'hmr')
     this.internal = this.ctx.loader.internal
-    this.baseDir = fileURLToPath(new URL(config.base || '.', ctx.baseUrl))
+    // On Windows, a drive-letter path is converted with `pathToFileURL`.
+    // `new URL()` would read its `C:` as a URL scheme, which `fileURLToPath` rejects.
+    this.baseDir = fileURLToPath(process.platform === 'win32' && config.base && driveLetter.test(config.base)
+      ? pathToFileURL(config.base)
+      : new URL(config.base || '.', ctx.baseUrl))
   }
 
   /**
@@ -157,7 +164,9 @@ class Hmr extends Service {
     this.watcher = watch(root, {
       ...this.config,
       cwd: this.baseDir,
-      ignored: path => !this.watchers.has(resolve(this.baseDir, path)) && match(relative(this.baseDir, path)),
+      // picomatch only splits on `/`, so a Windows path is converted before matching.
+      ignored: path => !this.watchers.has(resolve(this.baseDir, path))
+        && match(relative(this.baseDir, path).split(sep).join('/')),
     })
 
     const partialReload = this.ctx.debounce(() => this.partialReload(), this.config.debounce)
@@ -455,9 +464,31 @@ class Hmr extends Service {
       try {
         while (fiber.inertia) await fiber.inertia
 
+        const entry = fiber.entry
+        // Re-enable's init() may still be awaiting. It does not wait on stage 3.
+        // A rejection is already logged and must not skip the decision below.
+        while (entry?._initTask) await entry._initTask.catch(() => {})
+
+        // The host may have been replaced during the wait (e.g. disabled and re-enabled).
+        if (hasInactiveAncestor(fiber)) {
+          this.ctx.logger.debug('skip plugin at %C (inactive ancestor)', path)
+          return
+        }
+
+        const removed = !!entry && entry.parent.tree.store[entry.options.id] !== entry
+        // A nested fiber shares the host entry. Only the entry root can already be live.
+        const isEntryRoot = !!entry && fiber.parent.fiber?.entry !== entry
+        // `fiber` itself is disposed, so a live `entry.innerFiber` is a replacement.
+        const replaced = isEntryRoot && entry.innerFiber?.uid != null
+        if (entry?.disabled || removed || replaced) {
+          const reason = entry?.disabled ? 'disabled' : removed ? 'removed' : 'live fiber'
+          this.ctx.logger.debug(`skip plugin at %C (${reason})`, path)
+          return
+        }
+
         const newFiber = fiber.parent.registry.plugin(replacement, fiber.config, this.getOuterStack)
         newFiber.entry = fiber.entry
-        if (newFiber.entry) newFiber.entry.fiber = newFiber
+        if (isEntryRoot) entry.innerFiber = newFiber
         if (!logged.has(path)) {
           logged.add(path)
           this.ctx.logger.info('reload plugin at %C', path)

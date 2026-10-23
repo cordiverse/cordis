@@ -10,7 +10,7 @@
   ],
   "license": "MIT",
   "scripts": {
-    "lint": "eslint --cache",
+    "lint": "eslint --cache --ext .ts .",
     "yakumo": "node --expose-internals --import tsx --import @cordisjs/unyaml node_modules/yakumo/lib/cli.js",
     "build": "yarn yakumo esbuild && yarn yakumo tsc",
     "test": "yarn yakumo vitest --import tsx",
