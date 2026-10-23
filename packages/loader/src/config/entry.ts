@@ -253,7 +253,17 @@ export class Entry {
       .filter(key => !deepEqual(this.options[key], legacy[key]))
     if (!diff.length && !force) return
     this.context.emit('loader/partial-dispose', this, legacy, true)
-    await this._patchContext(diff)
+    try {
+      await this._patchContext(diff)
+    } catch (error) {
+      // The update was rejected after step 1 had already merged the new options.
+      // Restore them in place: the group's data array holds this very object, so
+      // assigning a fresh one would leave the tree describing a value the entry
+      // no longer holds.
+      for (const key of Object.keys(this.options)) delete (this.options as any)[key]
+      Object.assign(this.options, legacy)
+      throw error
+    }
   }
 
   dispose() {

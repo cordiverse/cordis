@@ -156,12 +156,18 @@ export abstract class EntryTree {
     // `Entry.update` assigns the new options before its first `await`, so the
     // change is fully visible to `commit()` once the call returns.
     const task = entry.update(options, false, true)
-    if (entry.parent.tree !== source.tree) {
-      source.tree.commit({ id: legacy.id, group: source, legacy })
+    // Report the change only once the update has been accepted. `Entry.update`
+    // merges the new options before its first `await` and rolls them back if it
+    // rejects, so committing eagerly would persist a value the entry no longer
+    // holds — and the file would claim a config the running plugin never took.
+    const commit = () => {
+      if (entry.parent.tree !== source.tree) {
+        source.tree.commit({ id: legacy.id, group: source, legacy })
+      }
+      const from = entry.parent === source ? undefined : source
+      entry.parent.tree.commit({ id: legacy.id, group: entry.parent, from, options: entry.options, legacy })
     }
-    const from = entry.parent === source ? undefined : source
-    entry.parent.tree.commit({ id: legacy.id, group: entry.parent, from, options: entry.options, legacy })
-    return task
+    return Promise.resolve(task).then(commit, (error) => { throw error })
   }
 
   import(name: string, getOuterStack?: () => string[]) {
