@@ -1532,6 +1532,7 @@ export function apply(ctx: Context) {
     it('rebuilds a child of an active host that reused the plugin', async () => {
       const entry = findEntry(ctx, 'live')
       const previous = entry.innerFiber!
+      const previousCallback = previous.runtime!.callback
       await configTree(ctx).create({ id: 'host', name: './plugin-host' })
       const host = findEntry(ctx, 'host')
       const hostRoot = host.innerFiber!
@@ -1549,7 +1550,9 @@ export function apply(ctx: Context) {
 
       // both the entry root and the child of the host are rebuilt
       expect(gate.applies - appliesBefore).to.equal(2)
-      expect(entry.innerFiber).to.not.equal(previous)
+      // the fiber is kept; the implementation behind it is what changed
+      expect(entry.innerFiber).to.equal(previous)
+      expect(entry.innerFiber!.runtime!.callback).to.not.equal(previousCallback)
       expect(liveUids(gate)).to.have.length(2)
       // rebuilding the child does not take over the host's entry root
       expect(host.innerFiber).to.equal(hostRoot)
