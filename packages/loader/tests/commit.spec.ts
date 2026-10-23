@@ -1,6 +1,6 @@
 import { Mock, mock } from 'node:test'
 import { expect, describe, it, beforeAll, beforeEach } from 'vitest'
-import { Context, Service } from 'cordis'
+import { Context, FiberState, Service } from 'cordis'
 import { EntryTree } from '../src/index.ts'
 import MockLoader, { sleep } from './utils.ts'
 
@@ -186,5 +186,43 @@ describe('EntryTree disposal', () => {
     expect(options.disabled).toBeUndefined()
     expect(commit.mock.calls).toHaveLength(0)
     await fiber.dispose()
+  })
+})
+
+// a failed fiber is inactive, so config validation must still run before commit
+describe('EntryTree.commit: invalid config on a failed fiber', () => {
+  const Config: any = {
+    '~standard': {
+      version: 1,
+      vendor: 'test',
+      validate: (value: any) => value?.ok
+        ? { value }
+        : { issues: [{ message: 'not ok' }] },
+    },
+  }
+
+  it('throws without writing the config or reporting a change', async () => {
+    const root = new Context()
+    ;(root.logger as any).error = mock.fn()
+    await root.plugin(MockLoader)
+    const loader = root.loader as MockLoader
+    loader.modules['bad'] = {
+      name: 'bad',
+      apply() {
+        throw new Error('boom')
+      },
+      Config,
+    }
+
+    const id = await loader.create({ name: 'bad', config: { ok: true } })
+    const entry = loader.store[id]!
+    const fiber = entry.innerFiber!
+    await fiber.await().catch(() => {})
+    expect(fiber.state).to.equal(FiberState.FAILED)
+    loader.changes = []
+
+    expect(() => fiber.update({ ok: false })).toThrow('invalid config')
+    expect(entry.options.config).to.deep.equal({ ok: true })
+    expect(loader.changes).to.have.length(0)
   })
 })
