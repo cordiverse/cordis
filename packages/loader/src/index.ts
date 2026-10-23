@@ -46,6 +46,9 @@ export namespace Loader {
   }
 }
 
+/** `loader.internal` is resolved once per `Loader`; the flag keeps the report to one per process. */
+let reportedInternals = false
+
 export class Loader extends EntryTree {
   declare [Service.metadata]: Loader.Intercept
 
@@ -58,6 +61,15 @@ export class Loader extends EntryTree {
 
   constructor(ctx: Context, public config: Loader.Config = {}) {
     super(ctx)
+    // HMR degrades to config reloading without internals, so the reason is detail
+    // one level below the warning; the condition is fixed per process, so report once
+    if (!this.internal && !reportedInternals) {
+      const reason = ModuleLoader.getInternalDiagnostics()
+      if (reason) {
+        reportedInternals = true
+        ctx.logger.debug('loader internals are unavailable:', reason)
+      }
+    }
     if (config.baseUrl) {
       this.ctx.baseUrl = config.baseUrl
     }
