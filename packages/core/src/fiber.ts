@@ -129,6 +129,12 @@ export class Fiber {
 
   private _error: any
   private _revision = 0
+  /** Bumped on every update, so a settled handler chain can detect that it was superseded. */
+  private _updateRevision = 0
+  /** Handler chains still in flight, and whether a replay is owed once they go quiet. */
+  private _activeChains = 0
+  private _replayOwed = false
+  private _replay: Promise<void> | undefined
   private _runner: EffectRunner<string>
   private _store: Dict<Impl> = Object.create(null)
   private _release: (() => void) | undefined
@@ -509,6 +515,7 @@ export class Fiber {
   update(config: any, noSave = false): Awaitable<void> {
     const fiber = this.ctx.fiber
     fiber.assertActive()
+    const revision = ++fiber._updateRevision
     const loaded = fiber._runner.epoch !== INACTIVE
     const resolved = loaded ? fiber._resolve(config) : undefined
     if (!noSave) fiber.context.emit('internal/commit', fiber, config)
@@ -520,11 +527,59 @@ export class Fiber {
       : restart()
     // a listener may veto the restart, in which case there is nothing to await
     if (result === undefined) return
-    const task = Promise.resolve(result)
+    fiber._activeChains++
+    const task = Promise.resolve(result).then(() => {
+      return fiber._settleChains(revision)
+    }, (error) => {
+      fiber._settleChains(revision)
+      throw error
+    })
     // the failure is already reported by the fiber, so mark it handled here:
-    // a caller that drops the result cannot turn it into an unhandled
-    // rejection, while `await update()` still observes it
+    // a dropped result must not become an unhandled rejection
     task.catch(() => {})
+    return task
+  }
+
+  private _settleChains(revision: number): Awaitable<void> {
+    this._activeChains--
+    // the configuration changed while this handler ran, so its writes are
+    // stale: the handlers have to run again against the one actually stored
+    if (this._updateRevision !== revision) this._replayOwed = true
+    // a chain that settles later could overwrite the replay, so it waits for
+    // the last one instead of running once per superseded caller
+    if (!this._replayOwed || this._activeChains > 0) return
+    return this._replayUpdate()
+  }
+
+  private _replayUpdate(): Awaitable<void> {
+    if (this.state === FiberState.DISPOSED) return
+    // one replay at a time; a concurrent caller observes the same repair
+    if (this._replay) return this._replay
+    this._replayOwed = false
+    // an unloaded fiber has no handler run left to correct: `update()` takes the
+    // restart branch there too, and the pending activation reads the stored config
+    if (this._runner.epoch === INACTIVE) return
+    const revision = this._updateRevision
+    const resolved = this._resolve(this.config)
+    // the load already reflects the latest configuration, so the replay only
+    // re-runs the handlers; it never requests another restart
+    const result = this.context.waterfall(this, 'internal/update', resolved, () => {})
+    if (result === undefined) return
+    const task = Promise.resolve(result).then(() => {
+      this._replay = undefined
+      // an update that landed during the replay makes it stale too: settle it first
+      if (this._updateRevision === revision) return
+      this._replayOwed = true
+      if (this._activeChains > 0) return
+      return this._replayUpdate()
+    }, (error) => {
+      this._replay = undefined
+      throw error
+    })
+    // as in `update()`: the fiber reports the failure, and a caller that drops
+    // the result must not turn it into an unhandled rejection
+    task.catch(() => {})
+    this._replay = task
     return task
   }
 }
