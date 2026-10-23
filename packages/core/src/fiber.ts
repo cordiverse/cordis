@@ -16,14 +16,26 @@ const kValidationError = Symbol.for('ValidationError')
 export class ValidationError extends TypeError {
   name = 'ValidationError'
 
-  constructor(issues: readonly StandardSchemaV1.Issue[]) {
+  constructor(public issues: readonly StandardSchemaV1.Issue[]) {
     super(`invalid config:\n` + issues.map(issue => {
-      if (issue.path) {
-        return `  - ${issue.message} (at ${issue.path.join('.')})`
+      if (issue.path?.length) {
+        return `  - ${issue.message} (at ${ValidationError.formatPath(issue.path)})`
       } else {
         return `  - ${issue.message}`
       }
     }).join('\n'))
+  }
+
+  static is(error: unknown): error is ValidationError {
+    return !!error?.[kValidationError]
+  }
+
+  static normalizePath(path: StandardSchemaV1.Issue['path'] = []) {
+    return path.map(segment => typeof segment === 'object' ? segment.key : segment)
+  }
+
+  static formatPath(path: StandardSchemaV1.Issue['path']) {
+    return ValidationError.normalizePath(path).map(String).join('.')
   }
 }
 

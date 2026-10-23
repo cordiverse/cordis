@@ -216,7 +216,7 @@ describe('EntryTree.commit: invalid config on a failed fiber', () => {
 
     const id = await loader.create({ name: 'bad', config: { ok: true } })
     const entry = loader.store[id]!
-    const fiber = entry.fiber!
+    const fiber = entry.innerFiber!
     await fiber.await().catch(() => {})
     expect(fiber.state).to.equal(FiberState.FAILED)
     loader.changes = []
