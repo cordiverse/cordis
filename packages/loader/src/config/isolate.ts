@@ -1,24 +1,15 @@
 import { Context } from 'cordis'
 import { Dict } from 'cosmokit'
 import { Entry } from './entry.ts'
+import { swap } from './utils.ts'
 
 declare module './entry.ts' {
   interface EntryOptions {
-    intercept?: Dict | null
     isolate?: Dict<true | string> | null
   }
 
   interface Entry {
     realm: LocalRealm
-  }
-}
-
-function swap<T extends {}>(target: T, source?: T | null) {
-  for (const key of Reflect.ownKeys(target)) {
-    Reflect.deleteProperty(target, key)
-  }
-  for (const key of Reflect.ownKeys(source || {})) {
-    Reflect.defineProperty(target, key, Reflect.getOwnPropertyDescriptor(source!, key)!)
   }
 }
 
@@ -85,7 +76,6 @@ export default function isolate(ctx: Context) {
   }
 
   ctx.on('loader/entry-init', (entry) => {
-    entry.ctx[Context.intercept] = Object.create(entry.ctx[Context.intercept])
     entry.ctx[Context.isolate] = Object.create(entry.ctx[Context.isolate])
   })
 
@@ -106,29 +96,30 @@ export default function isolate(ctx: Context) {
       for (const symbol of [oldMap[name], newMap[name]]) {
         const impl = symbol && entry.ctx.reflect.store[symbol]
         if (!impl) continue
-        if (!impl.fiber) {
+        const fiber = impl.ctx.fiber
+        if (!fiber) {
           entry.ctx.logger.warn(new Error(`expected service ${name} to be implemented`))
           continue
         }
-        diff[name] = [oldMap[name], newMap[name], entry.ctx[delim], impl.fiber.ctx[delim]]
-        if (entry.ctx[delim] !== impl.fiber.ctx[delim]) break
+        diff[name] = [oldMap[name], newMap[name], entry.ctx[delim], fiber.ctx[delim]]
+        if (entry.ctx[delim] !== fiber.ctx[delim]) break
       }
     }
 
     // step 3: set prototype for transferred context
     Object.setPrototypeOf(entry.ctx[Context.isolate], entry.parent.ctx[Context.isolate])
-    Object.setPrototypeOf(entry.ctx[Context.intercept], entry.parent.ctx[Context.intercept])
     swap(entry.ctx[Context.isolate], newMap)
-    swap(entry.ctx[Context.intercept], entry.options.intercept)
 
     // step 4: reload fiber
     await next()
 
     // step 5: replace service impl
     for (const [symbol1, symbol2, flag1, flag2] of Object.values(diff)) {
-      if (flag1 === flag2 && entry.ctx.reflect.store[symbol1] && !entry.ctx.reflect.store[symbol2]) {
-        entry.ctx.reflect.store[symbol2] = entry.ctx.reflect.store[symbol1]
+      const impl = entry.ctx.reflect.store[symbol1]
+      if (flag1 === flag2 && impl && !entry.ctx.reflect.store[symbol2]) {
+        entry.ctx.reflect.store[symbol2] = impl
         delete entry.ctx.reflect.store[symbol1]
+        impl.isolate = symbol2
       }
     }
 

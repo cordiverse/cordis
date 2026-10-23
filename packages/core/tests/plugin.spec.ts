@@ -1,8 +1,8 @@
-import { Context, Service } from '../src'
+import { Context, Service } from '../src/index.ts'
 import { expect, describe, it } from 'vitest'
 import { mock } from 'node:test'
 import { inspect } from 'util'
-import { event, getHookSnapshot, sleep } from './utils'
+import { event, getHookSnapshot, sleep } from './utils.ts'
 
 describe('Plugin', () => {
   it('apply functional plugin', async () => {

@@ -1,8 +1,8 @@
 import { defineProperty, Dict } from 'cosmokit'
 import { StandardSchemaV1 } from '@standard-schema/spec'
-import { Context } from './context'
-import { Fiber } from './fiber'
-import { buildOuterStack, DisposableList, symbols, withProps } from './utils'
+import { Context } from './context.ts'
+import { Fiber } from './fiber.ts'
+import { buildOuterStack, DisposableList, symbols, withProps } from './utils.ts'
 
 function isApplicable(object: Plugin) {
   return object && typeof object === 'object' && typeof object.apply === 'function'
@@ -11,10 +11,10 @@ function isApplicable(object: Plugin) {
 export type Inject<M = Dict> = (keyof M)[] | { [K in keyof M]?: M[K] }
 
 export type InjectKey = keyof {
-  [K in keyof Context & string as Context[K] extends { [symbols.config]: any } ? K : never]: any
+  [K in keyof Context & string as Context[K] extends { [symbols.metadata]: any } ? K : never]: any
 }
 
-export function Inject<K extends InjectKey>(name: K, config?: Context[K] extends { [symbols.config]: infer T } ? T : never) {
+export function Inject<K extends InjectKey>(name: K, config?: Context[K] extends { [symbols.metadata]: infer T } ? T : never) {
   return function (value: any, decorator: ClassDecoratorContext<any> | ClassMethodDecoratorContext<any>) {
     if (decorator.kind === 'class') {
       if (!Object.hasOwn(value, 'inject')) {
@@ -23,7 +23,7 @@ export function Inject<K extends InjectKey>(name: K, config?: Context[K] extends
       }
       value.inject[name] = config
     } else if (decorator.kind === 'method') {
-      const inject = (value[symbols.metadata] ??= {}).inject ??= Object.create(null)
+      const inject = (value[symbols.decorator] ??= {}).inject ??= Object.create(null)
       inject[name] = config
       decorator.addInitializer(function () {
         const property = this[symbols.tracker]?.property
@@ -115,7 +115,7 @@ type GetPluginConfig<P> =
   ? S
   : GetPluginParameters<P>[0]
 
-declare module './context' {
+declare module './context.ts' {
   export interface Context {
     inject(deps: Inject, callback: Plugin.Function<void>): Fiber & PromiseLike<Fiber>
     plugin<P extends Plugin>(plugin: P, ...args: Spread<GetPluginConfig<P>>): Fiber & PromiseLike<Fiber>

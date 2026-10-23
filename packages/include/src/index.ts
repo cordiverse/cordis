@@ -1,24 +1,37 @@
-import { EntryChange, EntryOptions, EntryTree, isJsExpr } from '@cordisjs/plugin-loader'
+import { Entry, EntryChange, EntryOptions, EntryTree, isJsExpr, SourceLocation } from '@cordisjs/plugin-loader'
 import { Context, Service } from 'cordis'
 import { deepEqual } from 'cosmokit'
 import { basename, dirname, extname, join } from 'node:path'
 import { access, constants, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import * as yaml from 'js-yaml'
-import { applyJournal, flatten, Journal, merge, reconcile, record } from './journal.ts'
+import {
+  Document, isAlias, isMap, isNode, isScalar, isSeq, LineCounter, parseDocument,
+  Range, Scalar, ScalarTag, SchemaOptions, stringify, YAMLError,
+} from 'yaml'
+import { stringifyString } from 'yaml/util'
+import { applyJournal, detach, flatten, Journal, merge, reconcile, record } from './journal.ts'
 import { applyPatches, ensureIds, ensureInsertIds, PatchIndex, PatchOptions, routeJournal } from './patch.ts'
 import type {} from '@cordisjs/plugin-hmr'
 
-const JsExpr = new yaml.Type('tag:yaml.org,2002:js', {
-  kind: 'scalar',
-  resolve: (data) => typeof data === 'string',
-  construct: (data) => ({ __jsExpr: data }),
-  predicate: isJsExpr,
-  represent: (data) => data['__jsExpr'],
-})
+// A Windows drive-letter path, e.g. `C:\app\cordis.yml` or `C:/app/cordis.yml`.
+const driveLetter = /^[A-Za-z]:[\\/]/
 
-const schema = yaml.JSON_SCHEMA.extend(JsExpr)
+const JsExpr: ScalarTag = {
+  tag: 'tag:yaml.org,2002:js',
+  identify: isJsExpr,
+  resolve: (source) => ({ __jsExpr: source }),
+  // quoted like any other string
+  stringify: (item, ctx, onComment, onChompKeep) => {
+    const scalar = new Scalar((item.value as any).__jsExpr)
+    return stringifyString(Object.assign(scalar, { type: item.type }), ctx, onComment, onChompKeep)
+  },
+}
+
+const yamlOptions: SchemaOptions = {
+  schema: 'core',
+  customTags: [JsExpr],
+}
 
 const types: Record<string, string> = {
   '.json': 'application/json',
@@ -28,16 +41,40 @@ const types: Record<string, string> = {
 
 type ConfigStage = 'read' | 'parse' | 'validate'
 
+/** JSON is parsed as YAML too, for node ranges and line positions. */
+interface Syntax {
+  document: Document
+  lines: LineCounter
+}
+
+function parseSyntax(content: string): Syntax {
+  const lines = new LineCounter()
+  const document = parseDocument(content, { ...yamlOptions, prettyErrors: false, lineCounter: lines })
+  return { document, lines }
+}
+
 interface Snapshot {
   content: string
   data: EntryOptions[]
+  /** Parsed on first use. */
+  syntax?: Syntax
+}
+
+// e.g. `at position 17 (line 2 column 16)`
+const jsonPosition = /\s+at position (\d+)(?: \(line \d+ column \d+\))?$/
+
+export interface ConfigIssue {
+  message: string
+  location: SourceLocation
 }
 
 export class ConfigFileError extends Error {
   name = 'ConfigFileError'
 
-  constructor(public stage: ConfigStage, path: string, cause: unknown) {
-    super(`failed to ${stage} config file ${path}`, { cause })
+  constructor(public stage: ConfigStage, path: string, cause: unknown, public issues: ConfigIssue[] = []) {
+    super([`failed to ${stage} config file ${path}`, ...issues.map(({ message, location }) => {
+      return `  - ${message} (at ${location.filename}:${location.line}:${location.column})`
+    })].join('\n'), { cause })
   }
 }
 
@@ -78,6 +115,131 @@ export namespace Include {
   }
 }
 
+/** Index path of an entry in a nested entry list. */
+function findEntry(entries: EntryOptions[], id: string): PropertyKey[] | undefined {
+  for (const [index, options] of entries.entries()) {
+    if (options.id === id) return [index]
+    if (!options.group || !Array.isArray(options.config)) continue
+    const path = findEntry(options.config, id)
+    if (path) return [index, 'config', ...path]
+  }
+}
+
+function findInvalidEntries(entries: unknown[], prefix: PropertyKey[] = []): PropertyKey[][] {
+  return entries.flatMap((options: any, index) => {
+    if (!options || typeof options !== 'object' || Array.isArray(options)) return [[...prefix, index]]
+    if (!options.group || !Array.isArray(options.config)) return []
+    return findInvalidEntries(options.config, [...prefix, index, 'config'])
+  })
+}
+
+function walk(document: Document, path: PropertyKey[]) {
+  let node: unknown = document.contents
+  let anchor = isNode(node) ? node.range : undefined
+  let complete = true
+  for (const key of path) {
+    if (isAlias(node)) node = node.resolve(document)
+    if (isMap(node)) {
+      const pair = node.items.find(pair => String(isScalar(pair.key) ? pair.key.value : pair.key) === String(key))
+      if (!pair) {
+        complete = false
+        break
+      }
+      node = pair.value
+      if (isNode(pair.key)) anchor = pair.key.range
+    } else if (isSeq(node)) {
+      const item = node.items[key as number]
+      if (!isNode(item)) {
+        complete = false
+        break
+      }
+      node = item
+      anchor = item.range
+    } else {
+      complete = false
+      break
+    }
+  }
+  // a value written through an alias is located at its anchor
+  if (isAlias(node)) node = node.resolve(document)
+  if (isScalar(node)) anchor = node.range
+  return { node, anchor, complete }
+}
+
+function seek(document: Document, path: PropertyKey[]): Range | null | undefined {
+  return walk(document, path).anchor
+}
+
+const isBlank = (char: string) => char === ' ' || char === '\t' || char === '\n' || char === '\r'
+
+const escapes: Record<string, string> = Object.fromEntries([
+  '0\0', 'a\x07', 'b\b', 't\t', '\t\t', 'n\n', 'v\v', 'f\f', 'r\r', 'e\x1b',
+  '  ', '""', '//', '\\\\', 'N\x85', '_\xa0', 'L\u2028', 'P\u2029',
+].map(([key, value]) => [key, value]))
+
+const hexLengths: Record<string, number> = { x: 2, u: 4, U: 8 }
+
+function scanScalar(content: string, node: Scalar) {
+  const [start, end] = node.range!
+  const units: number[] = []
+  let index = start
+  let stop = end
+  if (node.type === Scalar.BLOCK_LITERAL || node.type === Scalar.BLOCK_FOLDED) {
+    index = content.indexOf('\n', start)
+    if (index === -1) return units
+  } else if (node.type === Scalar.QUOTE_DOUBLE || node.type === Scalar.QUOTE_SINGLE) {
+    index += 1
+    stop -= 1
+  }
+  while (index < stop) {
+    const char = content[index]
+    if (node.type === Scalar.QUOTE_DOUBLE && char === '\\') {
+      const next = content[index + 1]
+      const length = hexLengths[next]
+      let decoded = ''
+      if (length) {
+        decoded = String.fromCodePoint(parseInt(content.slice(index + 2, index + 2 + length), 16))
+      } else if (next in escapes) {
+        decoded = escapes[next]
+      }
+      for (const unit of decoded.split('')) {
+        if (!isBlank(unit)) units.push(index)
+      }
+      index += 2 + (length ?? 0)
+    } else if (node.type === Scalar.QUOTE_SINGLE && char === '\'' && content[index + 1] === '\'') {
+      units.push(index)
+      index += 2
+    } else {
+      if (!isBlank(char)) units.push(index)
+      index += 1
+    }
+  }
+  return units
+}
+
+function seekExpr(content: string, document: Document, path: PropertyKey[], expr: string, offset: number) {
+  const { complete, ...rest } = walk(document, path)
+  let { node } = rest
+  // JSON has no tags
+  if (complete && isMap(node)) {
+    const pair = node.items.find(pair => isScalar(pair.key) && pair.key.value === '__jsExpr')
+    if (isScalar(pair?.value)) node = pair.value
+  }
+  if (!complete || !isScalar(node) || !node.range) return
+  const value = isJsExpr(node.value) ? node.value.__jsExpr : node.value
+  if (value !== expr) return
+  let rank = 0
+  let total = 0
+  for (let index = 0; index < value.length; index++) {
+    if (isBlank(value[index])) continue
+    if (index < offset) rank += 1
+    total += 1
+  }
+  const units = scanScalar(content, node)
+  if (units.length !== total || rank >= total) return node.range[0]
+  return units[rank]
+}
+
 export class Include extends EntryTree {
   static inject = ['loader']
 
@@ -90,6 +252,8 @@ export class Include extends EntryTree {
   private journal: Journal = new Map()
   // invariant: retries route against the ownership before an accepted patch handoff.
   private replay?: { patches: PatchOptions[]; accepted: PatchOptions[]; batch: Journal }
+  /** Where the entries of the applied tree come from. */
+  private index?: PatchIndex
   /** Ids we assigned to entries the file leaves anonymous. */
   private anonymous = new Map<string, Anonymous>()
 
@@ -112,7 +276,11 @@ export class Include extends EntryTree {
     super(ctx)
     this.ownerConfig = ctx.fiber.entry?.options.config
     this.enableLogs = config.enableLogs ?? ctx.fiber.entry?.parent.tree.enableLogs ?? false
-    this.filename = fileURLToPath(new URL(this.config.path, this.ctx.baseUrl))
+    // On Windows, a drive-letter path is converted with `pathToFileURL`.
+    // `new URL()` would read its `C:` as a URL scheme, which `fileURLToPath` rejects.
+    this.filename = fileURLToPath(process.platform === 'win32' && driveLetter.test(this.config.path)
+      ? pathToFileURL(this.config.path)
+      : new URL(this.config.path, this.ctx.baseUrl))
     const ext = extname(this.filename)
     if (!types[ext]) {
       throw new Error(`extension "${ext}" not supported`)
@@ -136,7 +304,7 @@ export class Include extends EntryTree {
   }
 
   private warn = (format: string, ...args: any[]) => {
-    this.ctx.root.logger?.('loader').warn(format, ...args)
+    this.ctx[Context.root].logger?.('loader').warn(format, ...args)
   }
 
   async* [Service.init]() {
@@ -244,32 +412,63 @@ export class Include extends EntryTree {
     if (content === this.cache?.content) return
 
     let data: any
-    try {
-      data = this.type === 'application/yaml'
-        ? yaml.load(content, { schema })
-        : JSON.parse(content)
-    } catch (error) {
-      throw new ConfigFileError('parse', this.filename, error)
+    let syntax: Syntax | undefined
+    if (this.type === 'application/yaml') {
+      syntax = parseSyntax(content)
+      const { document, lines } = syntax
+      // unknown tags are only warnings to the parser, but leave the data incomplete
+      const errors: YAMLError[] = [...document.errors, ...document.warnings]
+      if (errors.length) {
+        const issues = errors.map(error => ({ message: error.message, location: this._locate(lines, error.pos[0]) }))
+        throw new ConfigFileError('parse', this.filename, undefined, issues)
+      }
+      data = document.toJS()
+    } else {
+      try {
+        data = JSON.parse(content)
+      } catch (error) {
+        const match = error instanceof SyntaxError && error.message.match(jsonPosition)
+        if (!match) throw new ConfigFileError('parse', this.filename, error)
+        const message = error.message.slice(0, match.index)
+        const location = this._locate(parseSyntax(content).lines, +match[1])
+        throw new ConfigFileError('parse', this.filename, undefined, [{ message, location }])
+      }
     }
     // An empty or truncated file (routine mid-edit) parses to `undefined`, so
     // every non-array shape is rejected here as one "invalid file" signal.
     if (!Array.isArray(data)) {
-      throw new ConfigFileError('validate', this.filename, new TypeError('config file must be a top-level array'))
+      const message = 'config file must be a top-level array'
+      const { document, lines } = syntax ?? parseSyntax(content)
+      const range = document.contents?.range
+      if (!range) throw new ConfigFileError('validate', this.filename, new TypeError(message))
+      throw new ConfigFileError('validate', this.filename, undefined, [{ message, location: this._locate(lines, range[0]) }])
+    }
+    // ids, patches and the journal all assume an entry is an object
+    const invalid = findInvalidEntries(data)
+    if (invalid.length) {
+      const { document, lines } = syntax ?? parseSyntax(content)
+      const issues = invalid.map((path) => {
+        const range = seek(document, path)
+        return { message: 'entry must be an object', location: this._locate(lines, range?.[0] ?? 0) }
+      })
+      throw new ConfigFileError('validate', this.filename, undefined, issues)
     }
 
     this._assignIds(data)
 
     if (this.cache) {
-      const index = new PatchIndex(this.replay?.patches ?? this.config.patches ?? [])
+      const patches = this.replay?.patches ?? this.config.patches
+      let { index } = applyPatches(data, patches)
       const base = flatten(this.cache.data)
       const theirs = flatten(data)
       if (this.replay) {
         for (const [id, change] of this.journal) {
           if (change.kind !== 'upsert' || change.parent === undefined) continue
           const owner = index.entry(id)
-          if (owner.type !== 'insert' || index.entry(change.parent).type !== 'file') continue
+          if (owner.type !== 'embedded' || index.entry(change.parent).type !== 'file') continue
           if (base.has(id) || !theirs.has(id)) continue
-          owner.list.splice(owner.list.indexOf(owner.options), 1)
+          detach(this.replay.patches[owner.index][owner.key], id)
+          index = applyPatches(data, patches).index
           this.journal.delete(id)
           this.ctx.logger.error('config conflict in %C: entry %C added in file during move; file wins', this.filename, id)
         }
@@ -280,7 +479,7 @@ export class Include extends EntryTree {
       }
     }
 
-    this.cache = { content, data }
+    this.cache = { content, data, syntax }
     this._scheduleApply()
     // the file changed while tree-side changes were pending: write the merge
     if (this.journal.size || this.replay) this.dirtyWrite = true
@@ -338,7 +537,7 @@ export class Include extends EntryTree {
     // `Fiber.dispose` clears `uid` before effect disposers, so `stop()` cannot
     // call `Fiber.update`. The ancestor's `internal/commit` listener is itself
     // an effect and may already be gone. Write the parent commit directly.
-    if (fiber.parent.fiber?.entry === entry) return this.refusePatches()
+    if (entry.innerFiber?.dispose !== fiber.dispose) return this.refusePatches()
     const previousConfig = entry.options.config
     try {
       const unparse = fiber.runtime?.Config?.['simplify']
@@ -361,7 +560,7 @@ export class Include extends EntryTree {
       if (parent.journal.has(entry.options.id)) return this.refusePatches()
       try {
         const persisted = applyPatches(parent.cache?.data ?? [], parent.config.patches, this.warn)
-        if (!deepEqual(flatten(persisted).get(entry.options.id)?.options.config, committed)) return this.refusePatches()
+        if (!deepEqual(flatten(persisted.data).get(entry.options.id)?.options.config, committed)) return this.refusePatches()
       } catch (error) {
         this.ctx.logger.error(error)
         return this.refusePatches()
@@ -508,61 +707,110 @@ export class Include extends EntryTree {
 
   private dump(data: EntryOptions[]) {
     return this.type === 'application/yaml'
-      ? yaml.dump(data, { schema })
+      ? stringify(data, { ...yamlOptions, singleQuote: true })
       : JSON.stringify(data, null, 2)
+  }
+
+  getLocation(id: string, path: PropertyKey[]): SourceLocation | undefined {
+    const route = this._route(id, path)
+    if (!route) return
+    if (route.entry) return route.entry.getLocation(route.path)
+    const { document, lines } = this.cache!.syntax ??= parseSyntax(this.cache!.content)
+    const range = seek(document, route.path)
+    if (range) return this._locate(lines, range[0])
+  }
+
+  locateExpr(id: string, path: PropertyKey[], expr: string, offset: number): SourceLocation | undefined {
+    const route = this._route(id, path)
+    if (!route) return
+    if (route.entry) return route.entry.locateExpr(route.path, expr, offset)
+    const { document, lines } = this.cache!.syntax ??= parseSyntax(this.cache!.content)
+    const position = seekExpr(this.cache!.content, document, route.path, expr, offset)
+    if (position !== undefined) return this._locate(lines, position)
+  }
+
+  private _route(id: string, path: PropertyKey[]): { entry?: Entry; path: PropertyKey[] } | undefined {
+    if (!this.cache || !this.index) return
+    // values changed at runtime are not written anywhere yet
+    const record = this.journal.get(id)
+    if (record?.kind === 'remove') return
+    if (path.length && record && String(path[0]) in record.changes) return
+
+    const owner = path.length ? this.index.key(id, String(path[0])) : this.index.entry(id)
+    const { entry } = this.ctx.fiber
+    if (owner.type === 'patch') {
+      if (!entry) return
+      return { entry, path: ['config', 'patches', owner.index, ...path] }
+    } else if (owner.type === 'embedded') {
+      const prefix = findEntry(this.config.patches![owner.index][owner.key], id)
+      if (!prefix || !entry) return
+      return { entry, path: ['config', 'patches', owner.index, owner.key, ...prefix, ...path] }
+    }
+    const prefix = findEntry(this.cache.data, id)
+    if (!prefix) return
+    return { path: [...prefix, ...path] }
+  }
+
+  private _locate(lines: LineCounter, offset: number): SourceLocation {
+    const { line, col } = lines.linePos(offset)
+    return { filename: this.filename, line, column: col }
   }
 
   /**
    * Entries the file leaves anonymous get an id here, before the loader sees
    * them. One that looks exactly like an entry we named on the previous read
-   * keeps that id, so editing a neighbor does not restart it; anything else
-   * gets a fresh id. Assigned ids stay in memory until the next write.
+   * keeps that id, unless it is already explicitly owned, so editing a
+   * neighbor does not restart it; anything else gets a fresh id. Assigned
+   * ids stay in memory until the next write.
    */
   private _assignIds(data: EntryOptions[]) {
     const used = new Set<string>()
-    const pending: { options: EntryOptions; parent: string | null }[] = []
-    const walk = (entries: EntryOptions[], parent: string | null) => {
+    const collect = (entries: EntryOptions[]) => {
       for (const options of entries) {
-        if (options.id) {
-          used.add(options.id)
-        } else {
-          pending.push({ options, parent })
-        }
-        if (options.group && Array.isArray(options.config)) {
-          walk(options.config, options.id ?? null)
-        }
+        if (options.id) used.add(options.id)
+        if (options.group && Array.isArray(options.config)) collect(options.config)
       }
     }
-    walk(data, null)
+    collect(data)
+    for (const patch of this.config.patches ?? []) {
+      if (patch.insert) collect(patch.insert)
+    }
 
     const previous = this.anonymous
     this.anonymous = new Map()
-    for (const { options, parent } of pending) {
-      let id: string | undefined
-      for (const [candidate, info] of previous) {
-        if (info.parent !== parent || !deepEqual(info.options, options)) continue
-        id = candidate
-        previous.delete(candidate)
-        break
+    const assign = (entries: EntryOptions[], parent: string | null) => {
+      for (const options of entries) {
+        if (!options.id) {
+          let id: string | undefined
+          for (const [candidate, info] of previous) {
+            if (info.parent !== parent || used.has(candidate) || !deepEqual(info.options, options)) continue
+            id = candidate
+            previous.delete(candidate)
+            break
+          }
+          if (!id) {
+            do {
+              id = Math.random().toString(16).slice(2, 10)
+            } while (used.has(id) || this.store[id])
+          }
+          used.add(id)
+          this.anonymous.set(id, { parent, options: structuredClone(options) })
+          const rest = { ...options }
+          for (const key of Object.keys(options)) delete options[key]
+          Object.assign(options, { id }, rest)
+        }
+        if (options.group && Array.isArray(options.config)) assign(options.config, options.id)
       }
-      if (!id) {
-        do {
-          id = Math.random().toString(16).slice(2, 10)
-        } while (used.has(id) || this.store[id])
-      }
-      used.add(id)
-      this.anonymous.set(id, { parent, options: structuredClone(options) })
-      const rest = { ...options }
-      for (const key of Object.keys(options)) delete options[key]
-      Object.assign(options, { id }, rest)
     }
+    assign(data, null)
   }
 
   private _scheduleApply() {
     if (this._disposed || !this.cache) return
     const patches = this.replay && deepEqual(this.config.patches ?? [], this.replay.accepted)
       ? this.replay.patches : this.config.patches
-    const tree = applyPatches(this.cache.data, patches, this.warn)
+    const { data: tree, index } = applyPatches(this.cache.data, patches, this.warn)
+    this.index = index
     if (this.replay && patches === this.replay.patches) applyJournal(tree, this.replay.batch, undefined, this.warn)
     this._pendingTree = applyJournal(tree, this.journal, undefined, this.warn)
     this._applyTask ??= (async () => {

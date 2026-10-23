@@ -1,7 +1,7 @@
-import { Context } from '../src'
+import { Context } from '../src/index.ts'
 import { expect, describe, it, vi } from 'vitest'
 import { mock } from 'node:test'
-import { sleep, withTimers } from './utils'
+import { sleep, withTimers } from './utils.ts'
 
 describe('Effects', () => {
   it('dispose by plugin', async () => {

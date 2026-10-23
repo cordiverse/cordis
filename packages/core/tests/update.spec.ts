@@ -1,4 +1,4 @@
-import { Context, FiberState } from '../src'
+import { Context, FiberState } from '../src/index.ts'
 import { describe, expect, it } from 'vitest'
 import { mock } from 'node:test'
 

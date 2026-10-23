@@ -1,5 +1,5 @@
 import { expect, describe, it } from 'vitest'
-import { ModuleLoader } from '../src'
+import { ModuleLoader } from '../src/index.ts'
 
 describe('ModuleLoader.fromInternal', () => {
   it('tags the running loader with the resolver signature it accepts', () => {

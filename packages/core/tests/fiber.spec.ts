@@ -1,7 +1,7 @@
-import { Context, FiberState, Service } from '../src'
+import { Context, FiberState, Service, ValidationError } from '../src/index.ts'
 import { expect, describe, it, vi } from 'vitest'
 import { mock } from 'node:test'
-import { event, sleep, withTimers } from './utils'
+import { event, sleep, withTimers } from './utils.ts'
 
 describe('Fiber', () => {
   it('inertia lock 1', withTimers(async (root) => {
@@ -37,7 +37,13 @@ describe('Fiber', () => {
     expect(fiber.state).to.equal(FiberState.LOADING)
     root.provide('foo', 2)
     await vi.advanceTimersByTimeAsync(400) // 1200
+    // A new binding from the same provider still supersedes the old load.
+    expect(fiber.state).to.equal(FiberState.UNLOADING)
+    await vi.advanceTimersByTimeAsync(1000) // 2200
+    expect(fiber.state).to.equal(FiberState.LOADING)
+    await vi.advanceTimersByTimeAsync(1000) // 3200
     expect(fiber.state).to.equal(FiberState.ACTIVE)
+    expect(fiber.ctx.foo).to.equal(2)
   }))
 
   it('inertia lock 3', withTimers(async (root) => {
@@ -195,6 +201,94 @@ describe('Fiber', () => {
     expect(error.mock.calls).to.have.length(1)
   })
 
+  it('settles a pending fiber to DISPOSED on dispose', async () => {
+    const root = new Context()
+    const fiber = root.inject(['never-provided'], () => {})
+    const target = Object.getPrototypeOf(fiber)
+    const transitions: [FiberState, FiberState][] = []
+    const off = root.on('internal/status', (current, oldState) => {
+      if (current === target) {
+        transitions.push([oldState, current.state])
+      }
+    })
+
+    try {
+      expect(fiber.state).to.equal(FiberState.PENDING)
+
+      await fiber.dispose()
+
+      expect(fiber.uid).to.equal(null)
+      expect(fiber.inertia).to.equal(undefined)
+      expect(fiber.state).to.equal(FiberState.DISPOSED)
+      expect(transitions).to.deep.equal([
+        [FiberState.PENDING, FiberState.DISPOSED],
+      ])
+    } finally {
+      off()
+    }
+  })
+
+  it('settles a failed fiber to DISPOSED on dispose', async () => {
+    const root = new Context()
+    ;(root.logger as any).error = mock.fn()
+
+    const fiber = root.plugin(() => {
+      throw new Error('boom')
+    })
+    const target = Object.getPrototypeOf(fiber)
+    const transitions: [FiberState, FiberState][] = []
+
+    await expect(fiber.await()).rejects.toThrow('boom')
+    expect(fiber.state).to.equal(FiberState.FAILED)
+
+    const off = root.on('internal/status', (current, oldState) => {
+      if (current === target) {
+        transitions.push([oldState, current.state])
+      }
+    })
+
+    try {
+      await fiber.dispose()
+
+      expect(fiber.uid).to.equal(null)
+      expect(fiber.inertia).to.equal(undefined)
+      expect(fiber.state).to.equal(FiberState.DISPOSED)
+      expect(transitions).to.deep.equal([
+        [FiberState.FAILED, FiberState.DISPOSED],
+      ])
+    } finally {
+      off()
+    }
+  })
+
+  it('keeps the active dispose sequence stable', async () => {
+    const root = new Context()
+    const fiber = root.plugin(() => {})
+    await fiber.await()
+
+    const target = Object.getPrototypeOf(fiber)
+    const transitions: [FiberState, FiberState][] = []
+    const off = root.on('internal/status', (current, oldState) => {
+      if (current === target) {
+        transitions.push([oldState, current.state])
+      }
+    })
+
+    try {
+      await fiber.dispose()
+
+      expect(fiber.uid).to.equal(null)
+      expect(fiber.inertia).to.equal(undefined)
+      expect(fiber.state).to.equal(FiberState.DISPOSED)
+      expect(transitions).to.deep.equal([
+        [FiberState.ACTIVE, FiberState.UNLOADING],
+        [FiberState.UNLOADING, FiberState.DISPOSED],
+      ])
+    } finally {
+      off()
+    }
+  })
+
   it('update config on wrapped fiber', async () => {
     const root = new Context()
     const callback = mock.fn()
@@ -314,6 +408,18 @@ describe('Fiber: config validation', () => {
     expect(apply.mock.calls).to.have.length(1)
     expect(fiber.state).to.equal(FiberState.ACTIVE)
     expect(fiber.config).to.deep.equal({ ok: true })
+  })
+
+  it('keep the issues and their paths', () => {
+    const issues = [
+      { message: 'not a number', path: [{ key: 'items' }, 0] },
+      { message: 'required', path: [] },
+    ]
+    const error = new ValidationError(issues)
+    expect(error.issues).to.equal(issues)
+    expect(ValidationError.is(error)).to.be.true
+    expect(ValidationError.is(new TypeError())).to.be.false
+    expect(error.message).to.equal('invalid config:\n  - not a number (at items.0)\n  - required')
   })
 
   // listeners see what the plugin would see, while the fiber keeps the source
