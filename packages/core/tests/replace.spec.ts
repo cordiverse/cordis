@@ -34,11 +34,12 @@ describe('Registry.replace', () => {
     await fiber.await()
     const uid = fiber.uid
 
-    const runtime = await root.registry.replace(old, next)
+    const failures = await root.registry.replace(old, next)
     expect(fiber.uid).to.equal(uid)
+    expect([...failures.keys()]).to.have.length(0)
+    const runtime = root.registry.get(next)
     // `ctx.plugin()` returns a wrapper, so compare the fibers by identity
     expect([...runtime!.fibers].map(fiber => fiber.uid)).to.deep.equal([uid])
-    expect(root.registry.get(next)).to.equal(runtime)
     await root.fiber.dispose()
   })
 
@@ -209,7 +210,8 @@ describe('Registry.replace', () => {
     const root = new Context()
     const old = () => {}
     const next = () => {}
-    expect(await root.registry.replace(old, next)).to.be.undefined
+    // nothing moved, so nothing failed
+    expect(await root.registry.replace(old, next)).to.be.empty
     expect(root.registry.size).to.equal(0)
   })
 })

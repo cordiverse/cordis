@@ -242,15 +242,15 @@ export class RegistryService {
   // fibers keep their identity, so code holding one stays valid, and plugins no
   // loader entry manages can be replaced too. A replaced fiber restarts, which
   // withdraws and reinstalls its provisions, so its dependents reload with it.
-  async replace(plugin: Plugin, next: Plugin) {
+  async replace(plugin: Plugin, next: Plugin): Promise<Map<Fiber, Error>> {
     const resolved = this.resolve(plugin)
     const runtime = resolved && this._internal.get(this._forwarded(plugin, resolved).key)
-    if (!runtime) return
+    if (!runtime) return new Map()
     const resolvedNext = this.resolve(next)
     if (!resolvedNext) throw new Error('invalid plugin, expect function or object with an "apply" method, received ' + typeof next)
     // `next` may be a replaced plugin as well; the implementation in use wins
     const { key: nextKey, source } = this._forwarded(next, resolvedNext)
-    if (nextKey === runtime.callback) return runtime
+    if (nextKey === runtime.callback) return new Map()
 
     let target = this._internal.get(nextKey)
     const created = !target
@@ -276,7 +276,14 @@ export class RegistryService {
     // nothing moved into a runtime this call created: do not leave it behind
     if (created && !target.fibers.length) this._internal.delete(nextKey)
     // a replaced fiber reports its own failure; the caller only needs a settle point
-    await Promise.allSettled(fibers.map(fiber => fiber.await()))
-    return target
+    const failures = new Map<Fiber, Error>()
+    await Promise.all(fibers.map(async (fiber) => {
+      try {
+        await fiber.await()
+      } catch (error) {
+        failures.set(fiber, error as Error)
+      }
+    }))
+    return failures
   }
 }

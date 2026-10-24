@@ -193,6 +193,32 @@ export async function apply(ctx: any) {
     expect(result.replaced).to.have.length(0)
   }, 30000)
 
+  it('restores only the edges its own unit cut', () => {
+    // One parent can hold modules of several units — it is in none of their
+    // scopes, so each unit cuts its own edge from the same array. A rollback
+    // that put the whole snapshot back would also restore the edge another
+    // unit cut, and that module's old object would become reachable again.
+    fixture('iso1.cjs', `exports.v = 1\n`)
+    fixture('iso2.cjs', `exports.v = 2\n`)
+    fixture('iso-parent.cjs', `require('./iso1.cjs'); require('./iso2.cjs')\n`)
+    const parentPath = resolve(fixtureDir, 'iso-parent.cjs')
+    const first = resolve(fixtureDir, 'iso1.cjs')
+    const second = resolve(fixtureDir, 'iso2.cjs')
+    req(parentPath)
+    const parent = req.cache[parentPath]!
+    expect(parent.children.map(child => child.filename)).to.deep.equal([first, second])
+
+    const cache = new ModuleCache({ loadCache: new Map() } as any)
+    const unitA = {}
+    const unitB = {}
+    cache.evict([pathToFileURL(first).href], unitA)
+    cache.evict([pathToFileURL(second).href], unitB)
+    expect(parent.children).to.have.length(0)
+
+    cache.restore(unitA)
+    expect(parent.children.map(child => child.filename)).to.deep.equal([first])
+  })
+
   it('cuts and restores the children edges of the CJS cache', () => {
     fixture('c5.cjs', `exports.value = 'a'\n`)
     fixture('q5.cjs', `const { value } = require('./c5.cjs')\n\nexports.value = value\n`)
@@ -205,11 +231,12 @@ export async function apply(ctx: any) {
 
     // a bare loader stands in for the ESM side: this test drives the CJS cache
     const cache = new ModuleCache({ loadCache: new Map() } as any)
-    cache.evict([pathToFileURL(cPath).href])
+    const owner = {}
+    cache.evict([pathToFileURL(cPath).href], owner)
     expect(req.cache[cPath]).to.equal(undefined)
     expect(oldQ.children).to.have.length(0)
 
-    cache.restore()
+    cache.restore(owner)
     expect(req.cache[cPath]).to.be.ok
     expect(oldQ.children).to.deep.equal(children)
   })
