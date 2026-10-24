@@ -89,6 +89,13 @@ function toUrl(file: string | URL) {
   return pathToFileURL(resolve(file)).href
 }
 
+// `has(url)` consults the `javascript` slot alone, so a JSON module in its
+// `json` slot reads as absent; the whole entry is checked instead.
+function isLoaded(internal: ModuleLoader, url: string) {
+  const entry = Map.prototype.get.call(internal.loadCache, url) as Record<string, unknown>
+  return !!entry && Object.values(entry).some(Boolean)
+}
+
 class Hmr extends Service {
   // `watch.root` and logged paths are relative to it
   public baseDir: string
@@ -341,11 +348,11 @@ class Hmr extends Service {
       return result
     }
 
-    // In Node 24, both CJS and ESM modules imported via import() end up
-    // in loadCache, so this check covers all module formats.
+    // CJS and ESM modules imported via import() both end up in loadCache,
+    // and an entry of any type counts as loaded.
     const changed = new Set<string>()
     for (const url of files) {
-      if (internal.loadCache.has(url)) {
+      if (isLoaded(internal, url)) {
         changed.add(url)
       } else {
         result.pending.push({ url, reason: 'not-loaded' })

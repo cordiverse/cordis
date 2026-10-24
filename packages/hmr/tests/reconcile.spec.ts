@@ -171,6 +171,27 @@ export function apply(ctx, config) {
     expect(ctx.registry.get(refreshed)).to.equal(result.replaced[0].runtime)
   })
 
+  it('reloads a plugin when a JSON module changes', async () => {
+    await setup()
+    // a `.mjs` fixture keeps the import attributes away from the transform
+    const data = fixture('data.json', '{ "value": "a" }')
+    await load('json-dep.mjs', `
+import data from './data.json' with { type: 'json' }
+
+export function apply(ctx) {
+  ctx.on('reconcile/json-dep', () => data.value)
+}
+`)
+    expect(ctx.bail('reconcile/json-dep' as any)).to.equal('a')
+
+    writeFileSync(data, '{ "value": "b" }')
+    const result = await ctx.hmr.reconcile({ files: [data] })
+
+    expect(result.replaced).to.have.length(1)
+    expect(result.pending).to.deep.equal([])
+    expect(ctx.bail('reconcile/json-dep' as any)).to.equal('b')
+  })
+
   it('reports files it cannot apply', async () => {
     await setup()
     const orphan = fixture('orphan.ts', 'export const value = 1\n')
