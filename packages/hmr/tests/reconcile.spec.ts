@@ -1,6 +1,6 @@
 import { Context, Fiber, FiberState } from 'cordis'
 import Loader, { unwrapExports } from '@cordisjs/plugin-loader'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
@@ -169,6 +169,115 @@ export function apply(ctx, config) {
     const refreshed = await ctx.hmr.internal!.import(entryUrl, import.meta.url, {})
     expect(refreshed.apply).to.not.equal(original.apply)
     expect(ctx.registry.get(refreshed)).to.equal(result.replaced[0].runtime)
+  })
+
+  it('reloads a plugin when a shared dependency inside node_modules changes', async () => {
+    await setup()
+    const dir = resolve(fixtureDir, 'node_modules/shared')
+    mkdirSync(dir, { recursive: true })
+    const dep = resolve(dir, 'index.js')
+    writeFileSync(dep, `export const value = 'a'\n`)
+
+    await load('node-dep.ts', `
+import { value } from 'shared'
+
+export function apply(ctx: any) {
+  ctx.on('reconcile/node-dep' as any, () => value)
+}
+`)
+    expect(ctx.bail('reconcile/node-dep')).to.equal('a')
+
+    writeFileSync(dep, `export const value = 'b'\n`)
+    const result = await ctx.hmr.reconcile({ files: [dep] })
+    expect(result.replaced).to.have.length(1)
+    expect(ctx.bail('reconcile/node-dep')).to.equal('b')
+  })
+
+  it('reloads the plugins under a changed root', async () => {
+    await setup()
+    mkdirSync(resolve(fixtureDir, 'root'), { recursive: true })
+    const a = await load('root/a.ts', plugin('rootA', 'v1'))
+    const b = await load('root/b.ts', plugin('rootB', 'v1'))
+    const c = await load('root/c.ts', plugin('rootC', 'v1'))
+    const root = resolve(fixtureDir, 'root')
+
+    // the first pass records the baseline: a module loaded after the last
+    // observation cannot be proven unchanged, so it joins the batch once
+    const cold = await ctx.hmr.reconcile({ roots: [root] })
+    expect(cold.replaced).to.have.length(3)
+
+    writeFileSync(a, plugin('rootA', 'v2'))
+    writeFileSync(b, plugin('rootB', 'v2'))
+    writeFileSync(c, plugin('rootC', 'v2'))
+    const result = await ctx.hmr.reconcile({ roots: [root] })
+    expect(result.replaced).to.have.length(3)
+    expect(ctx.bail('reconcile/rootA' as any)).to.equal('v2')
+    expect(ctx.bail('reconcile/rootB' as any)).to.equal('v2')
+    expect(ctx.bail('reconcile/rootC' as any)).to.equal('v2')
+  })
+
+  it('produces no churn across repeated roots reconciles', async () => {
+    await setup()
+    await load('steady.ts', plugin('steady', 'v1'))
+    const cold = await ctx.hmr.reconcile({ roots: [fixtureDir] })
+    expect(cold.replaced).to.have.length(1)
+
+    for (let i = 0; i < 100; i++) {
+      const result = await ctx.hmr.reconcile({ roots: [fixtureDir] })
+      expect(result.replaced).to.have.length(0)
+      expect(result.pending).to.have.length(0)
+    }
+    expect(ctx.bail('reconcile/steady' as any)).to.equal('v1')
+  })
+
+  it('ignores a file under the root that was never loaded', async () => {
+    await setup()
+    await load('quiet.ts', plugin('quiet', 'v1'))
+    await ctx.hmr.reconcile({ roots: [fixtureDir] })
+
+    // a file a package operation just added: nothing has imported it, so it
+    // is neither recorded nor loaded and must not be reported
+    fixture('unrelated.ts', plugin('unrelated', 'v1'))
+    const result = await ctx.hmr.reconcile({ roots: [fixtureDir] })
+    expect(result.replaced).to.have.length(0)
+    expect(result.pending).to.have.length(0)
+  })
+
+  it('reports a recorded file that is no longer loaded as not-loaded', async () => {
+    await setup()
+    await load('present.ts', plugin('present', 'v1'))
+    await ctx.hmr.reconcile({ roots: [fixtureDir] })
+
+    // recorded by an earlier observation, never imported, then removed
+    const missing = fixture('missing.ts', plugin('missing', 'v1'))
+    ctx.hmr.identity.observe(pathToFileURL(missing).href)
+    rmSync(missing)
+
+    const result = await ctx.hmr.reconcile({ roots: [fixtureDir] })
+    expect(result.replaced).to.have.length(0)
+    expect(result.pending).to.have.deep.members([
+      { url: pathToFileURL(missing).href, reason: 'not-loaded' },
+    ])
+  })
+
+  it('catches a same-size rewrite under a root that hides its timestamp', async () => {
+    await setup()
+    const path = await load('pinned.ts', plugin('pinned', 'v1'))
+    const url = pathToFileURL(path).href
+    await ctx.hmr.reconcile({ roots: [fixtureDir] })
+
+    // re-observe while the write is still young, then rewrite with the same
+    // size and pin the mtime back: the recorded fields are identical, so only
+    // the recorded content hash can tell the versions apart
+    const t = Date.now() / 1000
+    utimesSync(path, t, t)
+    ctx.hmr.identity.observe(url)
+    writeFileSync(path, plugin('pinned', 'v2'))
+    utimesSync(path, t, t)
+
+    const result = await ctx.hmr.reconcile({ roots: [fixtureDir] })
+    expect(result.replaced).to.have.length(1)
+    expect(ctx.bail('reconcile/pinned' as any)).to.equal('v2')
   })
 
   it('reports files it cannot apply', async () => {
