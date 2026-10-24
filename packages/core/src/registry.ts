@@ -125,6 +125,10 @@ declare module './context.ts' {
 export class RegistryService {
   private _counter = 0
   private _internal = new Map<Function, Plugin.Runtime>()
+  // `replace()` leaves the old plugin forwarding to its replacement: calling
+  // `plugin(old)` afterwards creates a fiber of `next`, while `keys()`,
+  // `values()` and `size` keep reporting only the implementations in use
+  private _forward = new Map<Function, Plugin>()
 
   constructor(public ctx: Context) {
     defineProperty(this, symbols.tracker, {
@@ -149,18 +153,37 @@ export class RegistryService {
     } catch {}
   }
 
+  // Follows `_forward` to the implementation currently in use. `source` is the
+  // plugin object that carries the metadata of that implementation.
+  private _forwarded(plugin: Plugin, key: Function) {
+    if (!this._forward.size) return { key, source: plugin }
+    const seen = new Set<Function>()
+    let source = plugin
+    while (!seen.has(key)) {
+      seen.add(key)
+      const next = this._forward.get(key)
+      if (!next) break
+      const resolved = this.resolve(next)
+      if (!resolved) break
+      source = next
+      key = resolved
+    }
+    return { key, source }
+  }
+
   get(plugin: Plugin) {
-    const key = this.resolve(plugin)
-    return key && this._internal.get(key)
+    const resolved = this.resolve(plugin)
+    return resolved && this._internal.get(this._forwarded(plugin, resolved).key)
   }
 
   has(plugin: Plugin) {
-    const key = this.resolve(plugin)
-    return !!key && this._internal.has(key)
+    const resolved = this.resolve(plugin)
+    return !!resolved && this._internal.has(this._forwarded(plugin, resolved).key)
   }
 
   delete(plugin: Plugin) {
-    const key = this.resolve(plugin)
+    const resolved = this.resolve(plugin)
+    const key = resolved && this._forwarded(plugin, resolved).key
     const runtime = key && this._internal.get(key)
     if (!runtime) return
     this._internal.delete(key)
@@ -192,23 +215,75 @@ export class RegistryService {
 
   plugin(plugin: Plugin, config?: any, getOuterStack = buildOuterStack()) {
     // check if it's a valid plugin
-    const callback = this.resolve(plugin)
-    if (!callback) throw new Error('invalid plugin, expect function or object with an "apply" method, received ' + typeof plugin)
+    const resolved = this.resolve(plugin)
+    if (!resolved) throw new Error('invalid plugin, expect function or object with an "apply" method, received ' + typeof plugin)
+    // a replaced plugin forwards to its replacement, so the fiber is created
+    // against the runtime and the metadata of the implementation in use
+    const { key: callback, source } = this._forwarded(plugin, resolved)
     this.ctx.fiber.assertActive()
 
     let runtime = this._internal.get(callback)
     if (!runtime) {
-      let name = plugin.name
+      let name = source.name
       if (name === 'apply') name = undefined
-      runtime = { name, callback, fibers: new DisposableList(), Config: plugin.Config }
+      runtime = { name, callback, fibers: new DisposableList(), Config: source.Config }
       this._internal.set(callback, runtime)
     }
 
-    const fiber = new Fiber(this.ctx, config, Inject.resolve(plugin.inject), runtime, getOuterStack)
+    const fiber = new Fiber(this.ctx, config, Inject.resolve(source.inject), runtime, getOuterStack)
     const wrapped = Object.create(fiber) as Fiber & PromiseLike<Fiber>
     wrapped.then = (onFulfilled, onRejected) => {
       return fiber.await().then(onFulfilled, onRejected)
     }
     return wrapped
+  }
+
+  // Swaps the implementation behind the fibers of `plugin` for `next`: the
+  // fibers keep their identity, so code holding one stays valid, and plugins no
+  // loader entry manages can be replaced too. A replaced fiber restarts, which
+  // withdraws and reinstalls its provisions, so its dependents reload with it.
+  async replace(plugin: Plugin, next: Plugin): Promise<Map<Fiber, Error>> {
+    const resolved = this.resolve(plugin)
+    const runtime = resolved && this._internal.get(this._forwarded(plugin, resolved).key)
+    if (!runtime) return new Map()
+    const resolvedNext = this.resolve(next)
+    if (!resolvedNext) throw new Error('invalid plugin, expect function or object with an "apply" method, received ' + typeof next)
+    // `next` may be a replaced plugin as well; the implementation in use wins
+    const { key: nextKey, source } = this._forwarded(next, resolvedNext)
+    if (nextKey === runtime.callback) return new Map()
+
+    let target = this._internal.get(nextKey)
+    const created = !target
+    if (!target) {
+      let name = source.name
+      if (name === 'apply') name = undefined
+      target = { name, callback: nextKey, fibers: new DisposableList(), Config: source.Config }
+      this._internal.set(nextKey, target)
+    }
+
+    // the old key stops being an implementation of its own and forwards instead
+    const previous = runtime.callback
+    this._internal.delete(previous)
+    for (const key of [...this._forward.keys()]) {
+      if (this._forwarded(source, key).key === previous) this._forward.set(key, source)
+    }
+    this._forward.set(previous, source)
+
+    const fibers = [...runtime.fibers]
+    for (const fiber of fibers) {
+      fiber._replace(target, Inject.resolve(source.inject))
+    }
+    // nothing moved into a runtime this call created: do not leave it behind
+    if (created && !target.fibers.length) this._internal.delete(nextKey)
+    // a replaced fiber reports its own failure; the caller only needs a settle point
+    const failures = new Map<Fiber, Error>()
+    await Promise.all(fibers.map(async (fiber) => {
+      try {
+        await fiber.await()
+      } catch (error) {
+        failures.set(fiber, error as Error)
+      }
+    }))
+    return failures
   }
 }

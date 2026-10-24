@@ -1,5 +1,5 @@
 import { Context } from 'cordis'
-import { BuildFailure } from 'esbuild'
+import type { BuildFailure } from 'esbuild'
 import { codeFrameColumns } from '@babel/code-frame'
 import { readFileSync } from 'node:fs'
 

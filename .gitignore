@@ -37,3 +37,6 @@ report.*.json
 *.sln
 
 CLAUDE.md
+
+# differential test bundle
+packages/hmr/tests/__probe__/workspace.bundle.mjs
