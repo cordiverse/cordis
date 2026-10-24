@@ -6,8 +6,11 @@ import type {} from '@cordisjs/plugin-fs'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { relative, resolve, sep } from 'node:path'
 import { handleError } from './error.ts'
+import { collectDependencies, isBuiltin, isPackaged } from './graph.ts'
+import { IdentityStore } from './identity.ts'
+import { cjsChildren, cjsHas, cjsUrls, ModuleCache } from './cache.ts'
+import { invalidate } from './manifest.ts'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { createRequire } from 'node:module'
 import picomatch from 'picomatch'
 import z from 'schemastery'
 
@@ -23,27 +26,6 @@ declare module 'cordis' {
 
 // A Windows drive-letter path, e.g. `C:\app\cordis.yml` or `C:/app/cordis.yml`.
 const driveLetter = /^[A-Za-z]:[\\/]/
-
-function isExcluded(url: string) {
-  return url.startsWith('node:') || url.includes('/node_modules/')
-}
-
-/**
- * Recursively collect all module dependencies from a ModuleJob.
- * Skips node: builtins and node_modules to focus on user code.
- */
-async function loadDependencies(job: ModuleJob, ignored = new Set<string>()) {
-  const dependencies = new Set<string>()
-  async function traverse(job: ModuleJob) {
-    if (ignored.has(job.url) || dependencies.has(job.url)) return
-    if (isExcluded(job.url)) return
-    dependencies.add(job.url)
-    const children = await job.linked
-    await Promise.all(Array.prototype.map.call(children, traverse))
-  }
-  await traverse(job)
-  return dependencies
-}
 
 // A registered plugin whose module has changed.
 interface StalePlugin {
@@ -100,6 +82,15 @@ class Hmr extends Service {
   // the dependency tree of the main entry point; a change to any of these
   // modules requires a restart
   public hosts = new Set<string>()
+
+  // set when the host graph could not be computed, which keeps package
+  // modules out of the dependency walk
+  private _hostsUnknown = false
+
+  // the recorded identity of every module file a transaction has touched:
+  // the disk is compared against it, so a caller does not need to know which
+  // files an operation changed
+  public identity = new IdentityStore()
 
   // the tail of the transaction queue
   private _queue: Promise<unknown> = Promise.resolve()
@@ -193,19 +184,55 @@ class Hmr extends Service {
       const mainUrl = pathToFileURL(resolve(process.argv[1])).href
       const mainJob = this.internal?.loadCache.get(mainUrl)
       if (mainJob) {
-        this.hosts = await loadDependencies(mainJob)
+        this.hosts = this.widen(await collectDependencies(mainJob), new Set())
       }
+    }
+    if (!this.hosts.size) {
+      // The host graph is what keeps framework modules out of a reload;
+      // without it, package modules stay excluded, as before the traversal
+      // learned to cross them.
+      this.ctx.logger.warn('host modules are unknown, node_modules stays excluded')
+      this._hostsUnknown = true
+    }
+
+    // Record the identity of everything loaded so far, so the first
+    // `reconcile({ roots })` compares against a baseline; modules loaded
+    // later are covered at the end of the first transaction that touches them.
+    if (this.internal) {
+      this.identity.observeAll(Map.prototype.keys.call(this.internal.loadCache) as Iterable<string>)
     }
   }
 
   // hide stack trace from HMR
   getOuterStack = (): string[] => []
 
+  // Widen a dependency closure with the dependencies the ESM walk cannot see:
+  // a CJS module resolves its `require` calls at evaluation time, so they are
+  // recorded in `children` rather than `linked`, and a module that was only
+  // ever required never enters `loadCache` at all.
+  private widen(closure: Set<string>, stop: Set<string>) {
+    const result = new Set(closure)
+    const queue = [...result]
+    while (queue.length) {
+      const url = queue.pop()!
+      for (const child of cjsChildren(url)) {
+        if (result.has(child) || stop.has(child) || isBuiltin(child) || (this._hostsUnknown && isPackaged(child))) continue
+        result.add(child)
+        queue.push(child)
+      }
+    }
+    return result
+  }
+
   async getLinked(url: string) {
     const job = this.internal?.loadCache.get(url)
-    if (!job) return []
-    const linked = await job.linked
-    return Array.prototype.map.call(linked, (job: ModuleJob) => job.url) as string[]
+    const linked = job ? await job.linked : []
+    // a CJS module resolves its dependencies through `require`, which the ESM
+    // linker does not record: `children` are the edges `linked` misses
+    return [
+      ...Array.prototype.map.call(linked, (job: ModuleJob) => job.url) as string[],
+      ...cjsChildren(url),
+    ]
   }
 
   // Transactions run one at a time: a call made while another transaction is
@@ -248,7 +275,7 @@ class Hmr extends Service {
     await Promise.all([...changed].map(async (url) => {
       const children = await this.getLinked(url)
       for (const child of children) {
-        if (accepted.has(child) || declined.has(child) || isExcluded(child)) continue
+        if (accepted.has(child) || declined.has(child) || isBuiltin(child) || (this._hostsUnknown && isPackaged(child))) continue
         pending.push(child)
       }
     }))
@@ -260,7 +287,7 @@ class Hmr extends Service {
         const children = await this.getLinked(url)
         let isDeclined = true, isAccepted = false
         for (const child of children) {
-          if (declined.has(child) || isExcluded(child)) continue
+          if (declined.has(child) || isBuiltin(child) || (this._hostsUnknown && isPackaged(child))) continue
           if (accepted.has(child)) {
             isAccepted = true
             break
@@ -301,7 +328,7 @@ class Hmr extends Service {
     const internal = this.internal!
     const candidates = new Map<ModuleJob, Plugin>()
     for (const url of Map.prototype.keys.call(internal.loadCache) as Iterable<string>) {
-      if (declined.has(url) || isExcluded(url)) continue
+      if (declined.has(url) || isBuiltin(url)) continue
       const job = internal.loadCache.get(url)
       if (!job?.module) continue
       let plugin: Plugin | undefined
@@ -319,8 +346,7 @@ class Hmr extends Service {
 
   private async _reconcile(options: Hmr.ReconcileOptions): Promise<Hmr.Result> {
     const result: Hmr.Result = { replaced: [], failed: [], pending: [] }
-    const files = new Set([...options.files].map(toUrl))
-    if (!files.size) return result
+    const files = new Set([...options.files ?? []].map(toUrl))
 
     const internal = this.internal
     if (!internal) {
@@ -329,6 +355,31 @@ class Hmr extends Service {
       }
       return result
     }
+
+    // `roots` widens the batch to what a package operation may have rewritten.
+    // Only recorded or loaded files can matter: an entry counts as loaded when
+    // any of its slots holds a job (the keys also name entries `has` cannot
+    // serve, such as JSON modules), and the CJS cache holds the modules that
+    // were only ever required.
+    if (options.roots) {
+      const loaded = [
+        ...[...Map.prototype.keys.call(internal.loadCache) as Iterable<string>]
+          .filter(url => {
+            const entry = Map.prototype.get.call(internal.loadCache, url) as Record<string, unknown>
+            return entry && Object.values(entry).some(Boolean)
+          }),
+        ...cjsUrls(),
+      ]
+      for (const root of options.roots) {
+        // a package operation rewrites whole subtrees; an updated package
+        // stops resolving its entries through Node's cached manifest reader
+        invalidate(toUrl(root))
+        for (const url of this.identity.expand(toUrl(root), loaded)) {
+          files.add(url)
+        }
+      }
+    }
+    if (!files.size) return result
 
     // A change to a host module cannot be applied in place, and the restart
     // it requires supersedes everything else in the batch.
@@ -342,10 +393,11 @@ class Hmr extends Service {
     }
 
     // In Node 24, both CJS and ESM modules imported via import() end up
-    // in loadCache, so this check covers all module formats.
+    // in loadCache, so this check covers all module formats; a module that
+    // was only ever required lives in the CJS cache alone.
     const changed = new Set<string>()
     for (const url of files) {
-      if (internal.loadCache.has(url)) {
+      if (internal.loadCache.has(url) || cjsHas(url)) {
         changed.add(url)
       } else {
         result.pending.push({ url, reason: 'not-loaded' })
@@ -379,7 +431,7 @@ class Hmr extends Service {
       for (const job of unit.keys()) declined.delete(job.url)
       const closures = new Map<ModuleJob, Set<string>>()
       for (const job of unit.keys()) {
-        closures.set(job, await loadDependencies(job, declined))
+        closures.set(job, this.widen(await collectDependencies(job, declined, this._hostsUnknown), declined))
       }
       for (const job of unit.keys()) declined.add(job.url)
 
@@ -406,171 +458,147 @@ class Hmr extends Service {
       if (!owned.has(url)) result.pending.push({ url, reason: 'no-plugin' })
     }
 
-    /**
-     * Clear module caches for affected modules and complete dependency trees
-     * of selected plugins before re-importing.
-     *
-     * We need to clear both:
-     * 1. ESM loadCache — managed by Node's internal ModuleLoader
-     * 2. CJS Module._cache — for CJS modules that were imported via import()
-     *
-     * In Node 24, CJS modules loaded via import() appear in both caches.
-     * If we only clear loadCache, the CJS cache may serve stale modules.
-     *
-     * We use Map.prototype methods directly on loadCache because:
-     * - In Node 22/23, loadCache is a plain Map<url, ModuleJob>
-     * - In Node 24, loadCache is a LoadCache extends Map<url, { [type]: ModuleJob }>
-     *   where .delete() only sets the type slot to undefined (doesn't remove the entry)
-     * Using Map.prototype.delete ensures complete removal in both versions.
-     */
-    const esmBackup: Dict = Object.create(null)
-    const cjsBackup: Dict = Object.create(null)
-    const require = createRequire(import.meta.url)
-    for (const filename of invalidatedModules) {
-      // Backup and clear ESM loadCache
-      const job = Map.prototype.get.call(internal.loadCache, filename)
-      esmBackup[filename] = job
-      Map.prototype.delete.call(internal.loadCache, filename)
-
-      // Backup and clear CJS Module._cache
-      try {
-        const filepath = fileURLToPath(filename)
-        if (require.cache[filepath]) {
-          cjsBackup[filepath] = require.cache[filepath]
-          delete require.cache[filepath]
-        }
-      } catch {
-        // filename might not be a file: URL (e.g. node: protocol), ignore
-      }
-    }
-
-    const rollback = () => {
-      for (const filename in esmBackup) {
-        Map.prototype.set.call(internal.loadCache, filename, esmBackup[filename])
-      }
-      for (const filepath in cjsBackup) {
-        require.cache[filepath] = cjsBackup[filepath]
-      }
-    }
-
-    // Stage 1: re-import the module graph (all-or-nothing).
-    // Plugin validity is checked here, where the only mutated state is the
-    // module cache and no plugin has been touched yet. Moving this check
-    // earlier is what allows stage 3 to have no rollback at all: a malformed
-    // export can no longer fail halfway through swapping instances.
-    const replacements: Dict = Object.create(null)
+    // the cache keys present before the transaction, to tell what it imported
+    const before = new Set(Map.prototype.keys.call(internal.loadCache) as Iterable<string>)
+    const beforeCjs = new Set(cjsUrls())
     try {
-      for (const { url, urls } of stalePlugins.values()) {
-        // Import the other modules of the unit too, so that their failures
-        // abort the batch as well.
-        for (const other of urls) {
-          if (other !== url) await internal.import(other, import.meta.url, {})
-        }
-        const exports = unwrapExports(await internal.import(url, import.meta.url, {}))
-        if (!this.ctx.registry.resolve(exports)) {
-          throw new Error(`invalid plugin at ${this._relative(url)}, `
-            + `expect function or object with an "apply" method, received ${typeof exports}`)
-        }
-        replacements[url] = exports
-      }
-    } catch (error) {
-      handleError(this.ctx, error)
-      rollback()
-      result.aborted = { error }
-      return result
-    }
+      const cache = new ModuleCache(internal)
+      cache.evict(invalidatedModules)
 
-    // Stage 2: unload (per plugin, synchronous).
-    // `registry.delete()` does not block, so deleting everything up front
-    // costs nothing, and it is what makes the ancestor check below decidable:
-    // by the time anything is rebuilt, every fiber this batch tears down has
-    // already had its `uid` cleared.
-    let staleFibers: StaleFiber[] = []
-    for (const { url, plugin } of stalePlugins.values()) {
-      // The plugin may have been disposed while stage 1 was importing.
-      const runtime = this.ctx.registry.get(plugin)
-      if (!runtime) continue
-      const path = this._relative(url)
+      const rollback = () => cache.restore()
 
-      // `registry.delete()` deliberately leaves the fibers in `runtime.fibers`
-      // (the `registry.has()` guard in `Fiber` skips the removal) so that we
-      // can rebuild from them; snapshot anyway, as the list is backed by a
-      // live `Map` iterator.
-      const fibers = [...runtime.fibers]
+      // Stage 1: re-import the module graph (all-or-nothing).
+      // Plugin validity is checked here, where the only mutated state is the
+      // module cache and no plugin has been touched yet. Moving this check
+      // earlier is what allows stage 3 to have no rollback at all: a malformed
+      // export can no longer fail halfway through swapping instances.
+      const replacements: Dict = Object.create(null)
       try {
-        this.ctx.registry.delete(plugin)
-      } catch (err) {
-        this.ctx.logger.warn('failed to dispose plugin at %C', path)
-        this.ctx.logger.warn(err)
-      }
-      for (const fiber of fibers) {
-        staleFibers.push({ path, replacement: replacements[url], fiber })
-      }
-    }
-
-    // Everything below a fiber that is going away is rebuilt by that fiber, so
-    // rebuilding it here as well would yield two instances. Decided in a
-    // single pass now that every delete is done and before anything is
-    // awaited, so that stage 3 only ever has to think about its own fiber.
-    staleFibers = staleFibers.filter((stale) => {
-      if (!hasInactiveAncestor(stale.fiber)) return true
-      this.ctx.logger.debug('skip plugin at %C (inactive ancestor)', stale.path)
-      return false
-    })
-
-    // Stage 3: reload (per fiber, concurrent).
-    const logged = new Set<string>()
-    await Promise.all(staleFibers.map(async ({ path, replacement, fiber }) => {
-      let newFiber: Fiber | undefined
-      try {
-        while (fiber.inertia) await fiber.inertia
-
-        const entry = fiber.entry
-        // Re-enable's init() may still be awaiting. It does not wait on stage 3.
-        // A rejection is already logged and must not skip the decision below.
-        while (entry?._initTask) await entry._initTask.catch(() => {})
-
-        // The host may have been replaced during the wait (e.g. disabled and re-enabled).
-        if (hasInactiveAncestor(fiber)) {
-          this.ctx.logger.debug('skip plugin at %C (inactive ancestor)', path)
-          return
+        for (const { url, urls } of stalePlugins.values()) {
+          // Import the other modules of the unit too, so that their failures
+          // abort the batch as well.
+          for (const other of urls) {
+            if (other !== url) await internal.import(other, import.meta.url, {})
+          }
+          const exports = unwrapExports(await internal.import(url, import.meta.url, {}))
+          if (!this.ctx.registry.resolve(exports)) {
+            throw new Error(`invalid plugin at ${this._relative(url)}, `
+              + `expect function or object with an "apply" method, received ${typeof exports}`)
+          }
+          replacements[url] = exports
         }
-
-        const removed = !!entry && entry.parent.tree.store[entry.options.id] !== entry
-        // A nested fiber shares the host entry. Only the entry root can already be live.
-        const isEntryRoot = !!entry && fiber.parent.fiber?.entry !== entry
-        // `fiber` itself is disposed, so a live `entry.innerFiber` is a replacement.
-        const replaced = isEntryRoot && entry.innerFiber?.uid != null
-        if (entry?.disabled || removed || replaced) {
-          const reason = entry?.disabled ? 'disabled' : removed ? 'removed' : 'live fiber'
-          this.ctx.logger.debug(`skip plugin at %C (${reason})`, path)
-          return
-        }
-
-        newFiber = fiber.parent.registry.plugin(replacement, fiber.config, this.getOuterStack)
-        newFiber.entry = fiber.entry
-        if (isEntryRoot) entry.innerFiber = newFiber
-        if (!logged.has(path)) {
-          logged.add(path)
-          this.ctx.logger.info('reload plugin at %C', path)
-        }
-        await newFiber.await()
-        result.replaced.push(newFiber)
       } catch (error) {
-        // No rollback: a plugin that fails to load is left failed, exactly
-        // as it would be on a cold start. It stays registered and keeps its
-        // parent and config, so the next change to the file retries it.
-        // A failure inside the new fiber has already been logged by itself.
-        if (!newFiber) {
-          this.ctx.logger.warn('failed to reload plugin at %C', path)
-          this.ctx.logger.warn(error)
-        }
-        result.failed.push({ fiber: newFiber ?? fiber, error })
+        handleError(this.ctx, error)
+        rollback()
+        result.aborted = { error }
+        return result
       }
-    }))
 
-    this.ctx.emit('hmr/reload', result)
-    return result
+      // Stage 2: unload (per plugin, synchronous).
+      // `registry.delete()` does not block, so deleting everything up front
+      // costs nothing, and it is what makes the ancestor check below decidable:
+      // by the time anything is rebuilt, every fiber this batch tears down has
+      // already had its `uid` cleared.
+      let staleFibers: StaleFiber[] = []
+      for (const { url, plugin } of stalePlugins.values()) {
+        // The plugin may have been disposed while stage 1 was importing.
+        const runtime = this.ctx.registry.get(plugin)
+        if (!runtime) continue
+        const path = this._relative(url)
+
+        // `registry.delete()` deliberately leaves the fibers in `runtime.fibers`
+        // (the `registry.has()` guard in `Fiber` skips the removal) so that we
+        // can rebuild from them; snapshot anyway, as the list is backed by a
+        // live `Map` iterator.
+        const fibers = [...runtime.fibers]
+        try {
+          this.ctx.registry.delete(plugin)
+        } catch (err) {
+          this.ctx.logger.warn('failed to dispose plugin at %C', path)
+          this.ctx.logger.warn(err)
+        }
+        for (const fiber of fibers) {
+          staleFibers.push({ path, replacement: replacements[url], fiber })
+        }
+      }
+
+      // Everything below a fiber that is going away is rebuilt by that fiber, so
+      // rebuilding it here as well would yield two instances. Decided in a
+      // single pass now that every delete is done and before anything is
+      // awaited, so that stage 3 only ever has to think about its own fiber.
+      staleFibers = staleFibers.filter((stale) => {
+        if (!hasInactiveAncestor(stale.fiber)) return true
+        this.ctx.logger.debug('skip plugin at %C (inactive ancestor)', stale.path)
+        return false
+      })
+
+      // Stage 3: reload (per fiber, concurrent).
+      const logged = new Set<string>()
+      await Promise.all(staleFibers.map(async ({ path, replacement, fiber }) => {
+        let newFiber: Fiber | undefined
+        try {
+          while (fiber.inertia) await fiber.inertia
+
+          const entry = fiber.entry
+          // Re-enable's init() may still be awaiting. It does not wait on stage 3.
+          // A rejection is already logged and must not skip the decision below.
+          while (entry?._initTask) await entry._initTask.catch(() => {})
+
+          // The host may have been replaced during the wait (e.g. disabled and re-enabled).
+          if (hasInactiveAncestor(fiber)) {
+            this.ctx.logger.debug('skip plugin at %C (inactive ancestor)', path)
+            return
+          }
+
+          const removed = !!entry && entry.parent.tree.store[entry.options.id] !== entry
+          // A nested fiber shares the host entry. Only the entry root can already be live.
+          const isEntryRoot = !!entry && fiber.parent.fiber?.entry !== entry
+          // `fiber` itself is disposed, so a live `entry.innerFiber` is a replacement.
+          const replaced = isEntryRoot && entry.innerFiber?.uid != null
+          if (entry?.disabled || removed || replaced) {
+            const reason = entry?.disabled ? 'disabled' : removed ? 'removed' : 'live fiber'
+            this.ctx.logger.debug(`skip plugin at %C (${reason})`, path)
+            return
+          }
+
+          newFiber = fiber.parent.registry.plugin(replacement, fiber.config, this.getOuterStack)
+          newFiber.entry = fiber.entry
+          if (isEntryRoot) entry.innerFiber = newFiber
+          if (!logged.has(path)) {
+            logged.add(path)
+            this.ctx.logger.info('reload plugin at %C', path)
+          }
+          await newFiber.await()
+          result.replaced.push(newFiber)
+        } catch (error) {
+          // No rollback: a plugin that fails to load is left failed, exactly
+          // as it would be on a cold start. It stays registered and keeps its
+          // parent and config, so the next change to the file retries it.
+          // A failure inside the new fiber has already been logged by itself.
+          if (!newFiber) {
+            this.ctx.logger.warn('failed to reload plugin at %C', path)
+            this.ctx.logger.warn(error)
+          }
+          result.failed.push({ fiber: newFiber ?? fiber, error })
+        }
+      }))
+
+      this.ctx.emit('hmr/reload', result)
+      return result
+    } finally {
+      // Record the identity of every module the transaction touched, whether
+      // it succeeded or aborted: the disk holds the new content either way,
+      // and recording now keeps the next transaction from judging the same
+      // file changed again. A later fix still bumps mtime and is caught.
+      const touched = new Set(invalidatedModules)
+      for (const url of Map.prototype.keys.call(internal.loadCache) as Iterable<string>) {
+        if (!before.has(url)) touched.add(url)
+      }
+      for (const url of cjsUrls()) {
+        if (!beforeCjs.has(url)) touched.add(url)
+      }
+      this.identity.observeAll(touched)
+    }
   }
 }
 
@@ -604,7 +632,13 @@ namespace Hmr {
 
   export interface ReconcileOptions {
     // absolute paths or `file:` URLs
-    files: Iterable<string | URL>
+    files?: Iterable<string | URL>
+    // absolute paths or `file:` URLs of directories or files whose whole
+    // subtree may have been rewritten, e.g. by a package manager: every
+    // recorded or loaded module underneath whose content cannot be proven
+    // unchanged joins the batch. At least one of the two is required; when
+    // both are given the batches are unioned.
+    roots?: Iterable<string | URL>
   }
 
   export type PendingReason =
