@@ -2,7 +2,7 @@ import { Context } from 'cordis'
 import Loader, { ModuleLoader } from '@cordisjs/plugin-loader'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { dirname, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import Hmr from '../src/index.ts'
@@ -254,5 +254,32 @@ export async function apply(ctx: any) {
     const fixed = await ctx.hmr.reconcile({ files: [host] })
     expect(fixed.replaced).to.have.length(1)
     expect(ctx.bail('cache/host' as any)).to.equal('fixed')
+  }, 30000)
+
+  it('picks up a moved entry of an updated package', async () => {
+    await setup()
+    const pkgDir = resolve(fixtureDir, 'node_modules', 'mpkg')
+    mkdirSync(pkgDir, { recursive: true })
+    writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({ name: 'mpkg', main: './a.js' }))
+    writeFileSync(join(pkgDir, 'a.js'), `exports.value = 'a'\n`)
+    writeFileSync(join(pkgDir, 'b.js'), `exports.value = 'b'\n`)
+    await load('mp.ts', `
+import { value } from 'mpkg'
+
+export const name = 'mp'
+
+export async function apply(ctx: any) {
+  ctx.on('cache/mp' as any, () => value)
+}
+`)
+    expect(ctx.bail('cache/mp' as any)).to.equal('a')
+
+    // the update moves the entry to b.js and rewrites the old one
+    writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({ name: 'mpkg', main: './b.js' }))
+    writeFileSync(join(pkgDir, 'a.js'), `exports.value = 'a2'\n`)
+    const result = await ctx.hmr.reconcile({ roots: [pkgDir] })
+
+    expect(result.replaced).to.have.length(1)
+    expect(ctx.bail('cache/mp' as any)).to.equal('b')
   }, 30000)
 })
