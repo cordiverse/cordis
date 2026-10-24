@@ -8,8 +8,8 @@ import { relative, resolve, sep } from 'node:path'
 import { handleError } from './error.ts'
 import { collectDependencies, isBuiltin, isPackaged } from './graph.ts'
 import { IdentityStore } from './identity.ts'
+import { cjsChildren, cjsHas, cjsUrls, ModuleCache } from './cache.ts'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { createRequire } from 'node:module'
 import picomatch from 'picomatch'
 import z from 'schemastery'
 
@@ -183,7 +183,7 @@ class Hmr extends Service {
       const mainUrl = pathToFileURL(resolve(process.argv[1])).href
       const mainJob = this.internal?.loadCache.get(mainUrl)
       if (mainJob) {
-        this.hosts = await collectDependencies(mainJob)
+        this.hosts = this.widen(await collectDependencies(mainJob), new Set())
       }
     }
     if (!this.hosts.size) {
@@ -205,11 +205,33 @@ class Hmr extends Service {
   // hide stack trace from HMR
   getOuterStack = (): string[] => []
 
+  // Widen a dependency closure with the dependencies the ESM walk cannot see:
+  // a CJS module resolves its `require` calls at evaluation time, so they are
+  // recorded in `children` rather than `linked`, and a module that was only
+  // ever required never enters `loadCache` at all.
+  private widen(closure: Set<string>, stop: Set<string>) {
+    const result = new Set(closure)
+    const queue = [...result]
+    while (queue.length) {
+      const url = queue.pop()!
+      for (const child of cjsChildren(url)) {
+        if (result.has(child) || stop.has(child) || isBuiltin(child) || (this._hostsUnknown && isPackaged(child))) continue
+        result.add(child)
+        queue.push(child)
+      }
+    }
+    return result
+  }
+
   async getLinked(url: string) {
     const job = this.internal?.loadCache.get(url)
-    if (!job) return []
-    const linked = await job.linked
-    return Array.prototype.map.call(linked, (job: ModuleJob) => job.url) as string[]
+    const linked = job ? await job.linked : []
+    // a CJS module resolves its dependencies through `require`, which the ESM
+    // linker does not record: `children` are the edges `linked` misses
+    return [
+      ...Array.prototype.map.call(linked, (job: ModuleJob) => job.url) as string[],
+      ...cjsChildren(url),
+    ]
   }
 
   // Transactions run one at a time: a call made while another transaction is
@@ -334,15 +356,19 @@ class Hmr extends Service {
     }
 
     // `roots` widens the batch to what a package operation may have rewritten.
-    // Only recorded or loaded files can matter, and an entry counts as loaded
-    // when any of its slots holds a job: the keys of the cache also name
-    // entries `has` cannot serve, such as JSON modules.
+    // Only recorded or loaded files can matter: an entry counts as loaded when
+    // any of its slots holds a job (the keys also name entries `has` cannot
+    // serve, such as JSON modules), and the CJS cache holds the modules that
+    // were only ever required.
     if (options.roots) {
-      const loaded = [...Map.prototype.keys.call(internal.loadCache) as Iterable<string>]
-        .filter(url => {
-          const entry = Map.prototype.get.call(internal.loadCache, url) as Record<string, unknown>
-          return entry && Object.values(entry).some(Boolean)
-        })
+      const loaded = [
+        ...[...Map.prototype.keys.call(internal.loadCache) as Iterable<string>]
+          .filter(url => {
+            const entry = Map.prototype.get.call(internal.loadCache, url) as Record<string, unknown>
+            return entry && Object.values(entry).some(Boolean)
+          }),
+        ...cjsUrls(),
+      ]
       for (const root of options.roots) {
         for (const url of this.identity.expand(toUrl(root), loaded)) {
           files.add(url)
@@ -363,10 +389,11 @@ class Hmr extends Service {
     }
 
     // In Node 24, both CJS and ESM modules imported via import() end up
-    // in loadCache, so this check covers all module formats.
+    // in loadCache, so this check covers all module formats; a module that
+    // was only ever required lives in the CJS cache alone.
     const changed = new Set<string>()
     for (const url of files) {
-      if (internal.loadCache.has(url)) {
+      if (internal.loadCache.has(url) || cjsHas(url)) {
         changed.add(url)
       } else {
         result.pending.push({ url, reason: 'not-loaded' })
@@ -400,7 +427,7 @@ class Hmr extends Service {
       for (const job of unit.keys()) declined.delete(job.url)
       const closures = new Map<ModuleJob, Set<string>>()
       for (const job of unit.keys()) {
-        closures.set(job, await collectDependencies(job, declined, this._hostsUnknown))
+        closures.set(job, this.widen(await collectDependencies(job, declined, this._hostsUnknown), declined))
       }
       for (const job of unit.keys()) declined.add(job.url)
 
@@ -427,55 +454,14 @@ class Hmr extends Service {
       if (!owned.has(url)) result.pending.push({ url, reason: 'no-plugin' })
     }
 
-    /**
-     * Clear module caches for affected modules and complete dependency trees
-     * of selected plugins before re-importing.
-     *
-     * We need to clear both:
-     * 1. ESM loadCache — managed by Node's internal ModuleLoader
-     * 2. CJS Module._cache — for CJS modules that were imported via import()
-     *
-     * In Node 24, CJS modules loaded via import() appear in both caches.
-     * If we only clear loadCache, the CJS cache may serve stale modules.
-     *
-     * We use Map.prototype methods directly on loadCache because:
-     * - In Node 22/23, loadCache is a plain Map<url, ModuleJob>
-     * - In Node 24, loadCache is a LoadCache extends Map<url, { [type]: ModuleJob }>
-     *   where .delete() only sets the type slot to undefined (doesn't remove the entry)
-     * Using Map.prototype.delete ensures complete removal in both versions.
-     */
     // the cache keys present before the transaction, to tell what it imported
     const before = new Set(Map.prototype.keys.call(internal.loadCache) as Iterable<string>)
+    const beforeCjs = new Set(cjsUrls())
     try {
-      const esmBackup: Dict = Object.create(null)
-      const cjsBackup: Dict = Object.create(null)
-      const require = createRequire(import.meta.url)
-      for (const filename of invalidatedModules) {
-        // Backup and clear ESM loadCache
-        const job = Map.prototype.get.call(internal.loadCache, filename)
-        esmBackup[filename] = job
-        Map.prototype.delete.call(internal.loadCache, filename)
+      const cache = new ModuleCache(internal)
+      cache.evict(invalidatedModules)
 
-        // Backup and clear CJS Module._cache
-        try {
-          const filepath = fileURLToPath(filename)
-          if (require.cache[filepath]) {
-            cjsBackup[filepath] = require.cache[filepath]
-            delete require.cache[filepath]
-          }
-        } catch {
-          // filename might not be a file: URL (e.g. node: protocol), ignore
-        }
-      }
-
-      const rollback = () => {
-        for (const filename in esmBackup) {
-          Map.prototype.set.call(internal.loadCache, filename, esmBackup[filename])
-        }
-        for (const filepath in cjsBackup) {
-          require.cache[filepath] = cjsBackup[filepath]
-        }
-      }
+      const rollback = () => cache.restore()
 
       // Stage 1: re-import the module graph (all-or-nothing).
       // Plugin validity is checked here, where the only mutated state is the
@@ -603,6 +589,9 @@ class Hmr extends Service {
       const touched = new Set(invalidatedModules)
       for (const url of Map.prototype.keys.call(internal.loadCache) as Iterable<string>) {
         if (!before.has(url)) touched.add(url)
+      }
+      for (const url of cjsUrls()) {
+        if (!beforeCjs.has(url)) touched.add(url)
       }
       this.identity.observeAll(touched)
     }
