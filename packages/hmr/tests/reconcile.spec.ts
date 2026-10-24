@@ -171,6 +171,28 @@ export function apply(ctx, config) {
     expect(ctx.registry.get(refreshed)).to.equal(result.replaced[0].runtime)
   })
 
+  it('reloads a plugin when a shared dependency inside node_modules changes', async () => {
+    await setup()
+    const dir = resolve(fixtureDir, 'node_modules/shared')
+    mkdirSync(dir, { recursive: true })
+    const dep = resolve(dir, 'index.js')
+    writeFileSync(dep, `export const value = 'a'\n`)
+
+    await load('node-dep.ts', `
+import { value } from 'shared'
+
+export function apply(ctx: any) {
+  ctx.on('reconcile/node-dep' as any, () => value)
+}
+`)
+    expect(ctx.bail('reconcile/node-dep')).to.equal('a')
+
+    writeFileSync(dep, `export const value = 'b'\n`)
+    const result = await ctx.hmr.reconcile({ files: [dep] })
+    expect(result.replaced).to.have.length(1)
+    expect(ctx.bail('reconcile/node-dep')).to.equal('b')
+  })
+
   it('reports files it cannot apply', async () => {
     await setup()
     const orphan = fixture('orphan.ts', 'export const value = 1\n')

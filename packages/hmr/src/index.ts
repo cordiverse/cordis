@@ -6,6 +6,7 @@ import type {} from '@cordisjs/plugin-fs'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { relative, resolve, sep } from 'node:path'
 import { handleError } from './error.ts'
+import { collectDependencies, isBuiltin, isPackaged } from './graph.ts'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
 import picomatch from 'picomatch'
@@ -23,27 +24,6 @@ declare module 'cordis' {
 
 // A Windows drive-letter path, e.g. `C:\app\cordis.yml` or `C:/app/cordis.yml`.
 const driveLetter = /^[A-Za-z]:[\\/]/
-
-function isExcluded(url: string) {
-  return url.startsWith('node:') || url.includes('/node_modules/')
-}
-
-/**
- * Recursively collect all module dependencies from a ModuleJob.
- * Skips node: builtins and node_modules to focus on user code.
- */
-async function loadDependencies(job: ModuleJob, ignored = new Set<string>()) {
-  const dependencies = new Set<string>()
-  async function traverse(job: ModuleJob) {
-    if (ignored.has(job.url) || dependencies.has(job.url)) return
-    if (isExcluded(job.url)) return
-    dependencies.add(job.url)
-    const children = await job.linked
-    await Promise.all(Array.prototype.map.call(children, traverse))
-  }
-  await traverse(job)
-  return dependencies
-}
 
 // A registered plugin whose module has changed.
 interface StalePlugin {
@@ -100,6 +80,10 @@ class Hmr extends Service {
   // the dependency tree of the main entry point; a change to any of these
   // modules requires a restart
   public hosts = new Set<string>()
+
+  // set when the host graph could not be computed, which keeps package
+  // modules out of the dependency walk
+  private _hostsUnknown = false
 
   // the tail of the transaction queue
   private _queue: Promise<unknown> = Promise.resolve()
@@ -193,8 +177,15 @@ class Hmr extends Service {
       const mainUrl = pathToFileURL(resolve(process.argv[1])).href
       const mainJob = this.internal?.loadCache.get(mainUrl)
       if (mainJob) {
-        this.hosts = await loadDependencies(mainJob)
+        this.hosts = await collectDependencies(mainJob)
       }
+    }
+    if (!this.hosts.size) {
+      // The host graph is what keeps framework modules out of a reload;
+      // without it, package modules stay excluded, as before the traversal
+      // learned to cross them.
+      this.ctx.logger.warn('host modules are unknown, node_modules stays excluded')
+      this._hostsUnknown = true
     }
   }
 
@@ -248,7 +239,7 @@ class Hmr extends Service {
     await Promise.all([...changed].map(async (url) => {
       const children = await this.getLinked(url)
       for (const child of children) {
-        if (accepted.has(child) || declined.has(child) || isExcluded(child)) continue
+        if (accepted.has(child) || declined.has(child) || isBuiltin(child) || (this._hostsUnknown && isPackaged(child))) continue
         pending.push(child)
       }
     }))
@@ -260,7 +251,7 @@ class Hmr extends Service {
         const children = await this.getLinked(url)
         let isDeclined = true, isAccepted = false
         for (const child of children) {
-          if (declined.has(child) || isExcluded(child)) continue
+          if (declined.has(child) || isBuiltin(child) || (this._hostsUnknown && isPackaged(child))) continue
           if (accepted.has(child)) {
             isAccepted = true
             break
@@ -301,7 +292,7 @@ class Hmr extends Service {
     const internal = this.internal!
     const candidates = new Map<ModuleJob, Plugin>()
     for (const url of Map.prototype.keys.call(internal.loadCache) as Iterable<string>) {
-      if (declined.has(url) || isExcluded(url)) continue
+      if (declined.has(url) || isBuiltin(url)) continue
       const job = internal.loadCache.get(url)
       if (!job?.module) continue
       let plugin: Plugin | undefined
@@ -379,7 +370,7 @@ class Hmr extends Service {
       for (const job of unit.keys()) declined.delete(job.url)
       const closures = new Map<ModuleJob, Set<string>>()
       for (const job of unit.keys()) {
-        closures.set(job, await loadDependencies(job, declined))
+        closures.set(job, await collectDependencies(job, declined, this._hostsUnknown))
       }
       for (const job of unit.keys()) declined.add(job.url)
 
