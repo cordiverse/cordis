@@ -27,9 +27,9 @@ export async function apply(ctx: Context) {
 `
 }
 
-function finished(result: Hmr.Result) {
-  expect(result.status).to.equal('finished')
-  return result as Hmr.Result.Finished
+function reconciled(result: Hmr.Result) {
+  expect(result.status).to.equal('reconciled')
+  return result as Hmr.Result.Reconciled
 }
 
 function fixture(name: string, content: string) {
@@ -91,12 +91,13 @@ describe('Hmr.reconcile', () => {
     expect(ctx.bail('reconcile/entry' as any)).to.equal('v1')
 
     writeFileSync(path, plugin('entry', 'v2'))
-    const result = finished(await ctx.hmr.reconcile({ files: [path] }))
+    const result = reconciled(await ctx.hmr.reconcile({ files: [path] }))
 
-    expect(result.fibers).to.have.length(1)
-    expect(result.fibers[0].state).to.equal(FiberState.ACTIVE)
+    expect(result.settledFibers).to.have.length(1)
+    expect(result.settledFibers[0].state).to.equal(FiberState.ACTIVE)
+    expect(result.importFailures).to.deep.equal([])
     expect(stats.entryDisposed).to.equal(true)
-    expect(entry.innerFiber!.uid).to.equal(result.fibers[0].uid)
+    expect(entry.innerFiber!.uid).to.equal(result.settledFibers[0].uid)
     expect(ctx.bail('reconcile/entry' as any)).to.equal('v2')
   })
 
@@ -148,9 +149,9 @@ export function apply(ctx: Context) {
     expect(stats.siblingApplied).to.equal(1)
 
     writeFileSync(dep, `export const value = 'v2'\n`)
-    const result = finished(await ctx.hmr.reconcile({ files: [dep] }))
+    const result = reconciled(await ctx.hmr.reconcile({ files: [dep] }))
 
-    expect(result.fibers).to.have.length(1)
+    expect(result.settledFibers).to.have.length(1)
     expect(ctx.bail('reconcile/dependent' as any)).to.equal('v2')
     expect(stats.siblingApplied).to.equal(1)
   })
@@ -167,13 +168,13 @@ export function apply(ctx: Context) {
     expect(ctx.bail('reconcile/scoped' as any)).to.equal('v1')
 
     writeFileSync(path, plugin('scoped', 'v2'))
-    const result = finished(await ctx.hmr.reconcile({ files: [path] }))
+    const result = reconciled(await ctx.hmr.reconcile({ files: [path] }))
 
-    expect(result.fibers).to.have.length(1)
+    expect(result.settledFibers).to.have.length(1)
     // the outer fiber is kept, and the new fiber takes the place of the inner one
     expect(entry.outerFiber === outer).to.equal(true)
-    expect(entry.innerFiber!.uid).to.equal(result.fibers[0].uid)
-    expect(result.fibers[0].parent.fiber.uid).to.equal(outer.uid)
+    expect(entry.innerFiber!.uid).to.equal(result.settledFibers[0].uid)
+    expect(result.settledFibers[0].parent.fiber.uid).to.equal(outer.uid)
     expect(ctx.bail('reconcile/scoped' as any)).to.equal('v2')
   })
 
@@ -182,9 +183,9 @@ export function apply(ctx: Context) {
     const path = await load('url.ts', plugin('url', 'v1'))
 
     writeFileSync(path, plugin('url', 'v2'))
-    const result = finished(await ctx.hmr.reconcile({ files: [pathToFileURL(path)] }))
+    const result = reconciled(await ctx.hmr.reconcile({ files: [pathToFileURL(path)] }))
 
-    expect(result.fibers).to.have.length(1)
+    expect(result.settledFibers).to.have.length(1)
     expect(ctx.bail('reconcile/url' as any)).to.equal('v2')
   })
 
@@ -196,9 +197,9 @@ export function apply(ctx: Context) {
     expect(ctx.bail('reconcile/direct' as any)).to.equal('v1')
 
     writeFileSync(path, plugin('direct', 'v2'))
-    const result = finished(await ctx.hmr.reconcile({ files: [path] }))
+    const result = reconciled(await ctx.hmr.reconcile({ files: [path] }))
 
-    expect(result.fibers).to.have.length(1)
+    expect(result.settledFibers).to.have.length(1)
     expect(ctx.bail('reconcile/direct' as any)).to.equal('v2')
   })
 
@@ -212,9 +213,9 @@ export function apply(ctx: Context) {
     expect(ctx.bail('reconcile/data' as any)).to.equal('v1')
 
     writeFileSync(path, plugin('data', 'v2'))
-    const result = finished(await ctx.hmr.reconcile({ files: [path] }))
+    const result = reconciled(await ctx.hmr.reconcile({ files: [path] }))
 
-    expect(result.fibers).to.have.length(1)
+    expect(result.settledFibers).to.have.length(1)
     expect(ctx.bail('reconcile/data' as any)).to.equal('v2')
   })
 
@@ -246,15 +247,15 @@ export function apply(ctx, config) {
   ctx.on('reconcile/reexport', () => ({ version: 'v2', config }))
 }
 `)
-    const result = finished(await ctx.hmr.reconcile({ files: [implementation] }))
+    const result = reconciled(await ctx.hmr.reconcile({ files: [implementation] }))
 
-    expect(result.fibers).to.have.length(1)
-    expect(Object.keys(result.fibers[0].inject)).to.deep.equal(['reconcileGate'])
+    expect(result.settledFibers).to.have.length(1)
+    expect(Object.keys(result.settledFibers[0].inject)).to.deep.equal(['reconcileGate'])
     expect(ctx.bail('reconcile/reexport' as any)).to.deep.equal({ version: 'v2', config: { validated: true } })
     // the entry module is refreshed as well
     const refreshed = await ctx.hmr.internal.import(entryUrl, import.meta.url, {})
     expect(refreshed.apply).to.not.equal(original.apply)
-    expect(ctx.registry.get(refreshed)).to.equal(result.fibers[0].runtime)
+    expect(ctx.registry.get(refreshed)).to.equal(result.settledFibers[0].runtime)
   })
 
   it('refreshes a module that no plugin depends on for its next import', async () => {
@@ -265,40 +266,42 @@ export function apply(ctx, config) {
     const data = fixture('data.txt', 'data')
 
     writeFileSync(orphan, 'export const value = 2\n')
-    const result = finished(await ctx.hmr.reconcile({ files: [orphan, data] }))
+    const result = reconciled(await ctx.hmr.reconcile({ files: [orphan, data] }))
 
-    expect(result.fibers).to.deep.equal([])
+    expect(result.settledFibers).to.deep.equal([])
     // existing references keep the old module
     expect(before.value).to.equal(1)
     const after = await ctx.hmr.internal.import(url, import.meta.url, {})
     expect(after.value).to.equal(2)
   })
 
-  it('aborts the batch when a module fails to import', async () => {
+  it('does not apply a unit whose module fails to import', async () => {
     await setup()
     const path = await load('abort.ts', plugin('abort', 'v1'))
 
     writeFileSync(path, 'export function apply(ctx {{{ BROKEN')
-    const aborted = await ctx.hmr.reconcile({ files: [path] })
+    const result = reconciled(await ctx.hmr.reconcile({ files: [path] }))
 
-    expect(aborted.status).to.equal('import-failed')
+    expect(result.settledFibers).to.deep.equal([])
+    expect(result.importFailures).to.have.length(1)
+    expect(result.importFailures[0].urls).to.include(pathToFileURL(path).href)
     expect(ctx.bail('reconcile/abort' as any)).to.equal('v1')
 
     // the module cache is restored, so the next change is applied normally
     writeFileSync(path, plugin('abort', 'v2'))
-    finished(await ctx.hmr.reconcile({ files: [path] }))
+    reconciled(await ctx.hmr.reconcile({ files: [path] }))
     expect(ctx.bail('reconcile/abort' as any)).to.equal('v2')
   })
 
-  it('aborts the batch when a module does not export a plugin', async () => {
+  it('does not apply a unit whose module does not export a plugin', async () => {
     await setup()
     const path = await load('invalid.ts', plugin('invalid', 'v1', `
   ctx.effect(() => () => stats.invalidDisposed = true)`))
 
     writeFileSync(path, `export const apply = 'not a function'\n`)
-    const result = await ctx.hmr.reconcile({ files: [path] })
+    const result = reconciled(await ctx.hmr.reconcile({ files: [path] }))
 
-    expect(result.status).to.equal('import-failed')
+    expect(result.importFailures).to.have.length(1)
     // the running instance is not disposed
     expect(stats.invalidDisposed).to.be.undefined
     expect(ctx.bail('reconcile/invalid' as any)).to.equal('v1')
@@ -309,16 +312,16 @@ export function apply(ctx, config) {
     const path = await load('failed.ts', plugin('failed', 'v1'))
 
     writeFileSync(path, plugin('failed', 'v2', `throw new Error('apply failed')`))
-    const result = finished(await ctx.hmr.reconcile({ files: [path] }))
+    const result = reconciled(await ctx.hmr.reconcile({ files: [path] }))
 
-    expect(result.fibers).to.have.length(1)
-    expect(result.fibers[0].state).to.equal(FiberState.FAILED)
-    await expect(result.fibers[0].await()).rejects.toThrow('apply failed')
+    expect(result.settledFibers).to.have.length(1)
+    expect(result.settledFibers[0].state).to.equal(FiberState.FAILED)
+    await expect(result.settledFibers[0].await()).rejects.toThrow('apply failed')
 
     // the next change retries it
     writeFileSync(path, plugin('failed', 'v3'))
-    const retried = finished(await ctx.hmr.reconcile({ files: [path] }))
-    expect(retried.fibers).to.have.length(1)
+    const retried = reconciled(await ctx.hmr.reconcile({ files: [path] }))
+    expect(retried.settledFibers).to.have.length(1)
     expect(ctx.bail('reconcile/failed' as any)).to.equal('v3')
   })
 
@@ -352,8 +355,8 @@ export function apply(ctx, config) {
       ctx.hmr.reconcile({ files: [fast] }),
     ])
 
-    expect(finished(first).fibers).to.have.length(1)
-    expect(finished(second).fibers).to.have.length(1)
+    expect(reconciled(first).settledFibers).to.have.length(1)
+    expect(reconciled(second).settledFibers).to.have.length(1)
     expect(stats.fastApplied).to.be.greaterThanOrEqual(stats.slowDone)
   })
 
@@ -375,9 +378,9 @@ export function apply(ctx, config) {
       `export const name`,
       `export const inject = ['hmr']\n\nexport const name`,
     ))
-    const result = finished(await ctx.hmr.reconcile({ files: [path] }))
+    const result = reconciled(await ctx.hmr.reconcile({ files: [path] }))
 
-    expect(result.fibers).to.have.length(1)
+    expect(result.settledFibers).to.have.length(1)
     expect(await stats.nested).to.equal('cannot start a transaction inside another transaction')
 
     // once the transaction is over, its async context no longer counts

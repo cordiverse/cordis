@@ -308,7 +308,7 @@ class Hmr extends Service {
   }
 
   private async _reconcile(options: Hmr.ReconcileOptions): Promise<Hmr.Result> {
-    const result: Hmr.Result.Finished = { status: 'finished', fibers: [] }
+    const result: Hmr.Result.Reconciled = { status: 'reconciled', settledFibers: [], importFailures: [] }
     const files = new Set([...options.files].map(toUrl))
     if (!files.size) return result
 
@@ -454,7 +454,9 @@ class Hmr extends Service {
     } catch (error) {
       handleError(this.ctx, error)
       rollback()
-      return { status: 'import-failed', error }
+      // the whole batch is a single unit for now
+      result.importFailures.push({ urls: [...invalidatedModules], error })
+      return result
     }
 
     // Stage 2: unload (per plugin, synchronous).
@@ -531,7 +533,7 @@ class Hmr extends Service {
           logged.add(path)
           this.ctx.logger.info('reload plugin at %C', path)
         }
-        result.fibers.push(newFiber)
+        result.settledFibers.push(newFiber)
         // No rollback: a plugin that fails to apply is left FAILED, exactly
         // as it would be on a cold start, and has already been logged by its
         // fiber. It stays registered and keeps its parent and config, so the
@@ -581,21 +583,23 @@ namespace Hmr {
     files: Iterable<string | URL>
   }
 
-  export type Result = Result.Finished | Result.ImportFailed | Result.HostModuleChanged
+  export type Result = Result.Reconciled | Result.HostModuleChanged
 
   export namespace Result {
-    /** The batch is applied. */
-    export interface Finished {
-      status: 'finished'
-      fibers: Fiber[]
+    /** The running state is brought in line with the changes, as far as they can be applied. */
+    export interface Reconciled {
+      status: 'reconciled'
+      settledFibers: Fiber[]
+      importFailures: ImportFailure[]
     }
 
     /**
-     * A new module failed to import, or does not export a plugin. Nothing is
-     * applied, and the module cache is restored.
+     * A new module of a unit failed to import, or does not export a plugin.
+     * Nothing in the unit is applied, and its module cache is restored.
      */
-    export interface ImportFailed {
-      status: 'import-failed'
+    export interface ImportFailure {
+      /** the modules of the unit */
+      urls: string[]
       error: unknown
     }
 

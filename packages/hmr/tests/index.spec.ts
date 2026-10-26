@@ -125,9 +125,9 @@ function dropCached(ctx: Context, name: string) {
   }
 }
 
-function finished(result: Hmr.Result) {
-  expect(result.status).to.equal('finished')
-  return result as Hmr.Result.Finished
+function reconciled(result: Hmr.Result) {
+  expect(result.status).to.equal('reconciled')
+  return result as Hmr.Result.Reconciled
 }
 
 describe('HMR', () => {
@@ -161,8 +161,8 @@ describe('HMR', () => {
       // one change, two entries in the batch: the tree host and the entry
       // nested two fiber levels below it
       treeDep.modify(c => c.replace("version = 'tree-v1'", "version = 'tree-v2'"))
-      const result = finished(await ctx.hmr.reconcile({ files: [treeDep.path] }))
-      expect(result.fibers.map(fiber => fiber.state)).to.not.include(FiberState.FAILED)
+      const result = reconciled(await ctx.hmr.reconcile({ files: [treeDep.path] }))
+      expect(result.settledFibers.map(fiber => fiber.state)).to.not.include(FiberState.FAILED)
 
       expect(ctx.bail('hmr-test/get-tree')).to.equal('tree-v2')
       // the host rebuilds its subtree; reloading the nested entry separately
@@ -190,7 +190,7 @@ describe('HMR', () => {
       stats.stallTreeInit = 0
       treeDep.write(treeDep.original.replace("version = 'tree-v1'", "version = 'tree-v3'"))
       const results = await Promise.all([first, ctx.hmr.reconcile({ files: [treeDep.path] })])
-      expect(results.flatMap(result => finished(result).fibers).map(fiber => fiber.state)).to.not.include(FiberState.FAILED)
+      expect(results.flatMap(result => reconciled(result).settledFibers).map(fiber => fiber.state)).to.not.include(FiberState.FAILED)
 
       expect(ctx.bail('hmr-test/get-tree')).to.equal('tree-v3')
 
@@ -281,9 +281,9 @@ describe('HMR', () => {
 
       stats.multiApplies = []
       pluginMulti.modify(c => c.replace("version = 'multi-v1'", "version = 'multi-v2'"))
-      const result = finished(await ctx.hmr.reconcile({ files: [pluginMulti.path] }))
+      const result = reconciled(await ctx.hmr.reconcile({ files: [pluginMulti.path] }))
 
-      expect(result.fibers).to.have.length(2)
+      expect(result.settledFibers).to.have.length(2)
       // exactly one new instance per entry, each with its own config intact
       expect([...stats.multiApplies].sort()).to.deep.equal(['a:multi-v2', 'b:multi-v2'])
     }, 15000)

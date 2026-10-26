@@ -172,10 +172,10 @@ describe('Hmr with fs', () => {
     writeFileSync(b, plugin('b', 'v2'))
     change(a)
     change(b)
-    const result = await reloaded as Hmr.Result.Finished
+    const result = await reloaded as Hmr.Result.Reconciled
 
-    expect(result.status).to.equal('finished')
-    expect(result.fibers).to.have.length(2)
+    expect(result.status).to.equal('reconciled')
+    expect(result.settledFibers).to.have.length(2)
     expect(ctx.bail('hmr-watch/a' as any)).to.equal('v2')
     expect(ctx.bail('hmr-watch/b' as any)).to.equal('v2')
     await new Promise(r => setTimeout(r, 100))
