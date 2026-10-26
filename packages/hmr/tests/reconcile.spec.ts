@@ -96,6 +96,21 @@ describe('Hmr.reconcile', () => {
     expect(ctx.bail('reconcile/entry' as any)).to.equal('v2')
   })
 
+  it('imports a module again after it failed in an aborted attempt', async () => {
+    await setup()
+    const path = await load('added-entry.ts', plugin('added', 'v1'))
+    const added = fixture('added-dep.ts', `throw new Error('added v1')\n`)
+    writeFileSync(path, `import './added-dep.ts'\n` + plugin('added', 'v2'))
+    expect((await ctx.hmr.reconcile({ files: [path] })).importFailures).to.have.length(1)
+
+    // only the entry is reconciled again, as the caller knows no more
+    writeFileSync(added, `export {}\n`)
+    const result = await ctx.hmr.reconcile({ files: [path] })
+
+    expect(result.importFailures).to.deep.equal([])
+    expect(ctx.bail('reconcile/added' as any)).to.equal('v2')
+  })
+
   it('replaces a service', async () => {
     await setup()
     const service = (value: string) => `

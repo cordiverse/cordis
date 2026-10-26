@@ -423,7 +423,15 @@ class Hmr extends Service {
       }
     }
 
+    const esmKeys = new Set(Map.prototype.keys.call(internal.loadCache) as Iterable<string>)
+    const cjsKeys = new Set(Object.keys(require.cache))
     const rollback = () => {
+      for (const filename of [...Map.prototype.keys.call(internal.loadCache) as Iterable<string>]) {
+        if (!esmKeys.has(filename)) Map.prototype.delete.call(internal.loadCache, filename)
+      }
+      for (const filepath of Object.keys(require.cache)) {
+        if (!cjsKeys.has(filepath)) delete require.cache[filepath]
+      }
       for (const filename in esmBackup) {
         Map.prototype.set.call(internal.loadCache, filename, esmBackup[filename])
       }
