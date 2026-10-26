@@ -125,11 +125,6 @@ function dropCached(ctx: Context, name: string) {
   }
 }
 
-function reconciled(result: Hmr.Result) {
-  expect(result.status).to.equal('reconciled')
-  return result as Hmr.Result.Reconciled
-}
-
 describe('HMR', () => {
   describe('nested entry tree', () => {
     let ctx: Context
@@ -161,7 +156,7 @@ describe('HMR', () => {
       // one change, two entries in the batch: the tree host and the entry
       // nested two fiber levels below it
       treeDep.modify(c => c.replace("version = 'tree-v1'", "version = 'tree-v2'"))
-      const result = reconciled(await ctx.hmr.reconcile({ files: [treeDep.path] }))
+      const result = await ctx.hmr.reconcile({ files: [treeDep.path] })
       expect(result.settledFibers.map(fiber => fiber.state)).to.not.include(FiberState.FAILED)
 
       expect(ctx.bail('hmr-test/get-tree')).to.equal('tree-v2')
@@ -190,7 +185,7 @@ describe('HMR', () => {
       stats.stallTreeInit = 0
       treeDep.write(treeDep.original.replace("version = 'tree-v1'", "version = 'tree-v3'"))
       const results = await Promise.all([first, ctx.hmr.reconcile({ files: [treeDep.path] })])
-      expect(results.flatMap(result => reconciled(result).settledFibers).map(fiber => fiber.state)).to.not.include(FiberState.FAILED)
+      expect(results.flatMap(result => result.settledFibers).map(fiber => fiber.state)).to.not.include(FiberState.FAILED)
 
       expect(ctx.bail('hmr-test/get-tree')).to.equal('tree-v3')
 
@@ -281,7 +276,7 @@ describe('HMR', () => {
 
       stats.multiApplies = []
       pluginMulti.modify(c => c.replace("version = 'multi-v1'", "version = 'multi-v2'"))
-      const result = reconciled(await ctx.hmr.reconcile({ files: [pluginMulti.path] }))
+      const result = await ctx.hmr.reconcile({ files: [pluginMulti.path] })
 
       expect(result.settledFibers).to.have.length(2)
       // exactly one new instance per entry, each with its own config intact

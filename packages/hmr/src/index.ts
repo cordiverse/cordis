@@ -93,7 +93,7 @@ class Hmr extends Service {
 
   /**
    * The dependency tree of the main entry point. A change to any of these
-   * modules requires a restart.
+   * modules can only be applied by restarting the process.
    */
   public hostModules = new Set<string>()
 
@@ -155,25 +155,16 @@ class Hmr extends Service {
       try {
         // This waits behind a running transaction.
         const result = await this.reconcile({ files })
-        switch (result.status) {
-          case 'host-module-changed': {
-            this.ctx.logger.warn([
-              'host module changed, skipped',
-              ...result.urls.map(url => '- ' + this._relative(url)),
-            ].join('\n'))
-            // the other changes can still be applied without a restart
-            for (const url of files) {
-              if (!result.urls.includes(url)) retained.add(url)
-            }
-            break
-          }
-          case 'reconciled': {
-            // an import failure has been logged by the transaction itself
-            for (const { urls } of result.importFailures) {
-              for (const url of urls) {
-                if (files.has(url)) retained.add(url)
-              }
-            }
+        if (result.skippedHostModules.length) {
+          this.ctx.logger.warn([
+            'skipped host modules:',
+            ...result.skippedHostModules.map(url => '- ' + this._relative(url)),
+          ].join('\n'))
+        }
+        // an import failure has been logged by the transaction itself
+        for (const { urls } of result.importFailures) {
+          for (const url of urls) {
+            if (files.has(url)) retained.add(url)
           }
         }
       } catch (error) {
@@ -314,16 +305,20 @@ class Hmr extends Service {
   }
 
   private async _reconcile(options: Hmr.ReconcileOptions): Promise<Hmr.Result> {
-    const result: Hmr.Result.Reconciled = { status: 'reconciled', settledFibers: [], importFailures: [] }
-    const files = new Set([...options.files].map(toUrl))
+    const result: Hmr.Result = { settledFibers: [], importFailures: [], skippedHostModules: [] }
+    const files = new Set<string>()
+    for (const url of [...options.files].map(toUrl)) {
+      // A change to a host module cannot be applied in place. It is skipped,
+      // and restarting is up to the caller.
+      if (this.hostModules.has(url)) {
+        result.skippedHostModules.push(url)
+      } else {
+        files.add(url)
+      }
+    }
     if (!files.size) return result
 
     const internal = this.internal
-
-    // A change to a host module cannot be applied in place, so nothing in
-    // the batch is applied.
-    const urls = [...files].filter(url => this.hostModules.has(url))
-    if (urls.length) return { status: 'host-module-changed', urls }
 
     // In Node 24, both CJS and ESM modules imported via import() end up
     // in loadCache, so this check covers all module formats.
@@ -589,35 +584,25 @@ namespace Hmr {
     files: Iterable<string | URL>
   }
 
-  export type Result = Result.Reconciled | Result.HostModuleChanged
-
-  export namespace Result {
-    /** The running state is brought in line with the changes, as far as they can be applied. */
-    export interface Reconciled {
-      status: 'reconciled'
-      settledFibers: Fiber[]
-      importFailures: ImportFailure[]
-    }
-
+  /** The running state is brought in line with the changes, as far as they can be applied. */
+  export interface Result {
+    settledFibers: Fiber[]
+    importFailures: ImportFailure[]
     /**
-     * A new module of a unit failed to import, or does not export a plugin.
-     * Nothing in the unit is applied, and its module cache is restored.
+     * The changed host modules, which can only be applied by restarting the
+     * process. They are skipped, while the other changes are applied.
      */
-    export interface ImportFailure {
-      /** the modules of the unit */
-      urls: string[]
-      error: unknown
-    }
+    skippedHostModules: string[]
+  }
 
-    /**
-     * A changed file is a host module, which can only be applied by
-     * restarting the process. Nothing is applied.
-     */
-    export interface HostModuleChanged {
-      status: 'host-module-changed'
-      /** the changed host modules */
-      urls: string[]
-    }
+  /**
+   * A new module of a unit failed to import, or does not export a plugin.
+   * Nothing in the unit is applied, and its module cache is restored.
+   */
+  export interface ImportFailure {
+    /** the modules of the unit */
+    urls: string[]
+    error: unknown
   }
 }
 
