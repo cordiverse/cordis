@@ -1,0 +1,46 @@
+{
+  "name": "@cordisjs/plugin-fs-node",
+  "description": "Node.js File System Service for Cordis",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "lib/index.js",
+  "typings": "lib/index.d.ts",
+  "files": [
+    "lib"
+  ],
+  "author": "Shigma <shigma10826@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cordiverse/cordis.git",
+    "directory": "packages/fs-node"
+  },
+  "bugs": {
+    "url": "https://github.com/cordiverse/cordis/issues"
+  },
+  "homepage": "https://cordis.io/",
+  "keywords": [
+    "cordis",
+    "plugin",
+    "fs",
+    "node",
+    "file",
+    "watch"
+  ],
+  "cordis": {
+    "description": {
+      "en": "File System",
+      "zh": "文件系统"
+    }
+  },
+  "peerDependencies": {
+    "cordis": "^4.0.0-rc.12"
+  },
+  "devDependencies": {
+    "cordis": "^4.0.0-rc.12"
+  },
+  "dependencies": {
+    "chokidar": "^4.0.3",
+    "cosmokit": "^1.8.1"
+  }
+}
