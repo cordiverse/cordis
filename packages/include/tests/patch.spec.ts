@@ -169,6 +169,58 @@ describe('Include patches', () => {
     expect(ctx.bail('test/get-extra')).to.equal('extra')
   }, 10000)
 
+  it('should skip an insert whose name does not match the target', async () => {
+    ctx = new Context()
+    await ctx.plugin(LoggerConsole)
+    fiber = await ctx.plugin(Loader, {
+      baseUrl: import.meta.url,
+    })
+    await ctx.loader.create({
+      name: '@cordisjs/plugin-include',
+      config: {
+        path: './fixtures/base.yml',
+        patches: [
+          {
+            id: 'group',
+            name: 'wrong-name',
+            insert: [
+              { name: './extra-plugin' },
+            ],
+          },
+        ],
+      },
+    })
+    await waitFor(() => ctx.bail('test/get-value'))
+    // the id names a different entry than the patch expects, so nothing is inserted
+    expect(ctx.bail('test/get-extra')).to.be.undefined
+    expect(ctx.bail('test/get-value')).to.equal('default')
+  }, 10000)
+
+  it('should insert into a group whose name matches', async () => {
+    ctx = new Context()
+    await ctx.plugin(LoggerConsole)
+    fiber = await ctx.plugin(Loader, {
+      baseUrl: import.meta.url,
+    })
+    await ctx.loader.create({
+      name: '@cordisjs/plugin-include',
+      config: {
+        path: './fixtures/base.yml',
+        patches: [
+          {
+            id: 'group',
+            name: '@cordisjs/plugin-group',
+            insert: [
+              { name: './extra-plugin' },
+            ],
+          },
+        ],
+      },
+    })
+    await waitFor(() => ctx.bail('test/get-extra'))
+    expect(ctx.bail('test/get-extra')).to.equal('extra')
+  }, 10000)
+
   it('should warn when inserting into a non-group entry', async () => {
     ctx = new Context()
     await ctx.plugin(LoggerConsole)
