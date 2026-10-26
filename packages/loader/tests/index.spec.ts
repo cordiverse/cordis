@@ -319,8 +319,9 @@ describe('Loader: nested plugin config', () => {
   })
 })
 
-// resolution reads services through `fiber.committed`, which a failed fiber no
-// longer has, so recovery must not depend on resolving the new config first
+// resolution reads services through `fiber.committed`. A failed fiber has
+// dropped that view, so update() must expose the current store before it
+// resolves a recovery config
 describe('Loader: failed entry recovery', () => {
   const root = new Context()
 
