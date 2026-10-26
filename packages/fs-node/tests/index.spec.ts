@@ -198,9 +198,12 @@ describe('Fs', () => {
       const dispose = await ctx.fs.watch(path, () => { calls++ })
       await ctx.fs.watch(path, () => { others++ })
       await dispose()
+      // The OS may still report the write above while the watch is live, so
+      // only the calls after disposal count.
+      const before = calls
 
       await touch(path, () => others > 0)
-      expect(calls).to.equal(0)
+      expect(calls).to.equal(before)
     }, 15000)
 
     it('logs an error of the watcher instead of throwing it', async () => {
