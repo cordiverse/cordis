@@ -1,11 +1,5 @@
 - id: hmr
   name: '@cordisjs/plugin-hmr'
-  config:
-    watch:
-      enabled: true
-      debounce: 50
-- id: fs
-  name: '@cordisjs/plugin-fs'
 - id: test-slow
   name: ./plugin-slow
 - id: test-fast

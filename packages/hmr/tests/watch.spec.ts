@@ -1,10 +1,10 @@
 import { Context, Fiber, Service } from 'cordis'
 import Loader from '@cordisjs/plugin-loader'
-import type { WatchCallback, WatchOptions } from '@cordisjs/plugin-fs'
+import Fs, { WatchCallback, WatchOptions } from '@cordisjs/plugin-fs'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, MockInstance, vi } from 'vitest'
 import Hmr from '../src/index.ts'
 
 const testDir = dirname(fileURLToPath(import.meta.url))
@@ -60,6 +60,11 @@ class TestLoader extends Loader {
 describe('Hmr with fs', () => {
   let ctx: Context
   let fiber: Fiber<Context> | undefined
+  let reconcile: MockInstance<Hmr['reconcile']>
+
+  beforeEach(() => {
+    reconcile = vi.spyOn(Hmr.prototype, 'reconcile')
+  })
 
   beforeAll(() => {
     rmSync(fixtureDir, { recursive: true, force: true })
@@ -75,13 +80,14 @@ describe('Hmr with fs', () => {
     fiber = undefined
     FakeFs.watches = []
     TestLoader.exits = 0
+    reconcile.mockRestore()
   })
 
-  async function setup(config: Partial<Hmr.WatchConfig> = {}, fs = true, base?: string) {
+  async function setup(config: Partial<Hmr.WatchConfig> = {}, base?: string) {
     ctx = new Context()
     ctx.baseUrl = import.meta.url
     fiber = await ctx.plugin(TestLoader)
-    if (fs) await ctx.plugin(FakeFs)
+    await ctx.plugin(FakeFs)
     await ctx.plugin(Hmr, { base, watch: { enabled: true, debounce: 50, ...config } })
   }
 
@@ -93,13 +99,10 @@ describe('Hmr with fs', () => {
     return path
   }
 
-  function nextReload() {
-    return new Promise<Hmr.Result>((resolve) => {
-      const dispose = ctx.on('hmr/reload', (result) => {
-        dispose()
-        resolve(result)
-      })
-    })
+  async function nextReload() {
+    const index = reconcile.mock.results.length
+    await vi.waitFor(() => expect(reconcile.mock.results.length).to.be.greaterThan(index))
+    return reconcile.mock.results[index].value as Promise<Hmr.Result>
   }
 
   // Only `baseDir` is asserted, so nothing is watched.
@@ -108,21 +111,22 @@ describe('Hmr with fs', () => {
       ctx = new Context()
       ctx.baseUrl = baseUrl ?? undefined
       fiber = await ctx.plugin(Hmr, { base })
-      return ctx.hmr.baseDir
+      // a trailing separator does not matter
+      return resolve(ctx.hmr.baseDir)
     }
 
     // An absolute `base` is a legal configuration, but `new URL()` reads a Windows
     // drive letter as a URL scheme (`c:`) and `fileURLToPath` rejects that scheme.
     it.runIf(process.platform === 'win32')('accepts a drive-letter base', async () => {
-      expect(await create(testDir + sep)).to.equal(testDir + sep)
+      expect(await create(testDir + sep)).to.equal(testDir)
     })
 
     it('resolves a relative base against the context', async () => {
-      expect(await create('..')).to.equal(dirname(testDir) + sep)
+      expect(await create('..')).to.equal(dirname(testDir))
     })
 
     it('defaults to the context directory', async () => {
-      expect(await create()).to.equal(testDir + sep)
+      expect(await create()).to.equal(testDir)
     })
 
     it('defaults to the working directory without a context directory', async () => {
@@ -140,7 +144,7 @@ describe('Hmr with fs', () => {
   })
 
   it('watches each root relative to `base`', async () => {
-    await setup({}, true, '__watch__')
+    await setup({}, '__watch__')
     expect(FakeFs.watches.map(watch => watch.path)).to.deep.equal([fixtureDir])
   })
 
@@ -171,8 +175,6 @@ describe('Hmr with fs', () => {
     const a = await load('batch-a.ts', plugin('a', 'v1'))
     const b = await load('batch-b.ts', plugin('b', 'v1'))
 
-    let reloads = 0
-    ctx.on('hmr/reload', () => { reloads++ })
     const reloaded = nextReload()
     writeFileSync(a, plugin('a', 'v2'))
     writeFileSync(b, plugin('b', 'v2'))
@@ -184,13 +186,13 @@ describe('Hmr with fs', () => {
     expect(ctx.bail('hmr-watch/a' as any)).to.equal('v2')
     expect(ctx.bail('hmr-watch/b' as any)).to.equal('v2')
     await new Promise(r => setTimeout(r, 100))
-    expect(reloads).to.equal(1)
+    expect(reconcile).toHaveBeenCalledTimes(1)
   })
 
   it('calls loader.exit() when a restart is required', async () => {
     await setup()
     const path = await load('host.ts', plugin('host', 'v1'))
-    ctx.hmr.hosts.add(pathToFileURL(path).href)
+    ctx.hmr.hostModules.add(pathToFileURL(path).href)
 
     change(path)
     await new Promise(r => setTimeout(r, 200))
@@ -199,13 +201,18 @@ describe('Hmr with fs', () => {
     expect(ctx.bail('hmr-watch/host' as any)).to.equal('v1')
   })
 
-  it('does not watch without fs', async () => {
-    await setup({}, false)
-    const path = await load('unwatched.ts', plugin('unwatched', 'v1'))
-    writeFileSync(path, plugin('unwatched', 'v2'))
-    await new Promise(r => setTimeout(r, 200))
+  it('reloads a plugin when its file changes on disk', async () => {
+    ctx = new Context()
+    ctx.baseUrl = import.meta.url
+    fiber = await ctx.plugin(Loader)
+    await ctx.plugin(Fs)
+    await ctx.plugin(Hmr, { watch: { enabled: true, root: ['__watch__'], debounce: 50 } })
+    const path = await load('disk.ts', plugin('disk', 'v1'))
 
-    expect(FakeFs.watches).to.deep.equal([])
-    expect(ctx.bail('hmr-watch/unwatched' as any)).to.equal('v1')
+    // some platforms report changes late, so the file is rewritten until one is seen
+    await vi.waitFor(() => {
+      writeFileSync(path, plugin('disk', 'v2'))
+      expect(ctx.bail('hmr-watch/disk' as any)).to.equal('v2')
+    }, { timeout: 5000, interval: 200 })
   })
 })

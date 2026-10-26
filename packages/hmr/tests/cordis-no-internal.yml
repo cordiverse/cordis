@@ -1,4 +1,0 @@
-- id: fs
-  name: '@cordisjs/plugin-fs'
-- id: test
-  name: ./plugin

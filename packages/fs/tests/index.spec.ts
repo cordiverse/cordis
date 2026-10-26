@@ -1,5 +1,5 @@
 import { Context, Fiber } from 'cordis'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, relative, resolve } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -112,6 +112,25 @@ describe('Fs', () => {
   })
 
   describe('watch', () => {
+    // an atomic write replaces the file through a rename
+    it('keeps watching a file replaced through renames', async () => {
+      const path = write('atomic/config.yml')
+      const sibling = write('atomic/sibling.yml')
+      const ctx = await setup()
+      const seen: string[] = []
+      await ctx.fs.watch(path, (filename) => { seen.push(filename) })
+
+      for (const value of ['v1', 'v2']) {
+        writeFileSync(path + '.tmp', value)
+        renameSync(path + '.tmp', path)
+      }
+      await new Promise(r => setTimeout(r, 500))
+      seen.length = 0
+
+      await touch([path, sibling], () => seen.length)
+      expect([...new Set(seen)]).to.deep.equal([path])
+    }, 15000)
+
     it('reports the changed file of a watched directory', async () => {
       const path = write('dir/nested/file.txt')
       const ctx = await setup()

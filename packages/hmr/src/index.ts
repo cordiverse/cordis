@@ -15,10 +15,6 @@ declare module 'cordis' {
   interface Context {
     hmr: Hmr
   }
-
-  interface Events {
-    'hmr/reload'(result: Hmr.Result): void
-  }
 }
 
 // A Windows drive-letter path, e.g. `C:\app\cordis.yml` or `C:/app/cordis.yml`.
@@ -45,13 +41,13 @@ async function loadDependencies(job: ModuleJob, ignored = new Set<string>()) {
   return dependencies
 }
 
-// A registered plugin whose module has changed.
+/** A registered plugin whose module has changed. */
 interface StalePlugin {
-  // the module to take the replacement from
+  /** the module to take the replacement from */
   url: string
-  // every module that exports the plugin
+  /** every module that exports the plugin */
   urls: string[]
-  // the plugin before the change
+  /** the plugin before the change */
   plugin: Plugin
 }
 
@@ -90,21 +86,22 @@ function toUrl(file: string | URL) {
 }
 
 class Hmr extends Service {
-  // `watch.root` and logged paths are relative to it
+  /** The resolved `base`. `watch.root`, `watch.ignored` and logged paths are relative to it. */
   public baseDir: string
 
-  // `undefined` when Node's loader internals are unavailable, in which case
-  // no module can be replaced
-  public internal: ModuleLoader | undefined = ModuleLoader.fromInternal()
+  /** Node's ESM loader. */
+  public internal: ModuleLoader
 
-  // the dependency tree of the main entry point; a change to any of these
-  // modules requires a restart
-  public hosts = new Set<string>()
+  /**
+   * The dependency tree of the main entry point. A change to any of these
+   * modules requires a restart.
+   */
+  public hostModules = new Set<string>()
 
-  // the tail of the transaction queue
-  private _queue: Promise<unknown> = Promise.resolve()
+  /** The tail of the transaction queue. */
+  private _queue: Promise<void> = Promise.resolve()
 
-  // the running transaction, matched against the async context of a call
+  /** The running transaction, matched against the async context of a call. */
   private _current?: symbol
   private _storage = new AsyncLocalStorage<symbol>()
 
@@ -112,6 +109,12 @@ class Hmr extends Service {
 
   constructor(ctx: Context, public config: Hmr.Config) {
     super(ctx, 'hmr')
+    const internal = ModuleLoader.fromInternal()
+    if (!internal) {
+      throw new Error('loader internals are unavailable, pass --expose-internals or install node-addon-require-builtin')
+    }
+    this.internal = internal
+
     // On Windows, a drive-letter path is converted with `pathToFileURL`.
     // `new URL()` would read its `C:` as a URL scheme, which `fileURLToPath` rejects.
     // Without a `baseUrl`, file URLs are still decoded as URLs; ordinary
@@ -122,8 +125,6 @@ class Hmr extends Service {
         ? fileURLToPath(new URL(config.base || '.', ctx.baseUrl))
         : resolve(config.base || '.')
 
-    // Both services are optional. `reconcile()` depends on neither; they only
-    // drive reloads from fs changes and the restarts those require.
     ctx.inject(['fs'], ctx => this._watch(ctx))
     ctx.inject(['loader'], (ctx) => {
       this._loader = ctx.loader
@@ -131,8 +132,10 @@ class Hmr extends Service {
     })
   }
 
-  // Changes are collected over the debounce window. A batch that can only be
-  // applied by restarting the process calls `ctx.loader.exit()`.
+  /**
+   * Reconcile the changes collected over each debounce window. A change to a
+   * host module calls `ctx.loader.exit()`.
+   */
   private _watch(ctx: Context) {
     const { enabled, root, ignored, debounce } = this.config.watch
     if (!enabled || !root.length) return
@@ -155,12 +158,15 @@ class Hmr extends Service {
         for (const { url, reason } of result.pending) {
           this.ctx.logger.debug('change at %C not applied (%s)', url, reason)
         }
-        if (!result.restartReason) return
+        const hostModules = result.pending
+          .filter(({ reason }) => reason === 'host-module')
+          .map(({ url }) => this._relative(url))
+        if (!hostModules.length) return
         if (!this._loader) {
-          this.ctx.logger.warn('%s, restart required', result.restartReason)
+          this.ctx.logger.warn('host module changed: %s, restart required', hostModules.join(', '))
           return
         }
-        this.ctx.logger.info('%s, restarting', result.restartReason)
+        this.ctx.logger.info('host module changed: %s, restarting', hostModules.join(', '))
         await this._loader.exit()
       } catch (error) {
         this.ctx.logger.warn(error)
@@ -182,36 +188,28 @@ class Hmr extends Service {
   }
 
   async* [Service.init]() {
-    if (!this.internal) {
-      // eslint-disable-next-line max-len
-      this.ctx.logger.warn('loader internals are unavailable, source code HMR is disabled; pass --expose-internals or install node-addon-require-builtin to enable it')
-    }
-
     // Collect host modules: framework modules reachable from the main entry.
     // process.argv[1] is undefined in REPL, node -e, and some packed binaries.
     if (process.argv[1]) {
       const mainUrl = pathToFileURL(resolve(process.argv[1])).href
-      const mainJob = this.internal?.loadCache.get(mainUrl)
+      const mainJob = this.internal.loadCache.get(mainUrl)
       if (mainJob) {
-        this.hosts = await loadDependencies(mainJob)
+        this.hostModules = await loadDependencies(mainJob)
       }
     }
   }
 
-  // hide stack trace from HMR
-  getOuterStack = (): string[] => []
-
   async getLinked(url: string) {
-    const job = this.internal?.loadCache.get(url)
+    const job = this.internal.loadCache.get(url)
     if (!job) return []
     const linked = await job.linked
     return Array.prototype.map.call(linked, (job: ModuleJob) => job.url) as string[]
   }
 
-  // Transactions run one at a time: a call made while another transaction is
-  // running waits for it to finish. A call made from within the running
-  // transaction itself, such as from a plugin it applies, would wait for
-  // itself and is rejected instead.
+  /**
+   * Replace the plugins affected by `options.files`. Transactions run one at
+   * a time; one started from within the running transaction is rejected.
+   */
   reconcile(options: Hmr.ReconcileOptions): Promise<Hmr.Result> {
     const current = this._storage.getStore()
     if (current && current === this._current) {
@@ -224,26 +222,27 @@ class Hmr extends Service {
         this._current = undefined
       })
     })
-    this._queue = task.catch(() => {})
+    // only the order matters, so the result is not kept alive
+    this._queue = task.then(() => {}, () => {})
     return task
   }
 
   private _relative(url: string) {
-    try {
-      return relative(this.baseDir, fileURLToPath(url))
-    } catch {
-      return url
-    }
+    // a module loaded through a custom scheme, such as `data:`, has no path
+    if (!url.startsWith('file:')) return url
+    return relative(this.baseDir, fileURLToPath(url))
   }
 
-  // Classify the modules reachable from changed files into accepted (should
-  // reload) and declined (should not). A file is accepted if it's directly
-  // changed or if any of its dependencies are accepted. A file is declined if
-  // none of its dependencies are accepted or if it's a host module.
+  /**
+   * Classify the modules reachable from changed files into accepted (should
+   * reload) and declined (should not). A file is accepted if it's directly
+   * changed or if any of its dependencies are accepted. A file is declined if
+   * none of its dependencies are accepted or if it's a host module.
+   */
   private async _analyze(changed: Set<string>) {
     const pending: string[] = []
     const accepted = new Set(changed)
-    const declined = new Set(this.hosts)
+    const declined = new Set(this.hostModules)
 
     await Promise.all([...changed].map(async (url) => {
       const children = await this.getLinked(url)
@@ -294,11 +293,13 @@ class Hmr extends Service {
     return { accepted, declined }
   }
 
-  // Find every loaded module that exports a registered plugin. The modules of
-  // a plugin form an atomic reload unit: when anything in their dependency
-  // trees changes, they are imported again and the plugin is replaced.
+  /**
+   * Find every loaded module that exports a registered plugin. The modules of
+   * a plugin form an atomic reload unit: when anything in their dependency
+   * trees changes, they are imported again and the plugin is replaced.
+   */
   private _discover(declined: Set<string>) {
-    const internal = this.internal!
+    const internal = this.internal
     const candidates = new Map<ModuleJob, Plugin>()
     for (const url of Map.prototype.keys.call(internal.loadCache) as Iterable<string>) {
       if (declined.has(url) || isExcluded(url)) continue
@@ -323,21 +324,13 @@ class Hmr extends Service {
     if (!files.size) return result
 
     const internal = this.internal
-    if (!internal) {
-      for (const url of files) {
-        result.pending.push({ url, reason: 'cache-unavailable' })
-      }
-      return result
-    }
 
     // A change to a host module cannot be applied in place, and the restart
     // it requires supersedes everything else in the batch.
-    const hosts = [...files].filter(url => this.hosts.has(url))
-    if (hosts.length) {
+    if ([...files].some(url => this.hostModules.has(url))) {
       for (const url of files) {
-        result.pending.push({ url, reason: this.hosts.has(url) ? 'host-module' : 'restart-required' })
+        result.pending.push({ url, reason: this.hostModules.has(url) ? 'host-module' : 'restart-required' })
       }
-      result.restartReason = `host module changed: ${hosts.map(url => this._relative(url)).join(', ')}`
       return result
     }
 
@@ -547,7 +540,8 @@ class Hmr extends Service {
           return
         }
 
-        newFiber = fiber.parent.registry.plugin(replacement, fiber.config, this.getOuterStack)
+        // hide stack trace from HMR
+        newFiber = fiber.parent.registry.plugin(replacement, fiber.config, () => [])
         newFiber.entry = fiber.entry
         if (isEntryRoot) entry.innerFiber = newFiber
         if (!logged.has(path)) {
@@ -569,7 +563,6 @@ class Hmr extends Service {
       }
     }))
 
-    this.ctx.emit('hmr/reload', result)
     return result
   }
 }
@@ -588,7 +581,8 @@ namespace Hmr {
   }
 
   export const Config: z<Config> = z.object({
-    base: z.string().description('The directory that logged paths and `watch.root` are relative to, defaults to the context directory.'),
+    base: z.string().description('The directory that logged paths, `watch.root` and `watch.ignored` are relative to. '
+      + 'Defaults to the context directory, or the working directory without one.'),
     watch: z.object({
       enabled: z.boolean().default(false).description('Reload on file changes. Requires the `fs` service.'),
       root: z.array(String).role('table').default(['.']).description('Files or directories to watch, relative to `base`.'),
@@ -597,19 +591,17 @@ namespace Hmr {
         '**/.*',
         'cache',
         'data',
-      ]).description('Files or directories not to watch, in glob patterns.'),
+      ]).description('Files or directories not to watch, in glob patterns relative to `base`.'),
       debounce: z.natural().role('ms').default(100).description('Debounce changes before reloading, in milliseconds.'),
     }).description('Watch'),
   })
 
   export interface ReconcileOptions {
-    // absolute paths or `file:` URLs
+    /** absolute paths or `file:` URLs */
     files: Iterable<string | URL>
   }
 
   export type PendingReason =
-    // the module cache is not accessible, so no module can be replaced
-    | 'cache-unavailable'
     // the file is a host module, which requires a restart
     | 'host-module'
     // another file in the batch is a host module, so nothing is applied
@@ -625,7 +617,7 @@ namespace Hmr {
   }
 
   export interface Failure {
-    // left FAILED, as on a cold start
+    /** left FAILED, as on a cold start */
     fiber: Fiber
     error: unknown
   }
@@ -633,12 +625,13 @@ namespace Hmr {
   export interface Result {
     replaced: Fiber[]
     failed: Failure[]
-    // set when the new modules failed to import; nothing has been replaced
+    /** set when the new modules failed to import; nothing has been replaced */
     aborted?: { error: unknown }
-    // changed files that have not been applied
+    /**
+     * changed files that have not been applied; a `host-module` reason means
+     * that the batch can only be applied by restarting the process
+     */
     pending: Pending[]
-    // set when the batch can only be applied by restarting the process
-    restartReason?: string
   }
 }
 
