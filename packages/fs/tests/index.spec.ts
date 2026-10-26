@@ -1,7 +1,8 @@
 import { Context, Fiber } from 'cordis'
 import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, relative, resolve } from 'node:path'
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { FSWatcher } from 'chokidar'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import Fs from '../src/index.ts'
 
@@ -181,5 +182,24 @@ describe('Fs', () => {
       await touch(path, () => others > 0)
       expect(calls).to.equal(0)
     }, 15000)
+
+    it('logs an error of the watcher instead of throwing it', async () => {
+      const path = write('error.txt')
+      const ctx = await setup()
+      const warnings: unknown[] = []
+      ctx.logger.exporter({
+        export(message) {
+          if (message.type === 'warn') warnings.push(message.args[0])
+        },
+      })
+      const add = vi.spyOn(FSWatcher.prototype, 'add')
+      await ctx.fs.watch(path, () => {})
+      const watcher = add.mock.contexts[0] as FSWatcher
+      add.mockRestore()
+
+      const error = new Error('EPERM')
+      expect(() => watcher.emit('error', error)).to.not.throw()
+      expect(warnings).to.include(error)
+    })
   })
 })

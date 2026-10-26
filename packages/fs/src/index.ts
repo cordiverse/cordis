@@ -58,6 +58,9 @@ class Fs extends Service {
           return !!options.ignored?.(path)
         },
       })
+      watcher.on('error', (error) => {
+        this.ctx.logger.warn(error)
+      })
       watcher.on('change', async (path) => {
         try {
           await callback(resolve(path))
