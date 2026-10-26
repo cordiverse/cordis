@@ -580,8 +580,6 @@ namespace Hmr {
       ignored: z.array(String).role('table').default([
         '**/node_modules',
         '**/.*',
-        'cache',
-        'data',
       ]).description('Files or directories not to watch, in glob patterns relative to `base`.'),
       debounce: z.natural().role('ms').default(100).description('Debounce changes before reloading, in milliseconds.'),
     }).description('Watch'),
