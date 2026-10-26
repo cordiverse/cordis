@@ -91,8 +91,7 @@ describe('Hmr with fs', () => {
     return path
   }
 
-  async function nextReload() {
-    const index = reconcile.mock.results.length
+  async function nextReload(index = reconcile.mock.results.length) {
     await vi.waitFor(() => expect(reconcile.mock.results.length).to.be.greaterThan(index))
     return reconcile.mock.results[index].value as Promise<Hmr.Result>
   }
@@ -180,6 +179,79 @@ describe('Hmr with fs', () => {
     expect(ctx.bail('hmr-watch/b' as any)).to.equal('v2')
     await new Promise(r => setTimeout(r, 100))
     expect(reconcile).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries the changes of a failed batch with the next one', async () => {
+    await setup()
+    const dep = resolve(fixtureDir, 'retry-dep.ts')
+    writeFileSync(dep, `export const value = 'v1'\n`)
+    const dependent = (body: string) => `
+import { Context } from 'cordis'
+import { value } from './retry-dep.ts'
+
+${body}
+`
+    const path = await load('retry.ts', dependent(`export function apply(ctx: Context) {
+  ctx.on('hmr-watch/retry' as any, () => value)
+}`))
+
+    // one window: the dependency changes, but the plugin no longer exports one
+    writeFileSync(dep, `export const value = 'v2'\n`)
+    writeFileSync(path, dependent(`export const apply = 'not a function'`))
+    let reloaded = nextReload()
+    change(dep)
+    change(path)
+    expect((await reloaded as Hmr.Result.Reconciled).importFailures).to.have.length(1)
+    expect(ctx.bail('hmr-watch/retry' as any)).to.equal('v1')
+
+    // the next window only repairs the plugin
+    writeFileSync(path, dependent(`export function apply(ctx: Context) {
+  ctx.on('hmr-watch/retry' as any, () => value)
+}`))
+    reloaded = nextReload()
+    change(path)
+    await reloaded
+    expect(ctx.bail('hmr-watch/retry' as any)).to.equal('v2')
+  })
+
+  it('retries the changes of a failed batch with a batch queued behind it', async () => {
+    await setup()
+    const dep = resolve(fixtureDir, 'queued-dep.ts')
+    writeFileSync(dep, `export const value = 'v1'\n`)
+    const dependent = (body: string) => `
+import { Context } from 'cordis'
+import { value } from './queued-dep.ts'
+
+${body}
+`
+    const valid = dependent(`export function apply(ctx: Context) {
+  ctx.on('hmr-watch/queued' as any, () => value)
+}`)
+    const path = await load('queued.ts', valid)
+
+    // the first batch holds while importing the plugin, and then fails
+    let release!: () => void
+    const gate = (globalThis as any).__hmrWatchGate = { entered: false, hold: new Promise<void>(r => release = r) }
+    writeFileSync(dep, `export const value = 'v2'\n`)
+    writeFileSync(path, dependent(`const gate = (globalThis as any).__hmrWatchGate
+gate.entered = true
+await gate.hold
+export const apply = 'not a function'`))
+    const first = nextReload()
+    change(dep)
+    change(path)
+    await vi.waitFor(() => expect(gate.entered).to.equal(true))
+
+    // the repair arrives while the first batch is still running
+    writeFileSync(path, valid)
+    const second = nextReload(1)
+    change(path)
+    await new Promise(r => setTimeout(r, 150))
+    release()
+
+    expect((await first as Hmr.Result.Reconciled).importFailures).to.have.length(1)
+    await second
+    expect(ctx.bail('hmr-watch/queued' as any)).to.equal('v2')
   })
 
   it('only reports a change to a host module', async () => {

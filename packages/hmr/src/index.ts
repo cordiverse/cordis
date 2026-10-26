@@ -139,22 +139,46 @@ class Hmr extends Service {
     }
 
     const stashed = new Set<string>()
+    const retained = new Set<string>()
     let timer: NodeJS.Timeout | undefined
     ctx.effect(() => () => clearTimeout(timer))
 
+    // Batches are flushed one after another, including the handling of their
+    // results, so that a batch takes the changes retained by the one before.
+    let flushing = Promise.resolve()
+
     const flush = async () => {
-      const files = [...stashed]
+      if (!stashed.size) return
+      const files = new Set([...retained, ...[...stashed].map(toUrl)])
+      retained.clear()
       stashed.clear()
       try {
         // This waits behind a running transaction.
         const result = await this.reconcile({ files })
-        // an import failure has been logged by the transaction itself
-        if (result.status === 'host-module-changed') {
-          const paths = result.urls.map(url => this._relative(url)).join(', ')
-          this.ctx.logger.warn('host module changed: %s, restart to apply', paths)
+        switch (result.status) {
+          case 'host-module-changed': {
+            this.ctx.logger.warn([
+              'host module changed, skipped',
+              ...result.urls.map(url => '- ' + this._relative(url)),
+            ].join('\n'))
+            // the other changes can still be applied without a restart
+            for (const url of files) {
+              if (!result.urls.includes(url)) retained.add(url)
+            }
+            break
+          }
+          case 'reconciled': {
+            // an import failure has been logged by the transaction itself
+            for (const { urls } of result.importFailures) {
+              for (const url of urls) {
+                if (files.has(url)) retained.add(url)
+              }
+            }
+          }
         }
       } catch (error) {
         this.ctx.logger.warn(error)
+        for (const url of files) retained.add(url)
       }
     }
 
@@ -164,7 +188,7 @@ class Hmr extends Service {
         this.ctx.logger.debug('change detected at %C', relative(this.baseDir, filename))
         stashed.add(filename)
         clearTimeout(timer)
-        timer = setTimeout(flush, debounce)
+        timer = setTimeout(() => flushing = flushing.then(flush), debounce)
       }, {
         // picomatch only splits on `/`, so a Windows path is converted before matching.
         ignored: filename => match(relative(this.baseDir, filename).split(sep).join('/')),
@@ -223,62 +247,44 @@ class Hmr extends Service {
   }
 
   /**
-   * Classify the modules reachable from changed files into accepted (should
-   * reload) and declined (should not). A file is accepted if it's directly
-   * changed or if any of its dependencies are accepted. A file is declined if
-   * none of its dependencies are accepted or if it's a host module.
+   * Classify the loaded modules into accepted (evicted from the module cache)
+   * and declined (kept). The changed modules are accepted, and so is every
+   * module that imports an accepted one. This does not depend on whether a
+   * registered plugin uses them, so that a later import, such as by a plugin
+   * that is enabled again, gets the new code. Host modules are declined.
    */
   private async _analyze(changed: Set<string>) {
-    const pending: string[] = []
-    const accepted = new Set(changed)
-    const declined = new Set(this.hostModules)
-
-    await Promise.all([...changed].map(async (url) => {
-      const children = await this.getLinked(url)
+    const urls = [...Map.prototype.keys.call(this.internal.loadCache) as Iterable<string>]
+    const importers = new Map<string, string[]>()
+    await Promise.all(urls.map(async (url) => {
+      if (isExcluded(url) || this.hostModules.has(url)) return
+      let children: string[]
+      try {
+        children = await this.getLinked(url)
+      } catch {
+        // a module that failed to link has no dependencies to follow
+        return
+      }
       for (const child of children) {
-        if (accepted.has(child) || declined.has(child) || isExcluded(child)) continue
-        pending.push(child)
+        let list = importers.get(child)
+        if (!list) importers.set(child, list = [])
+        list.push(url)
       }
     }))
 
-    while (pending.length) {
-      let index = 0, hasUpdate = false
-      while (index < pending.length) {
-        const url = pending[index]
-        const children = await this.getLinked(url)
-        let isDeclined = true, isAccepted = false
-        for (const child of children) {
-          if (declined.has(child) || isExcluded(child)) continue
-          if (accepted.has(child)) {
-            isAccepted = true
-            break
-          } else {
-            isDeclined = false
-            if (!pending.includes(child)) {
-              hasUpdate = true
-              pending.push(child)
-            }
-          }
-        }
-        if (isAccepted || isDeclined) {
-          hasUpdate = true
-          pending.splice(index, 1)
-          if (isAccepted) {
-            accepted.add(url)
-          } else {
-            declined.add(url)
-          }
-        } else {
-          index++
-        }
-      }
-      if (!hasUpdate) break
+    const accepted = new Set<string>()
+    const queue = [...changed]
+    while (queue.length) {
+      const url = queue.pop()!
+      if (accepted.has(url)) continue
+      accepted.add(url)
+      queue.push(...importers.get(url) ?? [])
     }
 
-    for (const url of pending) {
-      declined.add(url)
+    const declined = new Set(this.hostModules)
+    for (const url of urls) {
+      if (!accepted.has(url)) declined.add(url)
     }
-
     return { accepted, declined }
   }
 

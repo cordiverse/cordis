@@ -219,6 +219,29 @@ export function apply(ctx: Context) {
     expect(ctx.bail('reconcile/data' as any)).to.equal('v2')
   })
 
+  it('refreshes a disabled plugin for when it is enabled again', async () => {
+    await setup()
+    const dep = fixture('disabled-dep.ts', `export const value = 'v1'\n`)
+    fixture('disabled.ts', `
+import { Context } from 'cordis'
+import { value } from './disabled-dep.ts'
+
+export function apply(ctx: Context) {
+  ctx.on('reconcile/disabled' as any, () => value)
+}
+`)
+    const id = await ctx.loader.create({ name: './__reconcile__/disabled.ts' })
+    await ctx.loader.store[id]!.innerFiber!.await()
+    await ctx.loader.update(id, { disabled: true })
+
+    writeFileSync(dep, `export const value = 'v2'\n`)
+    reconciled(await ctx.hmr.reconcile({ files: [dep] }))
+
+    await ctx.loader.update(id, { disabled: false })
+    await ctx.loader.store[id]!.innerFiber!.await()
+    expect(ctx.bail('reconcile/disabled' as any)).to.equal('v2')
+  })
+
   it('keeps the metadata of an entry that re-exports the changed plugin', async () => {
     await setup()
     ctx.provide('reconcileGate', {})
