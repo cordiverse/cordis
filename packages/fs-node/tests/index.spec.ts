@@ -142,6 +142,26 @@ describe('Fs', () => {
       expect([...new Set(seen)]).to.deep.equal([path])
     }, 15000)
 
+    it('reports a file created after the watch starts', async () => {
+      const path = resolve(fixture, 'created/file.txt')
+      mkdirSync(dirname(path), { recursive: true })
+      const ctx = await setup()
+      const seen: string[] = []
+      await ctx.fs.watch(path, (filename) => { seen.push(filename) })
+
+      // The file is created afresh each time, so that only its creation can be
+      // reported. A deletion is left to settle first, as chokidar reports a
+      // file deleted and created again shortly after as a change.
+      for (let i = 0; !seen.length; i++) {
+        if (i >= 20) throw new Error('create timed out')
+        rmSync(path, { force: true })
+        await new Promise(r => setTimeout(r, 200))
+        writeFileSync(path, '')
+        await new Promise(r => setTimeout(r, 200))
+      }
+      expect([...new Set(seen)]).to.deep.equal([path])
+    }, 15000)
+
     it('applies `ignored` to each watch on its own', async () => {
       const kept = write('ignored/kept.txt')
       const claimed = write('ignored/.claimed.yml')

@@ -40,7 +40,7 @@ class Fs extends Service {
 
   /**
    * Watch a file or a directory. `callback` receives the absolute path of
-   * each changed file. The watch ends with the calling fiber.
+   * each changed or added file. The watch ends with the calling fiber.
    */
   watch(path: string | URL, callback: WatchCallback, options: WatchOptions = {}): WatchHandle {
     const filename = this._resolve(path)
@@ -61,13 +61,15 @@ class Fs extends Service {
       watcher.on('error', (error) => {
         this.ctx.logger.warn(error)
       })
-      watcher.on('change', async (path) => {
+      const listener = async (path: string) => {
         try {
           await callback(resolve(path))
         } catch (error) {
           this.ctx.logger.warn(error)
         }
-      })
+      }
+      watcher.on('add', listener)
+      watcher.on('change', listener)
       await new Promise<void>(resolve => watcher.once('ready', () => resolve()))
       return () => watcher.close()
     }, 'ctx.fs.watch()')
