@@ -1,6 +1,6 @@
 {
-  "name": "@cordisjs/plugin-fs",
-  "description": "File System Service for Cordis",
+  "name": "@cordisjs/plugin-fs-node",
+  "description": "Node.js File System Service for Cordis",
   "version": "0.1.0",
   "type": "module",
   "main": "lib/index.js",
@@ -13,7 +13,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/cordiverse/cordis.git",
-    "directory": "packages/fs"
+    "directory": "packages/fs-node"
   },
   "bugs": {
     "url": "https://github.com/cordiverse/cordis/issues"
@@ -23,6 +23,7 @@
     "cordis",
     "plugin",
     "fs",
+    "node",
     "file",
     "watch"
   ],

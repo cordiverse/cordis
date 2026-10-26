@@ -1,6 +1,6 @@
 import { Context, Fiber, Service } from 'cordis'
 import Loader from '@cordisjs/plugin-loader'
-import Fs from '@cordisjs/plugin-fs'
+import Fs from '@cordisjs/plugin-fs-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readFile, rm, writeFile } from 'node:fs/promises'
 import * as yaml from 'yaml'

@@ -1,6 +1,6 @@
 import { Context, Fiber, Service } from 'cordis'
 import Loader from '@cordisjs/plugin-loader'
-import Fs, { WatchCallback, WatchOptions } from '@cordisjs/plugin-fs'
+import Fs, { WatchCallback, WatchOptions } from '@cordisjs/plugin-fs-node'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, resolve, sep } from 'node:path'
 import { format } from 'node:util'
@@ -29,7 +29,7 @@ interface Watch {
   options?: WatchOptions
 }
 
-// stands in for `@cordisjs/plugin-fs`, so that changes are reported by hand
+// stands in for `@cordisjs/plugin-fs-node`, so that changes are reported by hand
 class FakeFs extends Service {
   static watches: Watch[] = []
 
