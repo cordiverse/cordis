@@ -1,18 +1,28 @@
 import { Context, Fiber, FiberState } from 'cordis'
 import Loader from '@cordisjs/plugin-loader'
 import Logger from '@cordisjs/plugin-logger-console'
-import { writeFileSync, readFileSync } from 'node:fs'
+import { cpSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { expect, describe, it, beforeAll, afterAll, afterEach, beforeEach } from 'vitest'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import Hmr from '../src/index.ts'
 
 const testDir = dirname(fileURLToPath(import.meta.url))
+const templateDir = resolve(testDir, 'fixtures')
+const fixtureDir = resolve(testDir, '__index__')
 
-// Helper: read and backup a file, returning restore function
-function backupFile(filename: string) {
-  const path = resolve(testDir, filename)
-  const original = readFileSync(path, 'utf-8')
+// Each group works on its own copy of the fixtures, so that the files in the
+// repository are never modified.
+function copyFixtures(group: string) {
+  const dir = resolve(fixtureDir, group)
+  cpSync(templateDir, dir, { recursive: true })
+  return dir
+}
+
+// A file of a group's copy. `restore()` writes back the template.
+function fixture(group: string, filename: string) {
+  const path = resolve(fixtureDir, group, filename)
+  const original = readFileSync(resolve(templateDir, filename), 'utf-8')
   return {
     path,
     original,
@@ -34,24 +44,26 @@ function waitFor(condFn: () => boolean | any, timeout = 8000, interval = 100): P
     const check = setInterval(() => {
       if (condFn()) {
         clearInterval(check)
+        clearTimeout(timer)
         resolve()
       }
     }, interval)
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       clearInterval(check)
       reject(new Error('waitFor timed out'))
     }, timeout)
   })
 }
 
-async function createContext(configFile: string): Promise<{ ctx: Context; fiber: Fiber<Context> }> {
+async function createContext(group: string, configFile: string): Promise<{ ctx: Context; fiber: Fiber<Context> }> {
+  const dir = copyFixtures(group)
   const ctx = new Context()
   await ctx.plugin(Logger)
   const fiber = await ctx.plugin(Loader)
   await ctx.loader.create({
     name: '@cordisjs/plugin-include',
     config: {
-      path: pathToFileURL(resolve(testDir, configFile)).href,
+      path: pathToFileURL(resolve(dir, configFile)).href,
     },
   })
   await waitFor(() => ctx.get('hmr'), 5000)
@@ -65,6 +77,7 @@ interface Gate {
   hold?: Promise<void>
   entered?: () => void
   release?: () => void
+  timer?: NodeJS.Timeout
 }
 
 function configTree(ctx: Context) {
@@ -96,9 +109,9 @@ function arm(gate: Gate, timeout = 8000) {
   })
   gate.release = release
   const inside = new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('unload barrier timed out')), timeout)
+    gate.timer = setTimeout(() => reject(new Error('unload barrier timed out')), timeout)
     entered = () => {
-      clearTimeout(timer)
+      clearTimeout(gate.timer)
       resolve()
     }
   })
@@ -106,8 +119,11 @@ function arm(gate: Gate, timeout = 8000) {
   return inside
 }
 
+// Also called when a test fails between `arm()` and awaiting its barrier,
+// whose timer would otherwise reject with nobody to handle it.
 function disarm(gate: Gate | undefined) {
   if (!gate) return
+  clearTimeout(gate.timer)
   gate.hold = undefined
   gate.entered = undefined
   gate.release?.()
@@ -126,14 +142,21 @@ function dropCached(ctx: Context, name: string) {
 }
 
 describe('HMR', () => {
+  beforeAll(() => {
+    rmSync(fixtureDir, { recursive: true, force: true })
+  })
+
+  afterAll(() => {
+    rmSync(fixtureDir, { recursive: true, force: true })
+  })
+
   describe('nested entry tree', () => {
     let ctx: Context
     let fiber: Fiber<Context>
-    const treeDep = backupFile('tree-dep.ts')
+    const treeDep = fixture('nested', 'tree-dep.ts')
 
     beforeAll(async () => {
-      treeDep.restore()
-      const result = await createContext('cordis-nested.yml')
+      const result = await createContext('nested', 'cordis-nested.yml')
       ctx = result.ctx
       fiber = result.fiber
     }, 10000)
@@ -197,11 +220,10 @@ describe('HMR', () => {
   describe('resource handoff on reload', () => {
     let ctx: Context
     let fiber: Fiber<Context>
-    const drainDep = backupFile('drain-dep.ts')
+    const drainDep = fixture('drain', 'drain-dep.ts')
 
     beforeAll(async () => {
-      drainDep.restore()
-      const result = await createContext('cordis-drain.yml')
+      const result = await createContext('drain', 'cordis-drain.yml')
       ctx = result.ctx
       fiber = result.fiber
     }, 10000)
@@ -249,11 +271,10 @@ describe('HMR', () => {
   describe('plugin with multiple entries', () => {
     let ctx: Context
     let fiber: Fiber<Context>
-    const pluginMulti = backupFile('plugin-multi.ts')
+    const pluginMulti = fixture('multi', 'plugin-multi.ts')
 
     beforeAll(async () => {
-      pluginMulti.restore()
-      const result = await createContext('cordis-multi-entry.yml')
+      const result = await createContext('multi', 'cordis-multi-entry.yml')
       ctx = result.ctx
       fiber = result.fiber
     }, 10000)
@@ -285,16 +306,14 @@ describe('HMR', () => {
   })
 
   describe('entry changed during unload', () => {
-    const plugin = backupFile('plugin-disabled-hmr.ts')
-    const config = backupFile('cordis-disabled.yml')
+    const plugin = fixture('disabled', 'plugin-disabled-hmr.ts')
     let ctx: Context
     let root: Fiber
     let gate: Gate
 
     beforeAll(async () => {
-      plugin.restore()
       gate = installGate()
-      const started = await createContext('cordis-disabled.yml')
+      const started = await createContext('disabled', 'cordis-disabled.yml')
       ctx = started.ctx
       root = started.fiber
       await waitFor(() => gate.acquired === 1 && ctx.bail('hmr-test/get-value') === 'initial')
@@ -333,9 +352,7 @@ describe('HMR', () => {
     afterAll(async () => {
       disarm(gate)
       delete (globalThis as any).__hmrGate
-      plugin.restore()
       await root?.dispose()
-      config.restore()
     })
 
     it('does not rebuild an entry disabled during unload', async () => {
