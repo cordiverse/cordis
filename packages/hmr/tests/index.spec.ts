@@ -1,11 +1,11 @@
-import { Context, Fiber } from 'cordis'
+import { Context, Fiber, FiberState } from 'cordis'
 import Loader from '@cordisjs/plugin-loader'
 import Logger from '@cordisjs/plugin-logger-console'
 import { writeFileSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { expect, describe, it, beforeAll, afterAll, afterEach, beforeEach } from 'vitest'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import type {} from '../src/index.ts'
+import Hmr from '../src/index.ts'
 
 const testDir = dirname(fileURLToPath(import.meta.url))
 
@@ -125,6 +125,11 @@ function dropCached(ctx: Context, name: string) {
   }
 }
 
+function finished(result: Hmr.Result) {
+  expect(result.status).to.equal('finished')
+  return result as Hmr.Result.Finished
+}
+
 describe('HMR', () => {
   describe('nested entry tree', () => {
     let ctx: Context
@@ -156,8 +161,8 @@ describe('HMR', () => {
       // one change, two entries in the batch: the tree host and the entry
       // nested two fiber levels below it
       treeDep.modify(c => c.replace("version = 'tree-v1'", "version = 'tree-v2'"))
-      const result = await ctx.hmr.reconcile({ files: [treeDep.path] })
-      expect(result.failed).to.deep.equal([])
+      const result = finished(await ctx.hmr.reconcile({ files: [treeDep.path] }))
+      expect(result.fibers.map(fiber => fiber.state)).to.not.include(FiberState.FAILED)
 
       expect(ctx.bail('hmr-test/get-tree')).to.equal('tree-v2')
       // the host rebuilds its subtree; reloading the nested entry separately
@@ -185,7 +190,7 @@ describe('HMR', () => {
       stats.stallTreeInit = 0
       treeDep.write(treeDep.original.replace("version = 'tree-v1'", "version = 'tree-v3'"))
       const results = await Promise.all([first, ctx.hmr.reconcile({ files: [treeDep.path] })])
-      expect(results.flatMap(result => result.failed)).to.deep.equal([])
+      expect(results.flatMap(result => finished(result).fibers).map(fiber => fiber.state)).to.not.include(FiberState.FAILED)
 
       expect(ctx.bail('hmr-test/get-tree')).to.equal('tree-v3')
 
@@ -276,9 +281,9 @@ describe('HMR', () => {
 
       stats.multiApplies = []
       pluginMulti.modify(c => c.replace("version = 'multi-v1'", "version = 'multi-v2'"))
-      const result = await ctx.hmr.reconcile({ files: [pluginMulti.path] })
+      const result = finished(await ctx.hmr.reconcile({ files: [pluginMulti.path] }))
 
-      expect(result.replaced).to.have.length(2)
+      expect(result.fibers).to.have.length(2)
       // exactly one new instance per entry, each with its own config intact
       expect([...stats.multiApplies].sort()).to.deep.equal(['a:multi-v2', 'b:multi-v2'])
     }, 15000)

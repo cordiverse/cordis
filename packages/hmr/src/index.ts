@@ -1,7 +1,6 @@
 import { Context, Fiber, Plugin, Service } from 'cordis'
 import { Dict } from 'cosmokit'
 import { ModuleJob, ModuleLoader, unwrapExports } from '@cordisjs/plugin-loader'
-import type Loader from '@cordisjs/plugin-loader'
 import type {} from '@cordisjs/plugin-fs'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { relative, resolve, sep } from 'node:path'
@@ -105,8 +104,6 @@ class Hmr extends Service {
   private _current?: symbol
   private _storage = new AsyncLocalStorage<symbol>()
 
-  private _loader?: Loader
-
   constructor(ctx: Context, public config: Hmr.Config) {
     super(ctx, 'hmr')
     const internal = ModuleLoader.fromInternal()
@@ -126,15 +123,11 @@ class Hmr extends Service {
         : resolve(config.base || '.')
 
     ctx.inject(['fs'], ctx => this._watch(ctx))
-    ctx.inject(['loader'], (ctx) => {
-      this._loader = ctx.loader
-      ctx.effect(() => () => this._loader = undefined)
-    })
   }
 
   /**
    * Reconcile the changes collected over each debounce window. A change to a
-   * host module calls `ctx.loader.exit()`.
+   * host module is only reported, since restarting is up to the host.
    */
   private _watch(ctx: Context) {
     const { enabled, root, ignored, debounce } = this.config.watch
@@ -155,19 +148,11 @@ class Hmr extends Service {
       try {
         // This waits behind a running transaction.
         const result = await this.reconcile({ files })
-        for (const { url, reason } of result.pending) {
-          this.ctx.logger.debug('change at %C not applied (%s)', url, reason)
+        // an import failure has been logged by the transaction itself
+        if (result.status === 'host-module-changed') {
+          const paths = result.urls.map(url => this._relative(url)).join(', ')
+          this.ctx.logger.warn('host module changed: %s, restart to apply', paths)
         }
-        const hostModules = result.pending
-          .filter(({ reason }) => reason === 'host-module')
-          .map(({ url }) => this._relative(url))
-        if (!hostModules.length) return
-        if (!this._loader) {
-          this.ctx.logger.warn('host module changed: %s, restart required', hostModules.join(', '))
-          return
-        }
-        this.ctx.logger.info('host module changed: %s, restarting', hostModules.join(', '))
-        await this._loader.exit()
       } catch (error) {
         this.ctx.logger.warn(error)
       }
@@ -209,6 +194,10 @@ class Hmr extends Service {
   /**
    * Replace the plugins affected by `options.files`. Transactions run one at
    * a time; one started from within the running transaction is rejected.
+   *
+   * A changed module that no plugin depends on is still evicted from the
+   * module cache: its next import, such as a dynamic one, gets the new code,
+   * while existing references keep the old one.
    */
   reconcile(options: Hmr.ReconcileOptions): Promise<Hmr.Result> {
     const current = this._storage.getStore()
@@ -319,20 +308,16 @@ class Hmr extends Service {
   }
 
   private async _reconcile(options: Hmr.ReconcileOptions): Promise<Hmr.Result> {
-    const result: Hmr.Result = { replaced: [], failed: [], pending: [] }
+    const result: Hmr.Result.Finished = { status: 'finished', fibers: [] }
     const files = new Set([...options.files].map(toUrl))
     if (!files.size) return result
 
     const internal = this.internal
 
-    // A change to a host module cannot be applied in place, and the restart
-    // it requires supersedes everything else in the batch.
-    if ([...files].some(url => this.hostModules.has(url))) {
-      for (const url of files) {
-        result.pending.push({ url, reason: this.hostModules.has(url) ? 'host-module' : 'restart-required' })
-      }
-      return result
-    }
+    // A change to a host module cannot be applied in place, so nothing in
+    // the batch is applied.
+    const urls = [...files].filter(url => this.hostModules.has(url))
+    if (urls.length) return { status: 'host-module-changed', urls }
 
     // In Node 24, both CJS and ESM modules imported via import() end up
     // in loadCache, so this check covers all module formats.
@@ -341,7 +326,7 @@ class Hmr extends Service {
       if (internal.loadCache.has(url)) {
         changed.add(url)
       } else {
-        result.pending.push({ url, reason: 'not-loaded' })
+        this.ctx.logger.debug('skip %C (not loaded)', this._relative(url))
       }
     }
     if (!changed.size) return result
@@ -396,7 +381,7 @@ class Hmr extends Service {
     }
 
     for (const url of changed) {
-      if (!owned.has(url)) result.pending.push({ url, reason: 'no-plugin' })
+      if (!owned.has(url)) this.ctx.logger.debug('evict %C (no dependent plugin)', this._relative(url))
     }
 
     /**
@@ -469,8 +454,7 @@ class Hmr extends Service {
     } catch (error) {
       handleError(this.ctx, error)
       rollback()
-      result.aborted = { error }
-      return result
+      return { status: 'import-failed', error }
     }
 
     // Stage 2: unload (per plugin, synchronous).
@@ -514,7 +498,6 @@ class Hmr extends Service {
     // Stage 3: reload (per fiber, concurrent).
     const logged = new Set<string>()
     await Promise.all(staleFibers.map(async ({ path, replacement, fiber }) => {
-      let newFiber: Fiber | undefined
       try {
         while (fiber.inertia) await fiber.inertia
 
@@ -541,25 +524,23 @@ class Hmr extends Service {
         }
 
         // hide stack trace from HMR
-        newFiber = fiber.parent.registry.plugin(replacement, fiber.config, () => [])
+        const newFiber = fiber.parent.registry.plugin(replacement, fiber.config, () => [])
         newFiber.entry = fiber.entry
         if (isEntryRoot) entry.innerFiber = newFiber
         if (!logged.has(path)) {
           logged.add(path)
           this.ctx.logger.info('reload plugin at %C', path)
         }
-        await newFiber.await()
-        result.replaced.push(newFiber)
+        result.fibers.push(newFiber)
+        // No rollback: a plugin that fails to apply is left FAILED, exactly
+        // as it would be on a cold start, and has already been logged by its
+        // fiber. It stays registered and keeps its parent and config, so the
+        // next change to the file retries it.
+        await newFiber.await().catch(() => {})
       } catch (error) {
-        // No rollback: a plugin that fails to load is left failed, exactly
-        // as it would be on a cold start. It stays registered and keeps its
-        // parent and config, so the next change to the file retries it.
-        // A failure inside the new fiber has already been logged by itself.
-        if (!newFiber) {
-          this.ctx.logger.warn('failed to reload plugin at %C', path)
-          this.ctx.logger.warn(error)
-        }
-        result.failed.push({ fiber: newFiber ?? fiber, error })
+        // no fiber has been created, so there is nothing to report
+        this.ctx.logger.warn('failed to reload plugin at %C', path)
+        this.ctx.logger.warn(error)
       }
     }))
 
@@ -581,8 +562,7 @@ namespace Hmr {
   }
 
   export const Config: z<Config> = z.object({
-    base: z.string().description('The directory that logged paths, `watch.root` and `watch.ignored` are relative to. '
-      + 'Defaults to the context directory, or the working directory without one.'),
+    base: z.string().description('The base directory. Defaults to `ctx.baseUrl`.'),
     watch: z.object({
       enabled: z.boolean().default(false).description('Reload on file changes. Requires the `fs` service.'),
       root: z.array(String).role('table').default(['.']).description('Files or directories to watch, relative to `base`.'),
@@ -601,37 +581,33 @@ namespace Hmr {
     files: Iterable<string | URL>
   }
 
-  export type PendingReason =
-    // the file is a host module, which requires a restart
-    | 'host-module'
-    // another file in the batch is a host module, so nothing is applied
-    | 'restart-required'
-    // no module has been loaded from the file
-    | 'not-loaded'
-    // the module is loaded, but no registered plugin depends on it
-    | 'no-plugin'
+  export type Result = Result.Finished | Result.ImportFailed | Result.HostModuleChanged
 
-  export interface Pending {
-    url: string
-    reason: PendingReason
-  }
+  export namespace Result {
+    /** The batch is applied. */
+    export interface Finished {
+      status: 'finished'
+      fibers: Fiber[]
+    }
 
-  export interface Failure {
-    /** left FAILED, as on a cold start */
-    fiber: Fiber
-    error: unknown
-  }
-
-  export interface Result {
-    replaced: Fiber[]
-    failed: Failure[]
-    /** set when the new modules failed to import; nothing has been replaced */
-    aborted?: { error: unknown }
     /**
-     * changed files that have not been applied; a `host-module` reason means
-     * that the batch can only be applied by restarting the process
+     * A new module failed to import, or does not export a plugin. Nothing is
+     * applied, and the module cache is restored.
      */
-    pending: Pending[]
+    export interface ImportFailed {
+      status: 'import-failed'
+      error: unknown
+    }
+
+    /**
+     * A changed file is a host module, which can only be applied by
+     * restarting the process. Nothing is applied.
+     */
+    export interface HostModuleChanged {
+      status: 'host-module-changed'
+      /** the changed host modules */
+      urls: string[]
+    }
   }
 }
 

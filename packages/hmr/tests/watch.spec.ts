@@ -3,6 +3,7 @@ import Loader from '@cordisjs/plugin-loader'
 import Fs, { WatchCallback, WatchOptions } from '@cordisjs/plugin-fs'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, resolve, sep } from 'node:path'
+import { format } from 'node:util'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, MockInstance, vi } from 'vitest'
 import Hmr from '../src/index.ts'
@@ -49,14 +50,6 @@ function change(filename: string) {
   }
 }
 
-class TestLoader extends Loader {
-  static exits = 0
-
-  exit() {
-    TestLoader.exits++
-  }
-}
-
 describe('Hmr with fs', () => {
   let ctx: Context
   let fiber: Fiber<Context> | undefined
@@ -79,14 +72,13 @@ describe('Hmr with fs', () => {
     await fiber?.dispose()
     fiber = undefined
     FakeFs.watches = []
-    TestLoader.exits = 0
     reconcile.mockRestore()
   })
 
   async function setup(config: Partial<Hmr.WatchConfig> = {}, base?: string) {
     ctx = new Context()
     ctx.baseUrl = import.meta.url
-    fiber = await ctx.plugin(TestLoader)
+    fiber = await ctx.plugin(Loader)
     await ctx.plugin(FakeFs)
     await ctx.plugin(Hmr, { base, watch: { enabled: true, debounce: 50, ...config } })
   }
@@ -180,24 +172,32 @@ describe('Hmr with fs', () => {
     writeFileSync(b, plugin('b', 'v2'))
     change(a)
     change(b)
-    const result = await reloaded
+    const result = await reloaded as Hmr.Result.Finished
 
-    expect(result.replaced).to.have.length(2)
+    expect(result.status).to.equal('finished')
+    expect(result.fibers).to.have.length(2)
     expect(ctx.bail('hmr-watch/a' as any)).to.equal('v2')
     expect(ctx.bail('hmr-watch/b' as any)).to.equal('v2')
     await new Promise(r => setTimeout(r, 100))
     expect(reconcile).toHaveBeenCalledTimes(1)
   })
 
-  it('calls loader.exit() when a restart is required', async () => {
+  it('only reports a change to a host module', async () => {
     await setup()
     const path = await load('host.ts', plugin('host', 'v1'))
     ctx.hmr.hostModules.add(pathToFileURL(path).href)
+    const warnings: string[] = []
+    ctx.logger.exporter({
+      export(message) {
+        if (message.type === 'warn') warnings.push(format(...message.args))
+      },
+    })
 
+    const reloaded = nextReload()
+    writeFileSync(path, plugin('host', 'v2'))
     change(path)
-    await new Promise(r => setTimeout(r, 200))
-
-    expect(TestLoader.exits).to.equal(1)
+    await reloaded
+    await vi.waitFor(() => expect(warnings.some(warning => warning.includes('host.ts'))).to.equal(true))
     expect(ctx.bail('hmr-watch/host' as any)).to.equal('v1')
   })
 

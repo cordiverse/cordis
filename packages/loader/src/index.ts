@@ -202,9 +202,6 @@ export class Loader extends EntryTree {
     }
   }
 
-  exit() {
-  }
-
   unwrapExports(exports: any) {
     return unwrapExports(exports)
   }
