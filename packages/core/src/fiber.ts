@@ -270,7 +270,13 @@ export class Fiber {
           await Promise.resolve()
           info.error = new Error()
           while (true) {
-            if (runner.epoch !== oldEpoch) return
+            if (runner.epoch !== oldEpoch) {
+              // The effect's epoch moved on (dispose, reload, dependency loss): close the
+              // generator so its `finally` blocks run instead of abandoning it suspended at the
+              // last `yield`. The disposables it already yielded are drained by the runner.
+              await iter.return?.()
+              return
+            }
             const result = await iter.next()
             safeCollect(result.value)
             if (result.done) return
