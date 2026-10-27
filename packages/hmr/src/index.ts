@@ -50,34 +50,6 @@ interface StalePlugin {
   plugin: Plugin
 }
 
-/** One instance of a stale plugin, paired with what will replace it. */
-interface StaleFiber {
-  /** the module file, relative to `baseDir`, for logging */
-  path: string
-  /** the freshly imported plugin to rebuild with */
-  replacement: any
-  /** the fiber left behind by the unload stage */
-  fiber: Fiber
-}
-
-/**
- * Whether any ancestor of `fiber` is inactive, i.e. already disposed. Such a
- * fiber must not be rebuilt, for either of two reasons:
- *
- * - The ancestor is being reloaded in this batch, and rebuilding it rebuilds
- *   everything below it.
- * - The ancestor went away for an unrelated reason (a service disappeared, a
- *   concurrent config update). Nobody is going to rebuild it, and registering
- *   under a disposed context throws `INACTIVE_EFFECT`.
- */
-function hasInactiveAncestor(fiber: Fiber) {
-  for (let current = fiber.parent.fiber; ; current = current.parent.fiber) {
-    if (current.uid === null) return true
-    // the root fiber is its own parent's fiber
-    if (current === current.parent.fiber) return false
-  }
-}
-
 function toUrl(file: string | URL) {
   if (file instanceof URL) return file.href
   if (file.startsWith('file:')) return new URL(file).href
@@ -443,7 +415,7 @@ class Hmr extends Service {
     // Stage 1: re-import the module graph (all-or-nothing).
     // Plugin validity is checked here, where the only mutated state is the
     // module cache and no plugin has been touched yet. Moving this check
-    // earlier is what allows stage 3 to have no rollback at all: a malformed
+    // earlier is what allows the later stages to have no rollback at all: a malformed
     // export can no longer fail halfway through swapping instances.
     const replacements: Dict = Object.create(null)
     try {
@@ -468,92 +440,31 @@ class Hmr extends Service {
       return result
     }
 
-    // Stage 2: unload (per plugin, synchronous).
-    // `registry.delete()` does not block, so deleting everything up front
-    // costs nothing, and it is what makes the ancestor check below decidable:
-    // by the time anything is rebuilt, every fiber this batch tears down has
-    // already had its `uid` cleared.
-    let staleFibers: StaleFiber[] = []
+    // Stage 2: replace the plugins in place (synchronous).
+    // A plugin may have been disposed while stage 1 was importing, in which
+    // case the replacement only forwards a later registration of it.
+    // Waiting is left to stage 3, so that no plugin is delayed behind another.
+    const fibers: Fiber[] = []
     for (const { url, plugin } of stalePlugins.values()) {
-      // The plugin may have been disposed while stage 1 was importing.
-      const runtime = this.ctx.registry.get(plugin)
-      if (!runtime) continue
       const path = this._relative(url)
-
-      // `registry.delete()` deliberately leaves the fibers in `runtime.fibers`
-      // (the `registry.has()` guard in `Fiber` skips the removal) so that we
-      // can rebuild from them; snapshot anyway, as the list is backed by a
-      // live `Map` iterator.
-      const fibers = [...runtime.fibers]
       try {
-        this.ctx.registry.delete(plugin)
-      } catch (err) {
-        this.ctx.logger.warn('failed to dispose plugin at %C', path)
-        this.ctx.logger.warn(err)
-      }
-      for (const fiber of fibers) {
-        staleFibers.push({ path, replacement: replacements[url], fiber })
-      }
-    }
-
-    // Everything below a fiber that is going away is rebuilt by that fiber, so
-    // rebuilding it here as well would yield two instances. Decided in a
-    // single pass now that every delete is done and before anything is
-    // awaited, so that stage 3 only ever has to think about its own fiber.
-    staleFibers = staleFibers.filter((stale) => {
-      if (!hasInactiveAncestor(stale.fiber)) return true
-      this.ctx.logger.debug('skip plugin at %C (inactive ancestor)', stale.path)
-      return false
-    })
-
-    // Stage 3: reload (per fiber, concurrent).
-    const logged = new Set<string>()
-    await Promise.all(staleFibers.map(async ({ path, replacement, fiber }) => {
-      try {
-        while (fiber.inertia) await fiber.inertia
-
-        const entry = fiber.entry
-        // Re-enable's init() may still be awaiting. It does not wait on stage 3.
-        // A rejection is already logged and must not skip the decision below.
-        while (entry?._initTask) await entry._initTask.catch(() => {})
-
-        // The host may have been replaced during the wait (e.g. disabled and re-enabled).
-        if (hasInactiveAncestor(fiber)) {
-          this.ctx.logger.debug('skip plugin at %C (inactive ancestor)', path)
-          return
-        }
-
-        const removed = !!entry && entry.parent.tree.store[entry.options.id] !== entry
-        // A nested fiber shares the host entry. Only the entry root can already be live.
-        const isEntryRoot = !!entry && fiber.parent.fiber?.entry !== entry
-        // `fiber` itself is disposed, so a live `entry.innerFiber` is a replacement.
-        const replaced = isEntryRoot && entry.innerFiber?.uid != null
-        if (entry?.disabled || removed || replaced) {
-          const reason = entry?.disabled ? 'disabled' : removed ? 'removed' : 'live fiber'
-          this.ctx.logger.debug(`skip plugin at %C (${reason})`, path)
-          return
-        }
-
-        // hide stack trace from HMR
-        const newFiber = fiber.parent.registry.plugin(replacement, fiber.config, () => [])
-        newFiber.entry = fiber.entry
-        if (isEntryRoot) entry.innerFiber = newFiber
-        if (!logged.has(path)) {
-          logged.add(path)
-          this.ctx.logger.info('reload plugin at %C', path)
-        }
-        result.settledFibers.push(newFiber)
-        // No rollback: a plugin that fails to apply is left FAILED, exactly
-        // as it would be on a cold start, and has already been logged by its
-        // fiber. It stays registered and keeps its parent and config, so the
-        // next change to the file retries it.
-        await newFiber.await().catch(() => {})
+        const replaced = this.ctx.registry.replace(plugin, replacements[url])
+        if (!replaced.length) continue
+        this.ctx.logger.info('reload plugin at %C', path)
+        fibers.push(...replaced)
       } catch (error) {
-        // no fiber has been created, so there is nothing to report
         this.ctx.logger.warn('failed to reload plugin at %C', path)
         this.ctx.logger.warn(error)
       }
-    }))
+    }
+
+    // Stage 3: wait for the fibers to settle (concurrent).
+    // No rollback: a plugin that fails to apply is left FAILED, exactly as it
+    // would be on a cold start, and has already been logged by its fiber. It
+    // keeps its parent and config, so the next change to the file retries it.
+    await Promise.all(fibers.map(fiber => fiber.await().catch(() => {})))
+    // a fiber below another restarted fiber may have been disposed by it
+    result.settledFibers = fibers.filter(fiber => fiber.uid !== null)
 
     return result
   }

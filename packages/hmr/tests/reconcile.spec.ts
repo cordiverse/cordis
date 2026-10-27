@@ -78,11 +78,12 @@ describe('Hmr.reconcile', () => {
     expect(ctx.get('hmr')).to.be.undefined
   })
 
-  it('replaces an entry plugin', async () => {
+  it('replaces an entry plugin in place', async () => {
     await setup()
     const path = await load('entry.ts', plugin('entry', 'v1', `
   ctx.effect(() => () => stats.entryDisposed = true)`))
     const entry = [...ctx.loader.entries()].find(entry => entry.options.name === './__reconcile__/entry.ts')!
+    const inner = entry.innerFiber!
     expect(ctx.bail('reconcile/entry' as any)).to.equal('v1')
 
     writeFileSync(path, plugin('entry', 'v2'))
@@ -92,7 +93,10 @@ describe('Hmr.reconcile', () => {
     expect(result.settledFibers[0].state).to.equal(FiberState.ACTIVE)
     expect(result.importFailures).to.deep.equal([])
     expect(stats.entryDisposed).to.equal(true)
-    expect(entry.innerFiber!.uid).to.equal(result.settledFibers[0].uid)
+    // the entry keeps its fiber, which now runs the new plugin
+    expect(entry.innerFiber).to.equal(inner)
+    expect(Object.getPrototypeOf(inner)).to.equal(result.settledFibers[0])
+    expect(entry.disabled).to.equal(false)
     expect(ctx.bail('reconcile/entry' as any)).to.equal('v2')
   })
 
@@ -166,7 +170,7 @@ export function apply(ctx: Context) {
     expect(stats.siblingApplied).to.equal(1)
   })
 
-  it('replaces the inner fiber of an entry with an injection scope', async () => {
+  it('replaces the inner fiber of an entry with an injection scope in place', async () => {
     await setup()
     ctx.provide('reconcileScope', {})
     const path = fixture('scoped.ts', plugin('scoped', 'v1'))
@@ -174,6 +178,7 @@ export function apply(ctx: Context) {
     const entry = ctx.loader.store[id]!
     await ctx.loader.await()
     const outer = entry.outerFiber!
+    const inner = entry.innerFiber!
     expect(outer).to.be.ok
     expect(ctx.bail('reconcile/scoped' as any)).to.equal('v1')
 
@@ -181,10 +186,10 @@ export function apply(ctx: Context) {
     const result = await ctx.hmr.reconcile({ files: [path] })
 
     expect(result.settledFibers).to.have.length(1)
-    // the outer fiber is kept, and the new fiber takes the place of the inner one
+    // both fibers are kept
     expect(entry.outerFiber === outer).to.equal(true)
-    expect(entry.innerFiber!.uid).to.equal(result.settledFibers[0].uid)
-    expect(result.settledFibers[0].parent.fiber.uid).to.equal(outer.uid)
+    expect(entry.innerFiber).to.equal(inner)
+    expect(Object.getPrototypeOf(inner)).to.equal(result.settledFibers[0])
     expect(ctx.bail('reconcile/scoped' as any)).to.equal('v2')
   })
 
@@ -203,13 +208,17 @@ export function apply(ctx: Context) {
     await setup()
     const path = fixture('direct.ts', plugin('direct', 'v1'))
     const exports = await ctx.hmr.internal.import(pathToFileURL(path).href, import.meta.url, {})
-    await ctx.plugin(unwrapExports(exports))
+    const direct = ctx.plugin(unwrapExports(exports))
+    await direct
     expect(ctx.bail('reconcile/direct' as any)).to.equal('v1')
 
     writeFileSync(path, plugin('direct', 'v2'))
     const result = await ctx.hmr.reconcile({ files: [path] })
 
     expect(result.settledFibers).to.have.length(1)
+    // the fiber returned by `ctx.plugin()` stays valid
+    expect(Object.getPrototypeOf(direct)).to.equal(result.settledFibers[0])
+    expect(direct.state).to.equal(FiberState.ACTIVE)
     expect(ctx.bail('reconcile/direct' as any)).to.equal('v2')
   })
 
