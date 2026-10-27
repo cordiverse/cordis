@@ -101,6 +101,30 @@ describe('registry.replace()', () => {
     expect(next.mock.calls).to.have.length(1)
   })
 
+  it('reloads a consumer of a replaced service', async () => {
+    const root = new Context()
+    const old = (ctx: Context) => {
+      ctx.provide('replaced', { value: 'old' })
+    }
+    const next = (ctx: Context) => {
+      ctx.provide('replaced', { value: 'next' })
+    }
+    const values: string[] = []
+    await root.plugin(old)
+    const consumer = await root.plugin({
+      inject: ['replaced'],
+      apply: (ctx: Context) => {
+        values.push(ctx.get('replaced' as any).value)
+      },
+    })
+
+    const [fiber] = root.registry.replace(old, next)
+    await fiber.await()
+    await consumer.await()
+    expect(values).to.deep.equal(['old', 'next'])
+    expect(consumer.state).to.equal(FiberState.ACTIVE)
+  })
+
   it('merges the fibers into a registered plugin', async () => {
     const root = new Context()
     const old = mock.fn()
