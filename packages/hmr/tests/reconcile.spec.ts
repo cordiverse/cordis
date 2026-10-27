@@ -1,5 +1,6 @@
 import { Context, Fiber, FiberState } from 'cordis'
-import Loader, { ModuleLoader, unwrapExports } from '@cordisjs/plugin-loader'
+import { ModuleLoader, unwrapExports } from '@cordisjs/loader-utils'
+import Loader from '@cordisjs/plugin-loader'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'

@@ -1,6 +1,6 @@
 import { Context, Fiber, FiberState, Service, ValidationError } from 'cordis'
-import { Awaitable, defineProperty, isNullable } from 'cosmokit'
-import { ModuleLoader } from './internal.ts'
+import { Awaitable, defineProperty } from 'cosmokit'
+import { ModuleLoader, unwrapExports } from '@cordisjs/loader-utils'
 import { Entry, EntryOptions } from './config/entry.ts'
 import { EntryGroup } from './config/group.ts'
 import isolate from './config/isolate.ts'
@@ -12,7 +12,6 @@ export * from './config/group.ts'
 export * from './config/isolate.ts'
 export * from './config/tree.ts'
 export * from './config/utils.ts'
-export * from './internal.ts'
 
 declare module 'cordis' {
   interface Events {
@@ -200,16 +199,6 @@ export class Loader extends EntryTree {
   unwrapExports(exports: any) {
     return unwrapExports(exports)
   }
-}
-
-/** Get the plugin exported by a module namespace. */
-export function unwrapExports(exports: any) {
-  if (isNullable(exports)) return exports
-  exports = exports.default ?? exports
-  // https://github.com/evanw/esbuild/issues/2623
-  // https://esbuild.github.io/content-types/#default-interop
-  if (!exports.__esModule) return exports
-  return exports.default ?? exports
 }
 
 export default Loader

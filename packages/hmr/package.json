@@ -42,8 +42,13 @@
     }
   },
   "peerDependencies": {
-    "@cordisjs/plugin-loader": "^1.0.0-rc.9",
-    "cordis": "^4.0.0-rc.12"
+    "cordis": "^4.0.0-rc.12",
+    "node-addon-require-builtin": "^0.1.0"
+  },
+  "peerDependenciesMeta": {
+    "node-addon-require-builtin": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@cordisjs/plugin-fs-node": "^0.1.0",
@@ -57,6 +62,7 @@
   },
   "dependencies": {
     "@babel/code-frame": "^7.29.0",
+    "@cordisjs/loader-utils": "^0.1.0",
     "cosmokit": "^1.8.1",
     "picomatch": "^4.0.3",
     "schemastery": "^3.18.0"

@@ -48,6 +48,7 @@
     }
   },
   "dependencies": {
+    "@cordisjs/loader-utils": "^0.1.0",
     "cosmokit": "^1.8.1"
   }
 }

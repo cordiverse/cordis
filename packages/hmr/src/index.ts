@@ -1,6 +1,6 @@
 import { Context, Fiber, Plugin, Service } from 'cordis'
 import { Dict } from 'cosmokit'
-import { ModuleJob, ModuleLoader, unwrapExports } from '@cordisjs/plugin-loader'
+import { ModuleJob, ModuleLoader, unwrapExports } from '@cordisjs/loader-utils'
 import type {} from '@cordisjs/plugin-fs-node'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { relative, resolve, sep } from 'node:path'
