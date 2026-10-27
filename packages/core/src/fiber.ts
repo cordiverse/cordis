@@ -188,8 +188,8 @@ export class Fiber {
           this.context.emit('internal/plugin', this)
           const runtime = this.runtime!
           this._remove!()
-          if (!runtime.fibers.length && this.ctx.registry.get(runtime.callback) === runtime) {
-            this.ctx.registry.delete(runtime.callback)
+          if (!runtime.fibers.length) {
+            this.ctx.registry._unregister(runtime)
           }
           this._setEpoch(INACTIVE)
           // `inertia` never rejects: `_reload` and `_unload` both log their
@@ -394,14 +394,12 @@ export class Fiber {
   }
 
   _replace(runtime: Plugin.Runtime, inject: Dict<any>) {
-    const legacy = this.runtime!
-    if (runtime !== legacy) {
+    if (runtime !== this.runtime) {
       this._remove!()
       this._remove = runtime.fibers.push(this)
       this.runtime = runtime
     }
     this.inject = inject
-    this.context.emit('internal/replace', this, legacy)
     this._store = Object.create(null)
     for (const name of Object.keys(this.inject)) {
       this._checkImpl(name)

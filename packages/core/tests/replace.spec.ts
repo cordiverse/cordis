@@ -42,8 +42,6 @@ describe('registry.replace()', () => {
 
   it('takes the dependencies of the new plugin', async () => {
     const root = new Context()
-    const replaced = mock.fn()
-    root.on('internal/replace', replaced)
     const old = { apply() {} }
     const apply = mock.fn()
     const next = { inject: ['dep'], apply }
@@ -51,8 +49,6 @@ describe('registry.replace()', () => {
 
     root.registry.replace(old, next)
     await fiber.await()
-    expect(replaced.mock.calls).to.have.length(1)
-    expect(replaced.mock.calls[0].arguments[0]).to.equal(fiber)
     expect(Object.keys(fiber.inject)).to.deep.equal(['dep'])
     expect(fiber.state).to.equal(FiberState.PENDING)
     expect(apply.mock.calls).to.have.length(0)

@@ -178,15 +178,8 @@ export class RegistryService {
     return !!key && this._internal.has(key)
   }
 
-  delete(plugin: Plugin) {
-    const key = this._forward(plugin)?.[0]
-    const runtime = key && this._internal.get(key)
-    if (!runtime) return
-    this._internal.delete(key)
-    for (const fiber of [...runtime.fibers]) {
-      fiber.dispose()
-    }
-    return runtime
+  _unregister(runtime: Plugin.Runtime) {
+    this._internal.delete(runtime.callback)
   }
 
   replace(oldPlugin: Plugin, newPlugin: Plugin): Fiber[] {

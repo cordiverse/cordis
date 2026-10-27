@@ -446,3 +446,24 @@ describe('Loader: parent teardown', () => {
     expect(changes).to.deep.equal([])
   })
 })
+
+describe('Loader: replaced plugin', () => {
+  it('keeps the entry of a plugin replaced in place', async () => {
+    const root = new Context()
+    await root.plugin(MockLoader)
+    const loader = root.loader as any as MockLoader
+    const foo = loader.mock('foo', () => {})
+    await loader.read([{ id: '1', name: 'foo', config: { a: 1 } }])
+    const fiber = loader.expectFiber('1')
+
+    const next = mock.fn()
+    root.registry.replace(foo, next)
+    await fiber.await()
+
+    expect(loader.expectFiber('1')).to.equal(fiber)
+    expect(next.mock.calls).to.have.length(1)
+    expect(next.mock.calls[0].arguments[1]).to.deep.equal({ a: 1 })
+    expect(loader.store['1']!.disabled).to.equal(false)
+    expect(loader.data).to.deep.equal([{ id: '1', name: 'foo', config: { a: 1 } }])
+  })
+})
