@@ -64,7 +64,11 @@ export default function isolate(ctx: Context) {
   function access(entry: Entry, name: string, create = false) {
     let realm: Realm | undefined
     const label = entry.options.isolate?.[name]
-    if (!label) return
+    // `validateOptions` accepts any string, and the empty string is one: treat only a missing
+    // label as "no isolate". Testing truthiness mapped '' to `undefined`, which the isolate map
+    // still recorded for the name, and every service isolated under '' then shared the
+    // `undefined` key -- the second one failed with "has been registered at".
+    if (label === undefined || label === null) return
     if (label === true) {
       realm = entry.realm ??= new LocalRealm(entry)
     } else if (create) {
