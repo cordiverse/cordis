@@ -8,6 +8,7 @@ import { handleError } from './error.ts'
 import { collectDependencies, isBuiltin, isPackaged } from './graph.ts'
 import { IdentityStore } from './identity.ts'
 import { cjsChildren, cjsHas, cjsUrls, ModuleCache } from './cache.ts'
+import { invalidate } from './manifest.ts'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
 import picomatch from 'picomatch'
@@ -372,6 +373,9 @@ class Hmr extends Service {
         ...cjsUrls(),
       ]
       for (const root of options.roots) {
+        // a package operation rewrites whole subtrees; an updated package
+        // stops resolving its entries through Node's cached manifest reader
+        invalidate(toUrl(root))
         for (const url of this.identity.expand(toUrl(root), loaded)) add(url)
       }
     }
