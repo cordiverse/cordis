@@ -132,6 +132,9 @@ export class Fiber {
   private _runner: EffectRunner<string>
   private _store: Dict<Impl> = Object.create(null)
   private _release: (() => void) | undefined
+  // the removal handle of this fiber in `runtime.fibers`; `registry.replace()`
+  // moves the fiber to another runtime, so the handle cannot be captured
+  private _remove: (() => void) | undefined
 
   constructor(
     public parent: Context,
@@ -153,15 +156,18 @@ export class Fiber {
         getOuterStack,
         execute: function (this: Fiber) {
           const config = this._resolve(this.config)
-          if (isConstructor(runtime.callback)) {
+          // `registry.replace()` swaps the implementation behind a fiber, so the
+          // runtime is read here instead of captured from the constructor
+          const callback = this.runtime!.callback
+          if (isConstructor(callback)) {
             // eslint-disable-next-line new-cap
-            const instance = new runtime.callback(this.ctx, config)
+            const instance = new callback(this.ctx, config)
             for (const hook of instance?.[symbols.initHooks] ?? []) {
               hook()
             }
             return instance?.[symbols.init]?.()
           } else {
-            return runtime.callback(this.ctx, config)
+            return callback(this.ctx, config)
           }
         },
         collect,
@@ -174,7 +180,7 @@ export class Fiber {
       }
 
       this.dispose = parent.fiber.effect(() => {
-        const remove = runtime.fibers.push(this)
+        this._remove = this.runtime!.fibers.push(this)
         try {
           this._refresh()
         } catch (error) {
@@ -184,8 +190,9 @@ export class Fiber {
         return async () => {
           this.uid = null
           this.context.emit('internal/plugin', this)
+          const runtime = this.runtime!
           if (this.ctx.registry.has(runtime.callback)) {
-            remove()
+            this._remove?.()
             if (!runtime.fibers.length) {
               this.ctx.registry.delete(runtime.callback)
             }
@@ -390,6 +397,28 @@ export class Fiber {
       return delete this._store[name]
     }
     this._store[name] = impl
+  }
+
+  // Called by `registry.replace()`: the fiber keeps its identity while the
+  // implementation behind it is swapped, so its effects are rebuilt against the
+  // runtime it now points at. Failures stay with the fiber, as on a cold start.
+  _replace(runtime: Plugin.Runtime, inject: Dict<any>) {
+    if (this.uid === null) return
+    this._remove?.()
+    this.runtime = runtime
+    this._remove = runtime.fibers.push(this)
+    this.inject = inject
+    // listeners re-merge what the previous runtime declared, e.g. loader entries
+    this.context.emit('internal/replace', this)
+    for (const name of Object.keys(inject)) {
+      this._checkImpl(name)
+    }
+    const failed = !!this._error
+    this._error = undefined
+    // a fiber with no execution to rebuild — waiting for its dependencies, or on
+    // its way out — only takes the new runtime; it loads from it when it can
+    if (!failed && this._runner.epoch === INACTIVE) return
+    return this.restart()
   }
 
   _refresh() {
