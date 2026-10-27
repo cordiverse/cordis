@@ -6,6 +6,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { relative, resolve, sep } from 'node:path'
 import { handleError } from './error.ts'
 import { collectDependencies, isBuiltin, isPackaged } from './graph.ts'
+import { IdentityStore } from './identity.ts'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
 import picomatch from 'picomatch'
@@ -82,6 +83,11 @@ class Hmr extends Service {
    * out of the dependency walk, as before the walk learned to cross them.
    */
   private _hostsUnknown = false
+
+  // the recorded identity of every module file a transaction has touched:
+  // the disk is compared against it, so a caller does not need to know which
+  // files an operation changed
+  public identity = new IdentityStore()
 
   /** The tail of the transaction queue. */
   private _queue: Promise<void> = Promise.resolve()
@@ -189,6 +195,13 @@ class Hmr extends Service {
       // learned to cross them.
       this.ctx.logger.warn('host modules are unknown, node_modules stays excluded')
       this._hostsUnknown = true
+    }
+
+    // Record the identity of everything loaded so far, so the first
+    // `reconcile({ roots })` compares against a baseline; modules loaded
+    // later are covered at the end of the first transaction that touches them.
+    if (this.internal) {
+      this.identity.observeAll(Map.prototype.keys.call(this.internal.loadCache) as Iterable<string>)
     }
   }
 
@@ -300,7 +313,7 @@ class Hmr extends Service {
   private async _reconcile(options: Hmr.ReconcileOptions): Promise<Hmr.Result> {
     const result: Hmr.Result = { settledFibers: [], importFailures: [], skippedHostModules: [] }
     const files = new Set<string>()
-    for (const url of [...options.files].map(toUrl)) {
+    const add = (url: string) => {
       // A change to a host module cannot be applied in place. It is skipped,
       // and restarting is up to the caller.
       if (this.hostModules.has(url)) {
@@ -309,9 +322,26 @@ class Hmr extends Service {
         files.add(url)
       }
     }
-    if (!files.size) return result
+    for (const url of [...options.files ?? []].map(toUrl)) add(url)
 
     const internal = this.internal
+    const before = new Set(Map.prototype.keys.call(internal.loadCache) as Iterable<string>)
+
+    // `roots` widens the batch to what a package operation may have rewritten.
+    // Only recorded or loaded files can matter; an entry counts as loaded when
+    // any of its slots holds a job, since the cache keys also name entries
+    // `has` cannot serve, such as JSON modules.
+    if (options.roots) {
+      const loaded = [...Map.prototype.keys.call(internal.loadCache) as Iterable<string>]
+        .filter((url) => {
+          const entry = Map.prototype.get.call(internal.loadCache, url) as Record<string, unknown>
+          return entry && Object.values(entry).some(Boolean)
+        })
+      for (const root of options.roots) {
+        for (const url of this.identity.expand(toUrl(root), loaded)) add(url)
+      }
+    }
+    if (!files.size) return result
 
     // In Node 24, both CJS and ESM modules imported via import() end up
     // in loadCache, so this check covers all module formats.
@@ -320,6 +350,8 @@ class Hmr extends Service {
       if (internal.loadCache.has(url)) {
         changed.add(url)
       } else {
+        result.pending ??= []
+        result.pending.push({ url, reason: 'not-loaded' })
         this.ctx.logger.debug('skip %C (not loaded)', this._relative(url))
       }
     }
@@ -327,6 +359,17 @@ class Hmr extends Service {
 
     const { accepted, declined } = await this._analyze(changed)
     const invalidatedModules = new Set(accepted)
+    // Record the identity of every module the transaction touched, whether it
+    // succeeded or aborted: the disk holds the new content either way, and
+    // recording now keeps the next transaction from judging the same file
+    // changed again. A later fix still bumps mtime and is caught.
+    const recordIdentity = () => {
+      const touched = new Set(invalidatedModules)
+      for (const url of Map.prototype.keys.call(internal.loadCache) as Iterable<string>) {
+        if (!before.has(url)) touched.add(url)
+      }
+      this.identity.observeAll(touched)
+    }
     const stalePlugins = new Map<Plugin.Runtime, StalePlugin>()
     const owned = new Set<string>()
 
@@ -458,6 +501,7 @@ class Hmr extends Service {
       rollback()
       // the whole batch is a single unit for now
       result.importFailures.push({ urls: [...invalidatedModules], error })
+      recordIdentity()
       return result
     }
 
@@ -548,6 +592,7 @@ class Hmr extends Service {
       }
     }))
 
+    recordIdentity()
     return result
   }
 }
@@ -580,7 +625,15 @@ namespace Hmr {
 
   export interface ReconcileOptions {
     /** absolute paths or `file:` URLs */
-    files: Iterable<string | URL>
+    files?: Iterable<string | URL>
+    /**
+     * Absolute paths or `file:` URLs of directories or files whose whole
+     * subtree may have been rewritten, e.g. by a package manager: every
+     * recorded or loaded module underneath whose content cannot be proven
+     * unchanged joins the batch. At least one of `files` and `roots` is
+     * required; when both are given the batches are unioned.
+     */
+    roots?: Iterable<string | URL>
   }
 
   /** The running state is brought in line with the changes, as far as they can be applied. */
@@ -592,6 +645,16 @@ namespace Hmr {
      * process. They are skipped, while the other changes are applied.
      */
     skippedHostModules: string[]
+    /**
+     * Files in the batch that were recorded but are no longer loaded, so they
+     * cannot be reloaded. Only set when such a file is present.
+     */
+    pending?: PendingItem[]
+  }
+
+  export interface PendingItem {
+    url: string
+    reason: 'not-loaded'
   }
 
   /**
