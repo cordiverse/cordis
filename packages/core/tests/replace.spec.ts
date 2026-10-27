@@ -26,6 +26,23 @@ describe('registry.replace()', () => {
     expect([...root.registry.keys()]).to.deep.equal([next])
   })
 
+  it('emits internal/replace for each moved fiber', async () => {
+    const root = new Context()
+    const old = () => {}
+    const next = () => {}
+    const runtimes: any[] = []
+    root.on('internal/replace', (fiber) => {
+      runtimes.push(fiber.runtime)
+    })
+    const a = await root.plugin(old)
+    const b = await root.plugin(old)
+
+    const replaced = root.registry.replace(old, next)
+    expect(replaced).to.have.members([a, b])
+    // listeners see the fiber with its new implementation
+    expect(runtimes).to.deep.equal([root.registry.get(next), root.registry.get(next)])
+  })
+
   it('validates the config with the new schema', async () => {
     const root = new Context()
     const schema = (validate: (value: any) => any): any => ({

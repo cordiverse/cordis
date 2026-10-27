@@ -400,6 +400,7 @@ export class Fiber {
       this.runtime = runtime
     }
     this.inject = inject
+    this.context.emit('internal/replace', this)
     this._store = Object.create(null)
     for (const name of Object.keys(this.inject)) {
       this._checkImpl(name)

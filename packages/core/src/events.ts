@@ -186,6 +186,7 @@ export class EventsService {
 export interface Events {
   [key: symbol]: (...args: any[]) => any
   'internal/plugin'(fiber: Fiber): void
+  'internal/replace'(fiber: Fiber): void
   'internal/status'(fiber: Fiber, oldValue: FiberState): void
   'internal/service'(this: Context, name: string, value: any): void
   'internal/update'(this: Fiber, resolvedConfig: any, next: () => Awaitable<void>): Awaitable<void>
