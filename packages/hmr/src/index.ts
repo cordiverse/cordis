@@ -5,6 +5,7 @@ import type {} from '@cordisjs/plugin-fs-node'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { relative, resolve, sep } from 'node:path'
 import { handleError } from './error.ts'
+import { collectDependencies, isBuiltin, isPackaged } from './graph.ts'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
 import picomatch from 'picomatch'
@@ -18,27 +19,6 @@ declare module 'cordis' {
 
 // A Windows drive-letter path, e.g. `C:\app\cordis.yml` or `C:/app/cordis.yml`.
 const driveLetter = /^[A-Za-z]:[\\/]/
-
-function isExcluded(url: string) {
-  return url.startsWith('node:') || url.includes('/node_modules/')
-}
-
-/**
- * Recursively collect all module dependencies from a ModuleJob.
- * Skips node: builtins and node_modules to focus on user code.
- */
-async function loadDependencies(job: ModuleJob, ignored = new Set<string>()) {
-  const dependencies = new Set<string>()
-  async function traverse(job: ModuleJob) {
-    if (ignored.has(job.url) || dependencies.has(job.url)) return
-    if (isExcluded(job.url)) return
-    dependencies.add(job.url)
-    const children = await job.linked
-    await Promise.all(Array.prototype.map.call(children, traverse))
-  }
-  await traverse(job)
-  return dependencies
-}
 
 /** A registered plugin whose module has changed. */
 interface StalePlugin {
@@ -96,6 +76,12 @@ class Hmr extends Service {
    * modules can only be applied by restarting the process.
    */
   public hostModules = new Set<string>()
+
+  /**
+   * Set when the host graph could not be computed. Package modules then stay
+   * out of the dependency walk, as before the walk learned to cross them.
+   */
+  private _hostsUnknown = false
 
   /** The tail of the transaction queue. */
   private _queue: Promise<void> = Promise.resolve()
@@ -194,8 +180,15 @@ class Hmr extends Service {
       const mainUrl = pathToFileURL(resolve(process.argv[1])).href
       const mainJob = this.internal.loadCache.get(mainUrl)
       if (mainJob) {
-        this.hostModules = await loadDependencies(mainJob)
+        this.hostModules = await collectDependencies(mainJob)
       }
+    }
+    if (!this.hostModules.size) {
+      // The host graph is what keeps framework modules out of a reload;
+      // without it, package modules stay excluded, as before the traversal
+      // learned to cross them.
+      this.ctx.logger.warn('host modules are unknown, node_modules stays excluded')
+      this._hostsUnknown = true
     }
   }
 
@@ -248,7 +241,7 @@ class Hmr extends Service {
     const urls = [...Map.prototype.keys.call(this.internal.loadCache) as Iterable<string>]
     const importers = new Map<string, string[]>()
     await Promise.all(urls.map(async (url) => {
-      if (isExcluded(url) || this.hostModules.has(url)) return
+      if (isBuiltin(url) || (this._hostsUnknown && isPackaged(url)) || this.hostModules.has(url)) return
       let children: string[]
       try {
         children = await this.getLinked(url)
@@ -288,7 +281,7 @@ class Hmr extends Service {
     const internal = this.internal
     const candidates = new Map<ModuleJob, Plugin>()
     for (const url of Map.prototype.keys.call(internal.loadCache) as Iterable<string>) {
-      if (declined.has(url) || isExcluded(url)) continue
+      if (declined.has(url) || isBuiltin(url) || (this._hostsUnknown && isPackaged(url))) continue
       const job = internal.loadCache.get(url)
       if (!job?.module) continue
       let plugin: Plugin | undefined
@@ -358,7 +351,7 @@ class Hmr extends Service {
       for (const job of unit.keys()) declined.delete(job.url)
       const closures = new Map<ModuleJob, Set<string>>()
       for (const job of unit.keys()) {
-        closures.set(job, await loadDependencies(job, declined))
+        closures.set(job, await collectDependencies(job, declined, this._hostsUnknown))
       }
       for (const job of unit.keys()) declined.add(job.url)
 
