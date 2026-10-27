@@ -95,6 +95,10 @@ class Hmr extends Service {
   // files an operation changed
   public identity = new IdentityStore()
 
+  // changed modules of failed units, evicted at the start of the next transaction
+  private dirty = new Set<string>()
+  private dirtyOwner = {}
+
   /** The tail of the transaction queue. */
   private _queue: Promise<void> = Promise.resolve()
 
@@ -391,6 +395,14 @@ class Hmr extends Service {
     const before = new Set(Map.prototype.keys.call(internal.loadCache) as Iterable<string>)
     const beforeCjs = new Set(cjsUrls())
 
+    const cache = new ModuleCache(internal)
+    if (this.dirty.size) {
+      cache.evict([...this.dirty], this.dirtyOwner)
+      cache.clear()
+      for (const url of this.dirty) files.add(url)
+      this.dirty.clear()
+    }
+
     // `roots` widens the batch to what a package operation may have rewritten.
     // Only recorded or loaded files can matter; an entry counts as loaded when
     // any of its slots holds a job, since the cache keys also name entries
@@ -418,7 +430,7 @@ class Hmr extends Service {
     // required lives in the CJS cache alone.
     const changed = new Set<string>()
     for (const url of files) {
-      if (isLoaded(internal, url) || cjsHas(url)) {
+      if (isLoaded(internal, url) || cjsHas(url) || this.identity.has(url)) {
         changed.add(url)
       } else {
         result.pending ??= []
@@ -512,7 +524,6 @@ class Hmr extends Service {
       this.identity.observeAll(touched)
     }
 
-    const cache = new ModuleCache(internal)
     try {
       for (const batch of batches) {
         cache.evict(batch.scope, batch)
@@ -621,6 +632,15 @@ class Hmr extends Service {
           for (const attempt of group) cache.discard(attempt.added)
           for (const attempt of group) cache.restore(attempt.batch)
           report.aborted = { error: failure.error }
+          // The units' own plugin modules stay restored so a later reconcile
+          // can still discover the stale plugin; only their changed
+          // dependencies are handed to the next transaction.
+          for (const batch of members) {
+            const own = new Set(batch.plugins.flatMap(plugin => plugin.urls))
+            for (const url of batch.changed) {
+              if (!own.has(url)) this.dirty.add(url)
+            }
+          }
           ;(result.aborted ??= []).push({
             changed: report.changed,
             entries: report.entries,

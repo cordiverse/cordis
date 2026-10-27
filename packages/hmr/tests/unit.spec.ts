@@ -370,6 +370,54 @@ export async function apply(ctx: any) {
     expect(job?.module?.getNamespace().state.value).to.equal(1)
   }, 30000)
 
+  // A failed unit's changed dependency is restored for its rollback. The next
+  // transaction evicts it again and keeps it in the batch, so a retry that
+  // names only roots still reloads the plugin.
+  it('retries a failed unit when the next transaction names only roots', async () => {
+    await setup()
+    fixture('retry-dep.ts', `export const value = 'v1'\n`)
+    await load('retry.ts', `
+import { value } from './retry-dep.ts'
+
+export const name = 'retry'
+
+export async function apply(ctx: any) {
+  ctx.on('unit/retry' as any, () => value)
+}
+`)
+    expect(ctx.bail('unit/retry' as any)).to.equal('v1')
+
+    // the next version imports the changed dependency, then throws for a
+    // transient reason
+    fixture('retry-dep.ts', `export const value = 'v2'\n`)
+    fixture('retry.ts', `
+import { value } from './retry-dep.ts'
+if ((globalThis as any).__unitRetryFail) throw new Error('transient')
+export const name = 'retry'
+
+export async function apply(ctx: any) {
+  ctx.on('unit/retry' as any, () => value)
+}
+`)
+    ;(globalThis as any).__unitRetryFail = true
+    const first = await ctx.hmr.reconcile({ roots: [fixtureDir] })
+    expect(first.aborted).to.have.length(1)
+    expect(ctx.bail('unit/retry' as any)).to.equal('v1')
+
+    // the transient cause is gone, but no file changed since the failure: the
+    // restored dependency is still part of the next batch
+    ;(globalThis as any).__unitRetryFail = false
+    const second = await ctx.hmr.reconcile({ roots: [fixtureDir] })
+    expect(second.units).to.have.length(1)
+    expect(second.replaced).to.have.length(1)
+    expect(ctx.bail('unit/retry' as any)).to.equal('v2')
+
+    // the hand-off is consumed: another roots reconcile replaces nothing
+    const third = await ctx.hmr.reconcile({ roots: [fixtureDir] })
+    expect(third.replaced).to.have.length(0)
+    expect(ctx.bail('unit/retry' as any)).to.equal('v2')
+  }, 30000)
+
   // The narrowed eviction leaves a module that nothing reached untouched: its
   // evaluation count does not move, which is what keeps unrelated units apart.
   it('leaves an unreached module unevicted', async () => {

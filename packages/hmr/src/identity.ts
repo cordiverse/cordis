@@ -81,6 +81,11 @@ export class IdentityStore {
     return hashPath(rec.path) !== rec.hash
   }
 
+  has(url: string): boolean {
+    const path = toPath(url)
+    return !!path && this.records.has(path)
+  }
+
   // Every recorded or loaded module under `root` whose content cannot be
   // proven unchanged. The directory tree is not walked: only files that are
   // already recorded or loaded can affect the runtime, which is what keeps a
