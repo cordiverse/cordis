@@ -2,6 +2,7 @@ import { Awaitable, defineProperty, Promisify } from 'cosmokit'
 import { Context } from './context.ts'
 import { Fiber, FiberState, resolveConfig } from './fiber.ts'
 import { DisposableList, symbols } from './utils.ts'
+import { Plugin } from './registry.ts'
 
 export function isBailed(value: any) {
   return value !== null && value !== false && value !== undefined
@@ -186,6 +187,7 @@ export class EventsService {
 export interface Events {
   [key: symbol]: (...args: any[]) => any
   'internal/plugin'(fiber: Fiber): void
+  'internal/replace'(fiber: Fiber, legacy: Plugin.Runtime): void
   'internal/status'(fiber: Fiber, oldValue: FiberState): void
   'internal/service'(this: Context, name: string, value: any): void
   'internal/update'(this: Fiber, resolvedConfig: any, next: () => Awaitable<void>): Awaitable<void>
