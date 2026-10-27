@@ -269,11 +269,17 @@ export class Fiber {
           // force async stack trace
           await Promise.resolve()
           info.error = new Error()
-          while (true) {
-            if (runner.epoch !== oldEpoch) return
-            const result = await iter.next()
-            safeCollect(result.value)
-            if (result.done) return
+          let done = false
+          try {
+            while (runner.epoch === oldEpoch) {
+              const result = await iter.next()
+              done = !!result.done
+              safeCollect(result.value)
+              if (done) return
+            }
+          } finally {
+            // close the iterator so that its finally blocks run
+            if (!done) await iter.return?.()
           }
         })()
       } else {
