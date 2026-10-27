@@ -162,6 +162,26 @@ describe('Effects', () => {
     expect(seq).to.deep.equal([1, 3, 4, 2])
   }))
 
+  it('async yield (aborted, finally)', withTimers(async (root) => {
+    const seq: number[] = []
+    const dispose = root.effect(async function* () {
+      try {
+        yield () => seq.push(1)
+        await sleep(100)
+        yield () => seq.push(2)
+        await sleep(100)
+        yield () => seq.push(3)
+      } finally {
+        seq.push(0)
+      }
+    })
+    await vi.advanceTimersByTimeAsync(50)
+    const disposing = dispose()
+    await vi.advanceTimersByTimeAsync(100)
+    await disposing
+    expect(seq).to.deep.equal([0, 2, 1])
+  }))
+
   it('async yield 4 (await dispose)', withTimers(async (root) => {
     const seq: number[] = []
     const dispose = root.effect(async function* () {
@@ -236,5 +256,26 @@ describe('Effects', () => {
     }
     expect(caught).to.be.instanceOf(Error)
     expect(seq).to.deep.equal([1])
+  })
+
+  it('async yield invalid effect', async () => {
+    const root = new Context()
+    const seq: number[] = []
+    const dispose = root.effect(async function* () {
+      try {
+        yield () => seq.push(1)
+        yield 1 as never
+      } finally {
+        seq.push(0)
+      }
+    })
+    let caught: unknown
+    try {
+      await dispose
+    } catch (e) {
+      caught = e
+    }
+    expect(caught).to.be.instanceOf(TypeError)
+    expect(seq).to.deep.equal([0, 1])
   })
 })
