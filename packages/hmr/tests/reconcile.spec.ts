@@ -141,6 +141,38 @@ export function apply(ctx) {
     expect(ctx.bail('reconcile/json' as any)).to.equal('v2')
   })
 
+  it('imports a module again after its evaluation failed for a reason outside its file', async () => {
+    await setup()
+    const url = pathToFileURL(fixture('transient.mjs', `
+if (!globalThis.__hmrReconcile.transientReady) throw new Error('not ready')
+export const value = 'ready'
+`)).href
+    await expect(ctx.hmr.internal.import(url, import.meta.url, {})).rejects.toThrow('not ready')
+
+    stats.transientReady = true
+    await ctx.hmr.reconcile({ files: [] })
+
+    const { value } = await ctx.hmr.internal.import(url, import.meta.url, {})
+    expect(value).to.equal('ready')
+  })
+
+  it('keeps a module that is still being imported', async () => {
+    await setup()
+    const url = pathToFileURL(fixture('pending-dep.mjs', `
+const stats = globalThis.__hmrReconcile
+stats.pendingEvaluated = (stats.pendingEvaluated ?? 0) + 1
+export const state = {}
+`)).href
+
+    const pending = ctx.hmr.internal.import(url, import.meta.url, {})
+    await ctx.hmr.reconcile({ files: [] })
+
+    const first = await pending
+    const later = await ctx.hmr.internal.import(url, import.meta.url, {})
+    expect(later.state).to.equal(first.state)
+    expect(stats.pendingEvaluated).to.equal(1)
+  })
+
   it('keeps the job of a module when its job of another type fails', async () => {
     await setup()
     // the failing plugin is imported first, so that it creates the cache entry of the shared module
@@ -164,6 +196,8 @@ export function apply(ctx) {
 
     expect(result.settledFibers).to.have.length(1)
     expect(result.importFailures).to.have.length(1)
+    // the next transaction removes the failed job
+    await ctx.hmr.reconcile({ files: [] })
     const later = await ctx.hmr.internal.import(pathToFileURL(shared).href, import.meta.url, {})
     expect(ctx.bail('reconcile/slot' as any)).to.equal(later.default)
   })

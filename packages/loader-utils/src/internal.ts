@@ -56,7 +56,11 @@ export interface ModuleJob {
   loader: ModuleLoader
   module?: ModuleWrap
   importAttributes: ImportAttributes
-  linked: Promise<ModuleJob[]>
+  modulePromise: Promise<ModuleWrap>
+  /** a promise on Node 22 and 23, an array on Node 24 and later */
+  linked: ModuleJob[] | Promise<ModuleJob[]>
+  /** set by the first call to `instantiate()` */
+  instantiated?: Promise<void>
   instantiate(): Promise<void>
   run(): Promise<{ module: ModuleWrap }>
 }

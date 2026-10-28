@@ -85,14 +85,6 @@ function toUrl(file: string | URL) {
   return pathToFileURL(resolve(file)).href
 }
 
-/** Whether a module job failed to load, link or evaluate. */
-function isBroken(job: ModuleJob) {
-  const status = job.module?.getStatus()
-  return status !== ModuleStatus.Instantiated
-    && status !== ModuleStatus.Evaluating
-    && status !== ModuleStatus.Evaluated
-}
-
 function toPath(url: string) {
   if (url.startsWith('file:')) return fileURLToPath(url)
 }
@@ -253,16 +245,47 @@ class Hmr extends Service {
   }
 
   /**
-   * Remove the jobs of `url` that failed to load, link or evaluate, so that a
-   * later import tries them again. The jobs in the other type slots are kept.
+   * Remove the module jobs that failed to load, link or evaluate, each from
+   * its own type slot, so that the next import of their modules tries again.
+   * Node keeps such a job in the load cache, and every later import of the
+   * module throws its error again. A job in progress has not failed and is kept.
+   *
+   * A job has failed if its module is errored, or if its `modulePromise`,
+   * `linked` or `instantiated` promise has been rejected. A promise that has
+   * settled runs its handlers before the next macrotask.
    */
-  private _dropBroken(url: string) {
-    const entry: Record<string, ModuleJob | undefined> | undefined = Map.prototype.get.call(this.internal.loadCache, url)
-    if (!entry) return
-    for (const type in entry) {
-      if (entry[type] && isBroken(entry[type])) delete entry[type]
+  private async _sweep() {
+    interface ModuleCheck {
+      url: string
+      entry: Record<string, ModuleJob | undefined>
+      type: string
+      job: ModuleJob
+      failed: boolean
     }
-    if (!Object.values(entry).some(Boolean)) this._evict(url)
+    const checks: ModuleCheck[] = []
+    for (const url of Map.prototype.keys.call(this.internal.loadCache) as Iterable<string>) {
+      if (isBuiltin(url)) continue
+      const entry: Record<string, ModuleJob | undefined> = Map.prototype.get.call(this.internal.loadCache, url)
+      for (const type in entry) {
+        const job = entry[type]
+        if (!job) continue
+        const check = { url, entry, type, job, failed: job.module?.getStatus() === ModuleStatus.Errored }
+        for (const promise of [job.modulePromise, job.linked, job.instantiated]) {
+          if (!promise || Array.isArray(promise)) continue
+          promise.then(undefined, () => check.failed = true)
+        }
+        checks.push(check)
+      }
+    }
+    await new Promise(resolve => setImmediate(resolve))
+    for (const { url, entry, type, job, failed } of checks) {
+      if (!failed || entry[type] !== job) continue
+      delete entry[type]
+      // the CJS module cache is left alone: Node removes a CJS module that failed
+      if (!Object.values(entry).some(Boolean)) {
+        Map.prototype.delete.call(this.internal.loadCache, url)
+      }
+    }
   }
 
   /** Remove a module from both module caches. */
@@ -279,6 +302,10 @@ class Hmr extends Service {
    * A changed module that no plugin depends on is still evicted from the
    * module cache: its next import, such as a dynamic one, gets the new code,
    * while existing references keep the old one.
+   *
+   * Every transaction first removes the module jobs that failed to load, link
+   * or evaluate, whether or not their files changed, so that the next import
+   * of their modules tries again.
    */
   reconcile(options: Hmr.ReconcileOptions): Promise<Hmr.Result> {
     const current = this._storage.getStore()
@@ -419,6 +446,7 @@ class Hmr extends Service {
 
   private async _reconcile(options: Hmr.ReconcileOptions): Promise<Hmr.Result> {
     const result: Hmr.Result = { settledFibers: [], importFailures: [], skippedHostModules: [] }
+    await this._sweep()
     const files = new Set<string>()
     for (const url of [...options.files].map(toUrl)) {
       // A change to a host module or to a loaded native addon cannot be
@@ -596,18 +624,14 @@ class Hmr extends Service {
 
     // A module first loaded in stage 1 is removed from the caches if it reaches
     // a module to be restored in the new module graph, since it has been linked
-    // against the new version. Otherwise, only its jobs that failed are removed,
-    // each from its own type slot. Any other job is kept, including one loaded
-    // by an aborted unit, so that a committed unit that imported it, statically
-    // or dynamically, shares its instance with later imports.
+    // against the new version. Any other one is kept, including one loaded by an
+    // aborted unit, so that a committed unit that imported it, statically or
+    // dynamically, shares its instance with later imports. A job of it that
+    // failed is removed at the start of the next transaction.
     const restored = new Set(aborted.flatMap(unit => [...unit.modules]))
     for (const url of attempts.flatMap(attempt => attempt.loaded)) {
       const reached = await closure([url], newEdges, url => retained.has(url))
-      if ([...reached].some(url => restored.has(url))) {
-        this._evict(url)
-      } else {
-        this._dropBroken(url)
-      }
+      if ([...reached].some(url => restored.has(url))) this._evict(url)
     }
     for (const url of restored) restore(url)
 
