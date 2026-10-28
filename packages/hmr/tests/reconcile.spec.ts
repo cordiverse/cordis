@@ -2,6 +2,7 @@ import { Context, Fiber, FiberState } from 'cordis'
 import { ModuleLoader, unwrapExports } from '@cordisjs/loader-utils'
 import Loader from '@cordisjs/plugin-loader'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -114,6 +115,124 @@ describe('Hmr.reconcile', () => {
 
     expect(result.importFailures).to.deep.equal([])
     expect(ctx.bail('reconcile/added' as any)).to.equal('v2')
+  })
+
+  it('imports a JSON module again after it failed in an aborted attempt', async () => {
+    await setup()
+    const path = await load('json-entry.mjs', `
+export function apply(ctx) {
+  ctx.on('reconcile/json', () => 'v1')
+}
+`)
+    const data = fixture('json-data.json', '{"value":')
+    writeFileSync(path, `
+import data from './json-data.json' with { type: 'json' }
+
+export function apply(ctx) {
+  ctx.on('reconcile/json', () => data.value)
+}
+`)
+    expect((await ctx.hmr.reconcile({ files: [path] })).importFailures).to.have.length(1)
+
+    writeFileSync(data, '{"value":"v2"}')
+    const result = await ctx.hmr.reconcile({ files: [path] })
+
+    expect(result.importFailures).to.deep.equal([])
+    expect(ctx.bail('reconcile/json' as any)).to.equal('v2')
+  })
+
+  it('imports a module again after its evaluation failed for a reason outside its file', async () => {
+    await setup()
+    const url = pathToFileURL(fixture('transient.mjs', `
+if (!globalThis.__hmrReconcile.transientReady) throw new Error('not ready')
+export const value = 'ready'
+`)).href
+    await expect(ctx.hmr.internal.import(url, import.meta.url, {})).rejects.toThrow('not ready')
+
+    stats.transientReady = true
+    await ctx.hmr.reconcile({ files: [] })
+
+    const { value } = await ctx.hmr.internal.import(url, import.meta.url, {})
+    expect(value).to.equal('ready')
+  })
+
+  it('keeps a module that is still being imported', async () => {
+    await setup()
+    const url = pathToFileURL(fixture('pending-dep.mjs', `
+const stats = globalThis.__hmrReconcile
+stats.pendingEvaluated = (stats.pendingEvaluated ?? 0) + 1
+export const state = {}
+`)).href
+
+    const pending = ctx.hmr.internal.import(url, import.meta.url, {})
+    await ctx.hmr.reconcile({ files: [] })
+
+    const first = await pending
+    const later = await ctx.hmr.internal.import(url, import.meta.url, {})
+    expect(later.state).to.equal(first.state)
+    expect(stats.pendingEvaluated).to.equal(1)
+  })
+
+  it('keeps the job of a module when its job of another type fails', async () => {
+    await setup()
+    // the failing plugin is imported first, so that it creates the cache entry of the shared module
+    const failing = await load('slot-failing.mjs', `export function apply() {}\n`)
+    const importer = await load('slot-importer.mjs', `export function apply() {}\n`)
+    const shared = fixture('slot-shared.mjs', `export default {}\n`)
+
+    writeFileSync(failing, `
+import data from './slot-shared.mjs' with { type: 'json' }
+
+export function apply() {}
+`)
+    writeFileSync(importer, `
+import data from './slot-shared.mjs'
+
+export function apply(ctx) {
+  ctx.on('reconcile/slot', () => data)
+}
+`)
+    const result = await ctx.hmr.reconcile({ files: [failing, importer] })
+
+    expect(result.settledFibers).to.have.length(1)
+    expect(result.importFailures).to.have.length(1)
+    // the next transaction removes the failed job
+    await ctx.hmr.reconcile({ files: [] })
+    const later = await ctx.hmr.internal.import(pathToFileURL(shared).href, import.meta.url, {})
+    expect(ctx.bail('reconcile/slot' as any)).to.equal(later.default)
+  })
+
+  it('follows the dependencies of a module job when its job of another type fails to link', async () => {
+    await setup()
+    const core = fixture('edge-core.mjs', `export const value = 'v1'\n`)
+    const owner = await load('edge-owner.mjs', `import './edge-core.mjs'\nexport function apply() {}\n`)
+    const failing = await load('edge-failing.mjs', `export function apply() {}\n`)
+    const importer = await load('edge-importer.mjs', `
+export function apply(ctx) {
+  ctx.on('reconcile/edge', () => 'v1')
+}
+`)
+    fixture('edge-dep.mjs', `export { value as default } from './edge-core.mjs'\n`)
+
+    writeFileSync(core, `export const value = 'v2'\n`)
+    writeFileSync(owner, `import './edge-core.mjs'\nthrow new Error('owner failed')\n`)
+    writeFileSync(failing, `
+import data from './edge-dep.mjs' with { type: 'json' }
+
+export function apply() {}
+`)
+    writeFileSync(importer, `
+import data from './edge-dep.mjs'
+
+export function apply(ctx) {
+  ctx.on('reconcile/edge', () => data)
+}
+`)
+    const result = await ctx.hmr.reconcile({ files: [core, owner, failing, importer] })
+
+    // the importer links against the changed module of the failed owner
+    expect(result.settledFibers).to.deep.equal([])
+    expect(ctx.bail('reconcile/edge' as any)).to.equal('v1')
   })
 
   it('replaces a service', async () => {
@@ -350,6 +469,163 @@ export function apply(ctx, config) {
     expect(ctx.bail('reconcile/invalid' as any)).to.equal('v1')
   })
 
+  it('applies a unit when another unit fails to import', async () => {
+    await setup()
+    fixture('unit-common.ts', `export const value = 'common'\n`)
+    const shared = (name: string, value: string) => `import './unit-common.ts'\n` + plugin(name, value)
+    const broken = await load('unit-broken.ts', shared('broken', 'v1'))
+    const healthy = await load('unit-healthy.ts', shared('healthy', 'v1'))
+
+    // the two plugins only share an unchanged module
+    writeFileSync(broken, 'export function apply(ctx {{{ BROKEN')
+    writeFileSync(healthy, shared('healthy', 'v2'))
+    const result = await ctx.hmr.reconcile({ files: [broken, healthy] })
+
+    expect(result.settledFibers).to.have.length(1)
+    expect(result.importFailures).to.have.length(1)
+    expect(result.importFailures[0].urls).to.include(pathToFileURL(broken).href)
+    expect(result.importFailures[0].urls).to.not.include(pathToFileURL(healthy).href)
+    expect(ctx.bail('reconcile/broken' as any)).to.equal('v1')
+    expect(ctx.bail('reconcile/healthy' as any)).to.equal('v2')
+
+    // the failed unit is retried on its own
+    writeFileSync(broken, shared('broken', 'v2'))
+    const retried = await ctx.hmr.reconcile({ files: [broken] })
+    expect(retried.importFailures).to.deep.equal([])
+    expect(ctx.bail('reconcile/broken' as any)).to.equal('v2')
+  })
+
+  it('aborts plugins that share a changed module together', async () => {
+    await setup()
+    const dep = fixture('joint-dep.ts', `export const value = 'v1'\n`)
+    const dependent = (name: string, body = '') => `
+import { Context } from 'cordis'
+import { value } from './joint-dep.ts'
+${body}
+export function apply(ctx: Context) {
+  ctx.on('reconcile/${name}' as any, () => value)
+}
+`
+    const left = await load('joint-left.ts', dependent('left'))
+    await load('joint-right.ts', dependent('right'))
+
+    writeFileSync(dep, `export const value = 'v2'\n`)
+    writeFileSync(left, dependent('left', `throw new Error('left failed')`))
+    const result = await ctx.hmr.reconcile({ files: [dep, left] })
+
+    expect(result.settledFibers).to.deep.equal([])
+    expect(result.importFailures).to.have.length(1)
+    expect(result.importFailures[0].urls).to.include(pathToFileURL(dep).href)
+    expect(ctx.bail('reconcile/left' as any)).to.equal('v1')
+    expect(ctx.bail('reconcile/right' as any)).to.equal('v1')
+  })
+
+  it('aborts a plugin that newly imports a changed module of a failed unit', async () => {
+    await setup()
+    const dep = fixture('adopt-dep.ts', `export const value = 'v1'\n`)
+    const owner = await load('adopt-owner.ts', `import './adopt-dep.ts'\n` + plugin('owner', 'v1'))
+    const adopter = await load('adopt-adopter.ts', plugin('adopter', 'v1'))
+
+    // the adopter is unrelated to the owner before the change
+    writeFileSync(dep, `export const value = 'v2'\n`)
+    writeFileSync(owner, `import './adopt-dep.ts'\nthrow new Error('owner failed')\n`)
+    writeFileSync(adopter, `
+import { Context } from 'cordis'
+import { value } from './adopt-dep.ts'
+
+export function apply(ctx: Context) {
+  ctx.on('reconcile/adopter' as any, () => value)
+}
+`)
+    const result = await ctx.hmr.reconcile({ files: [dep, owner, adopter] })
+
+    expect(result.settledFibers).to.deep.equal([])
+    expect(result.importFailures).to.have.length(1)
+    expect(result.importFailures[0].urls).to.include.members([
+      pathToFileURL(dep).href,
+      pathToFileURL(adopter).href,
+    ])
+    expect(ctx.bail('reconcile/owner' as any)).to.equal('v1')
+    expect(ctx.bail('reconcile/adopter' as any)).to.equal('v1')
+  })
+
+  it('aborts a plugin that newly requires a changed module of a failed unit', async () => {
+    await setup()
+    const dep = fixture('require-dep.cjs', `exports.value = 'v1'\n`)
+    const owner = await load('require-owner.ts', `import './require-dep.cjs'\n` + plugin('owner', 'v1'))
+    const requirer = await load('require-requirer.cjs', `
+exports.apply = (ctx) => ctx.on('reconcile/requirer', () => 'v1')
+`)
+
+    // the requirer is unrelated to the owner before the change
+    writeFileSync(dep, `exports.value = 'v2'\n`)
+    writeFileSync(owner, `import './require-dep.cjs'\nthrow new Error('owner failed')\n`)
+    writeFileSync(requirer, `
+const { value } = require('./require-dep.cjs')
+exports.apply = (ctx) => ctx.on('reconcile/requirer', () => value)
+`)
+    const result = await ctx.hmr.reconcile({ files: [dep, owner, requirer] })
+
+    expect(result.settledFibers).to.deep.equal([])
+    expect(result.importFailures).to.have.length(1)
+    expect(result.importFailures[0].urls).to.include.members([
+      pathToFileURL(dep).href,
+      pathToFileURL(requirer).href,
+    ])
+    expect(ctx.bail('reconcile/requirer' as any)).to.equal('v1')
+  })
+
+  it('shares a module first loaded by a failed unit with a unit that imports it dynamically', async () => {
+    await setup()
+    const failing = await load('dynamic-failing.ts', plugin('failing', 'v1'))
+    const importer = await load('dynamic-importer.ts', plugin('importer', 'v1'))
+    const shared = pathToFileURL(resolve(fixtureDir, 'dynamic-shared.ts')).href
+
+    fixture('dynamic-shared.ts', `export const state = {}\n`)
+    writeFileSync(failing, `import './dynamic-shared.ts'\nthrow new Error('failing failed')\n`)
+    writeFileSync(importer, `
+import { Context } from 'cordis'
+
+const { state } = await import('./dynamic-shared.ts')
+
+export function apply(ctx: Context) {
+  ctx.on('reconcile/importer' as any, () => state)
+}
+`)
+    const result = await ctx.hmr.reconcile({ files: [failing, importer] })
+
+    expect(result.settledFibers).to.have.length(1)
+    expect(result.importFailures).to.have.length(1)
+    const { state } = await ctx.hmr.internal.import(shared, import.meta.url, {})
+    expect(ctx.bail('reconcile/importer' as any)).to.equal(state)
+  })
+
+  it('restores a changed module outside every plugin with the failed unit it imports', async () => {
+    await setup()
+    const dep = fixture('outside-dep.ts', `export const value = 'v1'\n`)
+    const outside = fixture('outside.ts', `
+import { value } from './outside-dep.ts'
+export const derived = value
+`)
+    const url = pathToFileURL(outside).href
+    await ctx.hmr.internal.import(url, import.meta.url, {})
+    const owner = await load('outside-owner.ts', `import './outside-dep.ts'\n` + plugin('owner', 'v1'))
+
+    // the new module depends on an export that only the new dependency has
+    writeFileSync(dep, `export const value = 'v2'\nexport const extra = '!'\n`)
+    writeFileSync(outside, `
+import { value, extra } from './outside-dep.ts'
+export const derived = value + extra
+`)
+    writeFileSync(owner, `import './outside-dep.ts'\nthrow new Error('owner failed')\n`)
+    const result = await ctx.hmr.reconcile({ files: [dep, outside, owner] })
+
+    expect(result.importFailures).to.have.length(1)
+    expect(result.importFailures[0].urls).to.include(url)
+    const { derived } = await ctx.hmr.internal.import(url, import.meta.url, {})
+    expect(derived).to.equal('v1')
+  })
+
   it('leaves a fiber failed when the new plugin fails to apply', async () => {
     await setup()
     const path = await load('failed.ts', plugin('failed', 'v1'))
@@ -382,6 +658,56 @@ export function apply(ctx, config) {
     expect(result.skippedHostModules).to.deep.equal([url])
     expect(ctx.bail('reconcile/host' as any)).to.equal('v1')
     expect(ctx.bail('reconcile/other' as any)).to.equal('v2')
+  })
+
+  it('skips a changed native addon', async () => {
+    await setup()
+    // A loaded addon is represented by its cache entry, which `require()`
+    // returns without opening the file.
+    const addon = fixture('addon.node', '')
+    const cache = createRequire(import.meta.url).cache
+    cache[addon] = { id: addon, filename: addon, loaded: true, children: [], exports: { value: 'v1' } } as any
+    try {
+      await load('addon-plugin.cjs', `
+const { value } = require('./addon.node')
+exports.apply = (ctx) => ctx.on('reconcile/addon', () => value)
+`)
+      expect(ctx.bail('reconcile/addon' as any)).to.equal('v1')
+
+      const result = await ctx.hmr.reconcile({ files: [addon] })
+
+      expect(result.skippedHostModules).to.deep.equal([pathToFileURL(addon).href])
+      expect(result.importFailures).to.deep.equal([])
+      expect(ctx.bail('reconcile/addon' as any)).to.equal('v1')
+    } finally {
+      delete cache[addon]
+    }
+  })
+
+  it('replaces a plugin when a module inside a package changes', async () => {
+    await setup()
+    const dir = resolve(fixtureDir, 'node_modules/reconcile-shared')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(resolve(dir, 'package.json'), '{ "name": "reconcile-shared", "type": "module", "exports": "./index.js" }')
+    writeFileSync(resolve(dir, 'index.js'), `export { value } from './lib.js'\n`)
+    const lib = resolve(dir, 'lib.js')
+    writeFileSync(lib, `export const value = 'v1'\n`)
+    await load('package-dependent.ts', `
+import { Context } from 'cordis'
+import { value } from 'reconcile-shared'
+
+export function apply(ctx: Context) {
+  ctx.on('reconcile/package' as any, () => value)
+}
+`)
+    expect(ctx.bail('reconcile/package' as any)).to.equal('v1')
+
+    // the changed module is not imported by the plugin directly
+    writeFileSync(lib, `export const value = 'v2'\n`)
+    const result = await ctx.hmr.reconcile({ files: [lib] })
+
+    expect(result.settledFibers).to.have.length(1)
+    expect(ctx.bail('reconcile/package' as any)).to.equal('v2')
   })
 
   it('runs transactions one at a time', async () => {
