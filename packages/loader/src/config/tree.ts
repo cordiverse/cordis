@@ -152,6 +152,12 @@ export abstract class EntryTree {
       source.unlink(entry.options)
       target.data.splice(position ?? Infinity, 0, entry.options)
       entry.parent = target
+      // groups of one tree share that tree's `store`, so only a cross-tree move must
+      // carry the entry: left behind, the source keeps resolving it and the target cannot
+      if (target.tree !== source.tree) {
+        delete source.tree.store[legacy.id]
+        target.tree.store[legacy.id] = entry
+      }
     }
     // `Entry.update` assigns the new options before its first `await`, so the
     // change is fully visible to `commit()` once the call returns.
