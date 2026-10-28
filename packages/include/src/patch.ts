@@ -1,6 +1,6 @@
 import { EntryOptions } from '@cordisjs/plugin-loader'
 import { Dict } from 'cosmokit'
-import { applyChanges, detach, flatten, Journal, place } from './journal.ts'
+import { applyChanges, applyOrder, detach, flatten, Journal, JournalRecord, place } from './journal.ts'
 
 export interface PatchOptions {
   id?: string
@@ -224,6 +224,16 @@ export function routeJournal(journal: Journal, data: EntryOptions[], patches: Pa
     }
   }
 
+  const reorder = (id: string, record: JournalRecord.Upsert) => {
+    if (!record.order?.length) return
+    const owner = index.entry(id)
+    const { list, parent } = container(owner)
+    const current = flatten(list).get(id)
+    if (!current || (current.parent ?? parent) !== record.parent) return
+    applyOrder(current.list, record.order, journal)
+    patched ||= owner.type === 'embedded'
+  }
+
   for (const [id, record] of journal) {
     const owner = index.entry(id)
     const { list, parent: base } = container(owner)
@@ -242,6 +252,7 @@ export function routeJournal(journal: Journal, data: EntryOptions[], patches: Pa
       applyChanges(options, record.changes)
       placeAt(options, record.parent ?? null, record.position)
       reindex()
+      reorder(id, record)
       continue
     }
 
@@ -253,9 +264,11 @@ export function routeJournal(journal: Journal, data: EntryOptions[], patches: Pa
       applyChanges(current.options, record.changes)
       placeAt(current.options, record.parent, record.position)
       reindex()
+      reorder(id, record)
       continue
     }
 
+    reorder(id, record)
     const patchChanges: Dict<Dict> = {}
     applyChanges(current.options, record.changes, (key) => {
       const keyOwner = index.key(id, key)

@@ -49,6 +49,8 @@ export interface EntryChange {
   id: string
   group: EntryGroup
   from?: EntryGroup
+  /** Same-group index change. `from` stays unset because the group object did not change. */
+  reordered?: boolean
   options?: EntryOptions
   legacy?: EntryOptions
 }
@@ -147,11 +149,16 @@ export abstract class EntryTree {
     const legacy = { ...entry.options }
     const issues = validateOptions(Entry.merge({ ...legacy }, options), EntryTree.sep, true)
     if (issues.length) throw new EntryValidationError(issues)
+    let reordered = false
     if (parent !== undefined) {
+      const before = source.data.indexOf(entry.options)
       const target = this.resolveGroup(parent)
       source.unlink(entry.options)
       target.data.splice(position ?? Infinity, 0, entry.options)
       entry.parent = target
+      // `from` compares group objects, so a same-parent splice would otherwise
+      // be indistinguishable from a config edit.
+      reordered = target === source && target.data.indexOf(entry.options) !== before
     }
     // `Entry.update` assigns the new options before its first `await`, so the
     // change is fully visible to `commit()` once the call returns.
@@ -160,7 +167,14 @@ export abstract class EntryTree {
       source.tree.commit({ id: legacy.id, group: source, legacy })
     }
     const from = entry.parent === source ? undefined : source
-    entry.parent.tree.commit({ id: legacy.id, group: entry.parent, from, options: entry.options, legacy })
+    entry.parent.tree.commit({
+      id: legacy.id,
+      group: entry.parent,
+      from,
+      ...(reordered ? { reordered: true } : {}),
+      options: entry.options,
+      legacy,
+    })
     return task
   }
 

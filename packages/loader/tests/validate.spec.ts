@@ -68,6 +68,22 @@ describe('Loader: entry options validation', () => {
     expect(loader.expectFiber(id).state).to.equal(FiberState.ACTIVE)
   })
 
+  it('rejects invalid options before reordering siblings', async () => {
+    const root = new Context()
+    await root.plugin(MockLoader)
+    const loader = root.loader as unknown as MockLoader
+    loader.mock('foo', () => {})
+    const first = await loader.create({ name: 'foo' })
+    const second = await loader.create({ name: 'foo' })
+    loader.changes.splice(0)
+
+    await expect(loader.update(second, { group: true, config: {} }, null, 0)).rejects.toThrow(EntryValidationError)
+
+    expect(loader.root.data.map(entry => entry.id)).to.deep.equal([first, second])
+    expect(loader.changes).to.deep.equal([])
+    expect(loader.store[second]!.options).to.deep.equal({ id: second, name: 'foo' })
+  })
+
   it('check the entries of a group passed at runtime as a whole', async () => {
     const root = new Context()
     await root.plugin(MockLoader)
