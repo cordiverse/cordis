@@ -18,14 +18,21 @@ declare module 'cordis' {
 // A Windows drive-letter path, e.g. `C:\app\cordis.yml` or `C:/app/cordis.yml`.
 const driveLetter = /^[A-Za-z]:[\\/]/
 
-function isExcluded(url: string) {
-  return url.startsWith('node:') || url.includes('/node_modules/')
+// a builtin has no file and no dependencies to follow
+function isBuiltin(url: string) {
+  return url.startsWith('node:')
+}
+
+// A native addon cannot be loaded again in the same process: requiring its
+// file once more returns the library that is already loaded.
+function isNativeAddon(url: string) {
+  return url.startsWith('file:') && url.endsWith('.node')
 }
 
 /**
  * Collect the modules reachable from `roots` along `edges`. The traversal
  * neither includes nor passes through a module for which `stop` holds.
- * Builtins and modules in `node_modules` are skipped.
+ * Builtins are skipped.
  */
 async function closure(
   roots: Iterable<string>,
@@ -34,7 +41,7 @@ async function closure(
 ) {
   const result = new Set<string>()
   const traverse = async (url: string) => {
-    if (result.has(url) || isExcluded(url) || stop(url)) return
+    if (result.has(url) || isBuiltin(url) || stop(url)) return
     result.add(url)
     await Promise.all([...await edges(url)].map(traverse))
   }
@@ -307,7 +314,7 @@ class Hmr extends Service {
    * the eviction, i.e. the old module graph.
    */
   private async _analyze(changed: Set<string>) {
-    const urls = [...this._loaded()].filter(url => !isExcluded(url))
+    const urls = [...this._loaded()].filter(url => !isBuiltin(url))
     const edges = new Map<string, Set<string>>()
     await Promise.all(urls.map(async url => edges.set(url, await this._edges(url))))
 
@@ -394,7 +401,7 @@ class Hmr extends Service {
     const internal = this.internal
     const candidates = new Map<ModuleJob, Plugin>()
     for (const url of Map.prototype.keys.call(internal.loadCache) as Iterable<string>) {
-      if (declined.has(url) || isExcluded(url)) continue
+      if (declined.has(url) || isBuiltin(url)) continue
       const job = internal.loadCache.get(url)
       if (!job?.module) continue
       let plugin: Plugin | undefined
@@ -414,9 +421,9 @@ class Hmr extends Service {
     const result: Hmr.Result = { settledFibers: [], importFailures: [], skippedHostModules: [] }
     const files = new Set<string>()
     for (const url of [...options.files].map(toUrl)) {
-      // A change to a host module cannot be applied in place. It is skipped,
-      // and restarting is up to the caller.
-      if (this.hostModules.has(url)) {
+      // A change to a host module or to a loaded native addon cannot be
+      // applied in place. It is skipped, and restarting is up to the caller.
+      if (this.hostModules.has(url) || isNativeAddon(url) && !!this._require.cache[toPath(url)!]) {
         result.skippedHostModules.push(url)
       } else {
         files.add(url)
@@ -678,8 +685,9 @@ namespace Hmr {
     settledFibers: Fiber[]
     importFailures: ImportFailure[]
     /**
-     * The changed host modules, which can only be applied by restarting the
-     * process. They are skipped, while the other changes are applied.
+     * The changed host modules and loaded native addons, which can only be
+     * applied by restarting the process. They are skipped, while the other
+     * changes are applied.
      */
     skippedHostModules: string[]
   }

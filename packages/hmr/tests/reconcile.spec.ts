@@ -2,6 +2,7 @@ import { Context, Fiber, FiberState } from 'cordis'
 import { ModuleLoader, unwrapExports } from '@cordisjs/loader-utils'
 import Loader from '@cordisjs/plugin-loader'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -623,6 +624,56 @@ export const derived = value + extra
     expect(result.skippedHostModules).to.deep.equal([url])
     expect(ctx.bail('reconcile/host' as any)).to.equal('v1')
     expect(ctx.bail('reconcile/other' as any)).to.equal('v2')
+  })
+
+  it('skips a changed native addon', async () => {
+    await setup()
+    // A loaded addon is represented by its cache entry, which `require()`
+    // returns without opening the file.
+    const addon = fixture('addon.node', '')
+    const cache = createRequire(import.meta.url).cache
+    cache[addon] = { id: addon, filename: addon, loaded: true, children: [], exports: { value: 'v1' } } as any
+    try {
+      await load('addon-plugin.cjs', `
+const { value } = require('./addon.node')
+exports.apply = (ctx) => ctx.on('reconcile/addon', () => value)
+`)
+      expect(ctx.bail('reconcile/addon' as any)).to.equal('v1')
+
+      const result = await ctx.hmr.reconcile({ files: [addon] })
+
+      expect(result.skippedHostModules).to.deep.equal([pathToFileURL(addon).href])
+      expect(result.importFailures).to.deep.equal([])
+      expect(ctx.bail('reconcile/addon' as any)).to.equal('v1')
+    } finally {
+      delete cache[addon]
+    }
+  })
+
+  it('replaces a plugin when a module inside a package changes', async () => {
+    await setup()
+    const dir = resolve(fixtureDir, 'node_modules/reconcile-shared')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(resolve(dir, 'package.json'), '{ "name": "reconcile-shared", "type": "module", "exports": "./index.js" }')
+    writeFileSync(resolve(dir, 'index.js'), `export { value } from './lib.js'\n`)
+    const lib = resolve(dir, 'lib.js')
+    writeFileSync(lib, `export const value = 'v1'\n`)
+    await load('package-dependent.ts', `
+import { Context } from 'cordis'
+import { value } from 'reconcile-shared'
+
+export function apply(ctx: Context) {
+  ctx.on('reconcile/package' as any, () => value)
+}
+`)
+    expect(ctx.bail('reconcile/package' as any)).to.equal('v1')
+
+    // the changed module is not imported by the plugin directly
+    writeFileSync(lib, `export const value = 'v2'\n`)
+    const result = await ctx.hmr.reconcile({ files: [lib] })
+
+    expect(result.settledFibers).to.have.length(1)
+    expect(ctx.bail('reconcile/package' as any)).to.equal('v2')
   })
 
   it('runs transactions one at a time', async () => {
