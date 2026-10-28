@@ -393,21 +393,16 @@ class Hmr extends Service {
      * 1. ESM loadCache — managed by Node's internal ModuleLoader
      * 2. CJS Module._cache — for CJS modules that were imported via import()
      *
-     * A CJS module loaded through import() lands in both caches, on 22 as well
-     * as on 24. If we only clear loadCache, the CJS cache may serve stale
-     * modules.
+     * A CJS module imported via import() is in both caches. If we only clear
+     * loadCache, the CJS cache may serve stale modules.
      *
-     * We use Map.prototype methods directly on loadCache because its own
-     * delete() only clears the per-type slot:
-     * - loadCache is a `LoadCache` from 22.11 on, not a plain Map: it carries
-     *   the Map internal slots while `instanceof Map` is false.
-     * - an entry is `{ [type]: ModuleJob }`, so `delete(url)` sets the
-     *   `javascript` slot to undefined and leaves the key in place.
-     * Map.prototype.delete removes the whole entry.
-     * Measured on 22.11.0, 22.22.2, 24.15.0 and 26.12.1.
-     *
-     * `has(url)` consults the `javascript` slot alone, so an entry of
-     * another type, such as a JSON module, reads as absent.
+     * We use Map.prototype methods directly on loadCache. It is a `LoadCache`,
+     * whose entries are `{ [type]: ModuleJob }`, one job per value of the
+     * `type` import attribute. Its own delete(url) only sets the `javascript`
+     * slot to undefined and keeps the entry, while Map.prototype.delete
+     * removes the whole entry. `LoadCache` extends Node's internal `SafeMap`,
+     * which carries the Map internal slots, so Map.prototype methods apply to
+     * it although `loadCache instanceof Map` is false.
      */
     const esmBackup: Dict = Object.create(null)
     const cjsBackup: Dict = Object.create(null)
