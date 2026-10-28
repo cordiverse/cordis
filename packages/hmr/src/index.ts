@@ -1,6 +1,5 @@
 import { Context, Fiber, Plugin, Service } from 'cordis'
-import { Dict } from 'cosmokit'
-import { ModuleJob, ModuleLoader, unwrapExports } from '@cordisjs/loader-utils'
+import { getModuleJobs, ModuleJob, ModuleLoader, ModuleStatus, unwrapExports } from '@cordisjs/loader-utils'
 import type {} from '@cordisjs/plugin-fs-node'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { relative, resolve, sep } from 'node:path'
@@ -24,20 +23,23 @@ function isExcluded(url: string) {
 }
 
 /**
- * Recursively collect all module dependencies from a ModuleJob.
- * Skips node: builtins and node_modules to focus on user code.
+ * Collect the modules reachable from `roots` along `edges`. The traversal
+ * neither includes nor passes through a module for which `stop` holds.
+ * Builtins and modules in `node_modules` are skipped.
  */
-async function loadDependencies(job: ModuleJob, ignored = new Set<string>()) {
-  const dependencies = new Set<string>()
-  async function traverse(job: ModuleJob) {
-    if (ignored.has(job.url) || dependencies.has(job.url)) return
-    if (isExcluded(job.url)) return
-    dependencies.add(job.url)
-    const children = await job.linked
-    await Promise.all(Array.prototype.map.call(children, traverse))
+async function closure(
+  roots: Iterable<string>,
+  edges: (url: string) => Iterable<string> | Promise<Iterable<string>>,
+  stop: (url: string) => boolean = () => false,
+) {
+  const result = new Set<string>()
+  const traverse = async (url: string) => {
+    if (result.has(url) || isExcluded(url) || stop(url)) return
+    result.add(url)
+    await Promise.all([...await edges(url)].map(traverse))
   }
-  await traverse(job)
-  return dependencies
+  await Promise.all([...roots].map(traverse))
+  return result
 }
 
 /** A registered plugin whose module has changed. */
@@ -48,12 +50,44 @@ interface StalePlugin {
   urls: string[]
   /** the plugin before the change */
   plugin: Plugin
+  /** the closure of the plugin in the old module graph */
+  modules: Set<string>
+}
+
+/** The import of a stale plugin in stage 1. */
+interface ImportAttempt {
+  stale: StalePlugin
+  /** the new plugin, if the import succeeded */
+  replacement?: Plugin
+  failed: boolean
+  error?: unknown
+  /** the modules that were not cached before this import, other than evicted modules */
+  loaded: string[]
+}
+
+/** A set of stale plugins that commit or abort together. */
+interface ReconcileUnit {
+  attempts: ImportAttempt[]
+  /** the evicted modules in the closures of the plugins */
+  modules: Set<string>
 }
 
 function toUrl(file: string | URL) {
   if (file instanceof URL) return file.href
   if (file.startsWith('file:')) return new URL(file).href
   return pathToFileURL(resolve(file)).href
+}
+
+/** Whether a module job failed to load, link or evaluate. */
+function isBroken(job: ModuleJob) {
+  const status = job.module?.getStatus()
+  return status !== ModuleStatus.Instantiated
+    && status !== ModuleStatus.Evaluating
+    && status !== ModuleStatus.Evaluated
+}
+
+function toPath(url: string) {
+  if (url.startsWith('file:')) return fileURLToPath(url)
 }
 
 class Hmr extends Service {
@@ -68,6 +102,9 @@ class Hmr extends Service {
    * modules can only be applied by restarting the process.
    */
   public hostModules = new Set<string>()
+
+  /** The CJS module cache is read through it. */
+  private _require = createRequire(import.meta.url)
 
   /** The tail of the transaction queue. */
   private _queue: Promise<void> = Promise.resolve()
@@ -164,18 +201,68 @@ class Hmr extends Service {
     // process.argv[1] is undefined in REPL, node -e, and some packed binaries.
     if (process.argv[1]) {
       const mainUrl = pathToFileURL(resolve(process.argv[1])).href
-      const mainJob = this.internal.loadCache.get(mainUrl)
-      if (mainJob) {
-        this.hostModules = await loadDependencies(mainJob)
+      if (this.internal.loadCache.has(mainUrl)) {
+        this.hostModules = await closure([mainUrl], url => this._edges(url))
       }
     }
   }
 
+  /**
+   * The URLs of the modules linked by the jobs of `url`, in every type slot.
+   * A job that failed to link contributes no URLs.
+   */
   async getLinked(url: string) {
-    const job = this.internal.loadCache.get(url)
-    if (!job) return []
-    const linked = await job.linked
-    return Array.prototype.map.call(linked, (job: ModuleJob) => job.url) as string[]
+    const urls = new Set<string>()
+    await Promise.all(getModuleJobs(this.internal.loadCache, url).map(async (job) => {
+      let linked: ModuleJob[]
+      try {
+        linked = Array.from(await job.linked)
+      } catch {
+        return
+      }
+      for (const child of linked) urls.add(child.url)
+    }))
+    return [...urls]
+  }
+
+  /** The loaded modules: the keys of the ESM load cache and of the CJS module cache. */
+  private _loaded() {
+    const urls = new Set(Map.prototype.keys.call(this.internal.loadCache) as Iterable<string>)
+    for (const path of Object.keys(this._require.cache)) urls.add(pathToFileURL(path).href)
+    return urls
+  }
+
+  /**
+   * The direct dependencies of a module in the current module caches: the
+   * linked jobs of its ESM module job and the children of its CJS module.
+   */
+  private async _edges(url: string) {
+    const edges = new Set(await this.getLinked(url))
+    const path = toPath(url)
+    for (const child of (path && this._require.cache[path]?.children) || []) {
+      edges.add(pathToFileURL(child.filename).href)
+    }
+    return edges
+  }
+
+  /**
+   * Remove the jobs of `url` that failed to load, link or evaluate, so that a
+   * later import tries them again. The jobs in the other type slots are kept.
+   */
+  private _dropBroken(url: string) {
+    const entry: Record<string, ModuleJob | undefined> | undefined = Map.prototype.get.call(this.internal.loadCache, url)
+    if (!entry) return
+    for (const type in entry) {
+      if (entry[type] && isBroken(entry[type])) delete entry[type]
+    }
+    if (!Object.values(entry).some(Boolean)) this._evict(url)
+  }
+
+  /** Remove a module from both module caches. */
+  private _evict(url: string) {
+    Map.prototype.delete.call(this.internal.loadCache, url)
+    const path = toPath(url)
+    if (path) delete this._require.cache[path]
   }
 
   /**
@@ -215,25 +302,24 @@ class Hmr extends Service {
    * module that imports an accepted one. This does not depend on whether a
    * registered plugin uses them, so that a later import, such as by a plugin
    * that is enabled again, gets the new code. Host modules are declined.
+   *
+   * The returned `edges` are the dependencies of each loaded module before
+   * the eviction, i.e. the old module graph.
    */
   private async _analyze(changed: Set<string>) {
-    const urls = [...Map.prototype.keys.call(this.internal.loadCache) as Iterable<string>]
+    const urls = [...this._loaded()].filter(url => !isExcluded(url))
+    const edges = new Map<string, Set<string>>()
+    await Promise.all(urls.map(async url => edges.set(url, await this._edges(url))))
+
     const importers = new Map<string, string[]>()
-    await Promise.all(urls.map(async (url) => {
-      if (isExcluded(url) || this.hostModules.has(url)) return
-      let children: string[]
-      try {
-        children = await this.getLinked(url)
-      } catch {
-        // a module that failed to link has no dependencies to follow
-        return
-      }
+    for (const [url, children] of edges) {
+      if (this.hostModules.has(url)) continue
       for (const child of children) {
         let list = importers.get(child)
         if (!list) importers.set(child, list = [])
         list.push(url)
       }
-    }))
+    }
 
     const accepted = new Set<string>()
     const queue = [...changed]
@@ -248,13 +334,61 @@ class Hmr extends Service {
     for (const url of urls) {
       if (!accepted.has(url)) declined.add(url)
     }
-    return { accepted, declined }
+    return { accepted, declined, edges }
   }
 
   /**
-   * Find every loaded module that exports a registered plugin. The modules of
-   * a plugin form an atomic reload unit: when anything in their dependency
-   * trees changes, they are imported again and the plugin is replaced.
+   * Partition the attempts into units: the connected components of the
+   * relation in which two plugins are related if their closures, in the old
+   * or the new module graph, share an evicted module.
+   *
+   * @param edges the dependencies of a module in the new module graph
+   * @param retained the modules kept in the caches through the eviction,
+   * which import no evicted module, so that the traversal stops at them
+   */
+  private async _partition(
+    attempts: ImportAttempt[],
+    evicted: Set<string>,
+    edges: (url: string) => Promise<Iterable<string>>,
+    retained: Set<string>,
+  ) {
+    const reaches = await Promise.all(attempts.map(attempt => {
+      return closure(attempt.stale.urls, edges, url => retained.has(url))
+    }))
+    const parents = attempts.map((_, index) => index)
+    const find = (index: number) => {
+      while (parents[index] !== index) index = parents[index] = parents[parents[index]]
+      return index
+    }
+    const owners = new Map<string, number>()
+    attempts.forEach((attempt, index) => {
+      for (const url of [...attempt.stale.modules, ...reaches[index]]) {
+        if (!evicted.has(url)) continue
+        const owner = owners.get(url)
+        if (owner === undefined) {
+          owners.set(url, index)
+        } else {
+          parents[find(index)] = find(owner)
+        }
+      }
+    })
+    const units = new Map<number, ReconcileUnit>()
+    attempts.forEach((attempt, index) => {
+      const root = find(index)
+      let unit = units.get(root)
+      if (!unit) units.set(root, unit = { attempts: [], modules: new Set() })
+      unit.attempts.push(attempt)
+      for (const url of [...attempt.stale.modules, ...reaches[index]]) {
+        if (evicted.has(url)) unit.modules.add(url)
+      }
+    })
+    return [...units.values()]
+  }
+
+  /**
+   * Find every loaded module that exports a registered plugin. When anything
+   * in the dependency tree of such a module changes, the module is imported
+   * again and the plugin is replaced.
    */
   private _discover(declined: Set<string>) {
     const internal = this.internal
@@ -292,11 +426,12 @@ class Hmr extends Service {
 
     const internal = this.internal
 
-    // In Node 24, both CJS and ESM modules imported via import() end up
-    // in loadCache, so this check covers all module formats.
+    // A module is loaded if it is in either module cache. In Node 24, a CJS
+    // module imported via import() is in both of them.
+    const loaded = this._loaded()
     const changed = new Set<string>()
     for (const url of files) {
-      if (internal.loadCache.has(url)) {
+      if (loaded.has(url)) {
         changed.add(url)
       } else {
         this.ctx.logger.debug('skip %C (not loaded)', this._relative(url))
@@ -304,52 +439,49 @@ class Hmr extends Service {
     }
     if (!changed.size) return result
 
-    const { accepted, declined } = await this._analyze(changed)
-    const invalidatedModules = new Set(accepted)
-    const stalePlugins = new Map<Plugin.Runtime, StalePlugin>()
-    const owned = new Set<string>()
+    const { accepted, declined, edges } = await this._analyze(changed)
+    const oldEdges = (url: string) => edges.get(url) ?? []
 
     // A plugin may be exported by several modules, e.g. an entry module that
-    // re-exports its implementation. All of them form a single reload unit.
-    const units = new Map<Plugin.Runtime, Map<ModuleJob, Plugin>>()
+    // re-exports its implementation. All of them are imported again together.
+    const exporters = new Map<Plugin.Runtime, Map<ModuleJob, Plugin>>()
     for (const [job, plugin] of this._discover(declined)) {
       const runtime = this.ctx.registry.get(plugin)!
-      let unit = units.get(runtime)
-      if (!unit) units.set(runtime, unit = new Map())
-      unit.set(job, plugin)
+      let exported = exporters.get(runtime)
+      if (!exported) exporters.set(runtime, exported = new Map())
+      exported.set(job, plugin)
     }
 
-    // Plugin modules are atomic reload units, so the dependency tree of one
-    // stops at every module of another unit.
-    for (const unit of units.values()) {
-      for (const job of unit.keys()) declined.add(job.url)
-    }
-
-    // Check each unit's dependency tree for accepted files
-    for (const [runtime, unit] of units) {
-      for (const job of unit.keys()) declined.delete(job.url)
+    // The closure of a plugin consists of its modules and the accepted modules
+    // they reach through accepted modules. It includes the modules of another
+    // plugin, so that a plugin importing another one shares its unit.
+    const stalePlugins: StalePlugin[] = []
+    const evicted = new Set(accepted)
+    const owned = new Set<string>()
+    for (const exported of exporters.values()) {
+      const jobs = [...exported.keys()]
+      const own = new Set(jobs.map(job => job.url))
+      const stop = (url: string) => declined.has(url) && !own.has(url)
       const closures = new Map<ModuleJob, Set<string>>()
-      for (const job of unit.keys()) {
-        closures.set(job, await loadDependencies(job, declined))
+      for (const job of jobs) {
+        closures.set(job, await closure([job.url], oldEdges, stop))
       }
-      for (const job of unit.keys()) declined.add(job.url)
+      const modules = new Set([...closures.values()].flatMap(closure => [...closure]))
+      if (![...modules].some(url => accepted.has(url))) continue
+      for (const url of modules) {
+        evicted.add(url)
+        owned.add(url)
+      }
 
-      const dependencies = new Set([...closures.values()].flatMap(closure => [...closure]))
-      if (![...dependencies].some(dep => accepted.has(dep))) continue
-      dependencies.forEach((dep) => {
-        invalidatedModules.add(dep)
-        owned.add(dep)
-      })
-
-      // Use a module that no other module of the unit imports.
+      // Use a module that no other module of the plugin imports.
       // Ambiguous aliases are deferred to the module/plugin identity work.
-      const jobs = [...unit.keys()]
       const outermost = jobs.find(job => !jobs.some(other => other !== job && closures.get(other)!.has(job.url)))
       const job = outermost ?? jobs[0]
-      stalePlugins.set(runtime, {
+      stalePlugins.push({
         url: job.url,
-        plugin: unit.get(job)!,
+        plugin: exported.get(job)!,
         urls: jobs.map(job => job.url),
+        modules,
       })
     }
 
@@ -358,8 +490,7 @@ class Hmr extends Service {
     }
 
     /**
-     * Clear module caches for affected modules and complete dependency trees
-     * of selected plugins before re-importing.
+     * Clear module caches for the evicted modules before re-importing.
      *
      * We need to clear both:
      * 1. ESM loadCache — managed by Node's internal ModuleLoader
@@ -376,70 +507,106 @@ class Hmr extends Service {
      * which carries the Map internal slots, so Map.prototype methods apply to
      * it although `loadCache instanceof Map` is false.
      */
-    const esmBackup: Dict = Object.create(null)
-    const cjsBackup: Dict = Object.create(null)
-    const require = createRequire(import.meta.url)
-    for (const filename of invalidatedModules) {
-      // Backup and clear ESM loadCache
-      const job = Map.prototype.get.call(internal.loadCache, filename)
-      esmBackup[filename] = job
-      Map.prototype.delete.call(internal.loadCache, filename)
-
-      // Backup and clear CJS Module._cache
-      try {
-        const filepath = fileURLToPath(filename)
-        if (require.cache[filepath]) {
-          cjsBackup[filepath] = require.cache[filepath]
-          delete require.cache[filepath]
-        }
-      } catch {
-        // filename might not be a file: URL (e.g. node: protocol), ignore
-      }
+    const esmBackup = new Map<string, unknown>()
+    const cjsBackup = new Map<string, NodeJS.Module>()
+    for (const url of evicted) {
+      esmBackup.set(url, Map.prototype.get.call(internal.loadCache, url))
+      const path = toPath(url)
+      if (path && this._require.cache[path]) cjsBackup.set(path, this._require.cache[path])
+      this._evict(url)
+    }
+    const restore = (url: string) => {
+      this._evict(url)
+      const job = esmBackup.get(url)
+      if (job) Map.prototype.set.call(internal.loadCache, url, job)
+      const path = toPath(url)
+      if (path && cjsBackup.has(path)) this._require.cache[path] = cjsBackup.get(path)
     }
 
-    const esmKeys = new Set(Map.prototype.keys.call(internal.loadCache) as Iterable<string>)
-    const cjsKeys = new Set(Object.keys(require.cache))
-    const rollback = () => {
-      for (const filename of [...Map.prototype.keys.call(internal.loadCache) as Iterable<string>]) {
-        if (!esmKeys.has(filename)) Map.prototype.delete.call(internal.loadCache, filename)
-      }
-      for (const filepath of Object.keys(require.cache)) {
-        if (!cjsKeys.has(filepath)) delete require.cache[filepath]
-      }
-      for (const filename in esmBackup) {
-        Map.prototype.set.call(internal.loadCache, filename, esmBackup[filename])
-      }
-      for (const filepath in cjsBackup) {
-        require.cache[filepath] = cjsBackup[filepath]
-      }
-    }
-
-    // Stage 1: re-import the module graph (all-or-nothing).
+    // Stage 1: import the new modules of every stale plugin.
     // Plugin validity is checked here, where the only mutated state is the
     // module cache and no plugin has been touched yet. Moving this check
     // earlier is what allows the later stages to have no rollback at all: a malformed
     // export can no longer fail halfway through swapping instances.
-    const replacements: Dict = Object.create(null)
-    try {
-      for (const { url, urls } of stalePlugins.values()) {
-        // Import the other modules of the unit too, so that their failures
-        // abort the batch as well.
-        for (const other of urls) {
-          if (other !== url) await internal.import(other, import.meta.url, {})
+    // No cache entry is restored before every plugin has been imported, so
+    // that no new module links against an old module that has been evicted.
+    const retained = this._loaded()
+    const attempts: ImportAttempt[] = []
+    for (const stale of stalePlugins) {
+      const before = this._loaded()
+      const attempt: ImportAttempt = { stale, loaded: [], failed: false }
+      try {
+        // Import the other modules of the plugin too, so that their failures
+        // abort its unit as well.
+        for (const url of stale.urls) {
+          if (url !== stale.url) await internal.import(url, import.meta.url, {})
         }
-        const exports = unwrapExports(await internal.import(url, import.meta.url, {}))
+        const exports = unwrapExports(await internal.import(stale.url, import.meta.url, {}))
         if (!this.ctx.registry.resolve(exports)) {
-          throw new Error(`invalid plugin at ${this._relative(url)}, `
+          throw new Error(`invalid plugin at ${this._relative(stale.url)}, `
             + `expect function or object with an "apply" method, received ${typeof exports}`)
         }
-        replacements[url] = exports
+        attempt.replacement = exports
+      } catch (error) {
+        handleError(this.ctx, error)
+        attempt.failed = true
+        attempt.error = error
       }
-    } catch (error) {
-      handleError(this.ctx, error)
-      rollback()
-      // the whole batch is a single unit for now
-      result.importFailures.push({ urls: [...invalidatedModules], error })
-      return result
+      for (const url of this._loaded()) {
+        if (!before.has(url) && !evicted.has(url)) attempt.loaded.push(url)
+      }
+      attempts.push(attempt)
+    }
+
+    // The new module graph is read once, before any cache entry is restored.
+    const newGraph = new Map<string, Promise<Set<string>>>()
+    const newEdges = (url: string) => {
+      let edges = newGraph.get(url)
+      if (!edges) newGraph.set(url, edges = this._edges(url))
+      return edges
+    }
+
+    // A unit is a connected component of the stale plugins, where two plugins
+    // are connected if their closures share an evicted module. The closure of a
+    // plugin is taken in both the old module graph and the new one, so that
+    // every evicted module that is imported again belongs to a single unit.
+    const units = await this._partition(attempts, evicted, newEdges, retained)
+    const aborted = units.filter(unit => unit.attempts.some(attempt => attempt.failed))
+    const committed = units.filter(unit => !aborted.includes(unit))
+
+    // An evicted module outside every unit is restored with the aborted units
+    // it reaches in the old module graph, so that it links against the modules
+    // they restore. If it also reaches a committed unit, neither version is
+    // consistent with the caches, and it is left evicted.
+    const unowned = new Set(evicted)
+    for (const unit of units) unit.modules.forEach(url => unowned.delete(url))
+    for (const url of unowned) {
+      const reached = await closure([url], oldEdges, url => !evicted.has(url))
+      const overlaps = (unit: ReconcileUnit) => [...unit.modules].some(url => reached.has(url))
+      if (committed.some(overlaps)) continue
+      for (const unit of aborted.filter(overlaps)) unit.modules.add(url)
+    }
+
+    // A module first loaded in stage 1 is removed from the caches if it reaches
+    // a module to be restored in the new module graph, since it has been linked
+    // against the new version. Otherwise, only its jobs that failed are removed,
+    // each from its own type slot. Any other job is kept, including one loaded
+    // by an aborted unit, so that a committed unit that imported it, statically
+    // or dynamically, shares its instance with later imports.
+    const restored = new Set(aborted.flatMap(unit => [...unit.modules]))
+    for (const url of attempts.flatMap(attempt => attempt.loaded)) {
+      const reached = await closure([url], newEdges, url => retained.has(url))
+      if ([...reached].some(url => restored.has(url))) {
+        this._evict(url)
+      } else {
+        this._dropBroken(url)
+      }
+    }
+    for (const url of restored) restore(url)
+
+    for (const unit of aborted) {
+      const failure = unit.attempts.find(attempt => attempt.failed)!
+      result.importFailures.push({ urls: [...unit.modules], error: failure.error })
     }
 
     // Stage 2: replace the plugins in place (synchronous).
@@ -447,10 +614,13 @@ class Hmr extends Service {
     // case the replacement only forwards a later registration of it.
     // Waiting is left to stage 3, so that no plugin is delayed behind another.
     const fibers: Fiber[] = []
-    for (const { url, plugin } of stalePlugins.values()) {
+    const applied = new Set(committed.flatMap(unit => unit.attempts))
+    for (const attempt of attempts) {
+      if (!applied.has(attempt)) continue
+      const { url, plugin } = attempt.stale
       const path = this._relative(url)
       try {
-        const replaced = this.ctx.registry.replace(plugin, replacements[url])
+        const replaced = this.ctx.registry.replace(plugin, attempt.replacement!)
         if (!replaced.length) continue
         this.ctx.logger.info('reload plugin at %C', path)
         fibers.push(...replaced)
@@ -516,11 +686,13 @@ namespace Hmr {
 
   /**
    * A new module of a unit failed to import, or does not export a plugin.
-   * Nothing in the unit is applied, and its module cache is restored.
+   * Nothing in the unit is applied, and its module cache is restored. The
+   * other units of the transaction are not affected.
    */
   export interface ImportFailure {
-    /** the modules of the unit */
+    /** the evicted modules of the unit, whose cache entries are restored */
     urls: string[]
+    /** the first error raised while importing the unit */
     error: unknown
   }
 }
