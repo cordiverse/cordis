@@ -125,6 +125,7 @@ declare module './context.ts' {
 export class RegistryService {
   private _counter = 0
   private _internal = new Map<Function, Plugin.Runtime>()
+  private _aliases = new WeakMap<Function, Plugin>()
 
   constructor(public ctx: Context) {
     defineProperty(this, symbols.tracker, {
@@ -149,25 +150,62 @@ export class RegistryService {
     } catch {}
   }
 
+  private _forward(plugin: Plugin): [key: Function, plugin: Plugin] | undefined {
+    let key = this.resolve(plugin)
+    while (key) {
+      const next = this._aliases.get(key)
+      if (!next) return [key, plugin]
+      plugin = next
+      key = this.resolve(next)
+    }
+  }
+
+  private _create(callback: Function, plugin: Plugin) {
+    let name = plugin.name
+    if (name === 'apply') name = undefined
+    const runtime: Plugin.Runtime = { name, callback, fibers: new DisposableList(), Config: plugin.Config }
+    this._internal.set(callback, runtime)
+    return runtime
+  }
+
   get(plugin: Plugin) {
-    const key = this.resolve(plugin)
+    const key = this._forward(plugin)?.[0]
     return key && this._internal.get(key)
   }
 
   has(plugin: Plugin) {
-    const key = this.resolve(plugin)
+    const key = this._forward(plugin)?.[0]
     return !!key && this._internal.has(key)
   }
 
-  delete(plugin: Plugin) {
-    const key = this.resolve(plugin)
-    const runtime = key && this._internal.get(key)
-    if (!runtime) return
-    this._internal.delete(key)
-    for (const fiber of runtime.fibers) {
-      fiber.dispose()
+  _unregister(runtime: Plugin.Runtime) {
+    this._internal.delete(runtime.callback)
+  }
+
+  replace(oldPlugin: Plugin, newPlugin: Plugin): Fiber[] {
+    const source = this._forward(oldPlugin)
+    if (!source) throw new Error('invalid plugin, expect function or object with an "apply" method, received ' + typeof oldPlugin)
+    const key = this.resolve(newPlugin)
+    if (!key) throw new Error('invalid plugin, expect function or object with an "apply" method, received ' + typeof newPlugin)
+
+    // `next` is an implementation of its own again
+    this._aliases.delete(key)
+    const [oldKey] = source
+    const runtime = this._internal.get(oldKey)
+    let target = this._internal.get(key)
+    if (oldKey !== key) {
+      this._internal.delete(oldKey)
+      this._aliases.set(oldKey, newPlugin)
     }
-    return runtime
+
+    const fibers = runtime ? [...runtime.fibers] : []
+    if (!fibers.length) return fibers
+    target ??= this._create(key, newPlugin)
+
+    for (const fiber of fibers) {
+      fiber._replace(target, Inject.resolve(newPlugin.inject))
+    }
+    return fibers
   }
 
   keys() {
@@ -192,19 +230,13 @@ export class RegistryService {
 
   plugin(plugin: Plugin, config?: any, getOuterStack = buildOuterStack()) {
     // check if it's a valid plugin
-    const callback = this.resolve(plugin)
-    if (!callback) throw new Error('invalid plugin, expect function or object with an "apply" method, received ' + typeof plugin)
+    const forwarded = this._forward(plugin)
+    if (!forwarded) throw new Error('invalid plugin, expect function or object with an "apply" method, received ' + typeof plugin)
     this.ctx.fiber.assertActive()
 
-    let runtime = this._internal.get(callback)
-    if (!runtime) {
-      let name = plugin.name
-      if (name === 'apply') name = undefined
-      runtime = { name, callback, fibers: new DisposableList(), Config: plugin.Config }
-      this._internal.set(callback, runtime)
-    }
-
-    const fiber = new Fiber(this.ctx, config, Inject.resolve(plugin.inject), runtime, getOuterStack)
+    const [callback, target] = forwarded
+    const runtime = this._internal.get(callback) ?? this._create(callback, target)
+    const fiber = new Fiber(this.ctx, config, Inject.resolve(target.inject), runtime, getOuterStack)
     const wrapped = Object.create(fiber) as Fiber & PromiseLike<Fiber>
     wrapped.then = (onFulfilled, onRejected) => {
       return fiber.await().then(onFulfilled, onRejected)

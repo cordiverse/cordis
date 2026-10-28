@@ -1,6 +1,6 @@
 import { Context, Fiber, FiberState, Service, ValidationError } from 'cordis'
-import { Awaitable, defineProperty, isNullable } from 'cosmokit'
-import { ModuleLoader } from './internal.ts'
+import { Awaitable, defineProperty } from 'cosmokit'
+import { ModuleLoader, unwrapExports } from '@cordisjs/loader-utils'
 import { Entry, EntryOptions } from './config/entry.ts'
 import { EntryGroup } from './config/group.ts'
 import isolate from './config/isolate.ts'
@@ -12,7 +12,6 @@ export * from './config/group.ts'
 export * from './config/isolate.ts'
 export * from './config/tree.ts'
 export * from './config/utils.ts'
-export * from './internal.ts'
 
 declare module 'cordis' {
   interface Events {
@@ -145,26 +144,21 @@ export class Loader extends EntryTree {
       // case 3: fiber is a child plugin under the entry (not the entry's root fiber)
       if (fiber.parent.fiber?.entry === fiber.entry) return
 
-      // case 4: fiber is disposed on behalf of plugin deletion (such as plugin hmr)
-      // self-dispose: ctx.fiber.dispose() -> fiber / runtime dispose -> delete(plugin)
-      // plugin hmr: delete(plugin) -> runtime dispose -> fiber dispose
-      if (!ctx.registry.has(fiber.runtime!.callback)) return
-
-      // case 5: the entry's tree is being disposed
+      // case 4: the entry's tree is being disposed
       if (!fiber.entry.parent.tree.ctx.fiber.uid) return
 
       const { entry } = fiber
       this.showLog(entry, 'unload')
 
-      // case 6: the entry's parent is being unloaded, which takes the entry with it
+      // case 5: the entry's parent is being unloaded, which takes the entry with it
       // (the parent may still be registered, e.g. when it has lost a dependency)
       if (fiber.parent.fiber.state === FiberState.UNLOADING) return
 
-      // case 7: the entry is being removed by the loader (`EntryGroup.remove`
+      // case 6: the entry is being removed by the loader (`EntryGroup.remove`
       // unregisters it before disposing the fiber)
       if (entry.parent.tree.store[entry.options.id] !== entry) return
 
-      // case 8: fiber is disposed by loader behavior through `entry.dispose()`,
+      // case 7: fiber is disposed by loader behavior through `entry.dispose()`,
       // such as config file update, ancestor group disable, rebuild
       if (entry._disposing) return
 
@@ -205,16 +199,6 @@ export class Loader extends EntryTree {
   unwrapExports(exports: any) {
     return unwrapExports(exports)
   }
-}
-
-/** Get the plugin exported by a module namespace. */
-export function unwrapExports(exports: any) {
-  if (isNullable(exports)) return exports
-  exports = exports.default ?? exports
-  // https://github.com/evanw/esbuild/issues/2623
-  // https://esbuild.github.io/content-types/#default-interop
-  if (!exports.__esModule) return exports
-  return exports.default ?? exports
 }
 
 export default Loader

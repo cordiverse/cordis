@@ -129,6 +129,11 @@ function disarm(gate: Gate | undefined) {
   gate.release?.()
 }
 
+// the instances of plugin-nested.ts that have been applied and not disposed
+function liveNested(stats: any) {
+  return (stats.nestedApplied ?? 0) - (stats.nestedDisposed ?? 0)
+}
+
 function liveUids(gate: Gate) {
   return gate.fibers.filter(fiber => fiber.uid !== null).map(fiber => fiber.uid)
 }
@@ -171,10 +176,9 @@ describe('HMR', () => {
       await new Promise(r => setTimeout(r, 200))
     })
 
-    it('should instantiate a nested entry exactly once when its host reloads too', async () => {
+    it('should keep a single nested entry when its host reloads too', async () => {
       const stats = (globalThis as any).__hmrTest
       await waitFor(() => ctx.bail('hmr-test/get-nested') === 'tree-v1')
-      const applied = stats.nestedApplied
 
       // one change, two entries in the batch: the tree host and the entry
       // nested two fiber levels below it
@@ -183,12 +187,13 @@ describe('HMR', () => {
       expect(result.settledFibers.map(fiber => fiber.state)).to.not.include(FiberState.FAILED)
 
       expect(ctx.bail('hmr-test/get-tree')).to.equal('tree-v2')
-      // the host rebuilds its subtree; reloading the nested entry separately
-      // would apply it a second time
-      expect(stats.nestedApplied - applied).to.equal(1)
+      expect(ctx.bail('hmr-test/get-nested')).to.equal('tree-v2')
+      // the host rebuilds its subtree, which disposes the nested entry, even
+      // if the nested entry has been restarted in place before
+      expect(liveNested(stats)).to.equal(1)
     }, 15000)
 
-    it('should skip a nested entry whose host has not started unloading', async () => {
+    it('should keep a single nested entry across a batch queued behind a stalled host', async () => {
       const stats = (globalThis as any).__hmrTest
       await waitFor(() => ctx.bail('hmr-test/get-nested') === 'tree-v1')
 
@@ -198,13 +203,10 @@ describe('HMR', () => {
       treeDep.modify(c => c.replace("version = 'tree-v1'", "version = 'tree-v2'"))
       const first = ctx.hmr.reconcile({ files: [treeDep.path] })
       await waitFor(() => ctx.bail('hmr-test/get-nested') === 'tree-v2')
-      const applied = stats.nestedApplied
 
-      // batch 2 arrives while the host is still stalled, so the nested entry's
-      // direct parent is very much alive; only walking up to the host itself
-      // reveals that the subtree is going away. Batch 1 waits for the host to
-      // finish initializing, so batch 2 is queued behind it; this pins that
-      // the queue keeps the two from overlapping.
+      // Batch 2 arrives while the host is still stalled. Batch 1 waits for the
+      // host to finish initializing, so batch 2 is queued behind it; this pins
+      // that the queue keeps the two from overlapping.
       stats.stallTreeInit = 0
       treeDep.write(treeDep.original.replace("version = 'tree-v1'", "version = 'tree-v3'"))
       const results = await Promise.all([first, ctx.hmr.reconcile({ files: [treeDep.path] })])
@@ -213,7 +215,7 @@ describe('HMR', () => {
       expect(ctx.bail('hmr-test/get-tree')).to.equal('tree-v3')
 
       expect(ctx.bail('hmr-test/get-nested')).to.equal('tree-v3')
-      expect(stats.nestedApplied - applied).to.equal(1)
+      expect(liveNested(stats)).to.equal(1)
     }, 30000)
   })
 
@@ -477,9 +479,9 @@ describe('HMR', () => {
       await reloaded
       await waitFor(() => ctx.bail('hmr-test/get-value') === 'from-host')
 
-      // both the entry root and the child of the host are rebuilt
+      // both the entry root and the child of the host are rebuilt in place
       expect(gate.applies - appliesBefore).to.equal(2)
-      expect(entry.innerFiber).to.not.equal(previous)
+      expect(entry.innerFiber).to.equal(previous)
       expect(liveUids(gate)).to.have.length(2)
       // rebuilding the child does not take over the host's entry root
       expect(host.innerFiber).to.equal(hostRoot)
