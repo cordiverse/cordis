@@ -590,4 +590,41 @@ describe('Include sync', () => {
 
     expect((await app.read())[0].config.value).toBe(2)
   }, 10000)
+
+  it('moves an entry into another include as a single instance', async () => {
+    const app = await setup('tmp-sync-move-source.yml', [plugin('m', 1)])
+    const target = fixture('tmp-sync-move-target.yml')
+    app.files.push(target)
+    await writeFile(target, yaml.stringify([group('g', [])]))
+    const targetId = await app.ctx.loader.create({
+      name: '@cordisjs/plugin-include',
+      config: { path: './fixtures/tmp-sync-move-target.yml' },
+    })
+    await app.ctx.loader.await()
+    const targetInclude = () => app.ctx.loader.store[targetId]!.subtree as Include
+    const running = () => {
+      const tags: string[] = []
+      app.ctx.emit('test/running', tags)
+      return tags
+    }
+    expect(running()).toEqual(['m'])
+
+    await app.ctx.loader.update(`${app.id}:m`, {}, `${targetId}:g`)
+    await app.settle()
+    await targetInclude().refresh()
+    await app.ctx.loader.await()
+
+    expect(await app.read()).toEqual([])
+    expect(yaml.parse(await readFile(target, 'utf8'))).toEqual([group('g', [plugin('m', 1)])])
+    expect(running()).toEqual(['m'])
+    expect(app.ctx.loader.resolve(`${targetId}:m`).options.config).toEqual({ tag: 'm', value: 1 })
+    expect(() => app.ctx.loader.resolve(`${app.id}:m`)).toThrow()
+
+    app.ctx.loader.remove(`${targetId}:m`)
+    await targetInclude().flush()
+    await app.ctx.loader.await()
+
+    expect(running()).toEqual([])
+    expect(yaml.parse(await readFile(target, 'utf8'))).toEqual([group('g', [])])
+  }, 10000)
 })
