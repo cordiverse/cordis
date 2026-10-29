@@ -18,9 +18,25 @@ declare module './context.ts' {
 }
 
 function enhanceError(error: Error) {
-  const lines = error.stack!.split('\n')
+  // The access error is created without a stack, since it is only thrown on a
+  // failed access; capture the stack here so that the common path allocates no
+  // more than the object.
+  if (!error.stack) {
+    Error.captureStackTrace(error, enhanceError)
+    const lines = error.stack!.split('\n')
+    lines.splice(0, 3, `Error: ${error.message}`)
+    error.stack = lines.join('\n')
+    return error
+  }
+  const lines = error.stack.split('\n')
   lines.splice(0, 2, `Error: ${error.message}`)
   error.stack = lines.join('\n')
+  return error
+}
+
+function createAccessError(message: string) {
+  const error: Error = Object.create(Error.prototype)
+  error.message = message
   return error
 }
 
@@ -100,7 +116,7 @@ export class ReflectService {
         return getTraceable(ctx, Reflect.get(target, prop, ctx))
       }
 
-      const error = new Error(`cannot get property "${prop}" without inject`)
+      const error = createAccessError(`cannot get property "${prop}" without inject`)
 
       try {
         const def = target.reflect.props[prop]
@@ -128,7 +144,7 @@ export class ReflectService {
         return Reflect.set(target, prop, value, ctx)
       }
 
-      const error = new Error(`cannot set property "${prop}" without provide`)
+      const error = createAccessError(`cannot set property "${prop}" without provide`)
       const def = target.reflect.props[prop]
       if (!def) {
         if (!ctx.fiber.runtime) return Reflect.set(target, prop, value, ctx)
