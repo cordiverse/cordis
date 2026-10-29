@@ -3,6 +3,7 @@ import { readFileSync, realpathSync, statSync } from 'node:fs'
 import type { BigIntStats } from 'node:fs'
 import { sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { relocate } from './manifest.ts'
 
 export interface Identity {
   // the realpath, the key of the store, and the `file:` URL the module was
@@ -155,17 +156,29 @@ export class IdentityStore {
     const rootPath = toPath(root) ?? toGivenPath(root)
     if (!rootPath) return []
     const candidates = new Set<string>()
-    for (const rec of this.records.values()) {
-      if (under(rec.path, rootPath)) candidates.add(rec.url)
+    // modules that a retargeted link now reaches: their files are unchanged,
+    // the package they belong to is not, so they join the batch uncompared
+    const retargeted = new Set<string>()
+    const collect = (url: string, path: string | undefined) => {
+      if (!path) return
+      if (under(path, rootPath)) {
+        candidates.add(url)
+        return
+      }
+      const moved = relocate(path)
+      if (moved && under(moved, rootPath)) retargeted.add(url)
     }
+    for (const rec of this.records.values()) collect(rec.url, rec.path)
     for (const url of loaded) {
       const path = toPath(url)
       // loaded after the last observation: no record to compare against yet
-      if (path && !this.records.has(path) && under(path, rootPath)) {
-        candidates.add(url)
-      }
+      if (path && this.records.has(path)) continue
+      collect(url, path)
     }
-    return [...candidates].filter(url => this.changed(url))
+    return [...new Set([
+      ...[...candidates].filter(url => this.changed(url)),
+      ...retargeted,
+    ])]
   }
 
   private trustworthy(rec: Identity) {

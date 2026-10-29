@@ -1,6 +1,6 @@
-import { existsSync, readFileSync, realpathSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { join, sep } from 'node:path'
+import { basename, join, normalize, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 // The `package.json` layer of the module cache.
@@ -32,6 +32,55 @@ function toPath(url: string) {
     return fileURLToPath(url)
   } catch {
     return undefined
+  }
+}
+
+/**
+ * Rewrite a resolved path that still names the directory a package symlink
+ * used to point at.
+ *
+ * An isolated-layout install retargets `node_modules/<name>` instead of
+ * rewriting the directory, and Node keeps answering from a real-path cache it
+ * does not expose — clearing `Module._pathCache` does not move the answer
+ * (measured). The cache cannot be cleared, so the path is rewritten instead:
+ * the `node_modules/<name>` segment identifies the package, and the link's
+ * current target gives the tail's new home.
+ *
+ * Returns undefined when the path does not name an invalidated link, so a
+ * lookup outside one keeps the answer Node gave.
+ */
+export function relocate(path: string) {
+  for (const dir of invalidated) {
+    if (!isLink(dir)) continue
+    const sub = packageSubpath(dir)
+    const marker = `${sep}node_modules${sep}${sub}${sep}`
+    const at = path.lastIndexOf(marker)
+    if (at < 0) continue
+    let target: string
+    try {
+      target = join(realpathSync(dir), path.slice(at + marker.length))
+    } catch {
+      // old directory likely deleted, path cannot be relocated
+      return undefined
+    }
+    if (target !== path && existsSync(target)) return target
+  }
+  return undefined
+}
+
+function packageSubpath(dir: string) {
+  const norm = normalize(dir)
+  const nm = `${sep}node_modules${sep}`
+  const idx = norm.lastIndexOf(nm)
+  if (idx < 0) return basename(norm)
+  return norm.slice(idx + nm.length)
+}
+
+function isLink(path: string) {
+  try {
+    return lstatSync(path).isSymbolicLink()
+  } catch {
+    return false
   }
 }
 
@@ -163,6 +212,9 @@ function install() {
         const result = nextResolve(specifier, context)
         const path = result?.url && toPath(result.url)
         if (!path) return result
+        // a retargeted link answers with the old directory; the path names it
+        const moved = relocate(path)
+        if (moved) return { ...result, url: pathToFileURL(moved).href }
         const dir = owner(path)
         if (!dir) return result
         const target = fresh(specifier, path, result.format)
@@ -180,7 +232,7 @@ function install() {
   Module._resolveFilename = function (request: string, ...rest: any[]) {
     const filename = resolve.call(this, request, ...rest)
     if (typeof filename !== 'string') return filename
-    return fresh(request, filename, 'commonjs') ?? filename
+    return relocate(filename) ?? fresh(request, filename, 'commonjs') ?? filename
   }
 }
 
