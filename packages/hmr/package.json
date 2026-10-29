@@ -1,6 +1,6 @@
 {
   "name": "@cordisjs/plugin-hmr",
-  "description": "Hot Module Replacement Plugin for Cordis",
+  "description": "Transactional Hot Module Replacement for Cordis",
   "version": "1.1.2",
   "type": "module",
   "main": "lib/index.js",
@@ -26,9 +26,7 @@
     "hot",
     "module",
     "replacement",
-    "reload",
-    "watch",
-    "development"
+    "reload"
   ],
   "yakumo": {
     "tsc": {
@@ -38,24 +36,25 @@
     }
   },
   "cordis": {
-    "services": {
-      "required": [
-        "timer"
-      ]
-    },
     "description": {
       "en": "Hot Module Replacement",
       "zh": "模块热替换"
     }
   },
   "peerDependencies": {
-    "@cordisjs/plugin-timer": "^1.1.4",
-    "cordis": "^4.0.0-rc.12"
+    "cordis": "^4.0.0-rc.12",
+    "node-addon-require-builtin": "^0.1.0"
+  },
+  "peerDependenciesMeta": {
+    "node-addon-require-builtin": {
+      "optional": true
+    }
   },
   "devDependencies": {
+    "@cordisjs/plugin-fs-node": "^0.1.0",
     "@cordisjs/plugin-include": "^1.2.0",
     "@cordisjs/plugin-loader": "^1.0.0-rc.9",
-    "@cordisjs/plugin-timer": "^1.1.4",
+    "@cordisjs/plugin-logger-console": "^1.0.0",
     "@types/babel__code-frame": "^7.27.0",
     "@types/picomatch": "^3.0.2",
     "cordis": "^4.0.0-rc.12",
@@ -63,8 +62,7 @@
   },
   "dependencies": {
     "@babel/code-frame": "^7.29.0",
-    "chokidar": "^4.0.3",
-    "cosmokit": "^1.8.1",
+    "@cordisjs/loader-utils": "^0.1.0",
     "picomatch": "^4.0.3",
     "schemastery": "^3.18.0"
   }

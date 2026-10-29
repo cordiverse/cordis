@@ -116,10 +116,9 @@ describe('Service', () => {
 
     const root = new Context()
     const before = getHookSnapshot(root)
-    await root.plugin(Test)
+    const fiber = await root.plugin(Test)
     const after = getHookSnapshot(root)
-    root.registry.delete(Test)
-    await sleep()
+    await fiber.dispose()
     expect(before).to.deep.equal(getHookSnapshot(root))
     root.plugin(Test)
     expect(after).to.deep.equal(getHookSnapshot(root))

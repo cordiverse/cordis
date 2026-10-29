@@ -132,6 +132,7 @@ export class Fiber {
   private _runner: EffectRunner<string>
   private _store: Dict<Impl> = Object.create(null)
   private _release: (() => void) | undefined
+  private _remove: (() => void) | undefined
 
   constructor(
     public parent: Context,
@@ -152,16 +153,17 @@ export class Fiber {
         epoch: INACTIVE,
         getOuterStack,
         execute: function (this: Fiber) {
+          const { callback } = this.runtime!
           const config = this._resolve(this.config)
-          if (isConstructor(runtime.callback)) {
+          if (isConstructor(callback)) {
             // eslint-disable-next-line new-cap
-            const instance = new runtime.callback(this.ctx, config)
+            const instance = new callback(this.ctx, config)
             for (const hook of instance?.[symbols.initHooks] ?? []) {
               hook()
             }
             return instance?.[symbols.init]?.()
           } else {
-            return runtime.callback(this.ctx, config)
+            return callback(this.ctx, config)
           }
         },
         collect,
@@ -174,7 +176,7 @@ export class Fiber {
       }
 
       this.dispose = parent.fiber.effect(() => {
-        const remove = runtime.fibers.push(this)
+        this._remove = runtime.fibers.push(this)
         try {
           this._refresh()
         } catch (error) {
@@ -184,11 +186,10 @@ export class Fiber {
         return async () => {
           this.uid = null
           this.context.emit('internal/plugin', this)
-          if (this.ctx.registry.has(runtime.callback)) {
-            remove()
-            if (!runtime.fibers.length) {
-              this.ctx.registry.delete(runtime.callback)
-            }
+          const runtime = this.runtime!
+          this._remove!()
+          if (!runtime.fibers.length) {
+            this.ctx.registry._unregister(runtime)
           }
           this._setEpoch(INACTIVE)
           // `inertia` never rejects: `_reload` and `_unload` both log their
@@ -269,11 +270,17 @@ export class Fiber {
           // force async stack trace
           await Promise.resolve()
           info.error = new Error()
-          while (true) {
-            if (runner.epoch !== oldEpoch) return
-            const result = await iter.next()
-            safeCollect(result.value)
-            if (result.done) return
+          let done = false
+          try {
+            while (runner.epoch === oldEpoch) {
+              const result = await iter.next()
+              done = !!result.done
+              safeCollect(result.value)
+              if (done) return
+            }
+          } finally {
+            // close the iterator so that its finally blocks run
+            if (!done) await iter.return?.()
           }
         })()
       } else {
@@ -390,6 +397,23 @@ export class Fiber {
       return delete this._store[name]
     }
     this._store[name] = impl
+  }
+
+  _replace(runtime: Plugin.Runtime, inject: Dict<any>) {
+    if (runtime !== this.runtime) {
+      this._remove!()
+      this._remove = runtime.fibers.push(this)
+      this.runtime = runtime
+    }
+    this.inject = inject
+    this.context.emit('internal/replace', this)
+    this._store = Object.create(null)
+    for (const name of Object.keys(this.inject)) {
+      this._checkImpl(name)
+    }
+    this._error = undefined
+    this._revision++
+    this._refresh()
   }
 
   _refresh() {

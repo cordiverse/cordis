@@ -23,9 +23,31 @@ interface LoadCache extends Omit<Map<string, Dict<LoadCacheData>>, 'get' | 'set'
   has(url: string, type?: string): boolean
 }
 
+/**
+ * Get the module jobs cached for `url`. An entry of the load cache holds one
+ * job per value of the `type` import attribute. `loadCache.get(url)` only
+ * reads the `javascript` slot, which an import without the attribute uses,
+ * so it misses a job imported `with { type: 'json' }`.
+ */
+export function getModuleJobs(loadCache: LoadCache, url: string): ModuleJob[] {
+  const entry: Dict<LoadCacheData> | undefined = Map.prototype.get.call(loadCache, url)
+  return Object.values(entry ?? {}).filter(Boolean)
+}
+
+/** @see https://v8.github.io/api/head/classv8_1_1Module.html */
+export const enum ModuleStatus {
+  Uninstantiated = 0,
+  Instantiating = 1,
+  Instantiated = 2,
+  Evaluating = 3,
+  Evaluated = 4,
+  Errored = 5,
+}
+
 export interface ModuleWrap {
   url: string
   getNamespace(): any
+  getStatus(): ModuleStatus
 }
 
 /** @see https://github.com/nodejs/node/blob/main/lib/internal/modules/esm/module_job.js */
@@ -34,7 +56,11 @@ export interface ModuleJob {
   loader: ModuleLoader
   module?: ModuleWrap
   importAttributes: ImportAttributes
-  linked: Promise<ModuleJob[]>
+  modulePromise: Promise<ModuleWrap>
+  /** a promise on Node 22 and 23, an array on Node 24 and later */
+  linked: ModuleJob[] | Promise<ModuleJob[]>
+  /** set by the first call to `instantiate()` */
+  instantiated?: Promise<void>
   instantiate(): Promise<void>
   run(): Promise<{ module: ModuleWrap }>
 }

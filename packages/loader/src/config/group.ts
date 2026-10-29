@@ -45,7 +45,7 @@ export class EntryGroup {
     const entry = this.tree.store[id]
     if (entry) {
       delete this.tree.store[id]
-      entry.fiber?.dispose()
+      entry.dispose()
       this.context.emit('loader/partial-dispose', entry, entry.options, false)
     }
     const frames = this.getOuterStack(id)
@@ -70,7 +70,7 @@ export class EntryGroup {
     // distinguishes "removed by the loader" from "disposed itself" by checking
     // whether the entry is still in the store.
     delete this.tree.store[id]
-    entry.fiber?.dispose()
+    entry.dispose()
     if (!isDispose) {
       this.unlink(entry.options)
     }
