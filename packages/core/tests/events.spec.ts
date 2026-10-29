@@ -129,6 +129,106 @@ describe('Events', () => {
     expect(callback.mock.calls).to.have.length(1)
   })
 
+  it.each(['emit', 'parallel', 'serial', 'bail'] as const)('%s skips listeners removed during dispatch', async (mode) => {
+    const { root } = setup()
+    let dispose!: () => void
+    root.on(event, () => { dispose() })
+    const removed = mock.fn()
+    dispose = root.on(event, removed)
+    const remaining = mock.fn()
+    root.on(event, remaining)
+
+    await root[mode](event)
+    expect(removed.mock.calls).to.have.length(0)
+    expect(remaining.mock.calls).to.have.length(1)
+  })
+
+  it.each(['emit', 'parallel', 'serial', 'bail'] as const)('%s defers added listeners until the next dispatch', async (mode) => {
+    const { root } = setup()
+    const added = mock.fn()
+    root.once(event, () => { root.on(event, added) })
+
+    await root[mode](event)
+    expect(added.mock.calls).to.have.length(0)
+    await root[mode](event)
+    expect(added.mock.calls).to.have.length(1)
+  })
+
+  it('skips a listener disposed by an earlier plugin during dispatch', async () => {
+    const { root } = setup()
+    let child!: ReturnType<Context['plugin']>
+    root.on(event, async () => { await child.dispose() })
+    const removed = mock.fn()
+    child = root.plugin((ctx: Context) => { ctx.on(event, removed) })
+    await child
+
+    await root.serial(event)
+    expect(removed.mock.calls).to.have.length(0)
+  })
+
+  it('waterfall continues past a removed listener', () => {
+    const { root } = setup()
+    let dispose!: () => void
+    root.on('test/waterfall', (value, next) => {
+      dispose()
+      return value + next()
+    })
+    const removed = mock.fn<Events['test/waterfall']>((value, next) => value + next())
+    dispose = root.on('test/waterfall', removed)
+    const remaining = mock.fn<Events['test/waterfall']>((value, next) => value + next())
+    root.on('test/waterfall', remaining)
+    const terminal = mock.fn(() => 2)
+
+    expect(root.waterfall('test/waterfall', 1, terminal)).to.equal(4)
+    expect(removed.mock.calls).to.have.length(0)
+    expect(remaining.mock.calls).to.have.length(1)
+    expect(terminal.mock.calls).to.have.length(1)
+  })
+
+  it('waterfall continues after a recursive dispatch has consumed a once listener', () => {
+    const { root } = setup()
+    let nested = false
+    root.on('test/waterfall', (value, next) => {
+      if (!nested) {
+        nested = true
+        root.waterfall('test/waterfall', value, () => 2)
+      }
+      return next()
+    })
+    const once = mock.fn<Events['test/waterfall']>((value, next) => value + next())
+    root.once('test/waterfall', once)
+    root.on('test/waterfall', (value, next) => value + next())
+
+    expect(root.waterfall('test/waterfall', 1, () => 2)).to.equal(3)
+    expect(once.mock.calls).to.have.length(1)
+  })
+
+  it('internal/update continues past a removed fiber listener', async () => {
+    const { root } = setup()
+    const removed = mock.fn()
+    const remaining = mock.fn()
+    const child = root.plugin((ctx: Context, _: { n: number }) => {
+      let dispose!: () => void
+      ctx.on('internal/update', (config, next) => {
+        dispose()
+        return next()
+      })
+      dispose = ctx.on('internal/update', (config, next) => {
+        removed()
+        return next()
+      })
+      ctx.on('internal/update', (config, next) => {
+        remaining()
+        return next()
+      })
+    }, { n: 0 })
+    await child
+
+    await child.update({ n: 1 })
+    expect(removed.mock.calls).to.have.length(0)
+    expect(remaining.mock.calls).to.have.length(1)
+  })
+
   it('ctx.parallel()', async () => {
     const { root } = setup()
     await root.parallel(event)
