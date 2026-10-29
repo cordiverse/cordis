@@ -105,6 +105,13 @@ class Hmr extends Service {
   /** The CJS module cache is read through it. */
   private _require = createRequire(import.meta.url)
 
+  /**
+   * The edges of a module, reused until the module jobs or the set of CJS
+   * children change. A job's `linked` links are fixed at link time, and a
+   * re-import installs a new job, so the jobs are compared by identity.
+   */
+  private _edgesCache = new Map<string, { jobs: ModuleJob[]; children: number; edges: Set<string> }>()
+
   /** The tail of the transaction queue. */
   private _queue: Promise<void> = Promise.resolve()
 
@@ -236,11 +243,29 @@ class Hmr extends Service {
    * linked jobs of its ESM module job and the children of its CJS module.
    */
   private async _edges(url: string) {
-    const edges = new Set(await this.getLinked(url))
+    const jobs = getModuleJobs(this.internal.loadCache, url)
     const path = toPath(url)
-    for (const child of (path && this._require.cache[path]?.children) || []) {
+    const children = (path && this._require.cache[path]?.children) || []
+    const cached = this._edgesCache.get(url)
+    if (cached && cached.children === children.length
+      && cached.jobs.length === jobs.length
+      && cached.jobs.every((job, index) => job === jobs[index])) {
+      return cached.edges
+    }
+    const edges = new Set<string>()
+    await Promise.all(jobs.map(async (job) => {
+      let linked: ModuleJob[]
+      try {
+        linked = Array.from(await job.linked)
+      } catch {
+        return
+      }
+      for (const child of linked) edges.add(child.url)
+    }))
+    for (const child of children) {
       edges.add(pathToFileURL(child.filename).href)
     }
+    this._edgesCache.set(url, { jobs, children: children.length, edges })
     return edges
   }
 
@@ -290,6 +315,7 @@ class Hmr extends Service {
 
   /** Remove a module from both module caches. */
   private _evict(url: string) {
+    this._edgesCache.delete(url)
     Map.prototype.delete.call(this.internal.loadCache, url)
     const path = toPath(url)
     if (path) delete this._require.cache[path]
