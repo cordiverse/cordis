@@ -27,6 +27,18 @@ function toPath(url: string) {
   }
 }
 
+function members(entry: Entry): Entry[] {
+  const { tree } = entry.parent
+  const result = [entry]
+  const group = entry.subgroup
+  if (group?.tree !== tree) return result
+  for (const options of group.data) {
+    const member = tree.store[options.id]
+    if (member?.parent === group) result.push(...members(member))
+  }
+  return result
+}
+
 export class ModuleNotFoundError extends Error {
   name = 'ModuleNotFoundError'
   code = 'ERR_MODULE_NOT_FOUND'
@@ -43,7 +55,10 @@ export class ModuleNotFoundError extends Error {
  * - `options` absent: the entry was removed from `group`.
  * - `legacy` absent: the entry was created in `group`.
  * - both present: the entry was updated and now lives in `group`; `from` is
- *   the group it left if the update moved it.
+ *   the group it left if the update moved it within the same tree.
+ *
+ * A move into another tree is reported as a removal to the source tree and a
+ * creation to the target tree.
  */
 export interface EntryChange {
   id: string
@@ -149,18 +164,34 @@ export abstract class EntryTree {
     if (issues.length) throw new EntryValidationError(issues)
     if (parent !== undefined) {
       const target = this.resolveGroup(parent)
+      const moved = target.tree === source.tree ? [] : members(entry)
+      for (const member of moved) {
+        const { id } = member.options
+        if (target.tree.store[id]) throw new Error(`entry ${id} already exists in the target tree`)
+      }
       source.unlink(entry.options)
       target.data.splice(position ?? Infinity, 0, entry.options)
       entry.parent = target
+      // The target tree owns the moved entries from now on, so that it adopts
+      // them instead of creating new ones when it reconciles its source.
+      for (const member of moved) {
+        delete source.tree.store[member.options.id]
+        target.tree.store[member.options.id] = member
+        if (member.subgroup?.tree === source.tree) member.subgroup.tree = target.tree
+      }
     }
     // `Entry.update` assigns the new options before its first `await`, so the
     // change is fully visible to `commit()` once the call returns.
     const task = entry.update(options, false, true)
     if (entry.parent.tree !== source.tree) {
+      // a move across trees removes the entry from the source tree and
+      // creates it in the target tree
       source.tree.commit({ id: legacy.id, group: source, legacy })
+      entry.parent.tree.commit({ id: legacy.id, group: entry.parent, options: entry.options })
+    } else {
+      const from = entry.parent === source ? undefined : source
+      entry.parent.tree.commit({ id: legacy.id, group: entry.parent, from, options: entry.options, legacy })
     }
-    const from = entry.parent === source ? undefined : source
-    entry.parent.tree.commit({ id: legacy.id, group: entry.parent, from, options: entry.options, legacy })
     return task
   }
 
