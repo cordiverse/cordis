@@ -30,7 +30,10 @@ export interface Identity {
 // whether a file can be proven unchanged, and what cannot be proven counts
 // as changed.
 export class IdentityStore {
-  // realpath -> Identity
+  // realpath -> Identity. Records are kept for the process lifetime: nothing
+  // proves a module left every closure, so they are never collected. A
+  // long-running process can read `Hmr#reloads` to decide when a restart is
+  // cheaper than the records it holds.
   private records = new Map<string, Identity>()
   // url -> realpath, so that when a file is deleted and `toPath(url)` can no
   // longer resolve via realpathSync, its record can still be found and pruned

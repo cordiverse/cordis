@@ -704,6 +704,34 @@ export async function apply(ctx: any) {
     expect(ctx.bail('reconcile/initEntry' as any)).to.equal('v2')
   }, 30000)
 
+  it('counts the transactions that finished, and only those', async () => {
+    await setup()
+    const path = await load('counted.ts', plugin('counted', 'v1'))
+    expect(ctx.hmr.reloads).to.equal(0)
+    // read-only: a caller that could move it would change what it means
+    expect(() => { (ctx.hmr as any).reloads = 99 }).to.throw()
+
+    // a module loaded after the last observation cannot be proven unchanged,
+    // so the first pass reloads it once and records the baseline
+    expect((await ctx.hmr.reconcile({ roots: [fixtureDir] })).settledFibers).to.have.length(1)
+    expect(ctx.hmr.reloads).to.equal(1)
+
+    // `roots` compares against the disk: nothing was written, so no reload
+    expect((await ctx.hmr.reconcile({ roots: [fixtureDir] })).settledFibers).to.have.length(0)
+    expect(ctx.hmr.reloads).to.equal(1)
+
+    writeFileSync(path, plugin('counted', 'v2'))
+    const applied = await ctx.hmr.reconcile({ files: [path] })
+    expect(applied.settledFibers).to.have.length(1)
+    expect(ctx.hmr.reloads).to.equal(2)
+
+    // an aborted transaction finished as well, and still counts once
+    writeFileSync(path, `export const name = 'counted'\nthrow new Error('broken')\n`)
+    const aborted = await ctx.hmr.reconcile({ files: [path] })
+    expect(aborted.importFailures).to.have.length(1)
+    expect(ctx.hmr.reloads).to.equal(3)
+  }, 30000)
+
   it('produces no churn across repeated roots reconciles', async () => {
     await setup()
     await load('steady.ts', plugin('steady', 'v1'))

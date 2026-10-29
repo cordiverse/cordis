@@ -117,6 +117,21 @@ class Hmr extends Service {
   // files an operation changed
   private identity = new IdentityStore()
 
+  private _reloads = 0
+
+  /**
+   * The transactions that finished, whether their units committed or aborted.
+   * Identity records are kept for the process lifetime, so a long-running
+   * process can read this to decide when a restart is cheaper than the
+   * records it holds. A call that found nothing to reload is not counted.
+   *
+   * Read-only: a caller that could move it would make the number mean
+   * something else.
+   */
+  get reloads() {
+    return this._reloads
+  }
+
   /** The tail of the transaction queue. */
   private _queue: Promise<void> = Promise.resolve()
 
@@ -667,6 +682,8 @@ class Hmr extends Service {
       result.importFailures.push({ urls: [...unit.modules], error: failure.error })
     }
 
+    // The single exit of a transaction: it records what it touched and counts
+    // itself. Both ways out go through here, so a new one cannot forget either.
     // What the runtime now runs, recorded as its file identity. A restored
     // module still runs the code it ran before the transaction, so the identity
     // of the file on disk is not its own: recording that would claim the new
@@ -674,7 +691,7 @@ class Hmr extends Service {
     // and never retry a batch that failed. Leaving it recorded as it was makes
     // the next call report the failure again, like a watcher that keeps the
     // files it could not apply.
-    const recordIdentity = () => {
+    const finish = () => {
       const touched = new Set<string>()
       for (const url of accepted) {
         if (!restored.has(url)) touched.add(url)
@@ -683,10 +700,12 @@ class Hmr extends Service {
         if (!before.has(url) && !restored.has(url)) touched.add(url)
       }
       this.identity.observeAll(touched)
-    }
-    if (!committed.length) {
-      recordIdentity()
+      this._reloads++
       return result
+    }
+
+    if (!committed.length) {
+      return finish()
     }
 
     // Stage 2: replace the plugins in place (synchronous).
@@ -718,8 +737,7 @@ class Hmr extends Service {
     // a fiber below another restarted fiber may have been disposed by it
     result.settledFibers = fibers.filter(fiber => fiber.uid !== null)
 
-    recordIdentity()
-    return result
+    return finish()
   }
 }
 
@@ -749,25 +767,17 @@ namespace Hmr {
     }).description('Watch'),
   })
 
-  /**
-   * What a transaction covers. At least one of the two is required: a call that
-   * names neither would reload nothing and report nothing, which is
-   * indistinguishable from a call that found nothing to do. When both are given
-   * the batches are unioned.
-   */
-  export type ReconcileOptions = {
-    /** absolute paths or `file:` URLs of the files that changed */
-    files: Iterable<string | URL>
+  export interface ReconcileOptions {
+    /** absolute paths or `file:` URLs */
+    files?: Iterable<string | URL>
     /**
      * Absolute paths or `file:` URLs of directories or files whose whole
      * subtree may have been rewritten, e.g. by a package manager: every
      * recorded or loaded module underneath whose content cannot be proven
-     * unchanged joins the batch.
+     * unchanged joins the batch. At least one of `files` and `roots` is
+     * required; when both are given the batches are unioned.
      */
     roots?: Iterable<string | URL>
-  } | {
-    files?: Iterable<string | URL>
-    roots: Iterable<string | URL>
   }
 
   /** The running state is brought in line with the changes, as far as they can be applied. */
