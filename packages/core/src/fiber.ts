@@ -378,9 +378,8 @@ export class Fiber {
 
     // only notify changes between ACTIVE and NON-ACTIVE states
     if (oldState !== FiberState.ACTIVE && this.state !== FiberState.ACTIVE) return
-    for (const key of Reflect.ownKeys(this.ctx.reflect.store)) {
-      const impl = this.ctx.reflect.store[key as symbol]
-      if (impl.ctx.fiber !== this) continue
+    for (const impl of this.provisions) {
+      if (this.ctx.reflect.store[impl.isolate] !== impl) continue
       this.ctx.isolate(impl.name, impl.isolate).reflect.notify([impl.name])
     }
   }
