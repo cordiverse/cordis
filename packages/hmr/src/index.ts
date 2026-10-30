@@ -87,6 +87,41 @@ function toUrl(file: string | URL) {
   return pathToFileURL(resolve(file)).href
 }
 
+// A Yarn PnP update rewrites `.pnp.cjs` and adds `.yarn/cache/<pkg>-<hash>.zip`;
+// neither path is a module URL, so a batch built from them is empty. A module
+// loaded from an archive carries that archive in its own URL, which is what
+// lets the update be attributed to the modules the archive served.
+const PNP_SIGNAL = /[\\/]\.pnp\.cjs$|[\\/][^\\/]+\.zip$/
+const PNP_MODULE = /\.zip[\\/]node_modules[\\/]|[\\/]\.yarn[\\/]unplugged[\\/]/
+
+function toComparable(url: string) {
+  try {
+    return (url.startsWith('file:') ? fileURLToPath(url) : url).replace(/\\/g, '/')
+  } catch {
+    return url.replace(/\\/g, '/')
+  }
+}
+
+export function isPnpSignal(url: string) {
+  return PNP_SIGNAL.test(toComparable(url))
+}
+
+// Every module the process loaded from a PnP archive, read from the three
+// places a module can still be known: the ESM cache, the CJS cache, and the identity records.
+export function pnpUrls(internal: ModuleLoader, identity: IdentityStore): string[] {
+  const urls = new Set<string>()
+  const add = (key: string) => {
+    if (!PNP_MODULE.test(toComparable(key))) return
+    urls.add(key.startsWith('file:') ? key : pathToFileURL(key).href)
+  }
+  try {
+    for (const key of Map.prototype.keys.call(internal.loadCache) as Iterable<string>) add(key)
+  } catch {}
+  for (const url of cjsUrls()) add(url)
+  for (const url of identity.urls()) add(url)
+  return [...urls]
+}
+
 function toPath(url: string) {
   if (!url.startsWith('file:')) return undefined
   // A `file:` URL that does not parse names no path. No caller can act on the
@@ -498,6 +533,15 @@ class Hmr extends Service {
       this.ctx.logger.debug('skip %C (%s)', this._relative(url), reason)
     }
     for (const url of [...options.files ?? []].map(toUrl)) add(url)
+
+    // An archive or its manifest is not a module: the batch becomes every
+    // module that archive served. Best-effort: attribution must never fail the
+    // reconcile it belongs to, so an unreadable cache leaves the batch as it is.
+    try {
+      if ([...files].some(isPnpSignal)) {
+        for (const url of pnpUrls(internal, this.identity)) add(url)
+      }
+    } catch {}
 
     const before = new Set(this._loaded())
 

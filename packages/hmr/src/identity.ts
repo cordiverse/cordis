@@ -38,7 +38,7 @@ export class IdentityStore {
   private records = new Map<string, Identity>()
   // url -> realpath, so that when a file is deleted and `toPath(url)` can no
   // longer resolve via realpathSync, its record can still be found and pruned
-  private urls = new Map<string, string>()
+  private _urls = new Map<string, string>()
 
   // `window`: how long after a write an observation of it stays suspicious,
   // in milliseconds. A record can be trusted only if no later write could
@@ -55,11 +55,11 @@ export class IdentityStore {
       this.unobserve(url)
       return undefined
     }
-    const oldPath = this.urls.get(url)
+    const oldPath = this._urls.get(url)
     if (oldPath && oldPath !== path) {
       this.records.delete(oldPath)
     }
-    this.urls.set(url, path)
+    this._urls.set(url, path)
 
     // the clock is read before the stat, so the window covers the stat itself:
     // a write landing during it cannot make the record look settled
@@ -109,8 +109,8 @@ export class IdentityStore {
   // identity to keep: leaving the record behind would make every later
   // `expand` report the ghost again, forever.
   private unobserve(url: string): boolean {
-    const path = this.urls.get(url)
-    this.urls.delete(url)
+    const path = this._urls.get(url)
+    this._urls.delete(url)
     if (path) return this.records.delete(path)
     return false
   }
@@ -182,6 +182,13 @@ export class IdentityStore {
       ...[...candidates].filter(url => this.changed(url)),
       ...retargeted,
     ])]
+  }
+
+  // Every URL this store holds a record for. A module can be evicted from both
+  // module caches while a plugin still refers to it, so the records are the
+  // only place such a module remains visible.
+  urls(): string[] {
+    return [...this.records.values()].map(record => record.url)
   }
 
   private trustworthy(rec: Identity) {
