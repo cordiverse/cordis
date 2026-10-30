@@ -1,9 +1,16 @@
-import { Context, FiberState, Service, ValidationError } from '../src/index.ts'
+import { Context, FiberState, Service, ValidationError, resolveConfig } from '../src/index.ts'
 import { expect, describe, it, vi } from 'vitest'
 import { mock } from 'node:test'
 import { event, sleep, withTimers } from './utils.ts'
 
 describe('Fiber', () => {
+  it('rejects a Config that is not a Standard Schema', () => {
+    expect(() => resolveConfig({ Config: {} } as any, {})).to.throw(
+      TypeError, 'plugin Config must implement Standard Schema V1')
+    expect(() => resolveConfig({ Config: { '~standard': {} } } as any, {})).to.throw(
+      TypeError, 'plugin Config must implement Standard Schema V1')
+  })
+
   it('inertia lock 1', withTimers(async (root) => {
     const dispose = root.provide('foo', 1)
     const fiber = root.inject(['foo'], async () => {
