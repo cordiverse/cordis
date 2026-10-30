@@ -272,6 +272,66 @@ export const apply = 'not a function'`))
     expect(ctx.bail('hmr-watch/host' as any)).to.equal('v1')
   })
 
+  it('drops a pending debounce when the service is disposed', async () => {
+    ctx = new Context()
+    ctx.baseUrl = import.meta.url
+    await ctx.plugin(Loader)
+    await ctx.plugin(FakeFs)
+    // a long debounce leaves room to dispose before the timer fires
+    const hmr = await ctx.plugin(Hmr, { watch: { enabled: true, debounce: 500 } })
+    const path = await load('pending.ts', plugin('pending', 'v1'))
+
+    // the change is stashed and a timer is set; disposing the service before it
+    // fires must clear the timer rather than let it run afterwards
+    change(path)
+    expect(reconcile.mock.calls.length).to.equal(0)
+    await hmr.dispose()
+    await new Promise(resolve => setTimeout(resolve, 700))
+    expect(reconcile.mock.calls.length).to.equal(0)
+  })
+
+  it('does not start a transaction when a queued flush has nothing to send', async () => {
+    await setup({ debounce: 20 }, '__watch__')
+    const path = await load('queued.ts', plugin('queued', 'v1'))
+    const empty = { settledFibers: [], importFailures: [], skippedHostModules: [] }
+    let release: () => void = () => {}
+    const blocked = new Promise<Hmr.Result>(resolve => { release = () => resolve(empty) })
+    // the first batch stays open, so later debounce windows queue behind it
+    reconcile.mockReturnValueOnce(blocked)
+
+    change(path)
+    await new Promise(resolve => setTimeout(resolve, 40))
+    change(path)
+    await new Promise(resolve => setTimeout(resolve, 40))
+    change(path)
+    await new Promise(resolve => setTimeout(resolve, 40))
+    release()
+    await new Promise(resolve => setTimeout(resolve, 200))
+
+    // the second flush takes every stashed file, so the third one has nothing
+    // left and must not start a transaction
+    expect(reconcile.mock.calls.length).to.equal(2)
+  })
+
+  it('keeps the changed files when the transaction rejects', async () => {
+    await setup({}, '__watch__')
+    const path = await load('rejects.ts', plugin('rejects', 'v1'))
+    const warn = vi.spyOn(ctx.logger, 'warn')
+
+    // a transaction that throws is logged, and the files it was given are kept
+    // rather than dropped, so the next change retries them too
+    reconcile.mockRejectedValueOnce(new Error('boom'))
+    change(path)
+    await vi.waitFor(() => expect(warn).toHaveBeenCalledWith(expect.objectContaining({ message: 'boom' })))
+
+    writeFileSync(path, plugin('rejects', 'v2'))
+    const next = nextReload()
+    change(path)
+    const result = await next
+    expect(result.settledFibers).to.have.length(1)
+    expect(ctx.bail('hmr-watch/rejects' as any)).to.equal('v2')
+  })
+
   it('reloads a plugin when its file changes on disk', async () => {
     ctx = new Context()
     ctx.baseUrl = import.meta.url
