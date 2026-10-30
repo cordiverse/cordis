@@ -5,8 +5,8 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { relative, resolve, sep } from 'node:path'
 import { handleError } from './error.ts'
 import { IdentityStore } from './identity.ts'
+import { cjsChildren, cjsHas, cjsUrls, ModuleCache } from './cache.ts'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { createRequire } from 'node:module'
 import picomatch from 'picomatch'
 import z from 'schemastery'
 
@@ -110,9 +110,6 @@ class Hmr extends Service {
    * modules can only be applied by restarting the process.
    */
   public hostModules = new Set<string>()
-
-  /** The CJS module cache is read through it. */
-  private _require = createRequire(import.meta.url)
 
   // the recorded identity of every module file a transaction has touched:
   // the disk is compared against it, so a caller does not need to know which
@@ -248,7 +245,7 @@ class Hmr extends Service {
   /** The loaded modules: the keys of the ESM load cache and of the CJS module cache. */
   private _loaded() {
     const urls = new Set(Map.prototype.keys.call(this.internal.loadCache) as Iterable<string>)
-    for (const path of Object.keys(this._require.cache)) urls.add(pathToFileURL(path).href)
+    for (const url of cjsUrls()) urls.add(url)
     return urls
   }
 
@@ -258,10 +255,7 @@ class Hmr extends Service {
    */
   private async _edges(url: string) {
     const edges = new Set(await this.getLinked(url))
-    const path = toPath(url)
-    for (const child of (path && this._require.cache[path]?.children) || []) {
-      edges.add(pathToFileURL(child.filename).href)
-    }
+    for (const child of cjsChildren(url)) edges.add(child)
     return edges
   }
 
@@ -307,13 +301,6 @@ class Hmr extends Service {
         Map.prototype.delete.call(this.internal.loadCache, url)
       }
     }
-  }
-
-  /** Remove a module from both module caches. */
-  private _evict(url: string) {
-    Map.prototype.delete.call(this.internal.loadCache, url)
-    const path = toPath(url)
-    if (path) delete this._require.cache[path]
   }
 
   /**
@@ -481,8 +468,7 @@ class Hmr extends Service {
       added.add(url)
       // A change to a host module or to a loaded native addon cannot be
       // applied in place. It is skipped, and restarting is up to the caller.
-      const path = toPath(url)
-      if (this.hostModules.has(url) || isNativeAddon(url) && !!path && !!this._require.cache[path]) {
+      if (this.hostModules.has(url) || isNativeAddon(url) && cjsHas(url)) {
         result.skippedHostModules.push(url)
       } else {
         files.add(url)
@@ -590,21 +576,8 @@ class Hmr extends Service {
      * which carries the Map internal slots, so Map.prototype methods apply to
      * it although `loadCache instanceof Map` is false.
      */
-    const esmBackup = new Map<string, unknown>()
-    const cjsBackup = new Map<string, NodeJS.Module>()
-    for (const url of evicted) {
-      esmBackup.set(url, Map.prototype.get.call(internal.loadCache, url))
-      const path = toPath(url)
-      if (path && this._require.cache[path]) cjsBackup.set(path, this._require.cache[path])
-      this._evict(url)
-    }
-    const restore = (url: string) => {
-      this._evict(url)
-      const job = esmBackup.get(url)
-      if (job) Map.prototype.set.call(internal.loadCache, url, job)
-      const path = toPath(url)
-      if (path && cjsBackup.has(path)) this._require.cache[path] = cjsBackup.get(path)
-    }
+    const cache = new ModuleCache(internal)
+    cache.evict(evicted)
 
     // Stage 1: import the new modules of every stale plugin.
     // Plugin validity is checked here, where the only mutated state is the
@@ -677,11 +650,13 @@ class Hmr extends Service {
     // dynamically, shares its instance with later imports. A job of it that
     // failed is removed at the start of the next transaction.
     const restored = new Set(aborted.flatMap(unit => [...unit.modules]))
+    const dropped = new Set<string>()
     for (const url of attempts.flatMap(attempt => attempt.loaded)) {
       const reached = await closure([url], newEdges, url => retained.has(url))
-      if ([...reached].some(url => restored.has(url))) this._evict(url)
+      if ([...reached].some(url => restored.has(url))) dropped.add(url)
     }
-    for (const url of restored) restore(url)
+    cache.evict(dropped)
+    cache.restore(restored)
 
     for (const unit of aborted) {
       const failure = unit.attempts.find(attempt => attempt.failed)!
