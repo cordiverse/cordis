@@ -64,7 +64,7 @@ export default function isolate(ctx: Context) {
   function access(entry: Entry, name: string, create = false) {
     let realm: Realm | undefined
     const label = entry.options.isolate?.[name]
-    if (!label) return
+    if (label === undefined) return
     if (label === true) {
       realm = entry.realm ??= new LocalRealm(entry)
     } else if (create) {
