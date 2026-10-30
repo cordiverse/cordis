@@ -170,7 +170,10 @@ export class IdentityStore {
     }
     for (const rec of this.records.values()) collect(rec.url, rec.path)
     for (const url of loaded) {
-      const path = toPath(url)
+      // The old real path may already be gone: the package manager can delete
+      // the versioned directory before `reconcile` runs. `toPath` needs the
+      // file to exist, but the URL still names the path under `node_modules`.
+      const path = toPath(url) ?? toGivenPath(url)
       // loaded after the last observation: no record to compare against yet
       if (path && this.records.has(path)) continue
       collect(url, path)
