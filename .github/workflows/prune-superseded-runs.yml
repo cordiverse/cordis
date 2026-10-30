@@ -1,0 +1,58 @@
+name: Prune superseded runs
+
+on:
+  workflow_run:
+    # Must match `name:` in build.yml.
+    workflows: ["Build"]
+    types: [requested]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only list the runs that would be deleted"
+        type: boolean
+        default: false
+
+permissions:
+  actions: write
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Delete held runs of the same pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          WORKFLOW_ID: ${{ github.event.workflow_run.workflow_id }}
+          HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          SELF_ID: ${{ github.event.workflow_run.id }}
+          SELF_CREATED: ${{ github.event.workflow_run.created_at }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: |
+          set -euo pipefail
+          # A run held for approval is never queued, so `concurrency` never
+          # replaces it; this job deletes it. Queued runs are left to `concurrency`.
+          # ⚠️ Deletion is irreversible and the five conditions below are the
+          # only gate. They bound the deletion to held (never executed, hence
+          # log-less) runs of this very pull request; the gate must never widen.
+          # A held run is never queued, so `workflow_run` fires for the newest
+          # run only when a push supersedes it — dispatch manually with dry_run
+          # to preview, deleting with the same conditions.
+          gh api --paginate "repos/$REPO/actions/workflows/$WORKFLOW_ID/runs?per_page=100" \
+            --jq '.workflow_runs[] | [.id, .head_repository.full_name, .head_branch, .conclusion, .created_at] | @tsv' \
+            > runs.tsv
+          while IFS=$'\t' read -r id repo branch conclusion created; do
+            [ "$conclusion" = "action_required" ] || continue
+            [ "$repo" = "$HEAD_REPO" ] || continue
+            [ "$branch" = "$HEAD_BRANCH" ] || continue
+            [ "$id" != "$SELF_ID" ] || continue
+            [ "$created" \< "$SELF_CREATED" ] || continue
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "dry run: would delete run $id"
+              continue
+            fi
+            gh api -X DELETE "repos/$REPO/actions/runs/$id" \
+              || echo "delete $id failed; continuing"
+          done < runs.tsv
