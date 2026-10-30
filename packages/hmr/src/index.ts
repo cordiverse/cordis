@@ -6,6 +6,7 @@ import { relative, resolve, sep } from 'node:path'
 import { handleError } from './error.ts'
 import { IdentityStore } from './identity.ts'
 import { cjsChildren, cjsHas, cjsUrls, ModuleCache } from './cache.ts'
+import { invalidate } from './manifest.ts'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import picomatch from 'picomatch'
 import z from 'schemastery'
@@ -490,6 +491,9 @@ class Hmr extends Service {
     if (options.roots) {
       const loaded = this._loaded()
       for (const root of options.roots) {
+        // A package operation rewrites whole subtrees, and an updated package
+        // stops resolving its entries through Node's cached manifest reader.
+        invalidate(toUrl(root))
         for (const url of this.identity.expand(toUrl(root), loaded)) add(url)
       }
     }
