@@ -4,8 +4,10 @@ import type {} from '@cordisjs/plugin-fs-node'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { relative, resolve, sep } from 'node:path'
 import { handleError } from './error.ts'
+import { IdentityStore } from './identity.ts'
+import { cjsChildren, cjsHas, cjsUrls, ModuleCache } from './cache.ts'
+import { invalidate } from './manifest.ts'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { createRequire } from 'node:module'
 import picomatch from 'picomatch'
 import z from 'schemastery'
 
@@ -86,7 +88,15 @@ function toUrl(file: string | URL) {
 }
 
 function toPath(url: string) {
-  if (url.startsWith('file:')) return fileURLToPath(url)
+  if (!url.startsWith('file:')) return undefined
+  // A `file:` URL that does not parse names no path. No caller can act on the
+  // throw, and a URL that came from a caller is not the place to fail a whole
+  // transaction, so it is treated like one that names nothing.
+  try {
+    return fileURLToPath(url)
+  } catch {
+    return undefined
+  }
 }
 
 class Hmr extends Service {
@@ -102,8 +112,25 @@ class Hmr extends Service {
    */
   public hostModules = new Set<string>()
 
-  /** The CJS module cache is read through it. */
-  private _require = createRequire(import.meta.url)
+  // the recorded identity of every module file a transaction has touched:
+  // the disk is compared against it, so a caller does not need to know which
+  // files an operation changed
+  private identity = new IdentityStore()
+
+  private _reloads = 0
+
+  /**
+   * The transactions that finished, whether their units committed or aborted.
+   * Identity records are kept for the process lifetime, so a long-running
+   * process can read this to decide when a restart is cheaper than the
+   * records it holds. A call that found nothing to reload is not counted.
+   *
+   * Read-only: a caller that could move it would make the number mean
+   * something else.
+   */
+  get reloads() {
+    return this._reloads
+  }
 
   /** The tail of the transaction queue. */
   private _queue: Promise<void> = Promise.resolve()
@@ -204,6 +231,13 @@ class Hmr extends Service {
         this.hostModules = await closure([mainUrl], url => this._edges(url))
       }
     }
+
+    // Record the identity of everything loaded so far, so the first
+    // `reconcile({ roots })` compares against a baseline; modules loaded
+    // later are covered at the end of the first transaction that touches them.
+    // A CJS module that only another CJS module required is in `require.cache`
+    // alone, so the baseline covers both caches, like every other read.
+    this.identity.observeAll(this._loaded())
   }
 
   /**
@@ -227,7 +261,7 @@ class Hmr extends Service {
   /** The loaded modules: the keys of the ESM load cache and of the CJS module cache. */
   private _loaded() {
     const urls = new Set(Map.prototype.keys.call(this.internal.loadCache) as Iterable<string>)
-    for (const path of Object.keys(this._require.cache)) urls.add(pathToFileURL(path).href)
+    for (const url of cjsUrls()) urls.add(url)
     return urls
   }
 
@@ -237,10 +271,7 @@ class Hmr extends Service {
    */
   private async _edges(url: string) {
     const edges = new Set(await this.getLinked(url))
-    const path = toPath(url)
-    for (const child of (path && this._require.cache[path]?.children) || []) {
-      edges.add(pathToFileURL(child.filename).href)
-    }
+    for (const child of cjsChildren(url)) edges.add(child)
     return edges
   }
 
@@ -288,13 +319,6 @@ class Hmr extends Service {
     }
   }
 
-  /** Remove a module from both module caches. */
-  private _evict(url: string) {
-    Map.prototype.delete.call(this.internal.loadCache, url)
-    const path = toPath(url)
-    if (path) delete this._require.cache[path]
-  }
-
   /**
    * Replace the plugins affected by `options.files`. Transactions run one at
    * a time; one started from within the running transaction is rejected.
@@ -325,9 +349,11 @@ class Hmr extends Service {
   }
 
   private _relative(url: string) {
-    // a module loaded through a custom scheme, such as `data:`, has no path
-    if (!url.startsWith('file:')) return url
-    return relative(this.baseDir, fileURLToPath(url))
+    // a module loaded through a custom scheme, such as `data:`, has no path,
+    // and neither has one whose `file:` URL does not parse
+    const path = toPath(url)
+    if (!path) return url
+    return relative(this.baseDir, path)
   }
 
   /**
@@ -447,19 +473,46 @@ class Hmr extends Service {
   private async _reconcile(options: Hmr.ReconcileOptions): Promise<Hmr.Result> {
     const result: Hmr.Result = { settledFibers: [], importFailures: [], skippedHostModules: [] }
     await this._sweep()
+    const internal = this.internal
     const files = new Set<string>()
-    for (const url of [...options.files].map(toUrl)) {
+    // `files` and the roots may name the same module, and two roots may overlap,
+    // so what a module needs is decided once: the result describes each module
+    // that was skipped, not each way it was named.
+    const added = new Set<string>()
+    const add = (url: string) => {
+      if (added.has(url)) return
+      added.add(url)
       // A change to a host module or to a loaded native addon cannot be
       // applied in place. It is skipped, and restarting is up to the caller.
-      if (this.hostModules.has(url) || isNativeAddon(url) && !!this._require.cache[toPath(url)!]) {
+      if (this.hostModules.has(url) || isNativeAddon(url) && cjsHas(url)) {
         result.skippedHostModules.push(url)
       } else {
         files.add(url)
       }
     }
-    if (!files.size) return result
+    // The single place a change that needs no action is handled. The result
+    // only describes what was done, as the caller has nothing to act on here:
+    // a module that is not loaded cannot be reloaded, and its next import
+    // reads the file as it is on disk by itself. Logged, not reported.
+    const skip = (url: string, reason: string) => {
+      this.ctx.logger.debug('skip %C (%s)', this._relative(url), reason)
+    }
+    for (const url of [...options.files ?? []].map(toUrl)) add(url)
 
-    const internal = this.internal
+    const before = new Set(this._loaded())
+
+    // `roots` widens the batch to what a package operation may have rewritten.
+    // Only recorded or loaded files can matter.
+    if (options.roots) {
+      const loaded = this._loaded()
+      for (const root of options.roots) {
+        // A package operation rewrites whole subtrees, and an updated package
+        // stops resolving its entries through Node's cached manifest reader.
+        invalidate(toUrl(root))
+        for (const url of this.identity.expand(toUrl(root), loaded)) add(url)
+      }
+    }
+    if (!files.size) return result
 
     // A module is loaded if it is in either module cache. In Node 24, a CJS
     // module imported via import() is in both of them.
@@ -469,7 +522,7 @@ class Hmr extends Service {
       if (loaded.has(url)) {
         changed.add(url)
       } else {
-        this.ctx.logger.debug('skip %C (not loaded)', this._relative(url))
+        skip(url, 'not loaded')
       }
     }
     if (!changed.size) return result
@@ -542,21 +595,8 @@ class Hmr extends Service {
      * which carries the Map internal slots, so Map.prototype methods apply to
      * it although `loadCache instanceof Map` is false.
      */
-    const esmBackup = new Map<string, unknown>()
-    const cjsBackup = new Map<string, NodeJS.Module>()
-    for (const url of evicted) {
-      esmBackup.set(url, Map.prototype.get.call(internal.loadCache, url))
-      const path = toPath(url)
-      if (path && this._require.cache[path]) cjsBackup.set(path, this._require.cache[path])
-      this._evict(url)
-    }
-    const restore = (url: string) => {
-      this._evict(url)
-      const job = esmBackup.get(url)
-      if (job) Map.prototype.set.call(internal.loadCache, url, job)
-      const path = toPath(url)
-      if (path && cjsBackup.has(path)) this._require.cache[path] = cjsBackup.get(path)
-    }
+    const cache = new ModuleCache(internal)
+    cache.evict(evicted)
 
     // Stage 1: import the new modules of every stale plugin.
     // Plugin validity is checked here, where the only mutated state is the
@@ -629,15 +669,43 @@ class Hmr extends Service {
     // dynamically, shares its instance with later imports. A job of it that
     // failed is removed at the start of the next transaction.
     const restored = new Set(aborted.flatMap(unit => [...unit.modules]))
+    const dropped = new Set<string>()
     for (const url of attempts.flatMap(attempt => attempt.loaded)) {
       const reached = await closure([url], newEdges, url => retained.has(url))
-      if ([...reached].some(url => restored.has(url))) this._evict(url)
+      if ([...reached].some(url => restored.has(url))) dropped.add(url)
     }
-    for (const url of restored) restore(url)
+    cache.evict(dropped)
+    cache.restore(restored)
 
     for (const unit of aborted) {
       const failure = unit.attempts.find(attempt => attempt.failed)!
       result.importFailures.push({ urls: [...unit.modules], error: failure.error })
+    }
+
+    // The single exit of a transaction: it records what it touched and counts
+    // itself. Both ways out go through here, so a new one cannot forget either.
+    // What the runtime now runs, recorded as its file identity. A restored
+    // module still runs the code it ran before the transaction, so the identity
+    // of the file on disk is not its own: recording that would claim the new
+    // code is in place, and the next reconcile would prove the file unchanged
+    // and never retry a batch that failed. Leaving it recorded as it was makes
+    // the next call report the failure again, like a watcher that keeps the
+    // files it could not apply.
+    const finish = () => {
+      const touched = new Set<string>()
+      for (const url of accepted) {
+        if (!restored.has(url)) touched.add(url)
+      }
+      for (const url of this._loaded()) {
+        if (!before.has(url) && !restored.has(url)) touched.add(url)
+      }
+      this.identity.observeAll(touched)
+      this._reloads++
+      return result
+    }
+
+    if (!committed.length) {
+      return finish()
     }
 
     // Stage 2: replace the plugins in place (synchronous).
@@ -669,7 +737,7 @@ class Hmr extends Service {
     // a fiber below another restarted fiber may have been disposed by it
     result.settledFibers = fibers.filter(fiber => fiber.uid !== null)
 
-    return result
+    return finish()
   }
 }
 
@@ -701,7 +769,15 @@ namespace Hmr {
 
   export interface ReconcileOptions {
     /** absolute paths or `file:` URLs */
-    files: Iterable<string | URL>
+    files?: Iterable<string | URL>
+    /**
+     * Absolute paths or `file:` URLs of directories or files whose whole
+     * subtree may have been rewritten, e.g. by a package manager: every
+     * recorded or loaded module underneath whose content cannot be proven
+     * unchanged joins the batch. At least one of `files` and `roots` is
+     * required; when both are given the batches are unioned.
+     */
+    roots?: Iterable<string | URL>
   }
 
   /** The running state is brought in line with the changes, as far as they can be applied. */
