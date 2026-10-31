@@ -102,19 +102,55 @@ export class Loader extends EntryTree {
       return interpolate(fiber.ctx, config, fiber.entry.trace, ['config'])
     })
 
+    type PendingCommit = { entry: Entry; legacy: EntryOptions; config: any }
+    const pendingCommits = new Map<Fiber, PendingCommit>()
+
+    const applyCommit = (pending: PendingCommit) => {
+      pending.entry.options.config = pending.config
+      pending.entry.parent.tree.commit({
+        id: pending.entry.options.id,
+        group: pending.entry.parent,
+        options: pending.entry.options,
+        legacy: pending.legacy,
+      })
+    }
+
     ctx.on('internal/commit', (fiber, config) => {
       if (!fiber.entry || fiber.parent.fiber?.entry === fiber.entry) return
       const unparse = fiber.runtime?.Config?.['simplify']
       const { entry } = fiber
-      const legacy = { ...entry.options }
-      entry.options.config = unparse ? unparse(config) : config
-      entry.parent.tree.commit({ id: entry.options.id, group: entry.parent, options: entry.options, legacy })
+      const pending = {
+        entry,
+        legacy: { ...entry.options },
+        config: unparse ? unparse(config) : config,
+      }
+      pendingCommits.set(fiber, pending)
+      // An unloaded fiber takes no `internal/update` waterfall, so it has no
+      // acceptance point to wait for; commit it on the next microtask. Loaded
+      // fibers consume the pending commit inside the update listener below.
+      queueMicrotask(() => {
+        if (pendingCommits.get(fiber) !== pending) return
+        pendingCommits.delete(fiber)
+        applyCommit(pending)
+      })
     })
 
     ctx.on('internal/update', function (config, next) {
       if (!this.entry || this.parent.fiber?.entry === this.entry) return next()
       self.showLog(this.entry, 'reload')
-      return next()
+      let result
+      try {
+        result = next()
+      } catch (error) {
+        pendingCommits.delete(this)
+        throw error
+      }
+      const pending = pendingCommits.get(this)
+      if (pending) {
+        pendingCommits.delete(this)
+        applyCommit(pending)
+      }
+      return result
     }, { global: true })
 
     ctx.on('internal/status', (fiber) => {
