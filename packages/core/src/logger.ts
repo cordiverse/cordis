@@ -35,13 +35,33 @@ export interface Exporter {
   export(message: Message): void
 }
 
+/** JSON without throwing: cycles become `[Circular]`, the rest falls back to `String`. */
+function stringify(value: any) {
+  try {
+    const seen = new WeakSet()
+    return JSON.stringify(value, (key, val) => {
+      if (typeof val !== 'object' || val === null) return val
+      if (seen.has(val)) return '[Circular]'
+      seen.add(val)
+      return val
+    })
+  } catch {
+    return String(value)
+  }
+}
+
+/** `Number(value)` throws on a symbol; its numeric value is not defined, so `NaN`. */
+function toNumber(value: any) {
+  return typeof value === 'symbol' ? NaN : Number(value)
+}
+
 export const defaultFormatters: Record<string, Formatter> = {
   s: (value) => String(value),
-  d: (value) => Math.trunc(Number(value)),
-  i: (value) => Math.trunc(Number(value)),
-  f: (value) => Number(value),
-  o: (value) => JSON.stringify(value),
-  O: (value) => JSON.stringify(value),
+  d: (value) => Math.trunc(toNumber(value)),
+  i: (value) => Math.trunc(toNumber(value)),
+  f: (value) => toNumber(value),
+  o: (value) => stringify(value),
+  O: (value) => stringify(value),
   c: () => '',
   C: (value, exporter, message) => {
     return Logger.color(exporter, Logger.code(message.name, exporter.colors), value)

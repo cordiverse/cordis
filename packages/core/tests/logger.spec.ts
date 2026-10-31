@@ -1,5 +1,5 @@
 import { Context, Service } from '../src/index.ts'
-import { Message } from '../src/logger.ts'
+import { Logger, Message } from '../src/logger.ts'
 import { describe, expect, it } from 'vitest'
 import { sleep } from './utils.ts'
 
@@ -50,6 +50,28 @@ describe('Logger', () => {
     disposeSecond()
     ctx.logger.info('test')
     expect(second).toHaveLength(1)
+  })
+
+  it('formats values JSON cannot represent without throwing', () => {
+    const { ctx, captured } = setup()
+    const circular: any = { name: 'circle' }
+    circular.self = circular
+
+    ctx.logger.info('%o', circular)
+    ctx.logger.info(circular)
+    ctx.logger.info('%o', ctx)
+    ctx.logger.info('%o', 10n)
+    ctx.logger.info('%o', undefined)
+    ctx.logger.info('%d', Symbol('nope'))
+    ctx.logger.info('%f', Symbol('nope'))
+
+    const formatted = captured.map(message => Logger.format({ colors: 0 }, message))
+    expect(formatted[0]).to.contain('[Circular]')
+    expect(formatted[2]).to.be.ok
+    expect(formatted[3]).to.equal('10')
+    expect(formatted[4]).to.equal('undefined')
+    expect(formatted[5]).to.equal('NaN')
+    expect(formatted[6]).to.equal('NaN')
   })
 
   it('uses fiber name when called from outside any service', () => {
