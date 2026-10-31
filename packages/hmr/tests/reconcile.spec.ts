@@ -1,7 +1,7 @@
 import { Context, Fiber, FiberState } from 'cordis'
 import { ModuleLoader, unwrapExports } from '@cordisjs/loader-utils'
 import Loader from '@cordisjs/plugin-loader'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -418,6 +418,429 @@ export function apply(ctx, config) {
     const refreshed = await ctx.hmr.internal.import(entryUrl, import.meta.url, {})
     expect(refreshed.apply).to.not.equal(original.apply)
     expect(ctx.registry.get(refreshed)).to.equal(result.settledFibers[0].runtime)
+  })
+
+  it('reloads the plugins under a changed root', async () => {
+    await setup()
+    mkdirSync(resolve(fixtureDir, 'root'), { recursive: true })
+    const a = await load('root/a.ts', plugin('rootA', 'v1'))
+    const b = await load('root/b.ts', plugin('rootB', 'v1'))
+    const c = await load('root/c.ts', plugin('rootC', 'v1'))
+    const root = resolve(fixtureDir, 'root')
+
+    // the first pass records the baseline: a module loaded after the last
+    // observation cannot be proven unchanged, so it joins the batch once
+    const cold = await ctx.hmr.reconcile({ roots: [root] })
+    expect(cold.settledFibers).to.have.length(3)
+
+    writeFileSync(a, plugin('rootA', 'v2'))
+    writeFileSync(b, plugin('rootB', 'v2'))
+    writeFileSync(c, plugin('rootC', 'v2'))
+    const result = await ctx.hmr.reconcile({ roots: [root] })
+    expect(result.settledFibers).to.have.length(3)
+    expect(ctx.bail('reconcile/rootA' as any)).to.equal('v2')
+    expect(ctx.bail('reconcile/rootB' as any)).to.equal('v2')
+    expect(ctx.bail('reconcile/rootC' as any)).to.equal('v2')
+  })
+
+  it('reloads a plugin when a package under node_modules is rewritten', async () => {
+    await setup()
+    // the layout #243 names first: a package at a fixed path, rewritten where
+    // it stands, so its real path does not change
+    const pkgDir = resolve(fixtureDir, 'node_modules/pkg')
+    mkdirSync(pkgDir, { recursive: true })
+    writeFileSync(resolve(pkgDir, 'package.json'), JSON.stringify({ name: 'pkg', main: 'index.js' }))
+    writeFileSync(resolve(pkgDir, 'index.js'), `module.exports = 'v1'\n`)
+
+    fixture('uses-pkg.ts', `
+import value from 'pkg'
+
+export const name = 'usesPkg'
+
+export async function apply(ctx: any) {
+  ctx.on('reconcile/usesPkg' as any, () => value)
+}
+`)
+    const id = await ctx.loader.create({ name: './__reconcile__/uses-pkg.ts' })
+    await ctx.loader.store[id]!.innerFiber!.await().catch(() => {})
+    expect(ctx.bail('reconcile/usesPkg' as any)).to.equal('v1')
+
+    // the baseline: the plugin was loaded after the service started, so it has
+    // no record yet and joins the batch once, then nothing is left to do
+    const cold = await ctx.hmr.reconcile({ roots: [fixtureDir] })
+    expect(cold.settledFibers).to.have.length(1)
+    const steady = await ctx.hmr.reconcile({ roots: [fixtureDir] })
+    expect(steady.settledFibers).to.have.length(0)
+
+    // a package update that rewrites the file in place, at the same size
+    writeFileSync(resolve(pkgDir, 'index.js'), `module.exports = 'v2'\n`)
+
+    const result = await ctx.hmr.reconcile({ roots: [pkgDir] })
+    expect(result.settledFibers).to.have.length(1)
+    expect(ctx.bail('reconcile/usesPkg' as any)).to.equal('v2')
+  })
+
+  it('reports a host module once when a root and a file both name it', async () => {
+    // the service reads its host modules from `process.argv[1]`, so an entry
+    // loaded before it starts becomes one
+    ctx = new Context()
+    fiber = await ctx.plugin(Loader, { baseUrl: import.meta.url })
+    const path = await load('host.ts', plugin('host', 'v1'))
+    const argv = process.argv[1]
+    process.argv[1] = path
+    try {
+      await ctx.plugin(Hmr)
+    } finally {
+      process.argv[1] = argv
+    }
+    const url = pathToFileURL(path).href
+    expect(ctx.hmr.hostModules.has(url)).to.equal(true)
+
+    writeFileSync(path, plugin('host', 'v2'))
+    // the same module arrives once from `files` and once from the root; it can
+    // only be applied by restarting, and it is one module, not two
+    const result = await ctx.hmr.reconcile({ files: [url], roots: [fixtureDir] })
+    expect(result.skippedHostModules).to.deep.equal([url])
+    expect(result.settledFibers).to.have.length(0)
+  })
+
+  it('skips a module whose namespace cannot be read', async () => {
+    await setup()
+    await load('present.ts', plugin('present', 'v1'))
+    await ctx.hmr.reconcile({ roots: [fixtureDir] })
+
+    // a job whose bindings cannot be read is skipped rather than failing the
+    // transaction; the cache is the only way to reach that state, and it is the
+    // structure the service reads
+    const internal = ModuleLoader.fromInternal()!
+    const fake = pathToFileURL(resolve(fixtureDir, 'unreadable.ts')).href
+    let reads = 0
+    Map.prototype.set.call(internal.loadCache, fake, {
+      javascript: {
+        module: {
+          getStatus: () => 0,
+          getNamespace() { reads++; throw new Error('boom') },
+        },
+      },
+    } as any)
+    try {
+      const result = await ctx.hmr.reconcile({ files: [fake] })
+      // the namespace was read once, threw, and the module was skipped
+      expect(reads).to.equal(1)
+      expect(result.settledFibers).to.have.length(0)
+    } finally {
+      Map.prototype.delete.call(internal.loadCache, fake)
+    }
+  })
+
+  it('logs a plugin it could not replace and keeps the rest of the batch', async () => {
+    await setup()
+    const path = await load('replace.ts', plugin('replace', 'v1'))
+    await ctx.hmr.reconcile({ roots: [fixtureDir] })
+
+    writeFileSync(path, plugin('replace', 'v2'))
+    const warn = vi.spyOn(ctx.logger, 'warn')
+    // a replacement that throws must not take the transaction down with it
+    const spy = vi.spyOn(ctx.registry, 'replace').mockImplementationOnce(() => {
+      throw new Error('boom')
+    })
+    try {
+      const result = await ctx.hmr.reconcile({ roots: [fixtureDir] })
+      expect(result.settledFibers).to.have.length(0)
+      expect(warn).toHaveBeenCalledWith('failed to reload plugin at %C', expect.anything())
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('keeps going when a cache entry has no job or no module', async () => {
+    await setup()
+    const path = await load('present.ts', plugin('present', 'v1'))
+    await ctx.hmr.reconcile({ roots: [fixtureDir] })
+
+    // an entry may hold an empty slot, or a job whose module was never created;
+    // both are skipped rather than dereferenced
+    const internal = ModuleLoader.fromInternal()!
+    const emptySlot = pathToFileURL(resolve(fixtureDir, 'empty-slot.ts')).href
+    const noModule = pathToFileURL(resolve(fixtureDir, 'no-module.ts')).href
+    Map.prototype.set.call(internal.loadCache, emptySlot, { javascript: undefined } as any)
+    Map.prototype.set.call(internal.loadCache, noModule, { javascript: {} } as any)
+    try {
+      writeFileSync(path, plugin('present', 'v2'))
+      const skipped = await ctx.hmr.reconcile({ files: [emptySlot, noModule] })
+      expect(skipped.settledFibers).to.have.length(0)
+      // and the service is still able to work afterwards
+      const result = await ctx.hmr.reconcile({ roots: [fixtureDir] })
+      expect(result.settledFibers).to.have.length(1)
+      expect(ctx.bail('reconcile/present' as any)).to.equal('v2')
+    } finally {
+      Map.prototype.delete.call(internal.loadCache, emptySlot)
+      Map.prototype.delete.call(internal.loadCache, noModule)
+    }
+  })
+
+  it('skips a plugin disposed while its replacement was importing', async () => {
+    await setup()
+    const path = await load('disposed.ts', plugin('disposed', 'v1'))
+    const id = [...ctx.loader.entries()].find(entry => entry.options.name === './__reconcile__/disposed.ts')!.id
+    await ctx.hmr.reconcile({ roots: [fixtureDir] })
+
+    // the new version removes its own entry at module scope, i.e. while stage 1
+    // is importing it, so stage 2 finds no fiber left to replace
+    ;(globalThis as any).__hmrReconcile.removeSelf = () => ctx.loader.remove(id)
+    writeFileSync(path, `
+;(globalThis as any).__hmrReconcile.removeSelf()
+export const name = 'disposed'
+export async function apply(ctx: any) {}
+`)
+    const warn = vi.spyOn(ctx.logger, 'warn')
+    try {
+      const result = await ctx.hmr.reconcile({ roots: [fixtureDir] })
+      expect(result.settledFibers).to.have.length(0)
+      expect(warn).not.toHaveBeenCalledWith('failed to reload plugin at %C', expect.anything())
+    } finally {
+      delete (globalThis as any).__hmrReconcile.removeSelf
+    }
+  })
+
+  it('leaves an orphan evicted when it reaches a unit that committed', async () => {
+    await setup()
+    const m1 = fixture('orphan-ok.ts', `export const v = 'v1'\n`)
+    const m2 = fixture('orphan-bad.ts', `export const v = 'v1'\n`)
+    const p1 = fixture('orphan-ok-plugin.ts', `
+import { v } from './orphan-ok.ts'
+
+export const name = 'orphanOk'
+
+export async function apply(ctx: any) {
+  ctx.on('reconcile/orphanOk' as any, () => v)
+}
+`)
+    const p2 = fixture('orphan-bad-plugin.ts', `
+import { v } from './orphan-bad.ts'
+
+export const name = 'orphanBad'
+
+export async function apply(ctx: any) {
+  ctx.on('reconcile/orphanBad' as any, () => v)
+}
+`)
+    // the orphan reaches both units: the one that commits and the one that aborts
+    const o = fixture('orphan-both.ts', `
+import { name as ok } from './orphan-ok-plugin.ts'
+import { name as bad } from './orphan-bad-plugin.ts'
+
+export const o = 'v1:' + ok + bad
+`)
+    for (const name of ['orphan-ok-plugin.ts', 'orphan-bad-plugin.ts']) {
+      const id = await ctx.loader.create({ name: `./__reconcile__/${name}` })
+      await ctx.loader.store[id]!.innerFiber!.await().catch(() => {})
+    }
+    await ModuleLoader.fromInternal()!.import(pathToFileURL(o).href, import.meta.url, {}).catch(() => {})
+    await ctx.hmr.reconcile({ roots: [fixtureDir] })
+
+    writeFileSync(m1, `export const v = 'v2'\n`)
+    writeFileSync(m2, `export const v = 'v2'\n`)
+    writeFileSync(p1, `
+import { v } from './orphan-ok.ts'
+
+export const name = 'orphanOk'
+
+export async function apply(ctx: any) {
+  ctx.on('reconcile/orphanOk' as any, () => v + '!')
+}
+`)
+    // a file that cannot be parsed: its unit aborts
+    writeFileSync(p2, 'export const name = "orphanBad"\n\nexport async function apply(ctx: any) {\n')
+    writeFileSync(o, `
+import { name as ok } from './orphan-ok-plugin.ts'
+import { name as bad } from './orphan-bad-plugin.ts'
+
+export const o = 'v2:' + ok + bad
+`)
+
+    const result = await ctx.hmr.reconcile({ files: [m1, m2, p1, p2, o] })
+    expect(result.settledFibers).to.have.length(1)
+    // neither version of the caches is consistent for the orphan, so it stays
+    // evicted rather than being restored with the aborted unit: its next import
+    // reads the new code
+    const reloaded = await ModuleLoader.fromInternal()!.import(pathToFileURL(o).href, import.meta.url, {}) as any
+    expect(reloaded.o).to.equal('v2:orphanOkorphanBad')
+  })
+
+  it('covers a CJS-only module in the baseline taken at init', async () => {
+    // A CJS module that only another CJS module requires is in `require.cache`
+    // and never in `loadCache`. Loaded before the service starts, it must be
+    // part of the baseline, or the first roots reconcile reloads the plugin
+    // although no file was written.
+    const cPath = fixture('init-leaf.cjs', `exports.value = 'v1'\n`)
+    fixture('init-mid.cjs', `const { value } = require('./init-leaf.cjs')\n\nexports.value = value\n`)
+    const entry = fixture('init-entry.ts', `
+import { value } from './init-mid.cjs'
+
+export const name = 'initEntry'
+
+export async function apply(ctx: any) {
+  ctx.on('reconcile/initEntry' as any, () => value)
+}
+`)
+    ctx = new Context()
+    fiber = await ctx.plugin(Loader, { baseUrl: import.meta.url })
+    const id = await ctx.loader.create({ name: './__reconcile__/init-entry.ts' })
+    await ctx.loader.store[id]!.innerFiber!.await().catch(() => {})
+    expect(ctx.bail('reconcile/initEntry' as any)).to.equal('v1')
+    expect(createRequire(import.meta.url).cache[cPath]).to.be.ok
+
+    // the service starts only now, so everything loaded so far is the baseline
+    await ctx.plugin(Hmr)
+    const cold = await ctx.hmr.reconcile({ roots: [fixtureDir] })
+    expect(cold.settledFibers).to.have.length(0)
+    expect(ctx.bail('reconcile/initEntry' as any)).to.equal('v1')
+
+    // a real change to the leaf still reaches the plugin
+    writeFileSync(cPath, `exports.value = 'v2'\n`)
+    const result = await ctx.hmr.reconcile({ roots: [fixtureDir] })
+    expect(result.settledFibers).to.have.length(1)
+    expect(ctx.bail('reconcile/initEntry' as any)).to.equal('v2')
+  }, 30000)
+
+  it('counts the transactions that finished, and only those', async () => {
+    await setup()
+    const path = await load('counted.ts', plugin('counted', 'v1'))
+    expect(ctx.hmr.reloads).to.equal(0)
+    // read-only: a caller that could move it would change what it means
+    expect(() => { (ctx.hmr as any).reloads = 99 }).to.throw()
+
+    // a module loaded after the last observation cannot be proven unchanged,
+    // so the first pass reloads it once and records the baseline
+    expect((await ctx.hmr.reconcile({ roots: [fixtureDir] })).settledFibers).to.have.length(1)
+    expect(ctx.hmr.reloads).to.equal(1)
+
+    // `roots` compares against the disk: nothing was written, so no reload
+    expect((await ctx.hmr.reconcile({ roots: [fixtureDir] })).settledFibers).to.have.length(0)
+    expect(ctx.hmr.reloads).to.equal(1)
+
+    writeFileSync(path, plugin('counted', 'v2'))
+    const applied = await ctx.hmr.reconcile({ files: [path] })
+    expect(applied.settledFibers).to.have.length(1)
+    expect(ctx.hmr.reloads).to.equal(2)
+
+    // an aborted transaction finished as well, and still counts once
+    writeFileSync(path, `export const name = 'counted'\nthrow new Error('broken')\n`)
+    const aborted = await ctx.hmr.reconcile({ files: [path] })
+    expect(aborted.importFailures).to.have.length(1)
+    expect(ctx.hmr.reloads).to.equal(3)
+  }, 30000)
+
+  it('produces no churn across repeated roots reconciles', async () => {
+    await setup()
+    await load('steady.ts', plugin('steady', 'v1'))
+    const cold = await ctx.hmr.reconcile({ roots: [fixtureDir] })
+    expect(cold.settledFibers).to.have.length(1)
+
+    for (let i = 0; i < 100; i++) {
+      const result = await ctx.hmr.reconcile({ roots: [fixtureDir] })
+      expect(result.settledFibers).to.have.length(0)
+      expect(result.importFailures).to.have.length(0)
+    }
+    expect(ctx.bail('reconcile/steady' as any)).to.equal('v1')
+  })
+
+  it('ignores a file under the root that was never loaded', async () => {
+    await setup()
+    await load('quiet.ts', plugin('quiet', 'v1'))
+    await ctx.hmr.reconcile({ roots: [fixtureDir] })
+
+    // a file a package operation just added: nothing has imported it, so it
+    // is neither recorded nor loaded and must not be reported
+    fixture('unrelated.ts', plugin('unrelated', 'v1'))
+    const result = await ctx.hmr.reconcile({ roots: [fixtureDir] })
+    expect(result.settledFibers).to.have.length(0)
+    expect(result.importFailures).to.have.length(0)
+  })
+
+  it('catches a same-size rewrite under a root that hides its timestamp', async () => {
+    await setup()
+    const path = await load('pinned.ts', plugin('pinned', 'v1'))
+    const url = pathToFileURL(path).href
+    await ctx.hmr.reconcile({ roots: [fixtureDir] })
+
+    // A transaction observes what it reloaded right after importing it, so a
+    // write that just landed is recorded with its content hash. Pin the mtime
+    // first, so the observation below is a young one whatever the clock
+    // granularity of the file system is.
+    const t = Date.now() / 1000
+    utimesSync(path, t, t)
+    await ctx.hmr.reconcile({ files: [url] })
+
+    // rewrite with the same size and pin the mtime back: the recorded fields
+    // are identical, so only the recorded content hash can tell the versions
+    // apart
+    writeFileSync(path, plugin('pinned', 'v2'))
+    utimesSync(path, t, t)
+
+    const result = await ctx.hmr.reconcile({ roots: [fixtureDir] })
+    expect(result.settledFibers).to.have.length(1)
+    expect(ctx.bail('reconcile/pinned' as any)).to.equal('v2')
+  })
+
+  it('retries a batch that aborted without another change', async () => {
+    await setup()
+    const good = await load('retry-good.ts', plugin('retryGood', 'v1'))
+    const bad = await load('retry-bad.ts', plugin('retryBad', 'v1'))
+    await ctx.hmr.reconcile({ roots: [fixtureDir] })
+
+    writeFileSync(good, plugin('retryGood', 'v2'))
+    // a file that cannot even be parsed: the unit it belongs to aborts while
+    // the other one commits
+    writeFileSync(bad, 'export const name = "retryBad"\n\nexport async function apply(ctx: any) {\n')
+
+    const first = await ctx.hmr.reconcile({ roots: [fixtureDir] })
+    expect(first.settledFibers).to.have.length(1)
+    expect(first.importFailures).to.have.length(1)
+    expect(ctx.bail('reconcile/retryGood' as any)).to.equal('v2')
+    expect(ctx.bail('reconcile/retryBad' as any)).to.equal('v1')
+
+    // nothing on disk changed since, and the runtime still runs the old code:
+    // the next call has to report the same failure rather than claim the tree
+    // is in line with the disk
+    const second = await ctx.hmr.reconcile({ roots: [fixtureDir] })
+    expect(second.settledFibers).to.have.length(0)
+    expect(second.importFailures).to.have.length(1)
+  })
+
+  it('logs a debug message for a change that needs no action', async () => {
+    await setup()
+    await load('present.ts', plugin('present', 'v1'))
+    await ctx.hmr.reconcile({ roots: [fixtureDir] })
+
+    // a file nothing ever imported, and that is gone again by the time it is
+    // reported: there is no module to reload, so it is logged rather than
+    // described in the result (#244)
+    const missing = fixture('missing.ts', plugin('missing', 'v1'))
+    rmSync(missing)
+
+    const spy = vi.spyOn(ctx.logger, 'debug')
+    const result = await ctx.hmr.reconcile({ files: [pathToFileURL(missing).href] })
+    expect(spy).toHaveBeenCalledWith('skip %C (%s)', expect.stringContaining('missing.ts'), 'not loaded')
+    expect(result.settledFibers).to.have.length(0)
+    expect(result.importFailures).to.have.length(0)
+  })
+
+  it('does not fail a transaction on a file url that does not parse', async () => {
+    await setup()
+    await load('present.ts', plugin('present', 'v1'))
+    await ctx.hmr.reconcile({ roots: [fixtureDir] })
+
+    // `new URL()` accepts both, and `fileURLToPath()` throws on both: a caller
+    // that builds a `file:` string by hand can produce them, and one bad entry
+    // must not fail the transaction after the cache sweep has already run
+    const spy = vi.spyOn(ctx.logger, 'debug')
+    const result = await ctx.hmr.reconcile({ files: ['file:///100%.js', 'file:///a%2.node'] })
+    expect(result.settledFibers).to.have.length(0)
+    expect(result.importFailures).to.have.length(0)
+    expect(result.skippedHostModules).to.have.length(0)
+    expect(spy).toHaveBeenCalledTimes(2)
   })
 
   it('refreshes a module that no plugin depends on for its next import', async () => {
