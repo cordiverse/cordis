@@ -2,7 +2,7 @@ import { Context, Fiber, Plugin, Service } from 'cordis'
 import { getModuleJobs, ModuleJob, ModuleLoader, ModuleStatus, unwrapExports } from '@cordisjs/loader-utils'
 import type {} from '@cordisjs/plugin-fs-node'
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { relative, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { handleError } from './error.ts'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
@@ -14,6 +14,8 @@ declare module 'cordis' {
     hmr: Hmr
   }
 }
+
+type Awaitable<T> = T | Promise<T>
 
 // A Windows drive-letter path, e.g. `C:\app\cordis.yml` or `C:/app/cordis.yml`.
 const driveLetter = /^[A-Za-z]:[\\/]/
@@ -77,12 +79,6 @@ interface ReconcileUnit {
   attempts: ImportAttempt[]
   /** the evicted modules in the closures of the plugins */
   modules: Set<string>
-}
-
-function toUrl(file: string | URL) {
-  if (file instanceof URL) return file.href
-  if (file.startsWith('file:')) return new URL(file).href
-  return pathToFileURL(resolve(file)).href
 }
 
 function toPath(url: string) {
@@ -157,12 +153,12 @@ class Hmr extends Service {
 
     const flush = async () => {
       if (!stashed.size) return
-      const files = new Set([...retained, ...[...stashed].map(toUrl)])
+      const files = new Set([...retained, ...stashed])
       retained.clear()
       stashed.clear()
       try {
         // This waits behind a running transaction.
-        const result = await this.reconcile({ files })
+        const result = await this.reconcile(() => files)
         if (result.skippedHostModules.length) {
           this.ctx.logger.warn([
             'skipped host modules:',
@@ -172,12 +168,13 @@ class Hmr extends Service {
         // an import failure has been logged by the transaction itself
         for (const { urls } of result.importFailures) {
           for (const url of urls) {
-            if (files.has(url)) retained.add(url)
+            const path = toPath(url)
+            if (path && files.has(path)) retained.add(path)
           }
         }
       } catch (error) {
         this.ctx.logger.warn(error)
-        for (const url of files) retained.add(url)
+        for (const path of files) retained.add(path)
       }
     }
 
@@ -296,8 +293,17 @@ class Hmr extends Service {
   }
 
   /**
-   * Replace the plugins affected by `options.files`. Transactions run one at
-   * a time; one started from within the running transaction is rejected.
+   * Run `callback` as the body of a transaction, and replace the plugins
+   * affected by the roots that it resolves to. Transactions run one at a
+   * time; one started from within the running transaction, including from
+   * `callback`, is rejected. If `callback` throws, the transaction rejects
+   * with its error and the module caches are left as they are.
+   *
+   * A root is an absolute path of a file or a directory. The loaded modules
+   * whose files are the root or lie below it are changed. Module URLs are
+   * real paths, so a root is matched against them as it is: the caller passes
+   * the real path under which modules were loaded, such as the previous
+   * target of a link.
    *
    * A changed module that no plugin depends on is still evicted from the
    * module cache: its next import, such as a dynamic one, gets the new code,
@@ -307,7 +313,7 @@ class Hmr extends Service {
    * or evaluate, whether or not their files changed, so that the next import
    * of their modules tries again.
    */
-  reconcile(options: Hmr.ReconcileOptions): Promise<Hmr.Result> {
+  reconcile(callback: () => Awaitable<Iterable<string>>): Promise<Hmr.Result> {
     const current = this._storage.getStore()
     if (current && current === this._current) {
       return Promise.reject(new Error('cannot start a transaction inside another transaction'))
@@ -315,7 +321,7 @@ class Hmr extends Service {
     const task = this._queue.then(() => {
       const id = Symbol('transaction')
       this._current = id
-      return this._storage.run(id, () => this._reconcile(options)).finally(() => {
+      return this._storage.run(id, () => this._reconcile(callback)).finally(() => {
         this._current = undefined
       })
     })
@@ -444,32 +450,59 @@ class Hmr extends Service {
     return candidates
   }
 
-  private async _reconcile(options: Hmr.ReconcileOptions): Promise<Hmr.Result> {
-    const result: Hmr.Result = { settledFibers: [], importFailures: [], skippedHostModules: [] }
-    await this._sweep()
-    const files = new Set<string>()
-    for (const url of [...options.files].map(toUrl)) {
-      // A change to a host module or to a loaded native addon cannot be
-      // applied in place. It is skipped, and restarting is up to the caller.
-      if (this.hostModules.has(url) || isNativeAddon(url) && !!this._require.cache[toPath(url)!]) {
-        result.skippedHostModules.push(url)
-      } else {
-        files.add(url)
-      }
-    }
-    if (!files.size) return result
-
-    const internal = this.internal
-
+  /**
+   * The loaded modules whose files are one of `roots` or lie below one of
+   * them. A root that matches no loaded module is logged.
+   */
+  private _match(roots: Set<string>) {
+    const matched = new Set<string>()
+    const used = new Set<string>()
     // A module is loaded if it is in either module cache. In Node 24, a CJS
     // module imported via import() is in both of them.
-    const loaded = this._loaded()
+    for (const url of this._loaded()) {
+      let path = toPath(url)
+      if (!path) continue
+      // The ancestors are looked up instead of comparing prefixes, so that a
+      // root matches whole path segments only.
+      while (true) {
+        if (roots.has(path)) {
+          matched.add(url)
+          used.add(path)
+        }
+        const parent = dirname(path)
+        if (parent === path) break
+        path = parent
+      }
+    }
+    for (const root of roots) {
+      if (!used.has(root)) this.ctx.logger.debug('skip %C (no loaded module)', relative(this.baseDir, root))
+    }
+    return matched
+  }
+
+  private async _reconcile(callback: () => Awaitable<Iterable<string>>): Promise<Hmr.Result> {
+    const result: Hmr.Result = { settledFibers: [], importFailures: [], skippedHostModules: [] }
+    const roots = new Set<string>()
+    for (const root of await callback()) {
+      if (typeof root !== 'string' || !isAbsolute(root)) {
+        throw new TypeError(`invalid root ${JSON.stringify(root)}, expected an absolute path`)
+      }
+      // `resolve()` normalizes the path and removes a trailing separator
+      roots.add(resolve(root))
+    }
+    // after the callback, so that a module job that failed during it is removed too
+    await this._sweep()
+    if (!roots.size) return result
+
+    const internal = this.internal
     const changed = new Set<string>()
-    for (const url of files) {
-      if (loaded.has(url)) {
-        changed.add(url)
+    for (const url of this._match(roots)) {
+      // A change to a host module or to a loaded native addon cannot be
+      // applied in place. It is skipped, and restarting is up to the caller.
+      if (this.hostModules.has(url) || isNativeAddon(url)) {
+        result.skippedHostModules.push(url)
       } else {
-        this.ctx.logger.debug('skip %C (not loaded)', this._relative(url))
+        changed.add(url)
       }
     }
     if (!changed.size) return result
@@ -699,17 +732,12 @@ namespace Hmr {
     }).description('Watch'),
   })
 
-  export interface ReconcileOptions {
-    /** absolute paths or `file:` URLs */
-    files: Iterable<string | URL>
-  }
-
   /** The running state is brought in line with the changes, as far as they can be applied. */
   export interface Result {
     settledFibers: Fiber[]
     importFailures: ImportFailure[]
     /**
-     * The changed host modules and loaded native addons, which can only be
+     * The URLs of the changed host modules and native addons, which can only be
      * applied by restarting the process. They are skipped, while the other
      * changes are applied.
      */
