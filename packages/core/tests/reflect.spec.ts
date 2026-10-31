@@ -1,5 +1,6 @@
 import { expect, describe, it } from 'vitest'
 import { mock } from 'node:test'
+import { types } from 'node:util'
 import { Context } from '../src/index.ts'
 
 describe('Reflect', () => {
@@ -52,6 +53,47 @@ describe('Reflect', () => {
         expect(warn.mock.calls).to.have.length(0)
       })
     })
+  })
+
+  it('access error', async () => {
+    const root = new Context()
+    root.provide('foo')
+    root.set('foo', { bar: 1 })
+
+    function capture(callback: () => void) {
+      try {
+        callback()
+      } catch (error) {
+        return error as Error
+      }
+      throw new Error('expected an access error')
+    }
+
+    function getBar(ctx: Context) {
+      return ctx.bar
+    }
+
+    function setBar(ctx: Context) {
+      ctx.bar = 0
+    }
+
+    const fiber = await root.inject(['foo'], (ctx) => {
+      for (const [name, callback] of [['getBar', getBar], ['setBar', setBar]] as const) {
+        const error = capture(() => callback(ctx))
+        expect(types.isNativeError(error)).to.equal(true)
+        expect(error.stack!.split('\n')[1]).to.match(new RegExp(`^\\s+at ${name} `))
+      }
+    })
+    await fiber.dispose()
+
+    function getFoo() {
+      return fiber.ctx.foo
+    }
+
+    const error = capture(getFoo)
+    expect(types.isNativeError(error)).to.equal(true)
+    expect(error.message).to.equal('cannot get required service "foo" in inactive context')
+    expect(error.stack!.split('\n')[1]).to.match(/^\s+at getFoo /)
   })
 
   it('service inject leak', async () => {
