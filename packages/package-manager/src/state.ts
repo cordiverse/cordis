@@ -1,7 +1,17 @@
-import { Dirent } from 'node:fs'
-import { readdir, readFile, readlink, realpath } from 'node:fs/promises'
+import { Dirent, realpath as realpathCallback } from 'node:fs'
+import { readdir, readFile, readlink } from 'node:fs/promises'
 import { basename, dirname, join, posix, resolve } from 'node:path'
+import { promisify } from 'node:util'
 import { parse } from 'yaml'
+
+/**
+ * The real path as Node resolves modules. Node's module resolution uses the
+ * implementation of `fs.realpath` that resolves the links along the path one
+ * by one and keeps the rest of the path as given. `fs.promises.realpath` uses
+ * the libuv implementation, which on Windows also expands 8.3 short names and
+ * normalizes the case, so that its result can differ from module URLs.
+ */
+export const realpath: (path: string) => Promise<string> = promisify(realpathCallback)
 
 /** A package installed at a location. */
 export interface PackageState {
@@ -17,9 +27,9 @@ export interface PackageState {
    */
   local: boolean
   /**
-   * The real directory of the location when the state was read. It differs
-   * from the location for a link at the location or at an ancestor, and a
-   * removed link keeps its last target.
+   * The real directory of the location when the state was read, as Node
+   * resolves modules. It differs from the location for a link at the location
+   * or at an ancestor, and a removed link keeps its last target.
    */
   realPath: string
 }

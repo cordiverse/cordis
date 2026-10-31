@@ -1,19 +1,18 @@
 import { Context, Service } from 'cordis'
 import { existsSync } from 'node:fs'
-import { readFile, realpath, writeFile } from 'node:fs/promises'
-import { dirname, isAbsolute, join, resolve } from 'node:path'
+import { readFile, writeFile } from 'node:fs/promises'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import z from 'schemastery'
 import { adapters, AgentInfo, detectAgent } from './agent.ts'
 import { applyChanges, DependencyChanges, normalizeChanges, stringifyManifest } from './manifest.ts'
 import { createEnv, run } from './process.ts'
 import { FileBackup } from './backup.ts'
-import { diffState, StateDiff } from './state.ts'
+import { diffState, realpath, StateDiff } from './state.ts'
 
-export * from './agent.ts'
-export * from './manifest.ts'
-export * from './process.ts'
-export * from './state.ts'
+export type * from './agent.ts'
+export type * from './manifest.ts'
+export type * from './state.ts'
 
 declare module 'cordis' {
   interface Context {
@@ -21,35 +20,31 @@ declare module 'cordis' {
   }
 }
 
-function findRoot(dir: string) {
-  while (true) {
-    if (existsSync(join(dir, 'package.json'))) return dir
-    const parent = dirname(dir)
-    if (parent === dir) return
-    dir = parent
-  }
-}
-
 class PackageManager extends Service {
-  public root?: string
+  /** the real path of the nearest directory with a `package.json` from `base` */
+  public root!: string
 
   private _queue: Promise<unknown> = Promise.resolve()
 
   constructor(ctx: Context, public config: PackageManager.Config) {
     super(ctx, 'packageManager')
-    const base = config.base
-      ? isAbsolute(config.base) ? config.base : resolve(ctx.baseUrl ? fileURLToPath(new URL('.', ctx.baseUrl)) : '.', config.base)
-      : ctx.baseUrl ? fileURLToPath(new URL('.', ctx.baseUrl)) : resolve('.')
-    this.root = findRoot(base)
   }
 
-  private _getRoot() {
-    if (!this.root) throw new Error('no package.json is found for the project')
-    return this.root
+  async* [Service.init]() {
+    const { base } = this.config
+    const dir = this.ctx.baseUrl ? fileURLToPath(new URL('.', this.ctx.baseUrl)) : resolve('.')
+    const start = base ? resolve(dir, base) : dir
+    let root = await realpath(start)
+    while (!existsSync(join(root, 'package.json'))) {
+      const parent = dirname(root)
+      if (parent === root) throw new Error(`no package.json is found from ${start}`)
+      root = parent
+    }
+    this.root = root
   }
 
   agent(): Promise<AgentInfo> {
-    return detectAgent(this._getRoot(), createEnv())
+    return detectAgent(this.root, createEnv())
   }
 
   install(changes: DependencyChanges | [string, string | null][], options: PackageManager.InstallOptions = {}) {
@@ -61,7 +56,7 @@ class PackageManager extends Service {
 
   private async _install(changes: [string, string | null][], options: PackageManager.InstallOptions): Promise<PackageManager.InstallResult> {
     options.signal?.throwIfAborted()
-    const root = this._getRoot()
+    const root = this.root
     const env = createEnv()
     const agent = await detectAgent(root, env)
     const adapter = adapters[agent.kind]
@@ -85,7 +80,7 @@ class PackageManager extends Service {
     try {
       await writeFile(manifestPath, stringifyManifest(applyChanges(manifest, changes), original))
       await run(agent.executable, adapter.installArgs, { ...runOptions, signal: options.signal })
-      return { agent, ...diffState(await realpath(root), before, await adapter.readState(root)) }
+      return { agent, ...diffState(root, before, await adapter.readState(root)) }
     } catch (error) {
       try {
         await backup.restore()

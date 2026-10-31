@@ -4,7 +4,9 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpat
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, sep } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import PackageManager, { adapters, createEnv, run, which } from '../src/index.ts'
+import PackageManager from '../src/index.ts'
+import { adapters } from '../src/agent.ts'
+import { createEnv, run, which } from '../src/process.ts'
 import { Registry } from './registry.ts'
 
 const registry = new Registry([
