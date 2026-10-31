@@ -2,7 +2,7 @@ import { Context } from 'cordis'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, relative, sep } from 'node:path'
+import { dirname, join, relative, sep } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import PackageManager, { adapters, createEnv, run, which } from '../src/index.ts'
 import { Registry } from './registry.ts'
@@ -31,6 +31,8 @@ interface Fixture {
   packageManager: () => Promise<string>
   files: (cache: string) => Record<string, string>
   lockfile: string
+  /** the protocols of a dependency on a local directory */
+  localProtocols: string[]
 }
 
 const fixtures: Fixture[] = [{
@@ -44,6 +46,7 @@ const fixtures: Fixture[] = [{
     '.npmrc': `registry=${registry.url}\ncache=${cache}\naudit=false\nfund=false\nupdate-notifier=false\n`,
   }),
   lockfile: 'package-lock.json',
+  localProtocols: ['file'],
 }, {
   name: 'pnpm',
   packageManager: async () => 'pnpm@10.33.0',
@@ -57,6 +60,7 @@ const fixtures: Fixture[] = [{
     ].join('\n'),
   }),
   lockfile: 'pnpm-lock.yaml',
+  localProtocols: ['file', 'link'],
 }, {
   name: 'yarn classic',
   packageManager: async () => 'yarn@1.22.19',
@@ -64,6 +68,7 @@ const fixtures: Fixture[] = [{
     '.yarnrc': `registry "${registry.url}"\ncache-folder ${JSON.stringify(cache)}\n`,
   }),
   lockfile: 'yarn.lock',
+  localProtocols: ['file', 'link'],
 }, {
   name: 'yarn berry',
   packageManager: async () => 'yarn@4.14.1',
@@ -82,6 +87,7 @@ const fixtures: Fixture[] = [{
     'yarn.lock': '',
   }),
   lockfile: 'yarn.lock',
+  localProtocols: ['file', 'portal', 'link'],
 }]
 
 let counter = 0
@@ -90,6 +96,7 @@ function createProject(files: Record<string, string>) {
   const dir = join(temp, `project-${++counter}`)
   mkdirSync(dir, { recursive: true })
   for (const [name, content] of Object.entries(files)) {
+    mkdirSync(dirname(join(dir, name)), { recursive: true })
     writeFileSync(join(dir, name), content)
   }
   return dir
@@ -220,6 +227,7 @@ describe.each(fixtures)('$name', (fixture) => {
     dir = createProject({
       'package.json': JSON.stringify(manifest, null, 2) + '\n',
       'postinstall.cjs': `process.exit(require('./package.json').dependencies?.delta ? 1 : 0)\n`,
+      'local/package.json': JSON.stringify({ name: 'local-real-name', version: '1.0.0' }),
       ...fixture.files(join(temp, `cache-${fixture.name.replace(' ', '-')}`)),
     })
     pm = await setup(dir)
@@ -287,6 +295,20 @@ describe.each(fixtures)('$name', (fixture) => {
     const result = await pm.install({ alpha: '2.0.0' })
     expectDiff(dir, result, before, scanVersions(dir))
   })
+
+  it.each(fixture.localProtocols)('reports a local package of the %s protocol by its manifest name', async (protocol) => {
+    const location = 'node_modules/local-alias'
+    try {
+      const added = await pm.install({ 'local-alias': `${protocol}:./local` })
+      const change = added.added.find(change => toPosix(relative(dir, change.path)) === location)
+      expect(change?.after).to.include({ name: 'local-real-name', local: true })
+      // the content of a local package is not recorded, so that every installation updates it
+      const updated = await pm.install([])
+      expect(locations(dir, updated.updated)).to.include(location)
+    } finally {
+      await pm.install({ 'local-alias': null })
+    }
+  })
 })
 
 describe('layout', () => {
@@ -308,9 +330,11 @@ describe('layout', () => {
   it.each([
     ['npm with a linked strategy', fixtures[0], { '.npmrc': 'install-strategy=linked\n' }],
     ['pnpm with an isolated linker', fixtures[1], { 'pnpm-workspace.yaml': 'nodeLinker: isolated\n' }],
+    ['yarn classic with pnp in the manifest', fixtures[2], { 'yarn.lock': '' }, { installConfig: { pnp: true } }],
+    ['yarn classic with pnp in .yarnrc', fixtures[2], { '.yarnrc': '--install.pnp true\n', 'yarn.lock': '' }],
     ['yarn berry with pnp', fixtures[3], { '.yarnrc.yml': 'nodeLinker: pnp\n', 'yarn.lock': '' }],
-  ] as const)('rejects %s', async (_, fixture, files) => {
-    const manifest = JSON.stringify({ name: 'project', packageManager: await fixture.packageManager() })
+  ] as [string, Fixture, Record<string, string>, object?][])('rejects %s', async (_, fixture, files, extra = {}) => {
+    const manifest = JSON.stringify({ name: 'project', packageManager: await fixture.packageManager(), ...extra })
     const dir = createProject({ 'package.json': manifest, ...files })
     const pm = await setup(dir)
     await expect(pm.install({ alpha: '1.0.0' })).rejects.toThrow('only')

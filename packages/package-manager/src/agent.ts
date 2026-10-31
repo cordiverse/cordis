@@ -19,7 +19,7 @@ export interface Adapter {
   recoverArgs: string[]
   lockfiles: string[]
   files: string[]
-  checkLayout(info: AgentInfo, root: string, env: Env): Promise<void>
+  checkLayout(info: AgentInfo, root: string, env: Env, manifest: any): Promise<void>
   readState(root: string): Promise<InstallState>
 }
 
@@ -31,6 +31,25 @@ async function getConfig(info: AgentInfo, root: string, env: Env, key: string) {
 function assertLayout(info: AgentInfo, key: string, value: string | undefined, expected: string) {
   if (value === expected) return
   throw new Error(`${info.spec} is configured with ${key} "${value}", only "${expected}" is supported`)
+}
+
+async function isYarnClassicPnp(info: AgentInfo, root: string, env: Env, manifest: any) {
+  const { stdout } = await run(info.executable, ['config', 'list', '--json'], { cwd: root, env, timeout: 60000 })
+  // the yarn configuration, then the npm configuration
+  const [yarnrc = {}, npmrc = {}] = stdout.split(/\r?\n/).flatMap((line) => {
+    try {
+      const data = JSON.parse(line)
+      return data?.type === 'inspect' ? [data.data ?? {}] : []
+    } catch {
+      return []
+    }
+  })
+  const override = yarnrc['plugnplay-override'] ?? npmrc['plugnplay-override']
+  if (override != null) return override !== 'false' && override !== '0'
+  const flag = (name: string) => yarnrc[`--${name}`] === true || yarnrc[`--install.${name}`] === true
+  const enable = flag('pnp') || flag('enable-pnp')
+  if (enable || flag('disable-pnp')) return enable
+  return !!manifest?.installConfig?.pnp
 }
 
 export const adapters: Record<AgentKind, Adapter> = {
@@ -62,8 +81,10 @@ export const adapters: Record<AgentKind, Adapter> = {
     recoverArgs: ['install', '--non-interactive', '--frozen-lockfile', '--prefer-offline'],
     lockfiles: ['yarn.lock'],
     files: ['.yarnrc', '.npmrc'],
-    // yarn classic has no other layout
-    async checkLayout() {},
+    async checkLayout(info, root, env, manifest) {
+      if (!await isYarnClassicPnp(info, root, env, manifest)) return
+      throw new Error(`${info.spec} is configured with Plug'n'Play, only node_modules is supported`)
+    },
     readState: readYarnClassicState,
   },
   'yarn-berry': {
@@ -103,6 +124,6 @@ export async function detectAgent(root: string, env: Env): Promise<AgentInfo> {
 
   const kind: AgentKind = name !== 'yarn' ? name : major === 1 ? 'yarn-classic' : 'yarn-berry'
   const info: AgentInfo = { kind, name, spec, version, executable }
-  await adapters[kind].checkLayout(info, root, env)
+  await adapters[kind].checkLayout(info, root, env, manifest)
   return info
 }

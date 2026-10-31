@@ -1,6 +1,7 @@
 import { ChildProcess, spawn } from 'node:child_process'
 import { accessSync, constants, existsSync, statSync } from 'node:fs'
 import { basename, delimiter, join } from 'node:path'
+import { setTimeout as sleep } from 'node:timers/promises'
 
 export type Env = Record<string, string | undefined>
 
@@ -82,23 +83,48 @@ export class RunError extends Error {
   }
 }
 
-function killTree(child: ChildProcess) {
-  if (!child.pid) return
+/** The interval between SIGTERM and SIGKILL, in milliseconds. */
+const KILL_DELAY = 5000
+
+function hasGroup(pid: number) {
+  try {
+    process.kill(-pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function killTree(child: ChildProcess) {
+  const pid = child.pid
+  if (!pid) return
   if (process.platform === 'win32') {
-    spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true })
+    await new Promise<void>((resolve) => {
+      spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true })
+        .on('close', () => resolve())
+        .on('error', () => resolve())
+    })
     return
   }
   try {
     // the child leads its own process group, see `detached` below
-    process.kill(-child.pid, 'SIGTERM')
-  } catch {}
-  const timer = setTimeout(() => {
-    try {
-      process.kill(-child.pid!, 'SIGKILL')
-    } catch {}
-  }, 5000)
-  timer.unref()
-  child.once('exit', () => clearTimeout(timer))
+    process.kill(-pid, 'SIGTERM')
+  } catch {
+    return
+  }
+  const start = Date.now()
+  let killed = false
+  while (hasGroup(pid)) {
+    const elapsed = Date.now() - start
+    if (elapsed >= 2 * KILL_DELAY) return
+    if (!killed && elapsed >= KILL_DELAY) {
+      killed = true
+      try {
+        process.kill(-pid, 'SIGKILL')
+      } catch {}
+    }
+    await sleep(100)
+  }
 }
 
 export function run(file: string, args: string[], options: RunOptions): Promise<RunResult> {
@@ -119,10 +145,11 @@ export function run(file: string, args: string[], options: RunOptions): Promise<
     let stdout = ''
     let output = ''
     let failure: unknown
+    let killing: Promise<void> | undefined
     let timer: NodeJS.Timeout | undefined
     const terminate = (reason: unknown) => {
       failure ??= reason
-      killTree(child)
+      killing ??= killTree(child)
     }
     const refresh = () => {
       if (!timeout) return
@@ -155,11 +182,15 @@ export function run(file: string, args: string[], options: RunOptions): Promise<
         reject(failure)
       }
     })
-    child.on('close', (code, signalName) => {
+    child.on('close', async (code, signalName) => {
       clearTimeout(timer)
       // cancellation is possible only until the agent exits
       signal?.removeEventListener('abort', onAbort)
-      if (failure) return reject(failure)
+      if (failure) {
+        // a terminated run settles after the whole tree, not only the agent
+        await killing
+        return reject(failure)
+      }
       if (code === 0) return resolve({ stdout, output })
       const status = code === null ? `signal ${signalName}` : `code ${code}`
       reject(new RunError(`${file} ${args.join(' ')} exited with ${status}\n${output}`, output, code))
