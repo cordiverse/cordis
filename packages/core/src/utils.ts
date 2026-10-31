@@ -158,6 +158,10 @@ function createShadowMethod(ctx: Context, value: any, outer: any, shadow: {}) {
   })
 }
 
+function isPrivateProperty(prop: string) {
+  return prop.charCodeAt(0) === 95 // `_`
+}
+
 // `ctx` may be a shadow, i.e. a pair of:
 // - def site: where the accessing code was defined, governs service resolution
 // - use site: where the service is consumed, governs intercept, isolate and effects
@@ -171,6 +175,11 @@ function createTraceable(ctx: Context, value: any, tracker: Tracker) {
       if (prop === tracker.property) return useSite
       if (typeof prop === 'symbol') {
         return Reflect.get(target, prop, receiver)
+      }
+      if (isPrivateProperty(prop)) {
+        const innerValue = Reflect.get(target, prop, receiver)
+        const innerTracker = innerValue?.[symbols.tracker]
+        return innerTracker ? createTraceable(useSite, innerValue, innerTracker) : innerValue
       }
       // `ctx` rather than `useSite`, so that `ctx.foo.bar` and `ctx['foo.bar']` are
       // governed by the same def site
@@ -199,7 +208,7 @@ function createTraceable(ctx: Context, value: any, tracker: Tracker) {
       if (prop === symbols.original) return false
       if (prop === symbols.caller) return false
       if (prop === tracker.property) return false
-      if (typeof prop === 'symbol') {
+      if (typeof prop === 'symbol' || isPrivateProperty(prop)) {
         return Reflect.set(target, prop, value, receiver)
       }
       if (tracker.associate && useSite.reflect.props[`${tracker.associate}.${prop}`]) {
