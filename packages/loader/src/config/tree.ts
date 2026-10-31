@@ -75,6 +75,11 @@ export abstract class EntryTree {
   public enableLogs?: boolean
   public root: EntryGroup
   public store: Dict<Entry> = Object.create(null)
+  /**
+   * Teardowns of entries already removed from `store`. `entries()` can no longer
+   * see them, but they are still pending lifecycle tasks.
+   */
+  private detached = new Set<Promise<unknown>>()
 
   constructor(ctx: Context) {
     this.ctx = ctx.extend({ baseUrl: ctx.baseUrl })
@@ -96,9 +101,20 @@ export abstract class EntryTree {
   }
 
   getTasks() {
-    return [...this.entries()]
-      .flatMap(entry => entry._initTask || [entry.outerFiber?.inertia, entry.innerFiber?.inertia])
-      .filter(isNonNullable)
+    return [
+      ...[...this.entries()]
+        .flatMap(entry => entry._initTask || [entry.outerFiber?.inertia, entry.innerFiber?.inertia])
+        .filter(isNonNullable),
+      ...this.detached,
+    ]
+  }
+
+  /** Keep a removed entry's teardown visible to `await()` until it settles. */
+  trackDetached(task: Promise<unknown>) {
+    const tracked = task
+      .catch(() => {})
+      .finally(() => this.detached.delete(tracked))
+    this.detached.add(tracked)
   }
 
   async await() {
@@ -152,8 +168,9 @@ export abstract class EntryTree {
     const entry = this.resolve(id)
     const group = entry.parent
     const legacy = entry.options
-    group.remove(legacy.id)
+    const task = group.remove(legacy.id)
     group.tree.commit({ id: legacy.id, group, legacy })
+    return task
   }
 
   async update(id: string, options: Omit<EntryOptions, 'id' | 'name'>, parent?: string | null, position?: number) {
