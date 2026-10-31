@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer, ServerResponse } from 'node:http'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import * as tar from 'tar'
 import { expect, it, onTestFinished } from 'vitest'
@@ -27,8 +27,9 @@ function childEnv(overrides: Record<string, string>) {
   return { ...env, ...overrides }
 }
 
-async function runCli(registry: string, args: string[] = [], options: { timeout?: number; yarn?: boolean } = {}) {
+async function runCli(registry: string, args: string[] = [], options: { timeout?: number; yarn?: boolean; name?: string } = {}) {
   const cwd = await mkdtemp(join(tmpdir(), 'cordis-create-'))
+  const name = options.name ?? 'myapp'
   try {
     await writeFile(join(cwd, '.npmrc'), `registry=${registry}\n`)
     // `bin.ts` passes no deadline, so a test that needs one runs its own entry
@@ -64,7 +65,7 @@ async function runCli(registry: string, args: string[] = [], options: { timeout?
     })
 
     const { stdout, stderr, code } = await new Promise<{ stdout: string; stderr: string; code: number }>((done) => {
-      execFile(process.execPath, ['--import', tsx, entry, 'myapp', '--yes', ...args], {
+      execFile(process.execPath, ['--import', tsx, entry, name, '--yes', ...args], {
         cwd,
         env,
       }, (error, stdout, stderr) => {
@@ -247,4 +248,17 @@ it('reports a pinned yarn download timeout without changing the rc', async () =>
   expect(output).toContain('error unable to set up yarn: timed out')
   expect(output).not.toContain('Done.')
   expect(yarnRc).toBe(rc)
+}, 30000)
+
+// Outside the working directory, so the target can only be reached if the path is used as given.
+it('accepts an absolute path as the target directory', async () => {
+  const tarball = await archive({ 'package.json': '{"name":"template"}' })
+  const registry = await startRegistry({ '/pkg.tgz': res => res.end(tarball) })
+  const target = await mkdtemp(join(tmpdir(), 'cordis-create-abs-'))
+  onTestFinished(() => rm(target, { recursive: true, force: true }))
+  const { output, code } = await runCli(registry, [], { name: target })
+  expect(code).toBe(0)
+  expect(output).toContain('Done.')
+  const { name } = JSON.parse(await readFile(join(target, 'package.json'), 'utf8'))
+  expect(name).toBe(basename(target))
 }, 30000)
