@@ -17,10 +17,21 @@ declare module './context.ts' {
   }
 }
 
-function enhanceError(error: Error) {
+// Construct the native error thrown by a failed access from its placeholder.
+// This function must be called directly in a proxy trap,
+// so that the second and third lines of the stack are this function and the trap.
+function enhanceAccessError(placeholder: Error) {
+  const error = new Error(placeholder.message)
   const lines = error.stack!.split('\n')
-  lines.splice(0, 2, `Error: ${error.message}`)
+  lines.splice(0, 3, `Error: ${error.message}`)
   error.stack = lines.join('\n')
+  return error
+}
+
+// An access creates this placeholder before its outcome is known, since capturing a stack is costly.
+function createAccessError(message: string): Error {
+  const error = Object.create(Error.prototype)
+  error.message = message
   return error
 }
 
@@ -100,7 +111,7 @@ export class ReflectService {
         return getTraceable(ctx, Reflect.get(target, prop, ctx))
       }
 
-      const error = new Error(`cannot get property "${prop}" without inject`)
+      const error = createAccessError(`cannot get property "${prop}" without inject`)
 
       try {
         const def = target.reflect.props[prop]
@@ -119,7 +130,7 @@ export class ReflectService {
           throw error
         })
       } catch (e: any) {
-        throw e === error ? enhanceError(e) : e
+        throw e === error ? enhanceAccessError(e) : e
       }
     },
 
@@ -128,11 +139,11 @@ export class ReflectService {
         return Reflect.set(target, prop, value, ctx)
       }
 
-      const error = new Error(`cannot set property "${prop}" without provide`)
+      const error = createAccessError(`cannot set property "${prop}" without provide`)
       const def = target.reflect.props[prop]
       if (!def) {
         if (!ctx.fiber.runtime) return Reflect.set(target, prop, value, ctx)
-        throw enhanceError(error)
+        throw enhanceAccessError(error)
       }
 
       try {
@@ -145,7 +156,7 @@ export class ReflectService {
           return ctx.reflect.set(prop, value, error)
         })
       } catch (e: any) {
-        throw e === error ? enhanceError(e) : e
+        throw e === error ? enhanceAccessError(e) : e
       }
     },
 
