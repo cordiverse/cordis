@@ -1,7 +1,7 @@
 import { Mock, mock } from 'node:test'
 import { expect, describe, it, beforeAll, beforeEach } from 'vitest'
 import { Context, Service } from 'cordis'
-import { EntryTree } from '../src/index.ts'
+import { EntryChange, EntryTree, Group } from '../src/index.ts'
 import MockLoader, { sleep } from './utils.ts'
 
 describe('EntryTree.commit: change reports', () => {
@@ -152,6 +152,143 @@ describe('EntryGroup.remove: file-driven moves', () => {
     expect(loader.store['x']!.parent).to.equal(loader.store['g']!.subgroup)
     loader.expectFiber('x')
     loader.expectEnable(foo)
+  })
+})
+
+describe('EntryTree.update: cross-tree moves', () => {
+  const root = new Context()
+  const changes: EntryChange[] = []
+
+  let loader!: MockLoader
+  let foo!: Mock<Function>
+
+  class Tree extends EntryTree {
+    static inject = ['loader']
+
+    commit(change: EntryChange) {
+      changes.push(change)
+    }
+
+    async import() {
+      return Group
+    }
+
+    async [Service.init]() {
+      await this.root.update([{ id: 'g', name: '@cordisjs/plugin-group', group: true, config: [] }])
+    }
+  }
+
+  beforeAll(async () => {
+    await root.plugin(MockLoader)
+    loader = root.loader as any
+    foo = loader.mock('foo', () => {})
+    loader.modules['tree'] = Tree
+  })
+
+  beforeEach(() => {
+    loader.changes = []
+    changes.length = 0
+  })
+
+  async function setup() {
+    const id = await loader.create({ name: 'tree' })
+    await loader.await()
+    loader.changes = []
+    return { id, subtree: loader.store[id]!.subtree! }
+  }
+
+  const running = () => root.registry.get(foo)?.fibers.length ?? 0
+
+  it('reports a removal to the source tree and a creation to the target tree', async () => {
+    const { id: tree, subtree } = await setup()
+    const id = await loader.create({ name: 'foo', config: { a: 1 } })
+    await loader.await()
+    loader.changes = []
+
+    await loader.update(id, { config: { a: 2 } }, `${tree}:g`)
+
+    expect(loader.changes).to.have.length(1)
+    expect(loader.changes[0].group).to.equal(loader.root)
+    expect(loader.changes[0].options).to.be.undefined
+    expect(loader.changes[0].legacy).to.deep.equal({ id, name: 'foo', config: { a: 1 } })
+
+    expect(changes).to.have.length(1)
+    const [change] = changes
+    expect(change.group).to.equal(subtree.store['g']!.subgroup)
+    expect(change.legacy).to.be.undefined
+    expect(change.from).to.be.undefined
+    expect(change.options).to.deep.equal({ id, name: 'foo', config: { a: 2 } })
+    await loader.remove(`${tree}:${id}`)
+  })
+
+  it('transfers the entry to the store of the target tree', async () => {
+    const { id: tree, subtree } = await setup()
+    const id = await loader.create({ name: 'foo' })
+    await loader.await()
+    const entry = loader.store[id]!
+
+    await loader.update(id, {}, `${tree}:g`)
+    await loader.await()
+
+    expect(loader.store[id]).to.be.undefined
+    expect(subtree.store[id]).to.equal(entry)
+    expect(loader.resolve(`${tree}:${id}`)).to.equal(entry)
+    expect(entry.id).to.equal(`${tree}:${id}`)
+    expect(running()).to.equal(1)
+
+    // the target tree adopts the entry when it reconciles its source
+    await subtree.store['g']!.subgroup!.update([{ ...entry.options }])
+    await loader.await()
+    expect(subtree.store[id]).to.equal(entry)
+    expect(running()).to.equal(1)
+
+    await loader.remove(`${tree}:${id}`)
+    await loader.await()
+    expect(running()).to.equal(0)
+  })
+
+  it('transfers the members of a moved group', async () => {
+    const { id: tree, subtree } = await setup()
+    const group = await loader.create({
+      name: '@cordisjs/plugin-group',
+      group: true,
+      config: [{ id: 'member', name: 'foo' }],
+    })
+    await loader.await()
+    const member = loader.store['member']!
+    expect(running()).to.equal(1)
+
+    await loader.update(group, {}, `${tree}:g`)
+    await loader.await()
+
+    expect(loader.store[group]).to.be.undefined
+    expect(loader.store['member']).to.be.undefined
+    expect(subtree.store['member']).to.equal(member)
+    expect(subtree.store[group]!.subgroup!.tree).to.equal(subtree)
+    expect(member.id).to.equal(`${tree}:member`)
+    expect(running()).to.equal(1)
+
+    await loader.remove(`${tree}:${group}`)
+    await loader.await()
+    expect(running()).to.equal(0)
+  })
+
+  it('rejects a move onto an id that the target tree already uses', async () => {
+    const { id: tree, subtree } = await setup()
+    const id = await loader.create({ id: 'g', name: 'foo' } as any)
+    await loader.await()
+    const entry = loader.store[id]!
+    loader.changes = []
+
+    await expect(loader.update(id, {}, `${tree}:g`)).rejects.toThrow()
+
+    expect(loader.store[id]).to.equal(entry)
+    expect(entry.parent).to.equal(loader.root)
+    expect(loader.root.data).to.include(entry.options)
+    expect(subtree.store['g']!.subgroup!.data).to.have.length(0)
+    expect(loader.changes).to.have.length(0)
+    expect(changes).to.have.length(0)
+    await loader.remove(id)
   })
 })
 
