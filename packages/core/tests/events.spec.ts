@@ -15,6 +15,49 @@ function setup() {
 }
 
 describe('Events', () => {
+  it.each(['emit', 'parallel', 'serial', 'bail', 'waterfall'] as const)('%s resolves a snapshot of hooks without callback wrappers', (mode) => {
+    const { root } = setup()
+    root.on(event, () => {})
+    root.on(event, () => {})
+    const registered = root.events._hooks[event]
+    const [, snapshot] = (root.events as any)._resolve(mode, [event])
+
+    expect(snapshot).to.not.equal(registered)
+    expect(snapshot[0]).to.equal(registered[0])
+    expect(snapshot[1]).to.equal(registered[1])
+  })
+
+  it('deprecated dispatch returns bound callbacks that respect later removal', () => {
+    const { root } = setup()
+    const name = Symbol('legacy')
+    const target = {}
+    const callback = mock.fn(function (this: object, value: string) {
+      expect(this).to.equal(target)
+      return value
+    })
+    const dispose = root.on(name, callback)
+    const [invoke] = root.events.dispatch('bail', [target, name])
+
+    expect(invoke('value')).to.equal('value')
+    dispose()
+    expect(invoke('removed')).to.be.undefined
+    expect(callback.mock.calls).to.have.length(1)
+  })
+
+  it('deprecated waterfall dispatch continues past a removed callback', () => {
+    const { root } = setup()
+    const name = Symbol('legacy waterfall')
+    const callback = mock.fn()
+    const dispose = root.on(name, callback)
+    const [invoke] = root.events.dispatch('waterfall', [name])
+    const next = mock.fn(() => 'continued')
+
+    dispose()
+    expect(invoke('value', next)).to.equal('continued')
+    expect(callback.mock.calls).to.have.length(0)
+    expect(next.mock.calls).to.have.length(1)
+  })
+
   it('supports symbol event names across dispatch modes', async () => {
     const { root } = setup()
     const event = Symbol('event')
