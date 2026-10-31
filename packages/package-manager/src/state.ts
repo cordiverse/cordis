@@ -1,5 +1,5 @@
 import { Dirent } from 'node:fs'
-import { readdir, readFile, readlink } from 'node:fs/promises'
+import { readdir, readFile, readlink, realpath } from 'node:fs/promises'
 import { posix, resolve } from 'node:path'
 import { parse } from 'yaml'
 
@@ -15,6 +15,11 @@ export interface PackageState {
    * `link:`, `portal:` or workspace dependency and a package bundled in one.
    */
   local: boolean
+  /**
+   * The real directory of the location when the state was read. It differs
+   * from the location for a link, and a removed link keeps its last target.
+   */
+  realPath: string
 }
 
 export type InstallState = Map<string, PackageState>
@@ -37,6 +42,14 @@ async function readName(dir: string): Promise<string | undefined> {
   } catch {}
 }
 
+async function createLocator(root: string) {
+  const realRoot = await realpath(root).catch(() => resolve(root))
+  return async (location: string, local: boolean) => {
+    if (!local) return resolve(realRoot, location)
+    return realpath(resolve(root, location)).catch(() => resolve(realRoot, location))
+  }
+}
+
 export function splitName(spec: string): [string, string] {
   const index = spec.indexOf('@', spec.startsWith('@') ? 1 : 0)
   if (index <= 0) return [spec, '']
@@ -53,6 +66,7 @@ export async function readNpmState(root: string): Promise<InstallState> {
   const text = await readText(resolve(root, 'node_modules/.package-lock.json'))
   if (!text) return state
   const packages: Record<string, any> = JSON.parse(text).packages ?? {}
+  const locate = await createLocator(root)
 
   // A bundled entry records only its version, since its content is that of
   // the tarball of its bundler, i.e. the nearest enclosing package that is
@@ -75,10 +89,12 @@ export async function readNpmState(root: string): Promise<InstallState> {
     if (entry.link) {
       // the name is recorded by the target entry, if it differs from the directory name
       const name = packages[entry.resolved]?.name ?? await readName(resolve(root, entry.resolved)) ?? nameOf(location)
-      state.set(location, { name, resolution: `link:${entry.resolved}`, local: true })
+      state.set(location, { name, resolution: `link:${entry.resolved}`, local: true, realPath: await locate(location, true) })
       continue
     }
-    state.set(location, { name: entry.name ?? nameOf(location), version: entry.version, ...identify(location) })
+    const identity = identify(location)
+    const realPath = await locate(location, identity.local)
+    state.set(location, { name: entry.name ?? nameOf(location), version: entry.version, ...identity, realPath })
   }
   return state
 }
@@ -93,6 +109,7 @@ export async function readPnpmState(root: string): Promise<InstallState> {
   const modules = parse(modulesText) ?? {}
   const lock = lockText ? parse(lockText) ?? {} : {}
   const packages: Record<string, any> = lock.packages ?? {}
+  const locate = await createLocator(root)
 
   for (const [depPath, locations] of Object.entries<string[]>(modules.hoistedLocations ?? {})) {
     // a peer suffix, e.g. `react-dom@18.0.0(react@18.0.0)`, is not part of the package key
@@ -100,13 +117,15 @@ export async function readPnpmState(root: string): Promise<InstallState> {
     const [name, version] = splitName(key)
     const resolution = packages[key]?.resolution
     const local = resolution?.type === 'directory' || /^(file|link):/.test(version)
-    const entry: PackageState = {
-      name,
-      version: version.includes(':') ? undefined : version,
-      resolution: `${depPath} ${JSON.stringify(resolution ?? null)}`,
-      local,
+    for (const location of locations) {
+      state.set(location, {
+        name,
+        version: version.includes(':') ? undefined : version,
+        resolution: `${depPath} ${JSON.stringify(resolution ?? null)}`,
+        local,
+        realPath: await locate(location, local),
+      })
     }
-    for (const location of locations) state.set(location, entry)
   }
 
   for (const [importer, data] of Object.entries<any>(lock.importers ?? {})) {
@@ -116,7 +135,8 @@ export async function readPnpmState(root: string): Promise<InstallState> {
         if (!version?.startsWith('link:')) continue
         const location = posix.join(importer, 'node_modules', name)
         const target = resolve(root, importer, version.slice(5))
-        state.set(location, { name: await readName(target) ?? name, resolution: version, local: true })
+        const realPath = await locate(location, true)
+        state.set(location, { name: await readName(target) ?? name, resolution: version, local: true, realPath })
       }
     }
   }
@@ -128,6 +148,7 @@ export async function readYarnBerryState(root: string): Promise<InstallState> {
   const text = await readText(resolve(root, 'node_modules/.yarn-state.yml'))
   if (!text) return state
   const data: Record<string, any> = parse(text) ?? {}
+  const locate = await createLocator(root)
   for (const [locator, entry] of Object.entries(data)) {
     if (locator === '__metadata') continue
     const [ident, raw] = splitName(locator)
@@ -140,7 +161,7 @@ export async function readYarnBerryState(root: string): Promise<InstallState> {
       if (!location) continue
       // the ident of a local package is that of its dependency, which may be an alias
       const name = local ? await readName(resolve(root, location)) ?? ident : ident
-      state.set(location, { name, version, resolution: locator, local })
+      state.set(location, { name, version, resolution: locator, local, realPath: await locate(location, local) })
     }
   }
   return state
@@ -151,6 +172,7 @@ export async function readYarnClassicState(root: string): Promise<InstallState> 
   const text = await readText(resolve(root, 'node_modules/.yarn-integrity'))
   if (!text) return state
   const integrity = JSON.parse(text)
+  const locate = await createLocator(root)
 
   const resolved = new Map<string, Set<string>>()
   const localNames = new Set<string>(integrity.linkedModules ?? [])
@@ -168,16 +190,19 @@ export async function readYarnClassicState(root: string): Promise<InstallState> 
     const manifest = JSON.parse(manifestText)
     const key = nameOf(location)
     if (dirent.isSymbolicLink()) {
-      state.set(location, { name: manifest.name ?? key, resolution: `link:${await readlink(dir)}`, local: true })
+      const realPath = await locate(location, true)
+      state.set(location, { name: manifest.name ?? key, resolution: `link:${await readlink(dir)}`, local: true, realPath })
       return
     }
     const urls = [...resolved.get(key) ?? []].sort()
     const matched = urls.filter(url => url.split('#')[0].endsWith(`-${manifest.version}.tgz`))
+    const local = localNames.has(key)
     state.set(location, {
       name: manifest.name ?? key,
       version: manifest.version,
       resolution: [manifest.version, ...matched.length ? matched : urls].join(' '),
-      local: localNames.has(key),
+      local,
+      realPath: await locate(location, local),
     })
     await walk(posix.join(location, 'node_modules'))
   }
@@ -207,7 +232,11 @@ export async function readYarnClassicState(root: string): Promise<InstallState> 
 export interface PackageChange {
   /** the dependency name, i.e. the directory name under `node_modules` */
   name: string
-  /** the absolute path of the location */
+  /**
+   * The location below the real project root. Node resolves dependencies
+   * from the real paths of modules, so a dependency name is resolved through
+   * this path. A link at the location itself is not resolved.
+   */
   path: string
   before?: PackageState
   after?: PackageState

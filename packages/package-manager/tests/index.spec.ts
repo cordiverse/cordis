@@ -1,6 +1,6 @@
 import { Context } from 'cordis'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, sep } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -161,8 +161,9 @@ function scanTree(dir: string) {
   return result
 }
 
+/** The locations of changes, which are reported below the real path of the project. */
 function locations(dir: string, changes: PackageManager.InstallResult['added']) {
-  return changes.map(change => toPosix(relative(dir, change.path))).sort()
+  return changes.map(change => toPosix(relative(realpathSync(dir), change.path))).sort()
 }
 
 /** The changes implied by two scans. A content change without a version change does not occur here. */
@@ -172,10 +173,11 @@ function expectDiff(dir: string, result: PackageManager.InstallResult, before: R
   expect(locations(dir, result.removed)).to.deep.equal(keys.filter(key => !(key in after)))
   expect(locations(dir, result.updated)).to.deep.equal(keys.filter(key => key in before && key in after && before[key] !== after[key]))
   for (const change of [...result.added, ...result.updated]) {
-    expect(change.after?.version).to.equal(after[toPosix(relative(dir, change.path))])
+    expect(change.after?.version).to.equal(after[toPosix(relative(realpathSync(dir), change.path))])
+    expect(change.after?.realPath).to.equal(realpathSync(change.path))
   }
   for (const change of [...result.removed, ...result.updated]) {
-    expect(change.before?.version).to.equal(before[toPosix(relative(dir, change.path))])
+    expect(change.before?.version).to.equal(before[toPosix(relative(realpathSync(dir), change.path))])
   }
 }
 
@@ -300,8 +302,8 @@ describe.each(fixtures)('$name', (fixture) => {
     const location = 'node_modules/local-alias'
     try {
       const added = await pm.install({ 'local-alias': `${protocol}:./local` })
-      const change = added.added.find(change => toPosix(relative(dir, change.path)) === location)
-      expect(change?.after).to.include({ name: 'local-real-name', local: true })
+      const change = added.added.find(change => toPosix(relative(realpathSync(dir), change.path)) === location)
+      expect(change?.after).to.include({ name: 'local-real-name', local: true, realPath: realpathSync(change!.path) })
       // the content of a local package is not recorded, so that every installation updates it
       const updated = await pm.install([])
       expect(locations(dir, updated.updated)).to.include(location)

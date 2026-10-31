@@ -1,6 +1,6 @@
 import { Context, Service } from 'cordis'
 import { existsSync } from 'node:fs'
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, realpath, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import z from 'schemastery'
@@ -85,7 +85,7 @@ class PackageManager extends Service {
     try {
       await writeFile(manifestPath, stringifyManifest(applyChanges(manifest, changes), original))
       await run(agent.executable, adapter.installArgs, { ...runOptions, signal: options.signal })
-      return { agent, ...diffState(root, before, await adapter.readState(root)) }
+      return { agent, ...diffState(await realpath(root), before, await adapter.readState(root)) }
     } catch (error) {
       try {
         await backup.restore()
