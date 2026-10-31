@@ -313,7 +313,7 @@ describe.each(fixtures)('$name', (fixture) => {
   })
 })
 
-describe('layout', () => {
+describe('preconditions', () => {
   it('rejects a project without a lockfile', async () => {
     const manifest = JSON.stringify({ name: 'project', packageManager: await fixtures[0].packageManager() })
     const dir = createProject({ 'package.json': manifest })
@@ -334,6 +334,8 @@ describe('layout', () => {
     ['pnpm with an isolated linker', fixtures[1], { 'pnpm-workspace.yaml': 'nodeLinker: isolated\n' }],
     ['yarn classic with pnp in the manifest', fixtures[2], { 'yarn.lock': '' }, { installConfig: { pnp: true } }],
     ['yarn classic with pnp in .yarnrc', fixtures[2], { '.yarnrc': '--install.pnp true\n', 'yarn.lock': '' }],
+    ['yarn classic with a modules folder', fixtures[2], { '.yarnrc': '--modules-folder lib\n', 'yarn.lock': '' }],
+    ['yarn classic with a meta folder', fixtures[2], { '.yarnrc': 'enable-meta-folder true\n', 'yarn.lock': '' }],
     ['yarn berry with pnp', fixtures[3], { '.yarnrc.yml': 'nodeLinker: pnp\n', 'yarn.lock': '' }],
   ] as [string, Fixture, Record<string, string>, object?][])('rejects %s', async (_, fixture, files, extra = {}) => {
     const manifest = JSON.stringify({ name: 'project', packageManager: await fixture.packageManager(), ...extra })

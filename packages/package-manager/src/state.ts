@@ -1,6 +1,6 @@
 import { Dirent } from 'node:fs'
 import { readdir, readFile, readlink, realpath } from 'node:fs/promises'
-import { posix, resolve } from 'node:path'
+import { basename, dirname, join, posix, resolve } from 'node:path'
 import { parse } from 'yaml'
 
 /** A package installed at a location. */
@@ -12,12 +12,14 @@ export interface PackageState {
   resolution: string
   /**
    * Whether the install state does not record the content, as for a `file:`,
-   * `link:`, `portal:` or workspace dependency and a package bundled in one.
+   * `link:`, `portal:` or workspace dependency, a package bundled in one, and
+   * a yarn classic package whose version has several sources.
    */
   local: boolean
   /**
    * The real directory of the location when the state was read. It differs
-   * from the location for a link, and a removed link keeps its last target.
+   * from the location for a link at the location or at an ancestor, and a
+   * removed link keeps its last target.
    */
   realPath: string
 }
@@ -44,9 +46,15 @@ async function readName(dir: string): Promise<string | undefined> {
 
 async function createLocator(root: string) {
   const realRoot = await realpath(root).catch(() => resolve(root))
+  const parents = new Map<string, Promise<string>>()
   return async (location: string, local: boolean) => {
-    if (!local) return resolve(realRoot, location)
-    return realpath(resolve(root, location)).catch(() => resolve(realRoot, location))
+    const path = resolve(root, location)
+    const fallback = resolve(realRoot, location)
+    if (local) return realpath(path).catch(() => fallback)
+    const parent = dirname(path)
+    let real = parents.get(parent)
+    if (!real) parents.set(parent, real = realpath(parent).catch(() => dirname(fallback)))
+    return join(await real, basename(path))
   }
 }
 
@@ -167,23 +175,66 @@ export async function readYarnBerryState(root: string): Promise<InstallState> {
   return state
 }
 
+/**
+ * A string of a yarn classic lockfile. Yarn quotes a string that contains
+ * whitespace, a comma, a colon, a quote, a bracket or a backslash with
+ * `JSON.stringify()`, so that an unquoted string contains none of them.
+ */
+const YARN_CLASSIC_LOCKFILE_STRING = /"(?:[^"\\]|\\.)*"|[^\s",:[\]\\]+/g
+
+function unquote(value: string) {
+  if (!value.startsWith('"')) return value
+  try {
+    return JSON.parse(value) as string
+  } catch {
+    // a pattern that cannot be read is not found, so that its version is unknown
+    return value
+  }
+}
+
+function parseYarnLockVersions(text: string) {
+  const versions = new Map<string, string>()
+  let patterns: string[] = []
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim() || line.startsWith('#')) continue
+    if (!/^\s/.test(line)) {
+      patterns = (line.match(YARN_CLASSIC_LOCKFILE_STRING) ?? []).map(unquote)
+      continue
+    }
+    const capture = /^ {2}version (.+)$/.exec(line)
+    if (capture) for (const pattern of patterns) versions.set(pattern, unquote(capture[1].trim()))
+  }
+  return versions
+}
+
 export async function readYarnClassicState(root: string): Promise<InstallState> {
   const state: InstallState = new Map()
-  const text = await readText(resolve(root, 'node_modules/.yarn-integrity'))
+  const [text, lockText] = await Promise.all([
+    readText(resolve(root, 'node_modules/.yarn-integrity')),
+    readText(resolve(root, 'yarn.lock')),
+  ])
   if (!text) return state
   const integrity = JSON.parse(text)
+  const versions = parseYarnLockVersions(lockText ?? '')
   const locate = await createLocator(root)
 
-  const resolved = new Map<string, Set<string>>()
+  // name → version → sources, where an unknown version is `undefined`
+  const resolved = new Map<string, Map<string | undefined, Set<string>>>()
   const localNames = new Set<string>(integrity.linkedModules ?? [])
   for (const [pattern, url] of Object.entries<string>(integrity.lockfileEntries ?? {})) {
     const [name, range] = splitName(pattern)
     if (!url || /^(file|link):/.test(range)) localNames.add(name)
-    if (!resolved.has(name)) resolved.set(name, new Set())
-    resolved.get(name)!.add(url)
+    if (!resolved.has(name)) resolved.set(name, new Map())
+    const byVersion = resolved.get(name)!
+    const version = versions.get(pattern)
+    if (!byVersion.has(version)) byVersion.set(version, new Set())
+    byVersion.get(version)!.add(url)
   }
 
-  const visit = async (location: string, dirent: Dirent) => {
+  /** the package that a bundled package comes with, by the name of the latter */
+  type Bundler = (name: string) => Pick<PackageState, 'resolution' | 'local'> | undefined
+
+  const visit = async (location: string, dirent: Dirent, bundler: Bundler) => {
     const dir = resolve(root, location)
     const manifestText = await readText(resolve(dir, 'package.json'))
     if (!manifestText) return
@@ -194,20 +245,33 @@ export async function readYarnClassicState(root: string): Promise<InstallState> 
       state.set(location, { name: manifest.name ?? key, resolution: `link:${await readlink(dir)}`, local: true, realPath })
       return
     }
-    const urls = [...resolved.get(key) ?? []].sort()
-    const matched = urls.filter(url => url.split('#')[0].endsWith(`-${manifest.version}.tgz`))
-    const local = localNames.has(key)
+    // A bundled package is not resolved from the lockfile, whose entries of
+    // the same name describe other copies. Its content is that of its bundler.
+    let identity: Pick<PackageState, 'resolution' | 'local'>
+    const outer = bundler(key)
+    if (outer) {
+      identity = { resolution: `${key}@${manifest.version} ${outer.resolution}`, local: outer.local }
+    } else {
+      const byVersion = resolved.get(key)
+      const sources = [...new Set([...byVersion?.get(manifest.version) ?? [], ...byVersion?.get(undefined) ?? []])].sort()
+      // The install state does not record which of several sources of a
+      // version is installed at a location, so that its content is unknown.
+      identity = { resolution: [manifest.version, ...sources].join(' '), local: localNames.has(key) || sources.length > 1 }
+    }
     state.set(location, {
       name: manifest.name ?? key,
       version: manifest.version,
-      resolution: [manifest.version, ...matched.length ? matched : urls].join(' '),
-      local,
-      realPath: await locate(location, local),
+      ...identity,
+      realPath: await locate(location, identity.local),
     })
-    await walk(posix.join(location, 'node_modules'))
+    // Every package below a bundled one comes with the same bundler.
+    const bundled = manifest.bundleDependencies ?? manifest.bundledDependencies
+    await walk(posix.join(location, 'node_modules'), outer
+      ? () => outer
+      : name => bundled === true || Array.isArray(bundled) && bundled.includes(name) ? identity : undefined)
   }
 
-  const walk = async (folder: string) => {
+  const walk = async (folder: string, bundler: Bundler = () => undefined) => {
     let dirents: Dirent[]
     try {
       dirents = await readdir(resolve(root, folder), { withFileTypes: true })
@@ -217,9 +281,9 @@ export async function readYarnClassicState(root: string): Promise<InstallState> 
     await Promise.all(dirents.map(async (dirent) => {
       if (dirent.name.startsWith('.')) return
       const location = posix.join(folder, dirent.name)
-      if (!dirent.name.startsWith('@')) return visit(location, dirent)
+      if (!dirent.name.startsWith('@')) return visit(location, dirent, bundler)
       const scoped = await readdir(resolve(root, location), { withFileTypes: true }).catch(() => [])
-      await Promise.all(scoped.map(dirent => visit(posix.join(location, dirent.name), dirent)))
+      await Promise.all(scoped.map(dirent => visit(posix.join(location, dirent.name), dirent, bundler)))
     }))
   }
 
@@ -263,6 +327,9 @@ export function diffState(root: string, before: InstallState, after: InstallStat
     } else if (!change.after) {
       diff.removed.push(change)
     } else if (change.after.local || change.before.resolution !== change.after.resolution) {
+      diff.updated.push(change)
+    } else if (change.before.realPath !== change.after.realPath) {
+      // the same content at another real directory, e.g. below a replaced link
       diff.updated.push(change)
     }
   }

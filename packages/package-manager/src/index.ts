@@ -73,7 +73,7 @@ class PackageManager extends Service {
     const original = await readFile(manifestPath, 'utf8')
     const manifest = JSON.parse(original)
     const before = await adapter.readState(root)
-    const backup = await FileBackup.create(['package.json', ...adapter.lockfiles, ...adapter.files].map(file => resolve(root, file)))
+    const backup = await FileBackup.create(['package.json', ...adapter.lockfiles, ...adapter.restoredFiles].map(file => resolve(root, file)))
     options.signal?.throwIfAborted()
 
     const runOptions = {

@@ -17,8 +17,13 @@ export interface AgentInfo {
 export interface Adapter {
   installArgs: string[]
   recoverArgs: string[]
+  /**
+   * The lockfiles of the project root, one of which must exist. They are
+   * restored after a failed installation, as is `package.json`.
+   */
   lockfiles: string[]
-  files: string[]
+  /** the other files of the project root that are restored after a failed installation */
+  restoredFiles: string[]
   checkLayout(info: AgentInfo, root: string, env: Env, manifest: any): Promise<void>
   readState(root: string): Promise<InstallState>
 }
@@ -33,7 +38,7 @@ function assertLayout(info: AgentInfo, key: string, value: string | undefined, e
   throw new Error(`${info.spec} is configured with ${key} "${value}", only "${expected}" is supported`)
 }
 
-async function isYarnClassicPnp(info: AgentInfo, root: string, env: Env, manifest: any) {
+async function getYarnClassicLayout(info: AgentInfo, root: string, env: Env, manifest: any) {
   const { stdout } = await run(info.executable, ['config', 'list', '--json'], { cwd: root, env, timeout: 60000 })
   // the yarn configuration, then the npm configuration
   const [yarnrc = {}, npmrc = {}] = stdout.split(/\r?\n/).flatMap((line) => {
@@ -44,12 +49,28 @@ async function isYarnClassicPnp(info: AgentInfo, root: string, env: Env, manifes
       return []
     }
   })
-  const override = yarnrc['plugnplay-override'] ?? npmrc['plugnplay-override']
-  if (override != null) return override !== 'false' && override !== '0'
+  const option = (name: string) => yarnrc[name] ?? npmrc[name]
+  // a boolean flag is passed only if it is `true`
   const flag = (name: string) => yarnrc[`--${name}`] === true || yarnrc[`--install.${name}`] === true
-  const enable = flag('pnp') || flag('enable-pnp')
-  if (enable || flag('disable-pnp')) return enable
-  return !!manifest?.installConfig?.pnp
+
+  // `plugnplay-override` enables Plug'n'Play unless it is the string `false`
+  // or `0`; the flags follow, then the manifest.
+  let pnp: boolean
+  const override = option('plugnplay-override')
+  if (override != null) {
+    pnp = override !== 'false' && override !== '0'
+  } else if (flag('pnp') || flag('enable-pnp') || flag('disable-pnp')) {
+    pnp = flag('pnp') || flag('enable-pnp')
+  } else {
+    pnp = !!manifest?.installConfig?.pnp
+  }
+  return {
+    pnp,
+    // the flags for `install` follow those for every command, so that they take precedence
+    modulesFolder: (yarnrc['--install.modules-folder'] ?? yarnrc['--modules-folder']) as string | undefined,
+    // yarn converts the option with `Boolean()`, so that the string `false` enables it
+    metaFolder: Boolean(option('enable-meta-folder')),
+  }
 }
 
 export const adapters: Record<AgentKind, Adapter> = {
@@ -58,7 +79,7 @@ export const adapters: Record<AgentKind, Adapter> = {
     // `npm ci` would remove `node_modules` first
     recoverArgs: ['install', '--no-audit', '--no-fund', '--prefer-offline'],
     lockfiles: ['package-lock.json', 'npm-shrinkwrap.json'],
-    files: ['.npmrc'],
+    restoredFiles: ['.npmrc'],
     async checkLayout(info, root, env) {
       assertLayout(info, 'install-strategy', await getConfig(info, root, env, 'install-strategy'), 'hoisted')
     },
@@ -70,7 +91,7 @@ export const adapters: Record<AgentKind, Adapter> = {
     installArgs: ['install', '--no-frozen-lockfile', '--config.confirmModulesPurge=false'],
     recoverArgs: ['install', '--frozen-lockfile', '--prefer-offline', '--config.confirmModulesPurge=false'],
     lockfiles: ['pnpm-lock.yaml'],
-    files: ['pnpm-workspace.yaml', '.npmrc'],
+    restoredFiles: ['pnpm-workspace.yaml', '.npmrc'],
     async checkLayout(info, root, env) {
       assertLayout(info, 'node-linker', await getConfig(info, root, env, 'node-linker'), 'hoisted')
     },
@@ -80,10 +101,19 @@ export const adapters: Record<AgentKind, Adapter> = {
     installArgs: ['install', '--non-interactive'],
     recoverArgs: ['install', '--non-interactive', '--frozen-lockfile', '--prefer-offline'],
     lockfiles: ['yarn.lock'],
-    files: ['.yarnrc', '.npmrc'],
+    restoredFiles: ['.yarnrc', '.npmrc'],
     async checkLayout(info, root, env, manifest) {
-      if (!await isYarnClassicPnp(info, root, env, manifest)) return
-      throw new Error(`${info.spec} is configured with Plug'n'Play, only node_modules is supported`)
+      const { pnp, modulesFolder, metaFolder } = await getYarnClassicLayout(info, root, env, manifest)
+      if (pnp) {
+        throw new Error(`${info.spec} is configured with Plug'n'Play, only node_modules is supported`)
+      }
+      if (modulesFolder != null) {
+        throw new Error(`${info.spec} is configured with modules-folder "${modulesFolder}", only node_modules is supported`)
+      }
+      if (metaFolder) {
+        // the install state would be written to `.yarn-meta` instead
+        throw new Error(`${info.spec} is configured with enable-meta-folder, only the install state in node_modules is supported`)
+      }
     },
     readState: readYarnClassicState,
   },
@@ -92,7 +122,7 @@ export const adapters: Record<AgentKind, Adapter> = {
     installArgs: ['install', '--no-immutable'],
     recoverArgs: ['install', '--immutable'],
     lockfiles: ['yarn.lock'],
-    files: ['.yarnrc.yml', '.yarn/install-state.gz'],
+    restoredFiles: ['.yarnrc.yml', '.yarn/install-state.gz'],
     async checkLayout(info, root, env) {
       assertLayout(info, 'nodeLinker', await getConfig(info, root, env, 'nodeLinker'), 'node-modules')
     },
