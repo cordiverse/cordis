@@ -40,6 +40,7 @@ export interface EventOptions {
 export interface Hook extends EventOptions {
   ctx: Context
   callback: (...args: any[]) => any
+  removed?: boolean
 }
 
 export class EventsService {
@@ -55,7 +56,16 @@ export class EventsService {
       if (name === 'internal/update' && !options.global) {
         const hooks = this.fiber._hooks['internal/update'] ??= new DisposableList()
         const method = options.prepend ? 'unshift' : 'push'
-        return this.fiber.effect(() => hooks[method](listener), 'ctx.on("internal/update")')
+        return this.fiber.effect(() => {
+          let removed = false
+          const dispose = hooks[method](function (this: Fiber, config: any, next: () => any) {
+            return removed ? next() : listener.call(this, config, next)
+          })
+          return () => {
+            removed = true
+            return dispose()
+          }
+        }, 'ctx.on("internal/update")')
       }
     })
 
@@ -82,7 +92,13 @@ export class EventsService {
     const filter = thisArg?.[Context.filter]
     const callbacks = (this._hooks[name] || [])
       .filter(hook => hook.global || !filter || filter.call(thisArg, hook.ctx))
-      .map(hook => hook.callback)
+      .map(hook => (...args: any[]) => {
+        if (hook.removed) {
+          if (type === 'waterfall') return args.at(-1)()
+          return
+        }
+        return Reflect.apply(hook.callback, thisArg, args)
+      })
     return [thisArg, callbacks, name] as const
   }
 
@@ -143,15 +159,17 @@ export class EventsService {
     const method = options.prepend ? 'unshift' : 'push'
     return this.ctx.fiber.effect(() => {
       const hooks = this._hooks[name] ??= []
-      hooks[method]({ ctx: this.ctx, callback, ...options })
-      return () => this.unregister(name, callback)
+      const hook = { ctx: this.ctx, callback, ...options }
+      hooks[method](hook)
+      return () => this.unregister(name, hook)
     }, label)
   }
 
-  private unregister(name: string | symbol, callback: any) {
+  private unregister(name: string | symbol, hook: Hook) {
+    hook.removed = true
     const hooks = this._hooks[name]
     if (!hooks) return
-    const index = hooks.findIndex(hook => hook.callback === callback)
+    const index = hooks.indexOf(hook)
     if (index >= 0) {
       hooks.splice(index, 1)
       if (!hooks.length) delete this._hooks[name]
