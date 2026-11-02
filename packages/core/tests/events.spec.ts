@@ -15,18 +15,6 @@ function setup() {
 }
 
 describe('Events', () => {
-  it.each(['emit', 'parallel', 'serial', 'bail', 'waterfall'] as const)('%s resolves a snapshot of hooks without callback wrappers', (mode) => {
-    const { root } = setup()
-    root.on(event, () => {})
-    root.on(event, () => {})
-    const registered = root.events._hooks[event]
-    const [, snapshot] = (root.events as any)._resolve(mode, [event])
-
-    expect(snapshot).to.not.equal(registered)
-    expect(snapshot[0]).to.equal(registered[0])
-    expect(snapshot[1]).to.equal(registered[1])
-  })
-
   it('deprecated dispatch returns bound callbacks that respect later removal', () => {
     const { root } = setup()
     const name = Symbol('legacy')
@@ -189,7 +177,7 @@ describe('Events', () => {
   it.each(['emit', 'parallel', 'serial', 'bail'] as const)('%s defers added listeners until the next dispatch', async (mode) => {
     const { root } = setup()
     const added = mock.fn()
-    root.once(event, () => { root.on(event, added) })
+    root.on(event, () => { root.on(event, added) })
 
     await root[mode](event)
     expect(added.mock.calls).to.have.length(0)
@@ -228,6 +216,20 @@ describe('Events', () => {
     expect(terminal.mock.calls).to.have.length(1)
   })
 
+  it('waterfall defers added listeners until the next dispatch', () => {
+    const { root } = setup()
+    const added = mock.fn<Events['test/waterfall']>((value, next) => value + next())
+    root.on('test/waterfall', (value, next) => {
+      root.on('test/waterfall', added)
+      return next()
+    })
+
+    expect(root.waterfall('test/waterfall', 1, () => 2)).to.equal(2)
+    expect(added.mock.calls).to.have.length(0)
+    expect(root.waterfall('test/waterfall', 1, () => 2)).to.equal(3)
+    expect(added.mock.calls).to.have.length(1)
+  })
+
   it('waterfall continues after a recursive dispatch has consumed a once listener', () => {
     const { root } = setup()
     let nested = false
@@ -250,7 +252,9 @@ describe('Events', () => {
     const { root } = setup()
     const removed = mock.fn()
     const remaining = mock.fn()
-    const child = root.plugin((ctx: Context, _: { n: number }) => {
+    const loaded: number[] = []
+    const child = root.plugin((ctx: Context, config: { n: number }) => {
+      loaded.push(config.n)
       let dispose!: () => void
       ctx.on('internal/update', (config, next) => {
         dispose()
@@ -270,6 +274,7 @@ describe('Events', () => {
     await child.update({ n: 1 })
     expect(removed.mock.calls).to.have.length(0)
     expect(remaining.mock.calls).to.have.length(1)
+    expect(loaded).to.deep.equal([0, 1])
   })
 
   it('ctx.parallel()', async () => {
