@@ -1,0 +1,49 @@
+{
+  "name": "@cordisjs/plugin-package-manager",
+  "description": "Package Manager Service for Cordis",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "lib/index.js",
+  "typings": "lib/index.d.ts",
+  "files": [
+    "lib"
+  ],
+  "author": "Shigma <shigma10826@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cordiverse/cordis.git",
+    "directory": "packages/package-manager"
+  },
+  "bugs": {
+    "url": "https://github.com/cordiverse/cordis/issues"
+  },
+  "homepage": "https://cordis.io/",
+  "keywords": [
+    "cordis",
+    "plugin",
+    "package",
+    "manager",
+    "npm",
+    "pnpm",
+    "yarn",
+    "install"
+  ],
+  "cordis": {
+    "description": {
+      "en": "Package Manager",
+      "zh": "包管理器"
+    }
+  },
+  "peerDependencies": {
+    "cordis": "^4.0.0-rc.12"
+  },
+  "devDependencies": {
+    "cordis": "^4.0.0-rc.12"
+  },
+  "dependencies": {
+    "cosmokit": "^1.8.1",
+    "schemastery": "^3.18.0",
+    "yaml": "^2.9.1"
+  }
+}
