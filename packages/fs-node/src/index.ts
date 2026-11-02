@@ -54,7 +54,8 @@ class Fs extends Service {
         depth: isFile ? 0 : undefined,
         ignored: (path) => {
           path = resolve(path)
-          if (isFile && path !== root && path !== filename) return true
+          if (path === root) return false
+          if (isFile && path !== filename) return true
           return !!options.ignored?.(path)
         },
       })

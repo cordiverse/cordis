@@ -179,6 +179,44 @@ describe('Fs', () => {
       expect([...new Set(fromFile)]).to.deep.equal([claimed])
     }, 15000)
 
+    it('keeps watching a directory whose own path is ignored', async () => {
+      const path = write('.ignored-root/file.txt')
+      const ctx = await setup()
+      const seen: string[] = []
+      await ctx.fs.watch(resolve(fixture, '.ignored-root'), (filename) => { seen.push(filename) }, {
+        ignored: filename => basename(filename).startsWith('.'),
+      })
+
+      await touch(path, () => seen.length)
+      expect([...new Set(seen)]).to.deep.equal([path])
+    }, 15000)
+
+    it('keeps watching a file whose directory is ignored', async () => {
+      const path = write('.ignored-file/entry.txt')
+      const ctx = await setup()
+      const seen: string[] = []
+      await ctx.fs.watch(path, (filename) => { seen.push(filename) }, {
+        ignored: filename => basename(filename).startsWith('.'),
+      })
+
+      await touch(path, () => seen.length)
+      expect([...new Set(seen)]).to.deep.equal([path])
+    }, 15000)
+
+    it('applies `ignored` below the watch root only', async () => {
+      const blocked = write('ignored-below/blocked.txt')
+      const kept = write('ignored-below/kept.txt')
+      const ctx = await setup()
+      const seen: string[] = []
+      await ctx.fs.watch(resolve(fixture, 'ignored-below'), (filename) => { seen.push(filename) }, {
+        ignored: filename => basename(filename) === 'blocked.txt',
+      })
+
+      await touch([blocked, kept], () => seen.length)
+      await new Promise(r => setTimeout(r, 200))
+      expect([...new Set(seen)]).to.deep.equal([kept])
+    }, 15000)
+
     it('runs every callback registered for the same path', async () => {
       const path = write('shared.txt')
       const ctx = await setup()
