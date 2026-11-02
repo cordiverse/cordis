@@ -21,3 +21,18 @@ describe.skipIf(process.platform === 'win32')('run', () => {
     expect(() => process.kill(pid!, 0)).to.throw()
   }, 30000)
 })
+
+describe('createEnv', () => {
+  it('drops npm configuration inherited from the caller', () => {
+    const env = createEnv({
+      npm_config_registry: 'https://host.example/',
+      npm_config_install_strategy: 'linked',
+      npm_package_name: 'caller',
+      KEEP_ME: 'yes',
+    })
+    expect(env).not.toHaveProperty('npm_config_registry')
+    expect(env).not.toHaveProperty('npm_config_install_strategy')
+    expect(env).not.toHaveProperty('npm_package_name')
+    expect(env.KEEP_ME).to.equal('yes')
+  })
+})
