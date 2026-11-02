@@ -40,6 +40,7 @@ export interface EventOptions {
 export interface Hook extends EventOptions {
   ctx: Context
   callback: (...args: any[]) => any
+  removed?: boolean
 }
 
 export class EventsService {
@@ -55,7 +56,16 @@ export class EventsService {
       if (name === 'internal/update' && !options.global) {
         const hooks = this.fiber._hooks['internal/update'] ??= new DisposableList()
         const method = options.prepend ? 'unshift' : 'push'
-        return this.fiber.effect(() => hooks[method](listener), 'ctx.on("internal/update")')
+        return this.fiber.effect(() => {
+          let removed = false
+          const dispose = hooks[method](function (this: Fiber, config: any, next: () => any) {
+            return removed ? next() : listener.call(this, config, next)
+          })
+          return () => {
+            removed = true
+            return dispose()
+          }
+        }, 'ctx.on("internal/update")')
       }
     })
 
@@ -80,21 +90,28 @@ export class EventsService {
       this.emit('internal/dispatch', type, name, args, thisArg)
     }
     const filter = thisArg?.[Context.filter]
-    const callbacks = (this._hooks[name] || [])
+    const hooks = (this._hooks[name] || [])
       .filter(hook => hook.global || !filter || filter.call(thisArg, hook.ctx))
-      .map(hook => hook.callback)
-    return [thisArg, callbacks, name] as const
+    return [thisArg, hooks, name] as const
   }
 
   /** @deprecated */
   dispatch(type: string, args: any[]) {
-    const [thisArg, callbacks] = this._resolve(type, args)
-    return callbacks.map(callback => callback.bind(thisArg))
+    const [thisArg, hooks] = this._resolve(type, args)
+    return hooks.map(hook => (...args: any[]) => {
+      if (hook.removed) {
+        if (type === 'waterfall') return args.at(-1)()
+        return
+      }
+      return Reflect.apply(hook.callback, thisArg, args)
+    })
   }
 
   async parallel(...args: any[]) {
-    const [thisArg, callbacks, name] = this._resolve('parallel', args)
-    const results = await Promise.allSettled(callbacks.map(async callback => Reflect.apply(callback, thisArg, args)))
+    const [thisArg, hooks, name] = this._resolve('parallel', args)
+    const results = await Promise.allSettled(hooks.map(async (hook) => {
+      if (!hook.removed) return Reflect.apply(hook.callback, thisArg, args)
+    }))
     const errors = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
     if (!errors.length) return
     const label = typeof name === 'symbol' ? String(name) : `"${name}"`
@@ -102,39 +119,45 @@ export class EventsService {
   }
 
   emit(...args: any[]) {
-    const [thisArg, callbacks] = this._resolve('emit', args)
-    for (const callback of callbacks) Reflect.apply(callback, thisArg, args)
+    const [thisArg, hooks] = this._resolve('emit', args)
+    for (const hook of hooks) {
+      if (!hook.removed) Reflect.apply(hook.callback, thisArg, args)
+    }
   }
 
   async serial(...args: any[]) {
-    const [thisArg, callbacks] = this._resolve('serial', args)
-    for (const callback of callbacks) {
-      const result = await Reflect.apply(callback, thisArg, args)
+    const [thisArg, hooks] = this._resolve('serial', args)
+    for (const hook of hooks) {
+      if (hook.removed) continue
+      const result = await Reflect.apply(hook.callback, thisArg, args)
       if (isBailed(result)) return result
     }
   }
 
   bail(...args: any[]) {
-    const [thisArg, callbacks] = this._resolve('bail', args)
-    for (const callback of callbacks) {
-      const result = Reflect.apply(callback, thisArg, args)
+    const [thisArg, hooks] = this._resolve('bail', args)
+    for (const hook of hooks) {
+      if (hook.removed) continue
+      const result = Reflect.apply(hook.callback, thisArg, args)
       if (isBailed(result)) return result
     }
   }
 
   waterfall(...args: any[]) {
-    const [thisArg, callbacks] = this._resolve('waterfall', args)
+    const [thisArg, hooks] = this._resolve('waterfall', args)
     const inner = args.pop()
+    let index = 0
     const dispatch = () => {
-      const callback = callbacks.shift()
-      if (!callback) return inner()
+      while (hooks[index]?.removed) index++
+      const hook = hooks[index++]
+      if (!hook) return inner()
       let called = false
       const next = () => {
         if (called) throw new Error('next() called multiple times')
         called = true
         return dispatch()
       }
-      return Reflect.apply(callback, thisArg, [...args, next])
+      return Reflect.apply(hook.callback, thisArg, [...args, next])
     }
     return dispatch()
   }
@@ -143,15 +166,17 @@ export class EventsService {
     const method = options.prepend ? 'unshift' : 'push'
     return this.ctx.fiber.effect(() => {
       const hooks = this._hooks[name] ??= []
-      hooks[method]({ ctx: this.ctx, callback, ...options })
-      return () => this.unregister(name, callback)
+      const hook = { ctx: this.ctx, callback, ...options }
+      hooks[method](hook)
+      return () => this.unregister(name, hook)
     }, label)
   }
 
-  private unregister(name: string | symbol, callback: any) {
+  private unregister(name: string | symbol, hook: Hook) {
+    hook.removed = true
     const hooks = this._hooks[name]
     if (!hooks) return
-    const index = hooks.findIndex(hook => hook.callback === callback)
+    const index = hooks.indexOf(hook)
     if (index >= 0) {
       hooks.splice(index, 1)
       if (!hooks.length) delete this._hooks[name]
