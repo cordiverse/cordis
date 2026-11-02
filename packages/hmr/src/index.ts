@@ -2,6 +2,7 @@ import { Context, Fiber, Plugin, Service } from 'cordis'
 import { getModuleJobs, ModuleJob, ModuleLoader, ModuleStatus, unwrapExports } from '@cordisjs/loader-utils'
 import type {} from '@cordisjs/plugin-fs-node'
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { realpathSync } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { handleError } from './error.ts'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -196,7 +197,18 @@ class Hmr extends Service {
     // Collect host modules: framework modules reachable from the main entry.
     // process.argv[1] is undefined in REPL, node -e, and some packed binaries.
     if (process.argv[1]) {
-      const mainUrl = pathToFileURL(resolve(process.argv[1])).href
+      const entry = resolve(process.argv[1])
+      // Node keys its load cache by the real path, so an entry started through
+      // a symlink (a package manager's bin shim) is not cacheable under
+      // `argv[1]`. `--preserve-symlinks-main` keeps the link, so try it first.
+      let mainUrl = pathToFileURL(entry).href
+      if (!this.internal.loadCache.has(mainUrl)) {
+        try {
+          mainUrl = pathToFileURL(realpathSync(entry)).href
+        } catch {
+          // the entry may be gone; keep the unresolved URL
+        }
+      }
       if (this.internal.loadCache.has(mainUrl)) {
         this.hostModules = await closure([mainUrl], url => this._edges(url))
       }
