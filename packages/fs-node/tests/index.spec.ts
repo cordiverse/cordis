@@ -109,7 +109,7 @@ describe('Fs', () => {
       const ctx = await setup()
       const seen: string[] = []
       await ctx.fs.watch(toUrl(dirname(path)), (filename) => { seen.push(filename) }, {
-        ignored: path => path !== 'file.txt',
+        filter: path => path === 'file.txt',
       })
 
       await touch(path, () => seen.length)
@@ -178,14 +178,14 @@ describe('Fs', () => {
       expect([...new Set(seen)]).to.deep.equal([path])
     }, 15000)
 
-    it('applies `ignored` to each watch on its own', async () => {
-      const kept = write('ignored/kept.txt')
-      const claimed = write('ignored/.claimed.yml')
+    it('applies `filter` to each watch on its own', async () => {
+      const kept = write('filtered/kept.txt')
+      const claimed = write('filtered/.claimed.yml')
       const ctx = await setup()
       const fromDir: string[] = []
       const fromFile: string[] = []
-      await ctx.fs.watch(resolve(fixture, 'ignored'), (filename) => { fromDir.push(filename) }, {
-        ignored: path => path.startsWith('.'),
+      await ctx.fs.watch(resolve(fixture, 'filtered'), (filename) => { fromDir.push(filename) }, {
+        filter: path => !path.startsWith('.'),
       })
       await ctx.fs.watch(claimed, (filename) => { fromFile.push(filename) })
 
@@ -195,61 +195,104 @@ describe('Fs', () => {
       expect([...new Set(fromFile)]).to.deep.equal([claimed])
     }, 15000)
 
-    it('passes `ignored` the paths relative to the watched directory', async () => {
+    it('passes `filter` the paths relative to the watched directory and their types', async () => {
       const path = write('relative/nested/file.txt')
       const ctx = await setup()
-      const tested: string[] = []
+      const tested: [string, boolean][] = []
       const seen: string[] = []
       await ctx.fs.watch(resolve(fixture, 'relative'), (filename) => { seen.push(filename) }, {
-        ignored: (path) => {
-          tested.push(path)
-          return false
+        filter: (path, isDirectory) => {
+          tested.push([path, isDirectory])
+          return true
         },
       })
 
       await touch(path, () => seen.length)
-      expect(tested).to.include.members(['nested', 'nested/file.txt'])
-      expect(tested.filter(path => !path || isAbsolute(path) || path.includes('\\'))).to.deep.equal([])
+      expect(tested).to.deep.include.members([['nested', true], ['nested/file.txt', false]])
+      expect(tested.filter(([path]) => !path || isAbsolute(path) || path.includes('\\'))).to.deep.equal([])
     }, 15000)
 
-    it('matches glob patterns against the paths relative to the watched directory', async () => {
-      const kept = write('glob/kept.txt')
-      const nested = write('glob/nested/skip/file.txt')
-      const numbered = write('glob/log1.txt')
-      const hidden = write('glob/.hidden.txt')
-      const skipped = write('glob/skip/file.txt')
-      const lettered = write('glob/logx.txt')
+    it('selects the files by glob patterns relative to the watched directory', async () => {
+      const selected = [
+        write('glob/lib/file.txt'),
+        write('glob/src/index.ts'),
+        write('glob/src/deep/index.ts'),
+        write('glob/src/log1.ts'),
+        write('glob/packages/a/deep/file.js'),
+      ]
+      const others = [
+        write('glob/lib/.hidden.txt'),
+        write('glob/src/index.js'),
+        write('glob/src/logx.ts'),
+        write('glob/other.txt'),
+      ]
       const ctx = await setup()
       const seen: string[] = []
       await ctx.fs.watch(resolve(fixture, 'glob'), (filename) => { seen.push(filename) }, {
-        ignored: ['**/.*', 'skip', 'log[!0-9].txt'],
+        filter: ['lib', 'src/**/*.ts', 'packages/*', '!**/.*', '!src/log[!0-9].ts'],
       })
 
-      const expected = [kept, nested, numbered]
-      await touch([...expected, hidden, skipped, lettered], () => expected.every(path => seen.includes(path)))
+      await touch([...selected, ...others], () => selected.every(path => seen.includes(path)))
       await new Promise(r => setTimeout(r, 200))
-      expect([...new Set(seen)].sort()).to.deep.equal(expected.sort())
+      expect([...new Set(seen)].sort()).to.deep.equal(selected.sort())
     }, 15000)
 
-    it('does not apply `ignored` to the watched directory', async () => {
+    it('decides an entry by the last pattern that matches it or one of its ancestors', async () => {
+      const selected = [
+        write('ordered/src/index.ts'),
+        write('ordered/src/gen/keep.ts'),
+      ]
+      const others = [
+        write('ordered/src/gen/other.ts'),
+      ]
+      const ctx = await setup()
+      const seen: string[] = []
+      await ctx.fs.watch(resolve(fixture, 'ordered'), (filename) => { seen.push(filename) }, {
+        filter: ['src', '!src/gen', 'src/gen/keep.ts'],
+      })
+
+      await touch([...selected, ...others], () => selected.every(path => seen.includes(path)))
+      await new Promise(r => setTimeout(r, 200))
+      expect([...new Set(seen)].sort()).to.deep.equal(selected.sort())
+    }, 15000)
+
+    it('keeps no entry with an empty `filter`', async () => {
+      const path = write('empty/file.txt')
+      const ctx = await setup()
+      const seen: string[] = []
+      const fromFile: string[] = []
+      await ctx.fs.watch(resolve(fixture, 'empty'), (filename) => { seen.push(filename) }, { filter: [] })
+      await ctx.fs.watch(path, (filename) => { fromFile.push(filename) })
+
+      await touch(path, () => fromFile.length)
+      await new Promise(r => setTimeout(r, 200))
+      expect(seen).to.deep.equal([])
+    }, 15000)
+
+    it('rejects a `filter` entry leading outside the watched directory', async () => {
+      const ctx = await setup()
+      for (const entry of ['../outside', '!../outside', 'a/../../outside', '/absolute']) {
+        expect(() => ctx.fs.watch(fixture, () => {}, { filter: [entry] })).to.throw(TypeError)
+      }
+    })
+
+    it('does not apply `filter` to the watched directory', async () => {
       const path = write('.root/file.txt')
       const ctx = await setup()
       const seen: string[] = []
       await ctx.fs.watch(resolve(fixture, '.root'), (filename) => { seen.push(filename) }, {
-        ignored: ['**/.*'],
+        filter: ['.', '!**/.*'],
       })
 
       await touch(path, () => seen.length)
       expect([...new Set(seen)]).to.deep.equal([path])
     }, 15000)
 
-    it('does not apply `ignored` to a watched file', async () => {
+    it('does not apply `filter` to a watched file', async () => {
       const path = write('.parent/.file')
       const ctx = await setup()
       const seen: string[] = []
-      await ctx.fs.watch(path, (filename) => { seen.push(filename) }, {
-        ignored: () => true,
-      })
+      await ctx.fs.watch(path, (filename) => { seen.push(filename) }, { filter: [] })
 
       await touch(path, () => seen.length)
       expect([...new Set(seen)]).to.deep.equal([path])
