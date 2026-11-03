@@ -1,6 +1,6 @@
 import { Context, Fiber } from 'cordis'
 import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { basename, dirname, relative, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { FSWatcher } from 'chokidar'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -100,6 +100,22 @@ describe('Fs', () => {
       expect([...new Set(seen)]).to.deep.equal([path])
     }, 15000)
 
+    // `fileURLToPath()` keeps the trailing slash of a directory URL.
+    it.each([
+      ['string', (path: string) => pathToFileURL(path).href + '/'],
+      ['object', (path: string) => new URL(pathToFileURL(path).href + '/')],
+    ])('accepts a directory URL with a trailing slash as a %s', async (kind, toUrl) => {
+      const path = write(`url-dir-${kind}/file.txt`)
+      const ctx = await setup()
+      const seen: string[] = []
+      await ctx.fs.watch(toUrl(dirname(path)), (filename) => { seen.push(filename) }, {
+        ignored: path => path !== 'file.txt',
+      })
+
+      await touch(path, () => seen.length)
+      expect([...new Set(seen)]).to.deep.equal([path])
+    }, 15000)
+
     it.runIf(process.platform === 'win32')('matches paths that differ in case on Windows', async () => {
       const path = write('case.txt')
       const ctx = await setup()
@@ -169,7 +185,7 @@ describe('Fs', () => {
       const fromDir: string[] = []
       const fromFile: string[] = []
       await ctx.fs.watch(resolve(fixture, 'ignored'), (filename) => { fromDir.push(filename) }, {
-        ignored: filename => basename(filename).startsWith('.'),
+        ignored: path => path.startsWith('.'),
       })
       await ctx.fs.watch(claimed, (filename) => { fromFile.push(filename) })
 
@@ -177,6 +193,66 @@ describe('Fs', () => {
       await new Promise(r => setTimeout(r, 200))
       expect([...new Set(fromDir)]).to.deep.equal([kept])
       expect([...new Set(fromFile)]).to.deep.equal([claimed])
+    }, 15000)
+
+    it('passes `ignored` the paths relative to the watched directory', async () => {
+      const path = write('relative/nested/file.txt')
+      const ctx = await setup()
+      const tested: string[] = []
+      const seen: string[] = []
+      await ctx.fs.watch(resolve(fixture, 'relative'), (filename) => { seen.push(filename) }, {
+        ignored: (path) => {
+          tested.push(path)
+          return false
+        },
+      })
+
+      await touch(path, () => seen.length)
+      expect(tested).to.include.members(['nested', 'nested/file.txt'])
+      expect(tested.filter(path => !path || isAbsolute(path) || path.includes('\\'))).to.deep.equal([])
+    }, 15000)
+
+    it('matches glob patterns against the paths relative to the watched directory', async () => {
+      const kept = write('glob/kept.txt')
+      const nested = write('glob/nested/skip/file.txt')
+      const numbered = write('glob/log1.txt')
+      const hidden = write('glob/.hidden.txt')
+      const skipped = write('glob/skip/file.txt')
+      const lettered = write('glob/logx.txt')
+      const ctx = await setup()
+      const seen: string[] = []
+      await ctx.fs.watch(resolve(fixture, 'glob'), (filename) => { seen.push(filename) }, {
+        ignored: ['**/.*', 'skip', 'log[!0-9].txt'],
+      })
+
+      const expected = [kept, nested, numbered]
+      await touch([...expected, hidden, skipped, lettered], () => expected.every(path => seen.includes(path)))
+      await new Promise(r => setTimeout(r, 200))
+      expect([...new Set(seen)].sort()).to.deep.equal(expected.sort())
+    }, 15000)
+
+    it('does not apply `ignored` to the watched directory', async () => {
+      const path = write('.root/file.txt')
+      const ctx = await setup()
+      const seen: string[] = []
+      await ctx.fs.watch(resolve(fixture, '.root'), (filename) => { seen.push(filename) }, {
+        ignored: ['**/.*'],
+      })
+
+      await touch(path, () => seen.length)
+      expect([...new Set(seen)]).to.deep.equal([path])
+    }, 15000)
+
+    it('does not apply `ignored` to a watched file', async () => {
+      const path = write('.parent/.file')
+      const ctx = await setup()
+      const seen: string[] = []
+      await ctx.fs.watch(path, (filename) => { seen.push(filename) }, {
+        ignored: () => true,
+      })
+
+      await touch(path, () => seen.length)
+      expect([...new Set(seen)]).to.deep.equal([path])
     }, 15000)
 
     it('runs every callback registered for the same path', async () => {
