@@ -2,6 +2,7 @@ import { Context, Fiber, Plugin, Service } from 'cordis'
 import { getModuleJobs, ModuleJob, ModuleLoader, ModuleStatus, unwrapExports } from '@cordisjs/loader-utils'
 import type {} from '@cordisjs/plugin-fs-node'
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { realpathSync } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { handleError } from './error.ts'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -142,6 +143,19 @@ class Hmr extends Service {
       this.ctx.logger.info('watching %o in %s', root, this.baseDir)
     }
 
+    // #282 matches a reconcile root against module URLs as it is, and those
+    // URLs are real paths unless `--preserve-symlinks` keeps the link.
+    // chokidar reports the spelling it was given, and a watch root below a
+    // symlink keeps that spelling, so an event records both the given path and
+    // its real path. A path that no longer exists is kept as it is.
+    const canonical = (path: string) => {
+      try {
+        return realpathSync(path)
+      } catch {
+        return path
+      }
+    }
+
     const stashed = new Set<string>()
     const retained = new Set<string>()
     let timer: NodeJS.Timeout | undefined
@@ -183,6 +197,8 @@ class Hmr extends Service {
       ctx.fs.watch(resolve(this.baseDir, path), (filename) => {
         this.ctx.logger.debug('change detected at %C', relative(this.baseDir, filename))
         stashed.add(filename)
+        const real = canonical(filename)
+        if (real !== filename) stashed.add(real)
         clearTimeout(timer)
         timer = setTimeout(() => flushing = flushing.then(flush), debounce)
       }, {
