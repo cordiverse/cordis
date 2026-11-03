@@ -177,12 +177,12 @@ class Hmr extends Service {
       }
     }
 
-    ctx.fs.watch(this.baseDir, (filename) => {
+    ctx.fs.watch(this.baseDir, { filter: files }).on('change', (filename) => {
       this.ctx.logger.debug('change detected at %C', relative(this.baseDir, filename))
       stashed.add(filename)
       clearTimeout(timer)
       timer = setTimeout(() => flushing = flushing.then(flush), debounce)
-    }, { filter: files })
+    })
   }
 
   async* [Service.init]() {

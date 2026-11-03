@@ -293,7 +293,7 @@ export class Include extends EntryTree {
 
     if (config.watch) {
       ctx.inject(['fs'], (ctx) => {
-        ctx.fs.watch(this.filename, () => this.refresh())
+        ctx.fs.watch(this.filename).on('change', () => this.refresh())
       })
     }
   }

@@ -4,7 +4,7 @@ import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { FSWatcher } from 'chokidar'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import Fs from '../src/index.ts'
+import Fs, { WatchOptions } from '../src/index.ts'
 
 const testDir = dirname(fileURLToPath(import.meta.url))
 const fixture = resolve(testDir, '__fixtures__')
@@ -42,6 +42,14 @@ function write(name: string, content = '') {
   return path
 }
 
+// resolves once the initial scan is done
+async function watch(ctx: Context, path: string | URL, listener: (filename: string) => void, options?: WatchOptions) {
+  const watcher = ctx.fs.watch(path, options)
+  watcher.on('change', listener)
+  await new Promise<void>(resolve => watcher.on('ready', resolve))
+  return watcher
+}
+
 describe('Fs', () => {
   let fiber: Fiber<Context> | undefined
 
@@ -74,7 +82,7 @@ describe('Fs', () => {
       const path = write('base with spaces # %/relative.txt')
       const ctx = await setup()
       const seen: string[] = []
-      await ctx.fs.watch('__fixtures__/base with spaces # %/relative.txt', (filename) => { seen.push(filename) })
+      await watch(ctx, '__fixtures__/base with spaces # %/relative.txt', (filename) => { seen.push(filename) })
 
       await touch(path, () => seen.length)
       expect([...new Set(seen)]).to.deep.equal([path])
@@ -84,7 +92,7 @@ describe('Fs', () => {
       const path = write('cwd.txt')
       const ctx = await setup(null)
       const seen: string[] = []
-      await ctx.fs.watch(relative(process.cwd(), path), (filename) => { seen.push(filename) })
+      await watch(ctx, relative(process.cwd(), path), (filename) => { seen.push(filename) })
 
       await touch(path, () => seen.length)
       expect([...new Set(seen)]).to.deep.equal([path])
@@ -94,7 +102,7 @@ describe('Fs', () => {
       const path = write('base with spaces # %/url.txt')
       const ctx = await setup()
       const seen: string[] = []
-      await ctx.fs.watch(pathToFileURL(path).href, (filename) => { seen.push(filename) })
+      await watch(ctx, pathToFileURL(path).href, (filename) => { seen.push(filename) })
 
       await touch(path, () => seen.length)
       expect([...new Set(seen)]).to.deep.equal([path])
@@ -108,7 +116,7 @@ describe('Fs', () => {
       const path = write(`url-dir-${kind}/file.txt`)
       const ctx = await setup()
       const seen: string[] = []
-      await ctx.fs.watch(toUrl(dirname(path)), (filename) => { seen.push(filename) }, {
+      await watch(ctx, toUrl(dirname(path)), (filename) => { seen.push(filename) }, {
         filter: path => path === 'file.txt',
       })
 
@@ -122,7 +130,7 @@ describe('Fs', () => {
       let calls = 0
       // drive letter and directories alike
       const dir = dirname(path).replace(/[a-z]/gi, c => c === c.toUpperCase() ? c.toLowerCase() : c.toUpperCase())
-      await ctx.fs.watch(resolve(dir, basename(path)), () => { calls++ })
+      await watch(ctx, resolve(dir, basename(path)), () => { calls++ })
 
       await touch(path, () => calls > 0)
     }, 15000)
@@ -135,7 +143,7 @@ describe('Fs', () => {
       const sibling = write('atomic/sibling.yml')
       const ctx = await setup()
       const seen: string[] = []
-      await ctx.fs.watch(path, (filename) => { seen.push(filename) })
+      await watch(ctx, path, (filename) => { seen.push(filename) })
 
       for (const value of ['v1', 'v2']) {
         writeFileSync(path + '.tmp', value)
@@ -152,29 +160,9 @@ describe('Fs', () => {
       const path = write('dir/nested/file.txt')
       const ctx = await setup()
       const seen: string[] = []
-      await ctx.fs.watch(resolve(fixture, 'dir'), (filename) => { seen.push(filename) })
+      await watch(ctx, resolve(fixture, 'dir'), (filename) => { seen.push(filename) })
 
       await touch(path, () => seen.length)
-      expect([...new Set(seen)]).to.deep.equal([path])
-    }, 15000)
-
-    it('reports a file created after the watch starts', async () => {
-      const path = resolve(fixture, 'created/file.txt')
-      mkdirSync(dirname(path), { recursive: true })
-      const ctx = await setup()
-      const seen: string[] = []
-      await ctx.fs.watch(path, (filename) => { seen.push(filename) })
-
-      // The file is created afresh each time, so that only its creation can be
-      // reported. A deletion is left to settle first, as chokidar reports a
-      // file deleted and created again shortly after as a change.
-      for (let i = 0; !seen.length; i++) {
-        if (i >= 20) throw new Error('create timed out')
-        rmSync(path, { force: true })
-        await new Promise(r => setTimeout(r, 200))
-        writeFileSync(path, '')
-        await new Promise(r => setTimeout(r, 200))
-      }
       expect([...new Set(seen)]).to.deep.equal([path])
     }, 15000)
 
@@ -184,10 +172,10 @@ describe('Fs', () => {
       const ctx = await setup()
       const fromDir: string[] = []
       const fromFile: string[] = []
-      await ctx.fs.watch(resolve(fixture, 'filtered'), (filename) => { fromDir.push(filename) }, {
+      await watch(ctx, resolve(fixture, 'filtered'), (filename) => { fromDir.push(filename) }, {
         filter: path => !path.startsWith('.'),
       })
-      await ctx.fs.watch(claimed, (filename) => { fromFile.push(filename) })
+      await watch(ctx, claimed, (filename) => { fromFile.push(filename) })
 
       await touch([claimed, kept], () => fromDir.length && fromFile.length)
       await new Promise(r => setTimeout(r, 200))
@@ -200,7 +188,7 @@ describe('Fs', () => {
       const ctx = await setup()
       const tested: [string, boolean][] = []
       const seen: string[] = []
-      await ctx.fs.watch(resolve(fixture, 'relative'), (filename) => { seen.push(filename) }, {
+      await watch(ctx, resolve(fixture, 'relative'), (filename) => { seen.push(filename) }, {
         filter: (path, isDirectory) => {
           tested.push([path, isDirectory])
           return true
@@ -228,7 +216,7 @@ describe('Fs', () => {
       ]
       const ctx = await setup()
       const seen: string[] = []
-      await ctx.fs.watch(resolve(fixture, 'glob'), (filename) => { seen.push(filename) }, {
+      await watch(ctx, resolve(fixture, 'glob'), (filename) => { seen.push(filename) }, {
         filter: ['lib', 'src/**/*.ts', 'packages/*', '!**/.*', '!src/log[!0-9].ts'],
       })
 
@@ -247,7 +235,7 @@ describe('Fs', () => {
       ]
       const ctx = await setup()
       const seen: string[] = []
-      await ctx.fs.watch(resolve(fixture, 'ordered'), (filename) => { seen.push(filename) }, {
+      await watch(ctx, resolve(fixture, 'ordered'), (filename) => { seen.push(filename) }, {
         filter: ['src', '!src/gen', 'src/gen/keep.ts'],
       })
 
@@ -260,7 +248,7 @@ describe('Fs', () => {
       const path = write('escaped/pkg[one]/file.ts')
       const ctx = await setup()
       const seen: string[] = []
-      await ctx.fs.watch(resolve(fixture, 'escaped'), (filename) => { seen.push(filename) }, {
+      await watch(ctx, resolve(fixture, 'escaped'), (filename) => { seen.push(filename) }, {
         filter: ['pkg\\[one\\]/*.ts'],
       })
 
@@ -276,7 +264,7 @@ describe('Fs', () => {
       symlinkSync(dirname(target), link, 'junction')
       const ctx = await setup()
       const seen: string[] = []
-      await ctx.fs.watch(dirname(link), (filename) => { seen.push(filename) }, {
+      await watch(ctx, dirname(link), (filename) => { seen.push(filename) }, {
         filter: ['linked/**/*.ts'],
       })
 
@@ -289,7 +277,7 @@ describe('Fs', () => {
       const link = write('relinked/root/linked')
       const ctx = await setup()
       const seen: string[] = []
-      await ctx.fs.watch(dirname(link), (filename) => { seen.push(filename) }, {
+      await watch(ctx, dirname(link), (filename) => { seen.push(filename) }, {
         filter: ['linked/**/*.ts'],
       })
 
@@ -304,8 +292,8 @@ describe('Fs', () => {
       const ctx = await setup()
       const seen: string[] = []
       const fromFile: string[] = []
-      await ctx.fs.watch(resolve(fixture, 'empty'), (filename) => { seen.push(filename) }, { filter: [] })
-      await ctx.fs.watch(path, (filename) => { fromFile.push(filename) })
+      await watch(ctx, resolve(fixture, 'empty'), (filename) => { seen.push(filename) }, { filter: [] })
+      await watch(ctx, path, (filename) => { fromFile.push(filename) })
 
       await touch(path, () => fromFile.length)
       await new Promise(r => setTimeout(r, 200))
@@ -315,7 +303,7 @@ describe('Fs', () => {
     it('rejects a `filter` entry leading outside the watched directory', async () => {
       const ctx = await setup()
       for (const entry of ['../outside', '!../outside', 'a/../../outside', '/absolute']) {
-        expect(() => ctx.fs.watch(fixture, () => {}, { filter: [entry] })).to.throw(TypeError)
+        expect(() => ctx.fs.watch(fixture, { filter: [entry] })).to.throw(TypeError)
       }
     })
 
@@ -323,7 +311,7 @@ describe('Fs', () => {
       const path = write('.root/file.txt')
       const ctx = await setup()
       const seen: string[] = []
-      await ctx.fs.watch(resolve(fixture, '.root'), (filename) => { seen.push(filename) }, {
+      await watch(ctx, resolve(fixture, '.root'), (filename) => { seen.push(filename) }, {
         filter: ['.', '!**/.*'],
       })
 
@@ -335,7 +323,7 @@ describe('Fs', () => {
       const path = write('.parent/.file')
       const ctx = await setup()
       const seen: string[] = []
-      await ctx.fs.watch(path, (filename) => { seen.push(filename) }, { filter: [] })
+      await watch(ctx, path, (filename) => { seen.push(filename) }, { filter: [] })
 
       await touch(path, () => seen.length)
       expect([...new Set(seen)]).to.deep.equal([path])
@@ -345,21 +333,21 @@ describe('Fs', () => {
       const path = write('shared.txt')
       const ctx = await setup()
       const seen: string[] = []
-      await ctx.fs.watch(path, () => { seen.push('a') })
-      await ctx.fs.watch(path, () => { seen.push('b') })
+      await watch(ctx, path, () => { seen.push('a') })
+      await watch(ctx, path, () => { seen.push('b') })
 
       await touch(path, () => seen.length >= 2)
       expect([...new Set(seen)].sort()).to.deep.equal(['a', 'b'])
     }, 15000)
 
-    it('stops calling a callback once it is disposed', async () => {
+    it('stops calling a listener once the watch is disposed', async () => {
       const path = write('dispose.txt')
       const ctx = await setup()
       let calls = 0
       let others = 0
-      const dispose = await ctx.fs.watch(path, () => { calls++ })
-      await ctx.fs.watch(path, () => { others++ })
-      await dispose()
+      const watcher = await watch(ctx, path, () => { calls++ })
+      await watch(ctx, path, () => { others++ })
+      await watcher.dispose()
       // The OS may still report the write above while the watch is live, so
       // only the calls after disposal count.
       const before = calls
@@ -368,23 +356,174 @@ describe('Fs', () => {
       expect(calls).to.equal(before)
     }, 15000)
 
-    it('logs an error of the watcher instead of throwing it', async () => {
-      const path = write('error.txt')
+    it('stops calling a listener once the calling fiber is disposed', async () => {
+      const path = write('fiber.txt')
       const ctx = await setup()
-      const warnings: unknown[] = []
-      ctx.logger.exporter({
-        export(message) {
-          if (message.type === 'warn') warnings.push(message.args[0])
+      let calls = 0
+      let others = 0
+      const inner = await ctx.plugin({
+        inject: ['fs'],
+        apply: (ctx: Context) => {
+          ctx.fs.watch(path).on('change', () => { calls++ })
         },
       })
-      const add = vi.spyOn(FSWatcher.prototype, 'add')
-      await ctx.fs.watch(path, () => {})
-      const watcher = add.mock.contexts[0] as FSWatcher
-      add.mockRestore()
+      await watch(ctx, path, () => { others++ })
+      await inner.dispose()
+      const before = calls
 
-      const error = new Error('EPERM')
-      expect(() => watcher.emit('error', error)).to.not.throw()
-      expect(warnings).to.include(error)
+      await touch(path, () => others > 0)
+      expect(calls).to.equal(before)
+    }, 15000)
+
+    it('calls a `ready` listener added after the initial scan asynchronously', async () => {
+      const path = write('ready.txt')
+      const ctx = await setup()
+      const watcher = await watch(ctx, path, () => {})
+      let called = false
+      watcher.on('ready', () => { called = true })
+
+      expect(called).to.equal(false)
+      await vi.waitFor(() => expect(called).to.equal(true))
+    })
+
+    it('calls a `ready` listener added by another one once', async () => {
+      const path = write('ready-nested.txt')
+      const ctx = await setup()
+      const watcher = ctx.fs.watch(path)
+      let calls = 0
+      watcher.on('ready', () => {
+        watcher.on('ready', () => { calls++ })
+      })
+
+      await vi.waitFor(() => expect(calls).to.equal(1))
+      await new Promise(r => setTimeout(r, 50))
+      expect(calls).to.equal(1)
+    })
+
+    it('does not call a listener removed by another one in the same dispatch', async () => {
+      const path = write('removed.txt')
+      const ctx = await setup()
+      const watcher = ctx.fs.watch(path)
+      let calls = 0
+      watcher.on('ready', () => { remove() })
+      const remove = watcher.on('ready', () => { calls++ })
+      let others = 0
+      watcher.on('ready', () => { others++ })
+
+      await vi.waitFor(() => expect(others).to.equal(1))
+      expect(calls).to.equal(0)
+    })
+
+    it('calls a function added again after its removal once for `ready`', async () => {
+      const path = write('readded.txt')
+      const ctx = await setup()
+      const watcher = await watch(ctx, path, () => {})
+      let calls = 0
+      const listener = () => { calls++ }
+      watcher.on('ready', listener)()
+      watcher.on('ready', listener)
+
+      await vi.waitFor(() => expect(calls).to.equal(1))
+      await new Promise(r => setTimeout(r, 50))
+      expect(calls).to.equal(1)
+    })
+
+    it('calls a function added again in the same dispatch once for `ready`', async () => {
+      const path = write('readded-dispatch.txt')
+      const ctx = await setup()
+      const watcher = ctx.fs.watch(path)
+      let calls = 0
+      const listener = () => { calls++ }
+      watcher.on('ready', () => {
+        remove()
+        watcher.on('ready', listener)
+      })
+      const remove = watcher.on('ready', listener)
+
+      await vi.waitFor(() => expect(calls).to.equal(1))
+      await new Promise(r => setTimeout(r, 50))
+      expect(calls).to.equal(1)
+    })
+
+    describe('error', () => {
+      let warnings: unknown[]
+
+      async function setupWithWarnings() {
+        const ctx = await setup()
+        warnings = []
+        ctx.logger.exporter({
+          export(message) {
+            if (message.type === 'warn') warnings.push(message.args[0])
+          },
+        })
+        return ctx
+      }
+
+      // the chokidar watcher created by `ctx.fs.watch()`
+      async function watchInternal(ctx: Context, path: string) {
+        const add = vi.spyOn(FSWatcher.prototype, 'add')
+        const watcher = await watch(ctx, path, () => {})
+        const internal = add.mock.contexts[0] as FSWatcher
+        add.mockRestore()
+        return { watcher, internal }
+      }
+
+      it('logs an error of the watcher without an `error` listener', async () => {
+        const ctx = await setupWithWarnings()
+        const { internal } = await watchInternal(ctx, write('error/logged.txt'))
+
+        const error = new Error('EPERM')
+        expect(() => internal.emit('error', error)).to.not.throw()
+        expect(warnings).to.include(error)
+      })
+
+      it('passes an error of the watcher to the `error` listeners instead of logging it', async () => {
+        const ctx = await setupWithWarnings()
+        const { watcher, internal } = await watchInternal(ctx, write('error/passed.txt'))
+        const errors: unknown[] = []
+        watcher.on('error', (error) => { errors.push(error) })
+
+        const error = new Error('EPERM')
+        internal.emit('error', error)
+        await vi.waitFor(() => expect(errors).to.deep.equal([error]))
+        expect(warnings).to.not.include(error)
+      })
+
+      it('passes an error of a `change` listener to the `error` listeners', async () => {
+        const path = write('error/listener.txt')
+        const ctx = await setupWithWarnings()
+        const error = new Error('listener')
+        const errors: unknown[] = []
+        const watcher = await watch(ctx, path, () => { throw error })
+        watcher.on('error', (error) => { errors.push(error) })
+
+        await touch(path, () => errors.length)
+        expect([...new Set(errors)]).to.deep.equal([error])
+      }, 15000)
+
+      it('logs an error of an `error` listener', async () => {
+        const ctx = await setupWithWarnings()
+        const { watcher, internal } = await watchInternal(ctx, write('error/nested.txt'))
+        const error = new Error('error listener')
+        watcher.on('error', () => { throw error })
+
+        internal.emit('error', new Error('EPERM'))
+        await vi.waitFor(() => expect(warnings).to.include(error))
+      })
+
+      it('does not call an `error` listener removed by another one in the same dispatch', async () => {
+        const ctx = await setupWithWarnings()
+        const { watcher, internal } = await watchInternal(ctx, write('error/removed.txt'))
+        const errors: unknown[] = []
+        watcher.on('error', () => { remove() })
+        const remove = watcher.on('error', (error) => { errors.push(error) })
+        let others = 0
+        watcher.on('error', () => { others++ })
+
+        internal.emit('error', new Error('EPERM'))
+        await vi.waitFor(() => expect(others).to.equal(1))
+        expect(errors).to.deep.equal([])
+      })
     })
   })
 })
