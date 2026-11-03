@@ -1,5 +1,5 @@
 import { Context, Fiber } from 'cordis'
-import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { FSWatcher } from 'chokidar'
@@ -254,6 +254,49 @@ describe('Fs', () => {
       await touch([...selected, ...others], () => selected.every(path => seen.includes(path)))
       await new Promise(r => setTimeout(r, 200))
       expect([...new Set(seen)].sort()).to.deep.equal(selected.sort())
+    }, 15000)
+
+    it('descends into a directory whose name a pattern escapes', async () => {
+      const path = write('escaped/pkg[one]/file.ts')
+      const ctx = await setup()
+      const seen: string[] = []
+      await ctx.fs.watch(resolve(fixture, 'escaped'), (filename) => { seen.push(filename) }, {
+        filter: ['pkg\\[one\\]/*.ts'],
+      })
+
+      await touch(path, () => seen.length)
+      expect([...new Set(seen)]).to.deep.equal([path])
+    }, 15000)
+
+    it('treats a symbolic link to a directory as a directory', async () => {
+      const target = write('symlink/target/file.ts')
+      const link = resolve(fixture, 'symlink/root/linked')
+      mkdirSync(dirname(link), { recursive: true })
+      // a junction needs no privilege on Windows, and the type is ignored elsewhere
+      symlinkSync(dirname(target), link, 'junction')
+      const ctx = await setup()
+      const seen: string[] = []
+      await ctx.fs.watch(dirname(link), (filename) => { seen.push(filename) }, {
+        filter: ['linked/**/*.ts'],
+      })
+
+      await touch(target, () => seen.length)
+      expect([...new Set(seen)]).to.deep.equal([resolve(link, 'file.ts')])
+    }, 15000)
+
+    it('treats a file replaced with a symbolic link to a directory as a directory', async () => {
+      const target = write('relinked/target/file.ts')
+      const link = write('relinked/root/linked')
+      const ctx = await setup()
+      const seen: string[] = []
+      await ctx.fs.watch(dirname(link), (filename) => { seen.push(filename) }, {
+        filter: ['linked/**/*.ts'],
+      })
+
+      rmSync(link)
+      symlinkSync(dirname(target), link, 'junction')
+      await touch(target, () => seen.length)
+      expect([...new Set(seen)]).to.deep.equal([resolve(link, 'file.ts')])
     }, 15000)
 
     it('keeps no entry with an empty `filter`', async () => {

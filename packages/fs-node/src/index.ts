@@ -58,7 +58,8 @@ function toPredicate(filter: WatchFilter): (path: string, isDirectory: boolean) 
     if (posix.isAbsolute(pattern) || pattern.split('/').includes('..')) {
       throw new TypeError(`filter entry ${JSON.stringify(entry)} leads outside the watched directory`)
     }
-    const { base } = picomatch.scan(pattern)
+    // compared with real paths, so the escapes are removed
+    const { base } = picomatch.scan(pattern, { unescape: true })
     return {
       negated,
       // `.` is the watched directory, which no path below it matches.
@@ -127,7 +128,14 @@ class Fs extends Service {
           if (path === root) return false
           if (isFile) return path !== filename
           if (!keep) return false
-          if (stats) isDirectoryMap.set(path, stats.isDirectory())
+          // The stats of a symbolic link, from `lstat()` in a scan, do not tell
+          // the type of its target, which a later call with `stat()` does. A
+          // type known before, as of a file the link replaced, is dropped.
+          if (stats?.isSymbolicLink()) {
+            isDirectoryMap.delete(path)
+          } else if (stats) {
+            isDirectoryMap.set(path, stats.isDirectory())
+          }
           const isDirectory = isDirectoryMap.get(path)
           // decided by a later call with the stats
           if (isDirectory === undefined) return false
