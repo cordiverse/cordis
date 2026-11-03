@@ -44,8 +44,8 @@ class FakeFs extends Service {
 }
 
 function change(filename: string) {
-  for (const { path, callback, options } of FakeFs.watches) {
-    if (!filename.startsWith(path) || options?.ignored?.(filename)) continue
+  for (const { path, callback } of FakeFs.watches) {
+    if (!filename.startsWith(path)) continue
     callback(filename)
   }
 }
@@ -134,31 +134,15 @@ describe('Hmr with fs', () => {
     })
   })
 
-  it('watches each root relative to `base`', async () => {
-    await setup({}, '__watch__')
-    expect(FakeFs.watches.map(watch => watch.path)).to.deep.equal([fixtureDir])
+  it('watches `files` in `base`', async () => {
+    const files = ['src', '!**/.*']
+    await setup({ files }, '__watch__')
+    expect(FakeFs.watches.map(({ path, options }) => [path, options?.filter])).to.deep.equal([[fixtureDir, files]])
   })
 
-  it('watches each root relative to the context', async () => {
-    await setup({ root: ['.', '__watch__'] })
-    expect(FakeFs.watches.map(watch => watch.path)).to.deep.equal([testDir, fixtureDir])
-  })
-
-  it('does not watch without a root', async () => {
-    await setup({ root: [] })
+  it('does not watch with empty `files`', async () => {
+    await setup({ files: [] })
     expect(FakeFs.watches).to.deep.equal([])
-  })
-
-  // `ignored` is matched against `path.relative()`, which is backslash-separated
-  // on Windows. Only a top-level entry carries no separator, so a nested
-  // `node_modules` was not ignored there. Directories are tested before they
-  // are descended into, so the directory itself has to match.
-  it('ignores nested matches of `ignored`', async () => {
-    await setup()
-    const [{ options }] = FakeFs.watches
-    expect(options!.ignored!(resolve(testDir, 'packages/core/node_modules'))).to.equal(true)
-    expect(options!.ignored!(resolve(testDir, 'src/.hidden'))).to.equal(true)
-    expect(options!.ignored!(resolve(testDir, 'src/index.js'))).to.equal(false)
   })
 
   it('reconciles the changes of one debounce window as a batch', async () => {
@@ -277,7 +261,7 @@ export const apply = 'not a function'`))
     ctx.baseUrl = import.meta.url
     fiber = await ctx.plugin(Loader)
     await ctx.plugin(Fs)
-    await ctx.plugin(Hmr, { watch: { enabled: true, root: ['__watch__'], debounce: 50 } })
+    await ctx.plugin(Hmr, { watch: { enabled: true, files: ['__watch__'], debounce: 50 } })
     const path = await load('disk.ts', plugin('disk', 'v1'))
 
     // some platforms report changes late, so the file is rewritten until one is seen
