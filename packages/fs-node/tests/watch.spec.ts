@@ -134,6 +134,36 @@ describe('Fs', () => {
 
       await touch(path, () => calls > 0)
     }, 15000)
+
+    // `_resolve` rather than `watch()`: without the guard these start a recursive
+    // watch on a real volume and hang, which hides the result instead of failing it.
+    it.runIf(process.platform === 'win32')('rejects a file URL that resolves to a drive-relative path', async () => {
+      const ctx = await setup()
+      const resolved = (input: string | URL) => (ctx.fs as any)._resolve(input)
+      for (const input of ['file:C:', 'file:/C:', 'file:/../C:', 'file:.\\C:']) {
+        expect(() => resolved(input), `${input} resolved to a drive-relative path`)
+          .to.throw(/drive-relative form/)
+      }
+    }, 15000)
+
+    // the string branch reaches the same state through `resolve('C:')`
+    it.runIf(process.platform === 'win32')('rejects a drive-relative path passed as a plain string', async () => {
+      const ctx = await setup()
+      const resolved = (input: string | URL) => (ctx.fs as any)._resolve(input)
+      // `C:Windows` is the shape that matters: it resolves to a real directory
+      for (const input of ['C:', 'c:', 'X:', 'Z:', 'C:.', 'C:..', 'C:./', 'C:x\\..', 'c:foo', 'C:Windows']) {
+        expect(() => resolved(input), `${input} is drive-relative, not a path`)
+          .to.throw(/drive-relative form/)
+      }
+    }, 15000)
+
+    it.runIf(process.platform === 'win32')('does not reject a path that names a location on a drive', async () => {
+      const ctx = await setup()
+      const resolved = (input: string | URL) => (ctx.fs as any)._resolve(input)
+      for (const input of ['C:\\', 'C:\\x', 'C:\\x\\y.yml', 'C:/x', 'C://x', 'C://x//y.yml', 'C://', '\\\\server\\share\\x']) {
+        expect(isAbsolute(resolved(input)), `${input} names a location on a drive`).to.be.true
+      }
+    }, 15000)
   })
 
   describe('watch', () => {
