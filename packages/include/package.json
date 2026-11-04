@@ -19,6 +19,7 @@
   },
   "homepage": "https://cordis.io/",
   "peerDependencies": {
+    "@cordisjs/plugin-fs-node": "^0.1.0",
     "@cordisjs/plugin-loader": "^1.0.0-rc.9",
     "cordis": "^4.0.0-rc.12"
   },
