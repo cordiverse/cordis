@@ -16,7 +16,7 @@ class FakeFs extends Service {
 
   watch(path: string) {
     FakeFs.paths.push(path)
-    return () => {}
+    return { on: () => () => {} }
   }
 }
 

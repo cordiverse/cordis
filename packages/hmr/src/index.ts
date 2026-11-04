@@ -2,11 +2,10 @@ import { Context, Fiber, Plugin, Service } from 'cordis'
 import { getModuleJobs, ModuleJob, ModuleLoader, ModuleStatus, unwrapExports } from '@cordisjs/loader-utils'
 import type {} from '@cordisjs/plugin-fs-node'
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { handleError } from './error.ts'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
-import picomatch from 'picomatch'
 import z from 'schemastery'
 
 declare module 'cordis' {
@@ -86,7 +85,7 @@ function toPath(url: string) {
 }
 
 class Hmr extends Service {
-  /** The resolved `base`. `watch.root`, `watch.ignored` and logged paths are relative to it. */
+  /** The resolved `base`. `watch.files` and logged paths are relative to it. */
   public baseDir: string
 
   /** Node's ESM loader. */
@@ -134,12 +133,12 @@ class Hmr extends Service {
    * host module is only reported, since restarting is up to the host.
    */
   private _watch(ctx: Context) {
-    const { enabled, root, ignored, debounce } = this.config.watch
-    if (!enabled || !root.length) return
+    const { enabled, files, debounce } = this.config.watch
+    if (!enabled || !files.length) return
     if (!this.config.base) {
-      this.ctx.logger.info('watching %o', root)
+      this.ctx.logger.info('watching %o', files)
     } else {
-      this.ctx.logger.info('watching %o in %s', root, this.baseDir)
+      this.ctx.logger.info('watching %o in %s', files, this.baseDir)
     }
 
     const stashed = new Set<string>()
@@ -178,18 +177,12 @@ class Hmr extends Service {
       }
     }
 
-    const match = picomatch(ignored)
-    for (const path of root) {
-      ctx.fs.watch(resolve(this.baseDir, path), (filename) => {
-        this.ctx.logger.debug('change detected at %C', relative(this.baseDir, filename))
-        stashed.add(filename)
-        clearTimeout(timer)
-        timer = setTimeout(() => flushing = flushing.then(flush), debounce)
-      }, {
-        // picomatch only splits on `/`, so a Windows path is converted before matching.
-        ignored: filename => match(relative(this.baseDir, filename).split(sep).join('/')),
-      })
-    }
+    ctx.fs.watch(this.baseDir, { filter: files }).on('change', (filename) => {
+      this.ctx.logger.debug('change detected at %C', relative(this.baseDir, filename))
+      stashed.add(filename)
+      clearTimeout(timer)
+      timer = setTimeout(() => flushing = flushing.then(flush), debounce)
+    })
   }
 
   async* [Service.init]() {
@@ -709,8 +702,7 @@ class Hmr extends Service {
 namespace Hmr {
   export interface WatchConfig {
     enabled: boolean
-    root: string[]
-    ignored: string[]
+    files: string[]
     debounce: number
   }
 
@@ -723,11 +715,11 @@ namespace Hmr {
     base: z.string().description('The base directory. Defaults to `ctx.baseUrl`.'),
     watch: z.object({
       enabled: z.boolean().default(false).description('Reload on file changes. Requires the `fs` service.'),
-      root: z.array(String).role('table').default(['.']).description('Files or directories to watch, relative to `base`.'),
-      ignored: z.array(String).role('table').default([
-        '**/node_modules',
-        '**/.*',
-      ]).description('Files or directories not to watch, in glob patterns relative to `base`.'),
+      files: z.array(String).role('table').default([
+        '.',
+        '!**/node_modules',
+        '!**/.*',
+      ]).description('Files to watch, in glob patterns relative to `base`, as `filter` of `ctx.fs.watch()`.'),
       debounce: z.natural().role('ms').default(100).description('Debounce changes before reloading, in milliseconds.'),
     }).description('Watch'),
   })

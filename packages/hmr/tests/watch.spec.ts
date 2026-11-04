@@ -1,6 +1,6 @@
 import { Context, Fiber, Service } from 'cordis'
 import Loader from '@cordisjs/plugin-loader'
-import Fs, { WatchCallback, WatchOptions } from '@cordisjs/plugin-fs-node'
+import Fs, { WatchOptions } from '@cordisjs/plugin-fs-node'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, resolve, sep } from 'node:path'
 import { format } from 'node:util'
@@ -25,8 +25,8 @@ export function apply(ctx: Context) {
 
 interface Watch {
   path: string
-  callback: WatchCallback
   options?: WatchOptions
+  listeners: ((filename: string) => void)[]
 }
 
 // stands in for `@cordisjs/plugin-fs-node`, so that changes are reported by hand
@@ -37,16 +37,22 @@ class FakeFs extends Service {
     super(ctx, 'fs')
   }
 
-  watch(path: string, callback: WatchCallback, options?: WatchOptions) {
-    FakeFs.watches.push({ path, callback, options })
-    return () => {}
+  watch(path: string, options?: WatchOptions) {
+    const watch: Watch = { path, options, listeners: [] }
+    FakeFs.watches.push(watch)
+    return {
+      on: (name: string, listener: (filename: string) => void) => {
+        if (name === 'change') watch.listeners.push(listener)
+        return () => {}
+      },
+    }
   }
 }
 
 function change(filename: string) {
-  for (const { path, callback, options } of FakeFs.watches) {
-    if (!filename.startsWith(path) || options?.ignored?.(filename)) continue
-    callback(filename)
+  for (const { path, listeners } of FakeFs.watches) {
+    if (!filename.startsWith(path)) continue
+    for (const listener of listeners) listener(filename)
   }
 }
 
@@ -134,31 +140,15 @@ describe('Hmr with fs', () => {
     })
   })
 
-  it('watches each root relative to `base`', async () => {
-    await setup({}, '__watch__')
-    expect(FakeFs.watches.map(watch => watch.path)).to.deep.equal([fixtureDir])
+  it('watches `files` in `base`', async () => {
+    const files = ['src', '!**/.*']
+    await setup({ files }, '__watch__')
+    expect(FakeFs.watches.map(({ path, options }) => [path, options?.filter])).to.deep.equal([[fixtureDir, files]])
   })
 
-  it('watches each root relative to the context', async () => {
-    await setup({ root: ['.', '__watch__'] })
-    expect(FakeFs.watches.map(watch => watch.path)).to.deep.equal([testDir, fixtureDir])
-  })
-
-  it('does not watch without a root', async () => {
-    await setup({ root: [] })
+  it('does not watch with empty `files`', async () => {
+    await setup({ files: [] })
     expect(FakeFs.watches).to.deep.equal([])
-  })
-
-  // `ignored` is matched against `path.relative()`, which is backslash-separated
-  // on Windows. Only a top-level entry carries no separator, so a nested
-  // `node_modules` was not ignored there. Directories are tested before they
-  // are descended into, so the directory itself has to match.
-  it('ignores nested matches of `ignored`', async () => {
-    await setup()
-    const [{ options }] = FakeFs.watches
-    expect(options!.ignored!(resolve(testDir, 'packages/core/node_modules'))).to.equal(true)
-    expect(options!.ignored!(resolve(testDir, 'src/.hidden'))).to.equal(true)
-    expect(options!.ignored!(resolve(testDir, 'src/index.js'))).to.equal(false)
   })
 
   it('reconciles the changes of one debounce window as a batch', async () => {
@@ -277,7 +267,7 @@ export const apply = 'not a function'`))
     ctx.baseUrl = import.meta.url
     fiber = await ctx.plugin(Loader)
     await ctx.plugin(Fs)
-    await ctx.plugin(Hmr, { watch: { enabled: true, root: ['__watch__'], debounce: 50 } })
+    await ctx.plugin(Hmr, { watch: { enabled: true, files: ['__watch__'], debounce: 50 } })
     const path = await load('disk.ts', plugin('disk', 'v1'))
 
     // some platforms report changes late, so the file is rewritten until one is seen
