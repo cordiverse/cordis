@@ -1,5 +1,7 @@
 import { Context, Fiber, Message } from 'cordis'
 import Loader from '@cordisjs/loader'
+import Fs from '@cordisjs/fs'
+import NodeFs from '@cordisjs/fs-node'
 import LoggerConsole from '@cordisjs/logger-console'
 import { expect, describe, it, afterEach } from 'vitest'
 import { readFile, rm, writeFile } from 'node:fs/promises'
@@ -45,6 +47,8 @@ describe('Include reload', () => {
     await ctx.use(LoggerConsole)
     const messages: Message[] = []
     ctx.logger.exporter({ export: message => messages.push(message) })
+    await ctx.use(Fs)
+    await ctx.use(NodeFs)
     fiber = await ctx.use(Loader, {
       baseUrl: import.meta.url,
     })

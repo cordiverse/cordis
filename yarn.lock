@@ -249,6 +249,7 @@ __metadata:
     cosmokit: "npm:^1.8.1"
     yaml: "npm:^2.9.1"
   peerDependencies:
+    "@cordisjs/fs": ^2.0.0-rc.0
     "@cordisjs/loader": ^1.0.0-rc.10
     cordis: ^4.0.0-rc.13
   languageName: unknown

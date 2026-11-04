@@ -1,5 +1,7 @@
 import { Context, Fiber, Message } from 'cordis'
 import Loader from '@cordisjs/loader'
+import Fs from '@cordisjs/fs'
+import NodeFs from '@cordisjs/fs-node'
 import { afterEach } from 'vitest'
 import { chmod, readFile, rm, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -47,6 +49,8 @@ export function harness() {
     const ctx = new Context()
     const messages: Message[] = []
     ctx.logger.exporter({ export: message => messages.push(message) })
+    await ctx.use(Fs)
+    await ctx.use(NodeFs)
     fiber = await ctx.use(Loader, { baseUrl: import.meta.url })
     const id = await ctx.loader.create({
       name: '@cordisjs/include',
