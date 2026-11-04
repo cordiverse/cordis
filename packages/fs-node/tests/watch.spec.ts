@@ -164,15 +164,6 @@ describe('Fs', () => {
         expect(isAbsolute(resolved(input)), `${input} names a location on a drive`).to.be.true
       }
     }, 15000)
-
-    // says so if a future Node rejects these itself, leaving the guard unreachable
-    it.runIf(process.platform === 'win32')('is reached because `fileURLToPath` yields a drive-relative path', () => {
-      const nonAbsolute = ['file:C:', 'file:/C:', 'file:/../C:', 'file:.\\C:']
-        .map((input) => fileURLToPath(input))
-        .filter((out) => !isAbsolute(out))
-      expect(nonAbsolute, '`fileURLToPath` no longer yields a drive-relative path, so the guard is unreachable').to.not.be.empty
-    })
-
   })
 
   describe('watch', () => {

@@ -11,8 +11,8 @@ declare module 'cordis' {
   }
 }
 
-// `C:` is drive-relative, and `statSync('C:').isDirectory()` is true, so watching
-// it recurses over the whole volume. A separator after the colon names a location.
+// `C:` is relative to the current directory of drive C, which depends on the
+// process. A separator after the colon names a location.
 const driveRelative = /^[a-zA-Z]:(?![\\/])/
 
 function assertNotDriveRelative(value: string, source: string) {
@@ -32,7 +32,7 @@ class Fs extends Service {
   /** A relative path is resolved against the calling context. The result is normalized. */
   private _resolve(path: string | URL) {
     if (path instanceof URL || path.startsWith('file:')) {
-      // checked before `resolve()`, which turns `C:` into an absolute `C:\`
+      // checked before `resolve()`, which makes a drive-relative path absolute
       const filename = fileURLToPath(path)
       assertNotDriveRelative(filename, String(path))
       // `fileURLToPath()` keeps a trailing slash
