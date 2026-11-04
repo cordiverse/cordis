@@ -11,6 +11,18 @@ declare module 'cordis' {
   }
 }
 
+// `C:` is drive-relative, and `statSync('C:').isDirectory()` is true, so watching
+// it recurses over the whole volume. A separator after the colon names a location.
+const driveRelative = /^[a-zA-Z]:(?![\\/])/
+
+function assertNotDriveRelative(value: string, source: string) {
+  if (process.platform !== 'win32' || !driveRelative.test(value)) return
+  const origin = value === source ? '' : ` from ${JSON.stringify(source)}`
+  throw new TypeError(
+    `expected an absolute path, got the drive-relative form ${JSON.stringify(value)}${origin}`,
+  )
+}
+
 /** For now, fs only provides `watch()`, coupled to `node:fs` through chokidar. */
 class Fs extends Service {
   constructor(ctx: Context) {
@@ -19,8 +31,14 @@ class Fs extends Service {
 
   /** A relative path is resolved against the calling context. The result is normalized. */
   private _resolve(path: string | URL) {
-    // `fileURLToPath()` keeps a trailing slash
-    if (path instanceof URL || path.startsWith('file:')) return resolve(fileURLToPath(path))
+    if (path instanceof URL || path.startsWith('file:')) {
+      // checked before `resolve()`, which turns `C:` into an absolute `C:\`
+      const filename = fileURLToPath(path)
+      assertNotDriveRelative(filename, String(path))
+      // `fileURLToPath()` keeps a trailing slash
+      return resolve(filename)
+    }
+    assertNotDriveRelative(path, path)
     if (isAbsolute(path)) return resolve(path)
     // resolved as a path rather than a URL, so that `#` and `%` stay literal
     if (this.ctx.baseUrl) return resolve(fileURLToPath(new URL('.', this.ctx.baseUrl)), path)
