@@ -1,11 +1,10 @@
 import { Context, Fiber, Plugin, Service } from 'cordis'
-import { getModuleJobs, ModuleJob, ModuleLoader, ModuleStatus, unwrapExports } from '@cordisjs/loader-utils'
+import { getRuntime, ModuleRuntime, unwrapExports } from '@cordisjs/loader-utils'
 import type {} from '@cordisjs/plugin-fs-node'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { handleError } from './error.ts'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { createRequire } from 'node:module'
 import z from 'schemastery'
 
 declare module 'cordis' {
@@ -88,17 +87,14 @@ class Hmr extends Service {
   /** The resolved `base`. `watch.files` and logged paths are relative to it. */
   public baseDir: string
 
-  /** Node's ESM loader. */
-  public internal: ModuleLoader
+  /** Node's module loading, reached through its internals. */
+  private _runtime: ModuleRuntime
 
   /**
    * The dependency tree of the main entry point. A change to any of these
    * modules can only be applied by restarting the process.
    */
   public hostModules = new Set<string>()
-
-  /** The CJS module cache is read through it. */
-  private _require = createRequire(import.meta.url)
 
   /** The tail of the transaction queue. */
   private _queue: Promise<void> = Promise.resolve()
@@ -109,11 +105,11 @@ class Hmr extends Service {
 
   constructor(ctx: Context, public config: Hmr.Config) {
     super(ctx, 'hmr')
-    const internal = ModuleLoader.fromInternal()
-    if (!internal) {
+    const runtime = getRuntime()
+    if (!runtime) {
       throw new Error('loader internals are unavailable, pass --expose-internals or install node-addon-require-builtin')
     }
-    this.internal = internal
+    this._runtime = runtime
 
     // On Windows, a drive-letter path is converted with `pathToFileURL`.
     // `new URL()` would read its `C:` as a URL scheme, which `fileURLToPath` rejects.
@@ -190,99 +186,10 @@ class Hmr extends Service {
     // process.argv[1] is undefined in REPL, node -e, and some packed binaries.
     if (process.argv[1]) {
       const mainUrl = pathToFileURL(resolve(process.argv[1])).href
-      if (this.internal.loadCache.has(mainUrl)) {
-        this.hostModules = await closure([mainUrl], url => this._edges(url))
+      if (this._runtime.modules.has(mainUrl)) {
+        this.hostModules = await closure([mainUrl], url => this._runtime.modules.edges(url))
       }
     }
-  }
-
-  /**
-   * The URLs of the modules linked by the jobs of `url`, in every type slot.
-   * A job that failed to link contributes no URLs.
-   */
-  async getLinked(url: string) {
-    const urls = new Set<string>()
-    await Promise.all(getModuleJobs(this.internal.loadCache, url).map(async (job) => {
-      let linked: ModuleJob[]
-      try {
-        linked = Array.from(await job.linked)
-      } catch {
-        return
-      }
-      for (const child of linked) urls.add(child.url)
-    }))
-    return [...urls]
-  }
-
-  /** The loaded modules: the keys of the ESM load cache and of the CJS module cache. */
-  private _loaded() {
-    const urls = new Set(Map.prototype.keys.call(this.internal.loadCache) as Iterable<string>)
-    for (const path of Object.keys(this._require.cache)) urls.add(pathToFileURL(path).href)
-    return urls
-  }
-
-  /**
-   * The direct dependencies of a module in the current module caches: the
-   * linked jobs of its ESM module job and the children of its CJS module.
-   */
-  private async _edges(url: string) {
-    const edges = new Set(await this.getLinked(url))
-    const path = toPath(url)
-    for (const child of (path && this._require.cache[path]?.children) || []) {
-      edges.add(pathToFileURL(child.filename).href)
-    }
-    return edges
-  }
-
-  /**
-   * Remove the module jobs that failed to load, link or evaluate, each from
-   * its own type slot, so that the next import of their modules tries again.
-   * Node keeps such a job in the load cache, and every later import of the
-   * module throws its error again. A job in progress has not failed and is kept.
-   *
-   * A job has failed if its module is errored, or if its `modulePromise`,
-   * `linked` or `instantiated` promise has been rejected. A promise that has
-   * settled runs its handlers before the next macrotask.
-   */
-  private async _sweep() {
-    interface ModuleCheck {
-      url: string
-      entry: Record<string, ModuleJob | undefined>
-      type: string
-      job: ModuleJob
-      failed: boolean
-    }
-    const checks: ModuleCheck[] = []
-    for (const url of Map.prototype.keys.call(this.internal.loadCache) as Iterable<string>) {
-      if (isBuiltin(url)) continue
-      const entry: Record<string, ModuleJob | undefined> = Map.prototype.get.call(this.internal.loadCache, url)
-      for (const type in entry) {
-        const job = entry[type]
-        if (!job) continue
-        const check = { url, entry, type, job, failed: job.module?.getStatus() === ModuleStatus.Errored }
-        for (const promise of [job.modulePromise, job.linked, job.instantiated]) {
-          if (!promise || Array.isArray(promise)) continue
-          promise.then(undefined, () => check.failed = true)
-        }
-        checks.push(check)
-      }
-    }
-    await new Promise(resolve => setImmediate(resolve))
-    for (const { url, entry, type, job, failed } of checks) {
-      if (!failed || entry[type] !== job) continue
-      delete entry[type]
-      // the CJS module cache is left alone: Node removes a CJS module that failed
-      if (!Object.values(entry).some(Boolean)) {
-        Map.prototype.delete.call(this.internal.loadCache, url)
-      }
-    }
-  }
-
-  /** Remove a module from both module caches. */
-  private _evict(url: string) {
-    Map.prototype.delete.call(this.internal.loadCache, url)
-    const path = toPath(url)
-    if (path) delete this._require.cache[path]
   }
 
   /**
@@ -340,9 +247,10 @@ class Hmr extends Service {
    * the eviction, i.e. the old module graph.
    */
   private async _analyze(changed: Set<string>) {
-    const urls = [...this._loaded()].filter(url => !isBuiltin(url))
+    const caches = this._runtime.modules
+    const urls = [...caches.urls()].filter(url => !isBuiltin(url))
     const edges = new Map<string, Set<string>>()
-    await Promise.all(urls.map(async url => edges.set(url, await this._edges(url))))
+    await Promise.all(urls.map(async url => edges.set(url, await caches.edges(url))))
 
     const importers = new Map<string, string[]>()
     for (const [url, children] of edges) {
@@ -424,21 +332,18 @@ class Hmr extends Service {
    * again and the plugin is replaced.
    */
   private _discover(declined: Set<string>) {
-    const internal = this.internal
-    const candidates = new Map<ModuleJob, Plugin>()
-    for (const url of Map.prototype.keys.call(internal.loadCache) as Iterable<string>) {
+    const candidates = new Map<string, Plugin>()
+    for (const url of this._runtime.modules.urls()) {
       if (declined.has(url) || isBuiltin(url)) continue
-      const job = internal.loadCache.get(url)
-      if (!job?.module) continue
       let plugin: Plugin | undefined
       try {
-        // reading the bindings of a module whose evaluation failed throws
-        plugin = unwrapExports(job.module.getNamespace())
+        // reading a binding that has not been initialized throws
+        plugin = unwrapExports(this._runtime.modules.namespace(url))
       } catch {
         continue
       }
       if (!plugin || !this.ctx.registry.has(plugin)) continue
-      candidates.set(job, plugin)
+      candidates.set(url, plugin)
     }
     return candidates
   }
@@ -452,7 +357,7 @@ class Hmr extends Service {
     const used = new Set<string>()
     // A module is loaded if it is in either module cache. In Node 24, a CJS
     // module imported via import() is in both of them.
-    for (const url of this._loaded()) {
+    for (const url of this._runtime.modules.urls()) {
       let path = toPath(url)
       if (!path) continue
       // The ancestors are looked up instead of comparing prefixes, so that a
@@ -484,10 +389,10 @@ class Hmr extends Service {
       roots.add(resolve(root))
     }
     // after the callback, so that a module job that failed during it is removed too
-    await this._sweep()
+    const caches = this._runtime.modules
+    await caches.sweep()
     if (!roots.size) return result
 
-    const internal = this.internal
     const changed = new Set<string>()
     for (const url of this._match(roots)) {
       // A change to a host module or to a loaded native addon cannot be
@@ -505,12 +410,12 @@ class Hmr extends Service {
 
     // A plugin may be exported by several modules, e.g. an entry module that
     // re-exports its implementation. All of them are imported again together.
-    const exporters = new Map<Plugin.Runtime, Map<ModuleJob, Plugin>>()
-    for (const [job, plugin] of this._discover(declined)) {
+    const exporters = new Map<Plugin.Runtime, Map<string, Plugin>>()
+    for (const [url, plugin] of this._discover(declined)) {
       const runtime = this.ctx.registry.get(plugin)!
       let exported = exporters.get(runtime)
       if (!exported) exporters.set(runtime, exported = new Map())
-      exported.set(job, plugin)
+      exported.set(url, plugin)
     }
 
     // The closure of a plugin consists of its modules and the accepted modules
@@ -520,12 +425,12 @@ class Hmr extends Service {
     const evicted = new Set(accepted)
     const owned = new Set<string>()
     for (const exported of exporters.values()) {
-      const jobs = [...exported.keys()]
-      const own = new Set(jobs.map(job => job.url))
+      const urls = [...exported.keys()]
+      const own = new Set(urls)
       const stop = (url: string) => declined.has(url) && !own.has(url)
-      const closures = new Map<ModuleJob, Set<string>>()
-      for (const job of jobs) {
-        closures.set(job, await closure([job.url], oldEdges, stop))
+      const closures = new Map<string, Set<string>>()
+      for (const url of urls) {
+        closures.set(url, await closure([url], oldEdges, stop))
       }
       const modules = new Set([...closures.values()].flatMap(closure => [...closure]))
       if (![...modules].some(url => accepted.has(url))) continue
@@ -536,12 +441,12 @@ class Hmr extends Service {
 
       // Use a module that no other module of the plugin imports.
       // Ambiguous aliases are deferred to the module/plugin identity work.
-      const outermost = jobs.find(job => !jobs.some(other => other !== job && closures.get(other)!.has(job.url)))
-      const job = outermost ?? jobs[0]
+      const outermost = urls.find(url => !urls.some(other => other !== url && closures.get(other)!.has(url)))
+      const url = outermost ?? urls[0]
       stalePlugins.push({
-        url: job.url,
-        plugin: exported.get(job)!,
-        urls: jobs.map(job => job.url),
+        url,
+        plugin: exported.get(url)!,
+        urls,
         modules,
       })
     }
@@ -550,39 +455,9 @@ class Hmr extends Service {
       if (!owned.has(url)) this.ctx.logger.debug('evict %C (no dependent plugin)', this._relative(url))
     }
 
-    /**
-     * Clear module caches for the evicted modules before re-importing.
-     *
-     * We need to clear both:
-     * 1. ESM loadCache — managed by Node's internal ModuleLoader
-     * 2. CJS Module._cache — for CJS modules that were imported via import()
-     *
-     * A CJS module imported via import() is in both caches. If we only clear
-     * loadCache, the CJS cache may serve stale modules.
-     *
-     * We use Map.prototype methods directly on loadCache. It is a `LoadCache`,
-     * whose entries are `{ [type]: ModuleJob }`, one job per value of the
-     * `type` import attribute. Its own delete(url) only sets the `javascript`
-     * slot to undefined and keeps the entry, while Map.prototype.delete
-     * removes the whole entry. `LoadCache` extends Node's internal `SafeMap`,
-     * which carries the Map internal slots, so Map.prototype methods apply to
-     * it although `loadCache instanceof Map` is false.
-     */
-    const esmBackup = new Map<string, unknown>()
-    const cjsBackup = new Map<string, NodeJS.Module>()
-    for (const url of evicted) {
-      esmBackup.set(url, Map.prototype.get.call(internal.loadCache, url))
-      const path = toPath(url)
-      if (path && this._require.cache[path]) cjsBackup.set(path, this._require.cache[path])
-      this._evict(url)
-    }
-    const restore = (url: string) => {
-      this._evict(url)
-      const job = esmBackup.get(url)
-      if (job) Map.prototype.set.call(internal.loadCache, url, job)
-      const path = toPath(url)
-      if (path && cjsBackup.has(path)) this._require.cache[path] = cjsBackup.get(path)
-    }
+    // A CJS module imported via import() is in both caches, and both are
+    // cleared, so that neither serves the old module.
+    const backup = caches.evict(evicted)
 
     // Stage 1: import the new modules of every stale plugin.
     // Plugin validity is checked here, where the only mutated state is the
@@ -591,18 +466,18 @@ class Hmr extends Service {
     // export can no longer fail halfway through swapping instances.
     // No cache entry is restored before every plugin has been imported, so
     // that no new module links against an old module that has been evicted.
-    const retained = this._loaded()
+    const retained = caches.urls()
     const attempts: ImportAttempt[] = []
     for (const stale of stalePlugins) {
-      const before = this._loaded()
+      const before = caches.urls()
       const attempt: ImportAttempt = { stale, loaded: [], failed: false }
       try {
         // Import the other modules of the plugin too, so that their failures
         // abort its unit as well.
         for (const url of stale.urls) {
-          if (url !== stale.url) await internal.import(url, import.meta.url, {})
+          if (url !== stale.url) await this._runtime.import(url, import.meta.url)
         }
-        const exports = unwrapExports(await internal.import(stale.url, import.meta.url, {}))
+        const exports = unwrapExports(await this._runtime.import(stale.url, import.meta.url))
         if (!this.ctx.registry.resolve(exports)) {
           throw new Error(`invalid plugin at ${this._relative(stale.url)}, `
             + `expect function or object with an "apply" method, received ${typeof exports}`)
@@ -613,7 +488,7 @@ class Hmr extends Service {
         attempt.failed = true
         attempt.error = error
       }
-      for (const url of this._loaded()) {
+      for (const url of caches.urls()) {
         if (!before.has(url) && !evicted.has(url)) attempt.loaded.push(url)
       }
       attempts.push(attempt)
@@ -623,7 +498,7 @@ class Hmr extends Service {
     const newGraph = new Map<string, Promise<Set<string>>>()
     const newEdges = (url: string) => {
       let edges = newGraph.get(url)
-      if (!edges) newGraph.set(url, edges = this._edges(url))
+      if (!edges) newGraph.set(url, edges = caches.edges(url))
       return edges
     }
 
@@ -657,9 +532,9 @@ class Hmr extends Service {
     const restored = new Set(aborted.flatMap(unit => [...unit.modules]))
     for (const url of attempts.flatMap(attempt => attempt.loaded)) {
       const reached = await closure([url], newEdges, url => retained.has(url))
-      if ([...reached].some(url => restored.has(url))) this._evict(url)
+      if ([...reached].some(url => restored.has(url))) caches.evict([url])
     }
-    for (const url of restored) restore(url)
+    backup.restore(restored)
 
     for (const unit of aborted) {
       const failure = unit.attempts.find(attempt => attempt.failed)!

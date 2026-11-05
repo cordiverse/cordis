@@ -1,6 +1,7 @@
 import { isNullable } from 'cosmokit'
 
 export * from './internal.ts'
+export * from './modules.ts'
 
 /** Get the plugin exported by a module namespace. */
 export function unwrapExports(exports: any) {
