@@ -250,7 +250,7 @@ export class ReflectService {
 
   notify(names: string[], filter = (ctx: Context, name: string) => ctx[symbols.isolate][name] === this.ctx[symbols.isolate][name]) {
     for (const runtime of this.ctx.registry.values()) {
-      for (const fiber of runtime.fibers) {
+      for (const fiber of [...runtime.fibers]) {
         let hasUpdate = false
         for (const name of names) {
           if (!(name in fiber.inject)) continue

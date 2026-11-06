@@ -2,36 +2,49 @@ import { defineProperty } from 'cosmokit'
 import type { Context } from './context.ts'
 import type { Service } from './service.ts'
 
+/**
+ * An ordered list whose entries are removed through the disposers returned on insertion.
+ */
 export class DisposableList<T extends WeakKey> {
   private sn = 0
-  private map = new Map<number, T>()
+  private head = new Map<number, T>()
+  private tail = new Map<number, T>()
   private weak = new WeakMap<T, number>()
 
   get length() {
-    return this.map.size
+    return this.head.size + this.tail.size
   }
 
   push(value: T) {
     const sn = ++this.sn
-    this.map.set(sn, value)
+    this.tail.set(sn, value)
     this.weak.set(value, sn)
-    return () => this.map.delete(sn)
+    return () => this.tail.delete(sn)
+  }
+
+  unshift(value: T) {
+    const sn = -++this.sn
+    this.head.set(sn, value)
+    this.weak.set(value, sn)
+    return () => this.head.delete(sn)
   }
 
   delete(value: T) {
     const sn = this.weak.get(value)
     if (!sn) return false
-    return this.map.delete(sn)
+    return (sn < 0 ? this.head : this.tail).delete(sn)
   }
 
   clear() {
-    const values = [...this.map.values()]
-    this.map.clear()
-    return values.reverse()
+    const values = [...this]
+    this.head.clear()
+    this.tail.clear()
+    return values
   }
 
-  [Symbol.iterator]() {
-    return this.map.values()
+  [Symbol.iterator](): IterableIterator<T> {
+    if (!this.head.size) return this.tail.values()
+    return [...this.head.values()].reverse().concat([...this.tail.values()]).values()
   }
 
   [Symbol.for('nodejs.util.inspect.custom')]() {

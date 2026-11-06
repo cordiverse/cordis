@@ -1,7 +1,7 @@
 import { expect, describe, it } from 'vitest'
 import { mock } from 'node:test'
 import { types } from 'node:util'
-import { Context } from '../src/index.ts'
+import { Context, FiberState } from '../src/index.ts'
 
 describe('Reflect', () => {
   it('Context.is()', () => {
@@ -104,5 +104,24 @@ describe('Reflect', () => {
     expect(fiber.ctx.foo).to.be.ok
     await fiber.dispose()
     expect(() => fiber.ctx.foo).to.throw('cannot get required service "foo" in inactive context')
+  })
+
+  it('does not load a fiber disposed during service notification', async () => {
+    const root = new Context()
+    const apply = mock.fn((ctx: Context, config: { id: number }) => {})
+    const plugin = { inject: ['foo'], apply }
+    const fiber1 = root.plugin(plugin, { id: 1 })
+    const fiber2 = root.plugin(plugin, { id: 2 })
+    root.on('internal/status', (fiber) => {
+      if (fiber === Object.getPrototypeOf(fiber1) && fiber.state === FiberState.LOADING) {
+        fiber2.dispose()
+      }
+    })
+
+    root.provide('foo', {})
+    await fiber1
+    expect(apply.mock.calls.map(call => call.arguments[1].id)).to.deep.equal([1])
+    expect(fiber2.state).to.equal(FiberState.DISPOSED)
+    await root.fiber.dispose()
   })
 })

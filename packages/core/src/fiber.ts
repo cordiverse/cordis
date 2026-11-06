@@ -416,6 +416,7 @@ export class Fiber {
   }
 
   _refresh() {
+    if (this.uid === null) return
     let epoch = `${this._revision}`
     for (const name of Object.keys(this.inject)) {
       const impl = this._store[name]
@@ -485,7 +486,10 @@ export class Fiber {
       await new Promise<void>((resolve) => this._release = resolve)
     }
     this._release = undefined
-    await Promise.all(this._disposables.clear().map(async (dispose) => {
+    // Disposers are started in the reverse order of registration and run
+    // concurrently; the order does not make one teardown wait for another.
+    // Effects that depend on one another use an effect iterator or a service.
+    await Promise.all(this._disposables.clear().reverse().map(async (dispose) => {
       try {
         await composeError(async (info) => {
           await Promise.resolve()
