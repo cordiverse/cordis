@@ -325,3 +325,51 @@ describe('EntryTree disposal', () => {
     await fiber.dispose()
   })
 })
+
+describe('EntryTree.commit: a schema Config', () => {
+  const root = new Context()
+
+  let loader!: MockLoader
+
+  beforeAll(async () => {
+    await root.plugin(MockLoader)
+    loader = root.loader as any
+  })
+
+  // `simplify` reads the schema off `this`, the way `Schema.prototype.simplify`
+  // does; a call that loses its receiver throws on this line.
+  const schema = () => ({
+    meta: { empty: (config: any) => Object.keys(config).length === 0 },
+    simplify(this: any, config: any) {
+      return this.meta.empty(config) ? null : config
+    },
+    '~standard': {
+      version: 1,
+      vendor: 'test',
+      validate: (value: any) => ({ value }),
+    },
+  })
+
+  let id!: string
+
+  it('persists the simplified value of a schema config', async () => {
+    const plugin: any = loader.mock('schema', () => {})
+    plugin.Config = schema()
+    id = await loader.create({ name: 'schema', config: { a: 1 } })
+    loader.changes = []
+
+    await loader.expectFiber(id).update({ a: 2 })
+
+    expect(loader.changes).to.have.length(1)
+    expect(loader.changes[0].options!.config).to.deep.equal({ a: 2 })
+  })
+
+  it('collapses a schema config holding only defaults', async () => {
+    loader.changes = []
+
+    await loader.expectFiber(id).update({})
+
+    expect(loader.changes).to.have.length(1)
+    expect(loader.changes[0].options!.config).to.equal(null)
+  })
+})
