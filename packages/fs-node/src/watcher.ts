@@ -115,13 +115,10 @@ export class Watcher {
           if (path === root) return false
           if (isFile) return path !== filename
           if (!keep) return false
-          // The stats of a symbolic link, from `lstat()` in a scan, do not tell
-          // the type of its target, which a later call with `stat()` does, so
-          // the entry is kept and decided by that call.
+          // Without the stats, or with the `lstat()` of a symbolic link, the type
+          // is unknown, so the entry is kept; chokidar tests it again with the
+          // stats of `stat()` before it is watched.
           if (!stats || stats.isSymbolicLink()) return false
-          // A type known before cannot stand in for the stats: an entry that
-          // was a file may have been replaced by a link to a directory, and
-          // answering "ignored" here means chokidar never looks at it again.
           return !keep(relative(root, path).split(sep).join('/'), stats.isDirectory())
         },
       })
