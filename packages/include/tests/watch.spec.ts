@@ -1,4 +1,4 @@
-import { Context, Fiber, Service } from 'cordis'
+import { Context, Fiber } from 'cordis'
 import Loader from '@cordisjs/plugin-loader'
 import Fs from '@cordisjs/plugin-fs-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -7,14 +7,11 @@ import * as yaml from 'yaml'
 import Include from '../src/index.ts'
 import { fixture, plugin } from './utils.ts'
 
-class FakeFs extends Service {
+// records the watches instead of starting them
+class FakeFs extends Fs {
   static paths: string[] = []
 
-  constructor(ctx: Context) {
-    super(ctx, 'fs')
-  }
-
-  watch(path: string) {
+  watch(path: string): any {
     FakeFs.paths.push(path)
     return { on: () => () => {} }
   }

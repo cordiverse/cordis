@@ -1,5 +1,6 @@
 import { Context, Fiber, FiberState } from 'cordis'
 import Loader from '@cordisjs/plugin-loader'
+import Fs from '@cordisjs/plugin-fs-node'
 import Logger from '@cordisjs/plugin-logger-console'
 import { cpSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -59,6 +60,7 @@ async function createContext(group: string, configFile: string): Promise<{ ctx: 
   const dir = copyFixtures(group)
   const ctx = new Context()
   await ctx.plugin(Logger)
+  await ctx.plugin(Fs)
   const fiber = await ctx.plugin(Loader)
   await ctx.loader.create({
     name: '@cordisjs/plugin-include',

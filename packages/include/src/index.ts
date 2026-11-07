@@ -2,7 +2,6 @@ import { Entry, EntryChange, EntryOptions, EntryTree, isJsExpr, SourceLocation }
 import { Context, Service } from 'cordis'
 import { deepEqual } from 'cosmokit'
 import { basename, dirname, extname, join } from 'node:path'
-import { access, constants, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
@@ -12,7 +11,7 @@ import {
 import { stringifyString } from 'yaml/util'
 import { applyJournal, flatten, Journal, merge, reconcile, record } from './journal.ts'
 import { applyPatches, ensureIds, ensureInsertIds, PatchIndex, PatchOptions, routeJournal } from './patch.ts'
-import type {} from '@cordisjs/plugin-fs-node'
+import { FsError } from '@cordisjs/plugin-fs-node'
 
 // A Windows drive-letter path, e.g. `C:\app\cordis.yml` or `C:/app/cordis.yml`.
 const driveLetter = /^[A-Za-z]:[\\/]/
@@ -88,8 +87,8 @@ interface Anonymous {
   options: EntryOptions
 }
 
-function isENOENT(error: unknown) {
-  return (error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT'
+function isNotFound(error: unknown) {
+  return error instanceof FsError && error.code === 'NotFound'
 }
 
 const RENAME_RETRIES = 10
@@ -97,13 +96,12 @@ const RENAME_BACKOFF = 20
 
 /**
  * On Windows a rename over a file that another process holds open (typically
- * an antivirus scanning what we just wrote) fails with one of these; the lock
- * is normally gone within milliseconds. A bounded retry is cheap enough to
- * apply on every platform.
+ * an antivirus scanning what we just wrote) fails as busy; the lock is
+ * normally gone within milliseconds. A bounded retry is cheap enough to apply
+ * on every platform.
  */
 function isTransientRenameError(error: unknown) {
-  const code = (error as NodeJS.ErrnoException | undefined)?.code
-  return code === 'EACCES' || code === 'EPERM' || code === 'EBUSY'
+  return error instanceof FsError && error.code === 'Busy'
 }
 
 export namespace Include {
@@ -242,7 +240,7 @@ function seekExpr(content: string, document: Document, path: PropertyKey[], expr
 }
 
 export class Include extends EntryTree {
-  static inject = ['loader']
+  static inject = ['loader', 'fs']
 
   public filename: string
   private type: string
@@ -292,9 +290,7 @@ export class Include extends EntryTree {
     })
 
     if (config.watch) {
-      ctx.inject(['fs'], (ctx) => {
-        ctx.fs.watch(this.filename).on('change', () => this.refresh())
-      })
+      ctx.fs.watch(this.filename).on('change', () => this.refresh())
     }
   }
 
@@ -308,7 +304,7 @@ export class Include extends EntryTree {
     } catch (error) {
       // only a missing file falls back to `initial`
       const cause = error instanceof ConfigFileError && error.stage === 'read' ? error.cause : undefined
-      if (!isENOENT(cause)) throw error
+      if (!isNotFound(cause)) throw error
       if (!this.config.initial) {
         throw new Error(`config file not found: ${this.filename}`)
       }
@@ -399,7 +395,7 @@ export class Include extends EntryTree {
   private async _read() {
     let content: string
     try {
-      content = await readFile(this.filename, 'utf8')
+      content = await this.ctx.fs.file(this.filename).text()
     } catch (error) {
       throw new ConfigFileError('read', this.filename, error)
     }
@@ -466,8 +462,8 @@ export class Include extends EntryTree {
 
   private async _write() {
     if (!this.cache || !this.journal.size) return
-    const current = await readFile(this.filename, 'utf8').catch((error) => {
-      if (isENOENT(error)) return undefined
+    const current = await this.ctx.fs.file(this.filename).text().catch((error) => {
+      if (isNotFound(error)) return undefined
       throw error
     })
     if (current === undefined) {
@@ -520,7 +516,7 @@ export class Include extends EntryTree {
     const text = this.dump(data)
 
     try {
-      await access(this.filename, constants.W_OK)
+      await this.ctx.fs.access(this.filename, 'write')
     } catch {
       restore()
       this.ctx.logger.warn('config file %C is read-only, %d pending change(s) kept in memory', this.filename, this.journal.size)
@@ -551,17 +547,17 @@ export class Include extends EntryTree {
   private async _writeText(text: string, expected?: string) {
     const tmp = join(dirname(this.filename), `.${basename(this.filename)}.${process.pid}.${this._seq++}.tmp`)
     try {
-      await writeFile(tmp, text)
+      await this.ctx.fs.file(tmp).write(text)
       for (let attempt = 0; ; attempt++) {
         if (expected !== undefined) {
-          const current = await readFile(this.filename, 'utf8').catch((error) => {
-            if (isENOENT(error)) return undefined
+          const current = await this.ctx.fs.file(this.filename).text().catch((error) => {
+            if (isNotFound(error)) return undefined
             throw error
           })
           if (current !== expected) throw new StaleWriteError()
         }
         try {
-          await rename(tmp, this.filename)
+          await this.ctx.fs.rename(tmp, this.filename)
           return
         } catch (error) {
           if (attempt >= RENAME_RETRIES || !isTransientRenameError(error)) throw error
@@ -569,7 +565,7 @@ export class Include extends EntryTree {
         await sleep(RENAME_BACKOFF * (attempt + 1))
       }
     } catch (error) {
-      await rm(tmp, { force: true }).catch(() => {})
+      await this.ctx.fs.remove(tmp, { force: true }).catch(() => {})
       throw error
     }
   }
