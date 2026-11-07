@@ -122,3 +122,16 @@ describe('ModuleCaches', () => {
     expect(counts['sweep-kept']).to.equal(1)
   })
 })
+
+describe('getRuntime', () => {
+  it('provides no runtime once another version of loader-utils has been loaded in the thread', () => {
+    const key = Symbol.for('cordis.loader-utils')
+    const state = (globalThis as any)[key]
+    ;(globalThis as any)[key] = { version: '0.0.0-other' }
+    try {
+      expect(getRuntime()).to.be.undefined
+    } finally {
+      (globalThis as any)[key] = state
+    }
+  })
+})

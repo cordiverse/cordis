@@ -779,6 +779,30 @@ export function apply(ctx: Context) {
     expect(ctx.bail('reconcile/package' as any)).to.equal('v2')
   })
 
+  it('replaces a plugin whose nested dependency is removed in favor of a hoisted copy', async () => {
+    await setup()
+    const install = (dir: string, value: string) => {
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(resolve(dir, 'package.json'), '{ "name": "reconcile-hoisted", "main": "index.cjs" }')
+      writeFileSync(resolve(dir, 'index.cjs'), `exports.value = '${value}'\n`)
+    }
+    install(resolve(fixtureDir, 'node_modules/reconcile-hoisted'), 'hoisted')
+    const nested = resolve(fixtureDir, 'hoist/node_modules/reconcile-hoisted')
+    install(nested, 'nested')
+    await load('hoist/index.cjs', `
+const { value } = require('reconcile-hoisted')
+exports.apply = (ctx) => ctx.on('reconcile/hoisted', () => value)
+`)
+    expect(ctx.bail('reconcile/hoisted' as any)).to.equal('nested')
+
+    rmSync(nested, { recursive: true })
+    const result = await ctx.hmr.reconcile(() => [nested])
+
+    expect(result.importFailures).to.deep.equal([])
+    expect(result.settledFibers).to.have.length(1)
+    expect(ctx.bail('reconcile/hoisted' as any)).to.equal('hoisted')
+  })
+
   it('runs transactions one at a time', async () => {
     await setup()
     const slow = await load('queue-slow.ts', plugin('slow', 'v1'))

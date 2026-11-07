@@ -119,20 +119,25 @@ export interface ModuleLoaderV2 {
 
 export type ModuleLoader = ModuleLoaderV1 | ModuleLoaderV2
 
-export namespace ModuleLoader {
-  let _cachedLoader: ModuleLoader | undefined
-
-  function requireInternal(id: string): any {
-    const require = createRequire(import.meta.url)
-    if (process.execArgv.includes('--expose-internals')) {
-      try {
-        return require(id)
-      } catch {}
-    }
+/**
+ * Load an internal module of Node, through `--expose-internals` or
+ * `node-addon-require-builtin`.
+ * @returns the module, or `undefined` when it is unreachable.
+ */
+export function requireInternal(id: string): any {
+  const require = createRequire(import.meta.url)
+  if (process.execArgv.includes('--expose-internals')) {
     try {
-      return require('node-addon-require-builtin').requireBuiltin(id)
+      return require(id)
     } catch {}
   }
+  try {
+    return require('node-addon-require-builtin').requireBuiltin(id)
+  } catch {}
+}
+
+export namespace ModuleLoader {
+  let _cachedLoader: ModuleLoader | undefined
 
   /**
    * Locate and classify the running Node internal module loader.

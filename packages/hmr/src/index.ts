@@ -393,6 +393,9 @@ class Hmr extends Service {
     await caches.sweep()
     if (!roots.size) return result
 
+    // also when the roots match no loaded module, e.g. a changed manifest
+    this._runtime.resolution.invalidate(roots)
+
     const changed = new Set<string>()
     for (const url of this._match(roots)) {
       // A change to a host module or to a loaded native addon cannot be
