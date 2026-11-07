@@ -70,11 +70,13 @@ export class EntryGroup {
     // distinguishes "removed by the loader" from "disposed itself" by checking
     // whether the entry is still in the store.
     delete this.tree.store[id]
-    entry.dispose()
+    const task = entry.dispose()
+    if (task) this.tree.trackDetached(task)
     if (!isDispose) {
       this.unlink(entry.options)
     }
     this.context.emit('loader/partial-dispose', entry, entry.options, false)
+    return task
   }
 
   async update(config: EntryOptions[]) {
@@ -92,7 +94,7 @@ export class EntryGroup {
           this.ctx.logger.error(error)
         })
       } else {
-        this.remove(id)
+        await this.remove(id)
       }
     }))
   }
