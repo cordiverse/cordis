@@ -1,9 +1,9 @@
 import { Context, Fiber, Plugin, Service } from 'cordis'
-import { getRuntime, ModuleRuntime, unwrapExports } from '@cordisjs/loader-utils'
 import type {} from '@cordisjs/plugin-fs-node'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { handleError } from './error.ts'
+import { activate, invalidateResolution, ModuleCaches, ModuleLoader } from './runtime/index.ts'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import z from 'schemastery'
 
@@ -79,6 +79,16 @@ interface ReconcileUnit {
   modules: Set<string>
 }
 
+/** Get the plugin exported by a module namespace. */
+function unwrapExports(exports: any) {
+  if (exports === null || exports === undefined) return exports
+  exports = exports.default ?? exports
+  // https://github.com/evanw/esbuild/issues/2623
+  // https://esbuild.github.io/content-types/#default-interop
+  if (!exports.__esModule) return exports
+  return exports.default ?? exports
+}
+
 function toPath(url: string) {
   if (url.startsWith('file:')) return fileURLToPath(url)
 }
@@ -87,8 +97,10 @@ class Hmr extends Service {
   /** The resolved `base`. `watch.files` and logged paths are relative to it. */
   public baseDir: string
 
-  /** Node's module loading, reached through its internals. */
-  private _runtime: ModuleRuntime
+  /** Node's internal ESM loader. */
+  private _loader: ModuleLoader
+  /** Node's module caches. */
+  private _modules: ModuleCaches
 
   /**
    * The dependency tree of the main entry point. A change to any of these
@@ -105,11 +117,13 @@ class Hmr extends Service {
 
   constructor(ctx: Context, public config: Hmr.Config) {
     super(ctx, 'hmr')
-    const runtime = getRuntime()
-    if (!runtime) {
+    const loader = ModuleLoader.fromInternal()
+    if (!loader) {
       throw new Error('loader internals are unavailable, pass --expose-internals or install node-addon-require-builtin')
     }
-    this._runtime = runtime
+    this._loader = loader
+    this._modules = new ModuleCaches(loader)
+    ctx.effect(() => activate())
 
     // On Windows, a drive-letter path is converted with `pathToFileURL`.
     // `new URL()` would read its `C:` as a URL scheme, which `fileURLToPath` rejects.
@@ -186,8 +200,8 @@ class Hmr extends Service {
     // process.argv[1] is undefined in REPL, node -e, and some packed binaries.
     if (process.argv[1]) {
       const mainUrl = pathToFileURL(resolve(process.argv[1])).href
-      if (this._runtime.modules.has(mainUrl)) {
-        this.hostModules = await closure([mainUrl], url => this._runtime.modules.edges(url))
+      if (this._modules.has(mainUrl)) {
+        this.hostModules = await closure([mainUrl], url => this._modules.edges(url))
       }
     }
   }
@@ -247,7 +261,7 @@ class Hmr extends Service {
    * the eviction, i.e. the old module graph.
    */
   private async _analyze(changed: Set<string>) {
-    const caches = this._runtime.modules
+    const caches = this._modules
     const urls = [...caches.urls()].filter(url => !isBuiltin(url))
     const edges = new Map<string, Set<string>>()
     await Promise.all(urls.map(async url => edges.set(url, await caches.edges(url))))
@@ -333,12 +347,12 @@ class Hmr extends Service {
    */
   private _discover(declined: Set<string>) {
     const candidates = new Map<string, Plugin>()
-    for (const url of this._runtime.modules.urls()) {
+    for (const url of this._modules.urls()) {
       if (declined.has(url) || isBuiltin(url)) continue
       let plugin: Plugin | undefined
       try {
         // reading a binding that has not been initialized throws
-        plugin = unwrapExports(this._runtime.modules.namespace(url))
+        plugin = unwrapExports(this._modules.namespace(url))
       } catch {
         continue
       }
@@ -357,7 +371,7 @@ class Hmr extends Service {
     const used = new Set<string>()
     // A module is loaded if it is in either module cache. In Node 24, a CJS
     // module imported via import() is in both of them.
-    for (const url of this._runtime.modules.urls()) {
+    for (const url of this._modules.urls()) {
       let path = toPath(url)
       if (!path) continue
       // The ancestors are looked up instead of comparing prefixes, so that a
@@ -389,12 +403,12 @@ class Hmr extends Service {
       roots.add(resolve(root))
     }
     // after the callback, so that a module job that failed during it is removed too
-    const caches = this._runtime.modules
+    const caches = this._modules
     await caches.sweep()
     if (!roots.size) return result
 
     // also when the roots match no loaded module, e.g. a changed manifest
-    this._runtime.resolution.invalidate(roots)
+    invalidateResolution(roots)
 
     const changed = new Set<string>()
     for (const url of this._match(roots)) {
@@ -478,9 +492,9 @@ class Hmr extends Service {
         // Import the other modules of the plugin too, so that their failures
         // abort its unit as well.
         for (const url of stale.urls) {
-          if (url !== stale.url) await this._runtime.import(url, import.meta.url)
+          if (url !== stale.url) await this._loader.import(url, import.meta.url, {})
         }
-        const exports = unwrapExports(await this._runtime.import(stale.url, import.meta.url))
+        const exports = unwrapExports(await this._loader.import(stale.url, import.meta.url, {}))
         if (!this.ctx.registry.resolve(exports)) {
           throw new Error(`invalid plugin at ${this._relative(stale.url)}, `
             + `expect function or object with an "apply" method, received ${typeof exports}`)

@@ -59,6 +59,8 @@ function change(filename: string) {
 describe('Hmr with fs', () => {
   let ctx: Context
   let fiber: Fiber<Context> | undefined
+  // HMR is a sibling of the loader, and at most one instance is active at a time
+  let hmr: Fiber<Context> | undefined
   let reconcile: MockInstance<Hmr['reconcile']>
 
   beforeEach(() => {
@@ -75,6 +77,8 @@ describe('Hmr with fs', () => {
   })
 
   afterEach(async () => {
+    await hmr?.dispose()
+    hmr = undefined
     await fiber?.dispose()
     fiber = undefined
     FakeFs.watches = []
@@ -86,7 +90,7 @@ describe('Hmr with fs', () => {
     ctx.baseUrl = import.meta.url
     fiber = await ctx.plugin(Loader)
     await ctx.plugin(FakeFs)
-    await ctx.plugin(Hmr, { base, watch: { enabled: true, debounce: 50, ...config } })
+    hmr = await ctx.plugin(Hmr, { base, watch: { enabled: true, debounce: 50, ...config } })
   }
 
   async function load(name: string, content: string) {
@@ -267,7 +271,7 @@ export const apply = 'not a function'`))
     ctx.baseUrl = import.meta.url
     fiber = await ctx.plugin(Loader)
     await ctx.plugin(Fs)
-    await ctx.plugin(Hmr, { watch: { enabled: true, files: ['__watch__'], debounce: 50 } })
+    hmr = await ctx.plugin(Hmr, { watch: { enabled: true, files: ['__watch__'], debounce: 50 } })
     const path = await load('disk.ts', plugin('disk', 'v1'))
 
     // some platforms report changes late, so the file is rewritten until one is seen

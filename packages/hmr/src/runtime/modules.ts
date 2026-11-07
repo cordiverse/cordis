@@ -1,8 +1,6 @@
 import { createRequire } from 'node:module'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { getModuleJobs, ModuleJob, ModuleLoader, ModuleStatus } from './internal.ts'
-import { ResolutionCaches } from './resolution.ts'
-import { getState } from './state.ts'
 
 // a builtin has no file and no dependencies to follow
 function isBuiltin(url: string) {
@@ -169,29 +167,4 @@ export interface ModuleBackup {
    * module that was not loaded when it was evicted is removed again.
    */
   restore(urls: Iterable<string>): void
-}
-
-/** Access to Node's module loading through its internals. */
-export interface ModuleRuntime {
-  /** Import a module through Node's internal ESM loader. */
-  import(specifier: string, parentURL: string): Promise<any>
-  readonly modules: ModuleCaches
-  readonly resolution: ResolutionCaches
-}
-
-let runtime: ModuleRuntime | undefined
-
-/**
- * Get the module runtime of this thread.
- * @returns the runtime, or `undefined` if Node's internal loader is
- * unreachable or another version of loader-utils is loaded in this thread.
- */
-export function getRuntime(): ModuleRuntime | undefined {
-  const loader = ModuleLoader.fromInternal()
-  if (!loader || !getState()) return
-  return runtime ??= {
-    import: (specifier, parentURL) => loader.import(specifier, parentURL, {}),
-    modules: new ModuleCaches(loader),
-    resolution: new ResolutionCaches(loader),
-  }
 }

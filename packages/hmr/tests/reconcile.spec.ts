@@ -1,5 +1,4 @@
 import { Context, Fiber, FiberState } from 'cordis'
-import { getRuntime, ModuleLoader, unwrapExports } from '@cordisjs/loader-utils'
 import Loader from '@cordisjs/plugin-loader'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -7,12 +6,14 @@ import { dirname, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import Hmr from '../src/index.ts'
+import { ModuleLoader } from '../src/runtime/index.ts'
 
 const testDir = dirname(fileURLToPath(import.meta.url))
 const fixtureDir = resolve(testDir, '__reconcile__')
 
 // imports through Node's own loader see the module caches that HMR manages
-const runtime = getRuntime()!
+const loader = ModuleLoader.fromInternal()!
+const importModule = (specifier: string, parentURL: string) => loader.import(specifier, parentURL, {})
 
 // Counters must survive module reloads, so they live on `globalThis`.
 const stats: any = (globalThis as any).__hmrReconcile = {}
@@ -41,6 +42,8 @@ function fixture(name: string, content: string) {
 describe('Hmr.reconcile', () => {
   let ctx: Context
   let fiber: Fiber<Context> | undefined
+  // HMR is a sibling of the loader, and at most one instance is active at a time
+  let hmr: Fiber<Context> | undefined
 
   beforeAll(() => {
     rmSync(fixtureDir, { recursive: true, force: true })
@@ -52,6 +55,8 @@ describe('Hmr.reconcile', () => {
   })
 
   afterEach(async () => {
+    await hmr?.dispose()
+    hmr = undefined
     await fiber?.dispose()
     fiber = undefined
   })
@@ -59,7 +64,7 @@ describe('Hmr.reconcile', () => {
   async function setup() {
     ctx = new Context()
     fiber = await ctx.plugin(Loader, { baseUrl: import.meta.url })
-    await ctx.plugin(Hmr)
+    hmr = await ctx.plugin(Hmr)
     return ctx
   }
 
@@ -81,6 +86,23 @@ describe('Hmr.reconcile', () => {
     }
     expect(fiber.state).to.equal(FiberState.FAILED)
     expect(ctx.get('hmr')).to.be.undefined
+  })
+
+  it('starts one instance at a time in a thread', async () => {
+    await setup()
+    const second = new Context().plugin(Hmr)
+    await second.await().catch(() => {})
+    expect(second.state).to.equal(FiberState.FAILED)
+
+    await hmr!.dispose()
+    hmr = undefined
+    const third = new Context().plugin(Hmr)
+    try {
+      await third.await()
+      expect(third.state).to.equal(FiberState.ACTIVE)
+    } finally {
+      await third.dispose()
+    }
   })
 
   it('replaces an entry plugin in place', async () => {
@@ -150,12 +172,12 @@ export function apply(ctx) {
 if (!globalThis.__hmrReconcile.transientReady) throw new Error('not ready')
 export const value = 'ready'
 `)).href
-    await expect(runtime.import(url, import.meta.url)).rejects.toThrow('not ready')
+    await expect(importModule(url, import.meta.url)).rejects.toThrow('not ready')
 
     stats.transientReady = true
     await ctx.hmr.reconcile(() => [])
 
-    const { value } = await runtime.import(url, import.meta.url)
+    const { value } = await importModule(url, import.meta.url)
     expect(value).to.equal('ready')
   })
 
@@ -167,11 +189,11 @@ stats.pendingEvaluated = (stats.pendingEvaluated ?? 0) + 1
 export const state = {}
 `)).href
 
-    const pending = runtime.import(url, import.meta.url)
+    const pending = importModule(url, import.meta.url)
     await ctx.hmr.reconcile(() => [])
 
     const first = await pending
-    const later = await runtime.import(url, import.meta.url)
+    const later = await importModule(url, import.meta.url)
     expect(later.state).to.equal(first.state)
     expect(stats.pendingEvaluated).to.equal(1)
   })
@@ -201,7 +223,7 @@ export function apply(ctx) {
     expect(result.importFailures).to.have.length(1)
     // the next transaction removes the failed job
     await ctx.hmr.reconcile(() => [])
-    const later = await runtime.import(pathToFileURL(shared).href, import.meta.url)
+    const later = await importModule(pathToFileURL(shared).href, import.meta.url)
     expect(ctx.bail('reconcile/slot' as any)).to.equal(later.default)
   })
 
@@ -395,8 +417,8 @@ export function apply(ctx: Context) {
   it('replaces a plugin that no entry manages', async () => {
     await setup()
     const path = fixture('direct.ts', plugin('direct', 'v1'))
-    const exports = await runtime.import(pathToFileURL(path).href, import.meta.url)
-    const direct = ctx.plugin(unwrapExports(exports))
+    const exports = await importModule(pathToFileURL(path).href, import.meta.url)
+    const direct = ctx.plugin(ctx.loader.unwrapExports(exports))
     await direct
     expect(ctx.bail('reconcile/direct' as any)).to.equal('v1')
 
@@ -415,8 +437,8 @@ export function apply(ctx: Context) {
     await setup()
     const path = fixture('data-impl.ts', plugin('data', 'v1'))
     const url = `data:text/javascript,export * from ${JSON.stringify(pathToFileURL(path).href)}`
-    const exports = await runtime.import(url, import.meta.url)
-    await ctx.plugin(unwrapExports(exports))
+    const exports = await importModule(url, import.meta.url)
+    await ctx.plugin(ctx.loader.unwrapExports(exports))
     expect(ctx.bail('reconcile/data' as any)).to.equal('v1')
 
     writeFileSync(path, plugin('data', 'v2'))
@@ -469,7 +491,7 @@ export const Config = {
 }
 `)
     const entryUrl = pathToFileURL(entry).href
-    const original = await runtime.import(entryUrl, import.meta.url)
+    const original = await importModule(entryUrl, import.meta.url)
     await ctx.plugin(original, {})
 
     writeFileSync(implementation, `
@@ -483,7 +505,7 @@ export function apply(ctx, config) {
     expect(Object.keys(result.settledFibers[0].inject)).to.deep.equal(['reconcileGate'])
     expect(ctx.bail('reconcile/reexport' as any)).to.deep.equal({ version: 'v2', config: { validated: true } })
     // the entry module is refreshed as well
-    const refreshed = await runtime.import(entryUrl, import.meta.url)
+    const refreshed = await importModule(entryUrl, import.meta.url)
     expect(refreshed.apply).to.not.equal(original.apply)
     expect(ctx.registry.get(refreshed)).to.equal(result.settledFibers[0].runtime)
   })
@@ -492,7 +514,7 @@ export function apply(ctx, config) {
     await setup()
     const orphan = fixture('orphan.ts', 'export const value = 1\n')
     const url = pathToFileURL(orphan).href
-    const before = await runtime.import(url, import.meta.url)
+    const before = await importModule(url, import.meta.url)
     const data = fixture('data.txt', 'data')
 
     writeFileSync(orphan, 'export const value = 2\n')
@@ -501,7 +523,7 @@ export function apply(ctx, config) {
     expect(result.settledFibers).to.deep.equal([])
     // existing references keep the old module
     expect(before.value).to.equal(1)
-    const after = await runtime.import(url, import.meta.url)
+    const after = await importModule(url, import.meta.url)
     expect(after.value).to.equal(2)
   })
 
@@ -664,7 +686,7 @@ export function apply(ctx: Context) {
 
     expect(result.settledFibers).to.have.length(1)
     expect(result.importFailures).to.have.length(1)
-    const { state } = await runtime.import(shared, import.meta.url)
+    const { state } = await importModule(shared, import.meta.url)
     expect(ctx.bail('reconcile/importer' as any)).to.equal(state)
   })
 
@@ -676,7 +698,7 @@ import { value } from './outside-dep.ts'
 export const derived = value
 `)
     const url = pathToFileURL(outside).href
-    await runtime.import(url, import.meta.url)
+    await importModule(url, import.meta.url)
     const owner = await load('outside-owner.ts', `import './outside-dep.ts'\n` + plugin('owner', 'v1'))
 
     // the new module depends on an export that only the new dependency has
@@ -690,7 +712,7 @@ export const derived = value + extra
 
     expect(result.importFailures).to.have.length(1)
     expect(result.importFailures[0].urls).to.include(url)
-    const { derived } = await runtime.import(url, import.meta.url)
+    const { derived } = await importModule(url, import.meta.url)
     expect(derived).to.equal('v1')
   })
 

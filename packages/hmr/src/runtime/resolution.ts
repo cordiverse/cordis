@@ -3,58 +3,62 @@ import fs from 'node:fs'
 import Module from 'node:module'
 import { pathToFileURL } from 'node:url'
 import { ModuleLoader, requireInternal } from './internal.ts'
-import { invalidateManifests } from './manifests.ts'
-import { Captured, getState } from './state.ts'
+import { invalidateManifests } from './patches.ts'
 
-/** The resolution caches that {@link ResolutionCaches.invalidate} can clear in this thread. */
+/** Node's private resolution caches. */
+interface Captured {
+  resolve?: Map<unknown, unknown>
+  realpath: {
+    esm?: Map<unknown, unknown>
+    /** may be the ESM one */
+    cjs?: Map<unknown, unknown>
+  }
+}
+
+/** The resolution caches that {@link invalidateResolution} can clear in this thread. */
 export interface ResolutionSupport {
   /** Whether the realpath caches of ESM and CJS are cleared; for ESM, on Node 24.16+ and 26.1+. */
   realpath: boolean
 }
 
-/** Node's caches from a request to the resolved module. */
-export class ResolutionCaches {
-  constructor(private _loader: ModuleLoader) {}
+let captured: Captured | undefined
 
-  get support(): ResolutionSupport {
-    const captured = this._captured()
-    return { realpath: !!captured?.realpath.esm && !!captured.realpath.cjs }
-  }
+/** The private caches, captured at the first use; a failed probe is tried again. */
+function getCaptured() {
+  if (captured) return captured
+  const loader = ModuleLoader.fromInternal()
+  if (!loader) return
+  const result = capture(loader)
+  if (result.complete) captured = result.captured
+  return result.captured
+}
 
-  /**
-   * Make later resolutions observe the file system below `paths`, which may
-   * be spelled through links. The caches are cleared as a whole, since an
-   * entry can depend on a manifest outside `paths`. A manifest at or below
-   * one of `paths`, as spelled or at the real path of its directory, is read
-   * from disk from now on.
-   *
-   * The first call replaces Node's manifest readers and `Module._load` for
-   * the lifetime of the thread, since Node's manifest caches cannot be
-   * cleared. CJS requests are then resolved before `Module._load`, which
-   * receives them under another key.
-   */
-  invalidate(paths: Iterable<string>) {
-    const list = [...paths]
-    if (!list.length) return
-    const pathCache: Record<string, string> = (Module as any)._pathCache
-    for (const key in pathCache) delete pathCache[key]
-    invalidateManifests(list)
-    const captured = this._captured()
-    if (!captured) return
-    const { resolve, realpath } = captured
-    for (const cache of new Set([resolve, realpath.esm, realpath.cjs])) {
-      if (cache) Map.prototype.clear.call(cache)
-    }
-  }
+export function getResolutionSupport(): ResolutionSupport {
+  const captured = getCaptured()
+  return { realpath: !!captured?.realpath.esm && !!captured.realpath.cjs }
+}
 
-  private _captured() {
-    const state = getState()
-    if (!state) return
-    if (state.captured) return state.captured
-    const { captured, complete } = capture(this._loader)
-    // a failed probe is tried again
-    if (complete) state.captured = captured
-    return captured
+/**
+ * Make later resolutions observe the file system below `paths`, which may be
+ * spelled through links. The caches are cleared as a whole, since an entry
+ * can depend on a manifest outside `paths`. A manifest at or below one of
+ * `paths`, as spelled or at the real path of its directory, is read from disk
+ * from now on.
+ *
+ * Manifests are read through the replacements of `activate()`, which
+ * must be in place.
+ */
+export function invalidateResolution(paths: Iterable<string>) {
+  const list = [...paths]
+  if (!list.length) return
+  const pathCache: Record<string, string> = (Module as any)._pathCache
+  for (const key in pathCache) delete pathCache[key]
+  invalidateManifests(list)
+  const captured = getCaptured()
+  if (!captured) return
+  const { resolve, realpath } = captured
+  for (const cache of new Set([resolve, realpath.esm, realpath.cjs])) {
+    if (cache) Map.prototype.clear.call(cache)
   }
 }
 
@@ -101,7 +105,7 @@ function captureESM(loader: ModuleLoader) {
     resolveCache ??= this
     return get.apply(this, args)
   }
-  const specifier = `${pathToFileURL(process.execPath).href}?cordis-loader-utils-capture=${randomUUID()}`
+  const specifier = `${pathToFileURL(process.execPath).href}?cordis-hmr-capture=${randomUUID()}`
   let complete = true
   try {
     if (loader.version === 'v2') {

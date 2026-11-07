@@ -3,10 +3,11 @@ import { createRequire, registerHooks } from 'node:module'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { getRuntime, requireInternal } from '../src/index.ts'
+import { activate, invalidateResolution, ModuleCaches, ModuleLoader, requireInternal } from '../src/runtime/index.ts'
 import { realpathESM, useFixtures } from './utils.ts'
 
-const runtime = getRuntime()!
+const modules = new ModuleCaches(ModuleLoader.fromInternal()!)
+activate()
 const fixtures = useFixtures('manifests')
 const { fixture, runESM } = fixtures
 const require = createRequire(import.meta.url)
@@ -59,7 +60,7 @@ describe('manifests', () => {
       const overlay = fixture(`parse/overlay/${index}/package.json`, '')
       writeFileSync(native, content)
       writeFileSync(overlay, content)
-      runtime.resolution.invalidate([join(fixtures.dir, 'parse/overlay')])
+      invalidateResolution([join(fixtures.dir, 'parse/overlay')])
       expect(read(overlay), String(content)).to.deep.equal(read(native))
     }
   })
@@ -69,8 +70,8 @@ describe('manifests', () => {
     const path = fixture('cjs-main/index.cjs', `module.exports = require('baz')`)
     expect(require(path)).to.have.property('version', 1)
     update()
-    runtime.modules.evict([url(path), old])
-    runtime.resolution.invalidate([dir])
+    modules.evict([url(path), old])
+    invalidateResolution([dir])
     expect(require(path)).to.have.property('version', 2)
   })
 
@@ -80,7 +81,7 @@ describe('manifests', () => {
     const lazy = require(path)
     expect(lazy()).to.equal(1)
     update()
-    runtime.resolution.invalidate([manifest])
+    invalidateResolution([manifest])
     expect(lazy()).to.equal(2)
   })
 
@@ -93,7 +94,7 @@ describe('manifests', () => {
     expect(lazy()).to.equal(1)
     fixture('cjs-shadow/app/node_modules/qux/package.json', '{"name":"qux","main":"main.cjs"}')
     fixture('cjs-shadow/app/node_modules/qux/main.cjs', 'exports.version = 2')
-    runtime.resolution.invalidate([join(fixtures.dir, 'cjs-shadow/app/node_modules/qux')])
+    invalidateResolution([join(fixtures.dir, 'cjs-shadow/app/node_modules/qux')])
     expect(lazy()).to.equal(2)
   })
 
@@ -110,8 +111,8 @@ describe('manifests', () => {
     expect(require(path)).to.have.property('version', 1)
     unlinkSync(location)
     symlinkSync(join(fixtures.dir, 'cjs-link/store/bar@2'), location, 'junction')
-    runtime.modules.evict([url(path), url(join(previous, 'v1.cjs'))])
-    runtime.resolution.invalidate([previous, location])
+    modules.evict([url(path), url(join(previous, 'v1.cjs'))])
+    invalidateResolution([previous, location])
     expect(require(path)).to.have.property('version', 2)
   })
 
@@ -120,11 +121,11 @@ describe('manifests', () => {
     const path = fixture('esm-exports/index.mjs', `export { version } from 'baz'`)
     expect(runESM('esm-exports', `
       const { writeFileSync } = await import('node:fs')
-      const before = (await runtime.import(${JSON.stringify(url(path))}, import.meta.url)).version
+      const before = (await importModule(${JSON.stringify(url(path))}, import.meta.url)).version
       writeFileSync(${JSON.stringify(manifest)}, ${JSON.stringify(JSON.stringify({ name: 'baz', exports: './b.mjs' }))})
-      runtime.modules.evict([${JSON.stringify(url(path))}, ${JSON.stringify(old)}])
-      runtime.resolution.invalidate([${JSON.stringify(dir)}])
-      const after = (await runtime.import(${JSON.stringify(url(path))}, import.meta.url)).version
+      modules.evict([${JSON.stringify(url(path))}, ${JSON.stringify(old)}])
+      invalidateResolution([${JSON.stringify(dir)}])
+      const after = (await importModule(${JSON.stringify(url(path))}, import.meta.url)).version
       return { before, after }
     `)).to.deep.equal({ before: 1, after: 2 })
   })
@@ -136,12 +137,12 @@ describe('manifests', () => {
     const path = fixture('esm-type/index.mjs', `import baz from 'baz'\nexport const version = baz.version`)
     expect(runESM('esm-type', `
       const { writeFileSync } = await import('node:fs')
-      const before = (await runtime.import(${JSON.stringify(url(path))}, import.meta.url)).version
+      const before = (await importModule(${JSON.stringify(url(path))}, import.meta.url)).version
       writeFileSync(${JSON.stringify(join(dir, 'package.json'))}, '{"name":"baz","type":"module","main":"index.js"}')
       writeFileSync(${JSON.stringify(index)}, 'export default { version: 2 }')
-      runtime.modules.evict([${JSON.stringify(url(path))}, ${JSON.stringify(url(index))}])
-      runtime.resolution.invalidate([${JSON.stringify(dir)}])
-      const after = (await runtime.import(${JSON.stringify(url(path))}, import.meta.url)).version
+      modules.evict([${JSON.stringify(url(path))}, ${JSON.stringify(url(index))}])
+      invalidateResolution([${JSON.stringify(dir)}])
+      const after = (await importModule(${JSON.stringify(url(path))}, import.meta.url)).version
       return { before, after }
     `)).to.deep.equal({ before: 1, after: 2 })
   })
@@ -158,12 +159,12 @@ describe('manifests', () => {
     const path = fixture('esm-link/index.mjs', `export { version } from 'bar'`)
     expect(runESM('esm-link', `
       const { symlinkSync, unlinkSync } = await import('node:fs')
-      const before = (await runtime.import(${JSON.stringify(url(path))}, import.meta.url)).version
+      const before = (await importModule(${JSON.stringify(url(path))}, import.meta.url)).version
       unlinkSync(${JSON.stringify(location)})
       symlinkSync(${JSON.stringify(join(fixtures.dir, 'esm-link/store/bar@2'))}, ${JSON.stringify(location)}, 'junction')
-      runtime.modules.evict([${JSON.stringify(url(path))}, ${JSON.stringify(url(join(previous, 'v1.mjs')))}])
-      runtime.resolution.invalidate([${JSON.stringify(previous)}, ${JSON.stringify(location)}])
-      const after = (await runtime.import(${JSON.stringify(url(path))}, import.meta.url)).version
+      modules.evict([${JSON.stringify(url(path))}, ${JSON.stringify(url(join(previous, 'v1.mjs')))}])
+      invalidateResolution([${JSON.stringify(previous)}, ${JSON.stringify(location)}])
+      const after = (await importModule(${JSON.stringify(url(path))}, import.meta.url)).version
       return { before, after }
     `)).to.deep.equal({ before: 1, after: 2 })
   })
@@ -186,7 +187,7 @@ describe('manifests', () => {
           ? { format: 'commonjs', source: 'exports.version = 2', shortCircuit: true }
           : nextLoad(url, context),
       })
-      runtime.resolution.invalidate([${JSON.stringify(join(fixtures.dir, 'hook'))}])
+      invalidateResolution([${JSON.stringify(join(fixtures.dir, 'hook'))}])
       return createRequire(import.meta.url)(${JSON.stringify(path)})
     `)).to.deep.equal({ file: 1, source: 2 })
   })
@@ -214,8 +215,8 @@ describe('manifests', () => {
       })
       const require = createRequire(import.meta.url)
       const before = require(${JSON.stringify(path)})
-      runtime.modules.evict([${JSON.stringify(url(path))}, ${JSON.stringify(url(target))}, ${JSON.stringify(url(absent))}])
-      runtime.resolution.invalidate([${JSON.stringify(join(fixtures.dir, 'hook-result'))}])
+      modules.evict([${JSON.stringify(url(path))}, ${JSON.stringify(url(target))}, ${JSON.stringify(url(absent))}])
+      invalidateResolution([${JSON.stringify(join(fixtures.dir, 'hook-result'))}])
       const after = require(${JSON.stringify(path)})
       return { before, after }
     `)).to.deep.equal({ before: { format: 1, absent: 2 }, after: { format: 1, absent: 2 } })
@@ -228,7 +229,7 @@ describe('manifests', () => {
       return [request, url(fixture(`hook-builtin/target-${index}.cjs`, 'exports.version = 42'))]
     }))
     const path = fixture('hook-builtin/lazy.cjs', `module.exports = request => require(request)`)
-    // the first requires precede the first invalidation, so that Node records them under the requests
+    // the first requires precede the installation, so that Node records them under the requests
     const result = runESM('hook-builtin', `
       const { createRequire, registerHooks } = await import('node:module')
       const targets = ${JSON.stringify(targets)}
@@ -248,10 +249,11 @@ describe('manifests', () => {
         } catch {}
       })
       redirect = false
-      runtime.resolution.invalidate([${JSON.stringify(join(fixtures.dir, 'hook-builtin'))}])
+      activate()
+      invalidateResolution([${JSON.stringify(join(fixtures.dir, 'hook-builtin'))}])
       const { default: builtin } = await import('node:path')
       return { recorded, after: recorded.map(request => lazy(request) === builtin) }
-    `)
+    `, { activate: false })
     expect(result.recorded).to.include.members(['virtual:alias', 'path'])
     expect(result.after.every(Boolean)).to.be.true
   })
@@ -267,7 +269,7 @@ describe('manifests', () => {
           ? { format: 'commonjs', source: 'globalThis.evaluations = (globalThis.evaluations ?? 0) + 1; exports.parent = module.parent', shortCircuit: true }
           : nextLoad(url, context),
       })
-      runtime.resolution.invalidate([${JSON.stringify(join(fixtures.dir, `hook-substitute-${name}`))}])
+      invalidateResolution([${JSON.stringify(join(fixtures.dir, `hook-substitute-${name}`))}])
       const require = createRequire(import.meta.url)
       const lazy = require(${JSON.stringify(path)})
       const [first, second] = [lazy(), lazy()]
@@ -289,7 +291,7 @@ describe('manifests', () => {
       const require = createRequire(import.meta.url)
       const fake = {}
       require.cache.path = { exports: fake, loaded: true }
-      runtime.resolution.invalidate([${JSON.stringify(join(fixtures.dir, 'builtin-cache'))}])
+      invalidateResolution([${JSON.stringify(join(fixtures.dir, 'builtin-cache'))}])
       const lazy = require(${JSON.stringify(path)})
       return { prefixed: lazy('node:path') === builtin, bare: lazy('path') === fake }
     `)).to.deep.equal({ prefixed: true, bare: true })
@@ -299,7 +301,7 @@ describe('manifests', () => {
     const target = fixture('hook-deregister/target.cjs', 'exports.version = 7')
     const mock = fixture('hook-deregister/mock.cjs', 'exports.version = 42')
     const path = fixture('hook-deregister/lazy.cjs', `module.exports = () => require(${JSON.stringify(target)}).version`)
-    // the first require precedes the first invalidation, so that Node records it under the request
+    // the first require precedes the installation, so that Node records it under the request
     expect(runESM('hook-deregister', `
       const { createRequire, registerHooks } = await import('node:module')
       const hooks = registerHooks({
@@ -310,28 +312,63 @@ describe('manifests', () => {
       const lazy = createRequire(import.meta.url)(${JSON.stringify(path)})
       const before = lazy()
       hooks.deregister()
-      runtime.resolution.invalidate([${JSON.stringify(join(fixtures.dir, 'hook-deregister'))}])
+      activate()
+      invalidateResolution([${JSON.stringify(join(fixtures.dir, 'hook-deregister'))}])
       return { before, after: lazy() }
-    `)).to.deep.equal({ before: 42, after: 7 })
+    `, { activate: false })).to.deep.equal({ before: 42, after: 7 })
   })
 
   it('throws from a later CommonJS require after `exports` is updated to exclude the request', () => {
     const { manifest } = baz('cjs-unexported', 'cjs', 'exports')
     const path = fixture('cjs-unexported/lazy.cjs', `module.exports = () => require('baz').version`)
-    // the first require precedes the first invalidation, so that Node records it under the request
+    // the first require precedes the installation, so that Node records it under the request
     expect(runESM('cjs-unexported', `
       const { writeFileSync } = await import('node:fs')
       const { createRequire } = await import('node:module')
       const lazy = createRequire(import.meta.url)(${JSON.stringify(path)})
       const before = lazy()
       writeFileSync(${JSON.stringify(manifest)}, ${JSON.stringify(JSON.stringify({ name: 'baz', exports: { '.': null } }))})
-      runtime.resolution.invalidate([${JSON.stringify(manifest)}])
+      activate()
+      invalidateResolution([${JSON.stringify(manifest)}])
       try {
         return { before, after: lazy() }
       } catch (error) {
         return { before, code: error.code }
       }
-    `)).to.deep.equal({ before: 1, code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' })
+    `, { activate: false })).to.deep.equal({ before: 1, code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' })
+  })
+
+  it('keeps reading the manifests that a disposed HMR has invalidated', () => {
+    const { manifest } = baz('takeover', 'cjs', 'main')
+    const path = fixture('takeover/lazy.cjs', `module.exports = () => require('baz').version`)
+    // the first require precedes the first invalidation, so that Node caches the manifest
+    expect(runESM('takeover', `
+      const { writeFileSync } = await import('node:fs')
+      const { createRequire } = await import('node:module')
+      const deactivate = activate()
+      const lazy = createRequire(import.meta.url)(${JSON.stringify(path)})
+      const before = lazy()
+      writeFileSync(${JSON.stringify(manifest)}, ${JSON.stringify(JSON.stringify({ name: 'baz', main: './b.cjs' }))})
+      invalidateResolution([${JSON.stringify(manifest)}])
+      deactivate()
+      activate()
+      return { before, after: lazy() }
+    `, { activate: false })).to.deep.equal({ before: 1, after: 2 })
+  })
+
+  it('refuses to take over replacements that another wrapper has covered', () => {
+    expect(runESM('covered', `
+      const { default: Module } = await import('node:module')
+      const deactivate = activate()
+      deactivate()
+      const { _load } = Module
+      Module._load = function (...args) { return _load.apply(this, args) }
+      try {
+        activate()
+      } catch (error) {
+        return error.message
+      }
+    `, { activate: false })).to.match(/restart/)
   })
 
   it('leaves Node unchanged when a replacement cannot be installed', () => {
@@ -343,8 +380,8 @@ describe('manifests', () => {
       const methods = () => [binding.readPackageJSON, binding.getNearestParentPackageJSON, binding.getPackageScopeConfig, Module._load]
       const originals = methods()
       Object.defineProperty(reader, 'getNearestParentPackageJSON', { value: reader.getNearestParentPackageJSON, writable: false })
-      runtime.resolution.invalidate([${JSON.stringify(join(fixtures.dir, 'rollback'))}])
+      activate()
       return methods().map((method, index) => method === originals[index])
-    `)).to.deep.equal([true, true, true, true])
+    `, { activate: false })).to.deep.equal([true, true, true, true])
   })
 })

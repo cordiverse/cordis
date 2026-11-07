@@ -3,10 +3,13 @@ import { createRequire, registerHooks } from 'node:module'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { getRuntime } from '../src/index.ts'
+import { activate, getResolutionSupport, invalidateResolution, ModuleCaches, ModuleLoader } from '../src/runtime/index.ts'
 import { realpathESM, useFixtures } from './utils.ts'
 
-const runtime = getRuntime()!
+const loader = ModuleLoader.fromInternal()!
+activate()
+const modules = new ModuleCaches(loader)
+const importModule = (specifier: string, parentURL: string) => loader.import(specifier, parentURL, {})
 const fixtures = useFixtures('resolution')
 const { fixture, runESM } = fixtures
 
@@ -52,13 +55,13 @@ describe('ResolutionCaches', () => {
     return runESM(name, `
       const url = ${JSON.stringify(pathToFileURL(path).href)}
       const root = ${JSON.stringify(root)}
-      const before = (await runtime.import(url, import.meta.url)).version
-      runtime.modules.evict([url, ${JSON.stringify(pathToFileURL(join(root, 'index.mjs')).href)}])
+      const before = (await importModule(url, import.meta.url)).version
+      modules.evict([url, ${JSON.stringify(pathToFileURL(join(root, 'index.mjs')).href)}])
       rmSync(root, { recursive: true })
-      runtime.resolution.invalidate([root])
-      const after = (await runtime.import(url, import.meta.url)).version
+      invalidateResolution([root])
+      const after = (await importModule(url, import.meta.url)).version
       return { before, after }
-    `, preamble)
+    `, { preamble })
   }
 
   const shortCircuit = `import { registerHooks } from 'node:module'
@@ -80,18 +83,18 @@ describe('ResolutionCaches', () => {
     const { path, root } = install('cjs', 'cjs', `module.exports = require('foo')`, version => `exports.version = ${version}`)
     const require = createRequire(import.meta.url)
     expect(require(path)).to.have.property('version', 1)
-    runtime.modules.evict([pathToFileURL(path).href, pathToFileURL(join(root, 'index.cjs')).href])
+    modules.evict([pathToFileURL(path).href, pathToFileURL(join(root, 'index.cjs')).href])
     rmSync(root, { recursive: true })
-    runtime.resolution.invalidate([root])
+    invalidateResolution([root])
     expect(require(path)).to.have.property('version', 2)
   })
 
   it('reports realpath support where Node passes the ESM realpath cache to fs.realpathSync', () => {
-    expect(runESM('support', 'return runtime.resolution.support')).to.deep.equal({ realpath: realpathESM })
+    expect(runESM('support', 'return getResolutionSupport()')).to.deep.equal({ realpath: realpathESM })
   })
 
   it.runIf(typeof registerHooks === 'function')('reports realpath support under a synchronous hook that short-circuits file URLs', () => {
-    expect(runESM('support-hooks', 'return runtime.resolution.support', shortCircuit)).to.deep.equal({ realpath: realpathESM })
+    expect(runESM('support-hooks', 'return getResolutionSupport()', { preamble: shortCircuit })).to.deep.equal({ realpath: realpathESM })
   })
 
   it.runIf(realpathESM)('resolves an ESM import through a link that is retargeted', () => {
@@ -99,32 +102,32 @@ describe('ResolutionCaches', () => {
     expect(runESM('esm-link', `
       const { symlinkSync, unlinkSync } = await import('node:fs')
       const url = ${JSON.stringify(pathToFileURL(path).href)}
-      const before = (await runtime.import(url, import.meta.url)).version
-      runtime.modules.evict([url, ${JSON.stringify(pathToFileURL(join(previous, 'index.mjs')).href)}])
+      const before = (await importModule(url, import.meta.url)).version
+      modules.evict([url, ${JSON.stringify(pathToFileURL(join(previous, 'index.mjs')).href)}])
       unlinkSync(${JSON.stringify(location)})
       symlinkSync(${JSON.stringify(next)}, ${JSON.stringify(location)}, 'junction')
-      runtime.resolution.invalidate([${JSON.stringify(previous)}])
-      const after = (await runtime.import(url, import.meta.url)).version
+      invalidateResolution([${JSON.stringify(previous)}])
+      const after = (await importModule(url, import.meta.url)).version
       return { before, after }
     `)).to.deep.equal({ before: 1, after: 2 })
   })
 
-  it.runIf(realpathESM)('resolves an ESM import through a retargeted link after loader-utils itself is removed', () => {
+  it.runIf(realpathESM)('resolves an ESM import through a retargeted link after the runtime itself is removed', () => {
     const { path, location, previous, next } = link('esm-removed', 'mjs', `export { version } from 'bar'`, version => `export const version = ${version}`)
-    const library = join(fixtures.dir, 'esm-removed/loader-utils.mjs')
+    const library = join(fixtures.dir, 'esm-removed/runtime.mjs')
     copyFileSync(fixtures.bundle, library)
     expect(runESM('esm-removed', `
       const { symlinkSync, unlinkSync } = await import('node:fs')
       const url = ${JSON.stringify(pathToFileURL(path).href)}
-      const before = (await runtime.import(url, import.meta.url)).version
-      runtime.modules.evict([url, ${JSON.stringify(pathToFileURL(join(previous, 'index.mjs')).href)}])
+      const before = (await importModule(url, import.meta.url)).version
+      modules.evict([url, ${JSON.stringify(pathToFileURL(join(previous, 'index.mjs')).href)}])
       rmSync(${JSON.stringify(library)})
       unlinkSync(${JSON.stringify(location)})
       symlinkSync(${JSON.stringify(next)}, ${JSON.stringify(location)}, 'junction')
-      runtime.resolution.invalidate([${JSON.stringify(previous)}])
-      const after = (await runtime.import(url, import.meta.url)).version
+      invalidateResolution([${JSON.stringify(previous)}])
+      const after = (await importModule(url, import.meta.url)).version
       return { before, after }
-    `, '', library)).to.deep.equal({ before: 1, after: 2 })
+    `, { library })).to.deep.equal({ before: 1, after: 2 })
   })
 
   it('retries a probe that failed', () => {
@@ -132,9 +135,9 @@ describe('ResolutionCaches', () => {
       const { default: Module } = await import('node:module')
       const { _findPath } = Module
       Module._findPath = () => { throw new Error('probe') }
-      const failed = runtime.resolution.support
+      const failed = getResolutionSupport()
       Module._findPath = _findPath
-      return { failed, retried: runtime.resolution.support }
+      return { failed, retried: getResolutionSupport() }
     `)).to.deep.equal({ failed: { realpath: false }, retried: { realpath: realpathESM } })
   })
 
@@ -147,12 +150,12 @@ describe('ResolutionCaches', () => {
       const loader = require('internal/modules/esm/loader').getOrInitializeCascadedLoader()
       const path = ${JSON.stringify(path)}
       const before = require(path).version
-      runtime.modules.evict([${JSON.stringify(pathToFileURL(path).href)}, ${JSON.stringify(pathToFileURL(join(previous, 'index.cjs')).href)}])
+      modules.evict([${JSON.stringify(pathToFileURL(path).href)}, ${JSON.stringify(pathToFileURL(join(previous, 'index.cjs')).href)}])
       unlinkSync(${JSON.stringify(location)})
       symlinkSync(${JSON.stringify(next)}, ${JSON.stringify(location)}, 'junction')
       loader.resolveSync = () => { throw new Error('probe') }
       try {
-        runtime.resolution.invalidate([${JSON.stringify(previous)}])
+        invalidateResolution([${JSON.stringify(previous)}])
       } finally {
         delete loader.resolveSync
       }
@@ -164,10 +167,10 @@ describe('ResolutionCaches', () => {
     const { path, location, previous, next } = link('cjs-link', 'cjs', `module.exports = require('bar')`, version => `exports.version = ${version}`)
     const require = createRequire(import.meta.url)
     expect(require(path)).to.have.property('version', 1)
-    runtime.modules.evict([pathToFileURL(path).href, pathToFileURL(join(previous, 'index.cjs')).href])
+    modules.evict([pathToFileURL(path).href, pathToFileURL(join(previous, 'index.cjs')).href])
     unlinkSync(location)
     symlinkSync(next, location, 'junction')
-    runtime.resolution.invalidate([previous])
+    invalidateResolution([previous])
     expect(require(path)).to.have.property('version', 2)
   })
 })

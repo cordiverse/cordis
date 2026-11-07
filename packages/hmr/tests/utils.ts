@@ -12,7 +12,15 @@ export const realpathESM = (() => {
   return major > 26 || major === 26 && minor >= 1 || major === 24 && minor >= 16
 })()
 
-/** A temporary directory for the tests of a file, with an esbuild bundle of loader-utils in it. */
+interface RunOptions {
+  /** code that precedes the import of the runtime, such as the registration of hooks */
+  preamble?: string
+  /** the bundle of the runtime to import */
+  library?: string
+  activate?: boolean
+}
+
+/** A temporary directory for the tests of a file, with an esbuild bundle of the HMR runtime in it. */
 export function useFixtures(name: string) {
   const fixtures = {
     /** a real path, as resolved paths are, e.g. /private/var on macOS */
@@ -28,15 +36,21 @@ export function useFixtures(name: string) {
 
     /**
      * Run `body` as an ES module in a child process, since the test runner
-     * registers asynchronous hooks. `runtime` is in scope; the result of
-     * `body` is printed and returned.
+     * registers asynchronous hooks. `activate`, `loader`, `modules`,
+     * `importModule`, `invalidateResolution` and `getResolutionSupport` are in
+     * scope, and the replacements are activated unless `activate` is false.
+     * The result of `body` is printed and returned.
      */
-    runESM(name: string, body: string, preamble = '', library = fixtures.bundle) {
+    runESM(name: string, body: string, options: RunOptions = {}) {
+      const { preamble = '', library = fixtures.bundle, activate = true } = options
       const script = fixtures.fixture(`${name}.mjs`, `
         import { rmSync } from 'node:fs'
         ${preamble}
-        import { getRuntime } from ${JSON.stringify(pathToFileURL(library).href)}
-        const runtime = getRuntime()
+        import { activate, getResolutionSupport, invalidateResolution, ModuleCaches, ModuleLoader } from ${JSON.stringify(pathToFileURL(library).href)}
+        const loader = ModuleLoader.fromInternal()
+        const modules = new ModuleCaches(loader)
+        const importModule = (specifier, parentURL) => loader.import(specifier, parentURL, {})
+        ${activate ? 'activate()' : ''}
         console.log(JSON.stringify(await (async () => { ${body} })()))
       `)
       const output = execFileSync(process.execPath, ['--expose-internals', script], {
@@ -48,10 +62,10 @@ export function useFixtures(name: string) {
   }
 
   beforeAll(async () => {
-    fixtures.dir = realpathSync(mkdtempSync(join(tmpdir(), `loader-utils-${name}-`)))
-    fixtures.bundle = join(fixtures.dir, 'loader-utils.mjs')
+    fixtures.dir = realpathSync(mkdtempSync(join(tmpdir(), `hmr-runtime-${name}-`)))
+    fixtures.bundle = join(fixtures.dir, 'runtime.mjs')
     await build({
-      entryPoints: [resolve(fileURLToPath(import.meta.url), '../../src/index.ts')],
+      entryPoints: [resolve(fileURLToPath(import.meta.url), '../../src/runtime/index.ts')],
       outfile: fixtures.bundle,
       bundle: true,
       format: 'esm',

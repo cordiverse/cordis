@@ -4,8 +4,6 @@ import Module, { isBuiltin } from 'node:module'
 import { basename, dirname, join, parse, resolve, sep, toNamespacedPath } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { internalBinding, requireInternal } from './internal.ts'
-import { install } from './patch.ts'
-import { getState } from './state.ts'
 
 /** A manifest as serialized by Node's `modules` binding: name, main, type, imports, exports, path. */
 type Manifest = [string | undefined, string | undefined, string, string | undefined, string | undefined, string]
@@ -58,25 +56,68 @@ export interface ManifestState {
   directories: Map<string, string>
 }
 
-const kDefer = Symbol('defer')
-
 /**
- * Make later resolutions read the manifests below `paths` from disk. On the
- * first call, the methods that read Node's manifest caches and `Module._load`
- * are replaced for the lifetime of the thread, since those caches cannot be
- * cleared.
+ * The replacements of Node's methods in this thread, as recorded for the next
+ * HMR. The members are kept compatible across versions of HMR: a later
+ * version reads them from an earlier one.
  */
-export function invalidateManifests(paths: string[]) {
-  const state = getState()
-  if (!state) return
-  const manifests = state.manifests ??= setup()
-  if (!manifests) return
-  for (const path of paths) manifests.paths.add(resolve(path))
-  manifests.cache.clear()
-  manifests.directories.clear()
+interface Patches {
+  /** whether the HMR that installed them is active; Node's module caches belong to the thread, so at most one is */
+  active: boolean
+  /** the invalidated paths, which the next HMR takes over */
+  paths: Iterable<string>
+  /**
+   * Restore the replaced methods, which only the next HMR does.
+   * @returns whether every method is restored.
+   */
+  dispose(): boolean
 }
 
-function setup(): ManifestState | undefined {
+const key = Symbol.for('cordis.hmr.patches')
+
+/** the replacements installed by this evaluation */
+let current: ManifestState | undefined
+
+/**
+ * Replace the methods that read Node's manifest caches and `Module._load`
+ * for an HMR instance. The replacements that a disposed HMR has left are
+ * restored first, and their invalidated paths are taken over, in one step,
+ * so that no resolution in between reads Node's stale caches.
+ * @returns a function that leaves the replacements to the next HMR, which
+ * keeps them in place: restoring them would expose the stale caches again.
+ */
+export function activate() {
+  const previous: Patches | undefined = (globalThis as any)[key]
+  if (previous?.active) {
+    throw new Error('another HMR instance is active in this thread')
+  }
+  const paths = new Set(previous?.paths ?? [])
+  if (previous && !previous.dispose()) {
+    throw new Error('the methods replaced by an earlier HMR cannot be restored, restart the process to use this one')
+  }
+  const installed = setup(paths)
+  const patches: Patches = installed
+    ? { active: true, paths: installed.state.paths, dispose: installed.dispose }
+    : { active: true, paths, dispose: () => true }
+  ;(globalThis as any)[key] = patches
+  current = installed?.state
+  return () => {
+    patches.active = false
+    current = undefined
+  }
+}
+
+const kDefer = Symbol('defer')
+
+/** Make later resolutions read the manifests below `paths` from disk. */
+export function invalidateManifests(paths: string[]) {
+  if (!current) return
+  for (const path of paths) current.paths.add(resolve(path))
+  current.cache.clear()
+  current.directories.clear()
+}
+
+function setup(paths: Set<string>) {
   const binding: Binding | undefined = internalBinding('modules')
   const reader: Reader | undefined = requireInternal('internal/modules/package_json_reader')
   if (typeof binding?.readPackageJSON !== 'function') return
@@ -86,7 +127,7 @@ function setup(): ManifestState | undefined {
   const resolveForCJSWithHooks: ResolveForCJSWithHooks | undefined = requireInternal('internal/modules/cjs/loader')?.resolveForCJSWithHooks
   const hooks: unknown = requireInternal('internal/modules/customization_hooks')?.resolveHooks
   const resolveHooks = Array.isArray(hooks) ? hooks as ResolveHook[] : undefined
-  const state: ManifestState = { paths: new Set(), cache: new Map(), directories: new Map() }
+  const state: ManifestState = { paths, cache: new Map(), directories: new Map() }
   const original = {
     readPackageJSON: binding.readPackageJSON,
     getNearestParentPackageJSON: binding.getNearestParentPackageJSON,
@@ -206,7 +247,7 @@ function setup(): ManifestState | undefined {
   }
 
   // Node's private request cache maps a parent and a request to a file while
-  // the file is loaded. Before the first invalidation, a hook may have
+  // the file is loaded. Before the installation, a hook may have
   // resolved any request to any file, so the native `_load` receives a
   // request with the parent only under a key derived from its resolution,
   // which no request has been recorded under, and which always resolves to
@@ -236,7 +277,8 @@ function setup(): ManifestState | undefined {
       : loadAsFile.call(this, key, builtin ?? result.filename, parent, isMain, args)
   }
 
-  const restores: (() => void)[] = []
+  const restores: (() => boolean)[] = []
+  const dispose = () => [...restores].reverse().map(restore => restore()).every(Boolean)
   try {
     install(restores, binding, 'readPackageJSON', readPackageJSON)
     if (original.getNearestParentPackageJSON) install(restores, binding, 'getNearestParentPackageJSON', getNearestParentPackageJSON)
@@ -245,10 +287,26 @@ function setup(): ManifestState | undefined {
     install(restores, reader, 'getNearestParentPackageJSON', getNearestParentPackageJSONFromReader)
     install(restores, Module as any, '_load', load)
   } catch {
-    for (const restore of restores.reverse()) restore()
+    dispose()
     return
   }
-  return state
+  return { state, dispose }
+}
+
+/**
+ * Replace a method of Node. A function that restores the original method
+ * while the replacement is still in place, and reports whether it did, is
+ * appended to `restores` before this returns, so that a partial installation
+ * can be rolled back.
+ */
+function install<T extends object, K extends keyof T>(restores: (() => boolean)[], target: T, key: K, replacement: T[K]) {
+  const original = target[key]
+  target[key] = replacement
+  restores.push(() => {
+    if (target[key] !== replacement) return false
+    target[key] = original
+    return true
+  })
 }
 
 /** Whether `manifest`, or the manifest at the real path of its directory, is one of the paths or lies below one. */

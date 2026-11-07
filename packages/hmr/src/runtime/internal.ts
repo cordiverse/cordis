@@ -1,5 +1,4 @@
 import { createRequire, LoadHookContext } from 'node:module'
-import { Dict } from 'cosmokit'
 
 export type ModuleFormat = 'builtin' | 'commonjs' | 'json' | 'module' | 'wasm'
 export type ModuleSource = string | ArrayBuffer
@@ -17,7 +16,7 @@ export interface LoadResult {
 type LoadCacheData = ModuleJob // | Function
 
 /** @see https://github.com/nodejs/node/blob/main/lib/internal/modules/esm/module_map.js */
-interface LoadCache extends Omit<Map<string, Dict<LoadCacheData>>, 'get' | 'set' | 'has'> {
+interface LoadCache extends Omit<Map<string, Record<string, LoadCacheData>>, 'get' | 'set' | 'has'> {
   get(url: string, type?: string): LoadCacheData | undefined
   set(url: string, type?: string, job?: LoadCacheData): this
   has(url: string, type?: string): boolean
@@ -30,7 +29,7 @@ interface LoadCache extends Omit<Map<string, Dict<LoadCacheData>>, 'get' | 'set'
  * so it misses a job imported `with { type: 'json' }`.
  */
 export function getModuleJobs(loadCache: LoadCache, url: string): ModuleJob[] {
-  const entry: Dict<LoadCacheData> | undefined = Map.prototype.get.call(loadCache, url)
+  const entry: Record<string, LoadCacheData> | undefined = Map.prototype.get.call(loadCache, url)
   return Object.values(entry ?? {}).filter(Boolean)
 }
 
