@@ -346,3 +346,40 @@ describe('Traceable caller', () => {
     expect(root.logger.buffer.filter(message => message.type === 'error')).toHaveLength(0)
   })
 })
+
+describe('Self-calling methods', () => {
+  it('keep `this` one shadow deep however often they call themselves again', async () => {
+    class Poller extends Service {
+      count = 0
+      sites: { shadow: Context, caller: Context }[] = []
+
+      constructor(ctx: Context) {
+        super(ctx, 'poller')
+      }
+
+      tick(left: number, done: (error?: unknown) => void) {
+        try {
+          this.count++
+          if (left === 2000 || left === 0) {
+            this.sites.push({ shadow: this.ctx[symbols.shadow] as Context, caller: (this as any)[symbols.caller] as Context })
+          }
+        } catch (error) {
+          return done(error)
+        }
+        if (!left) return done()
+        setImmediate(() => this.tick(left - 1, done))
+      }
+    }
+
+    const root = new Context()
+    await root.plugin(Poller)
+    const error = await new Promise<unknown>((resolve) => root['poller'].tick(2000, resolve))
+    expect(error).toBeUndefined()
+    expect(root['poller'].count).toBe(2001)
+    // the first round and the last see the same sites
+    const [first, last] = root['poller'].sites
+    expect(last.shadow).toBe(first.shadow)
+    expect(last.caller).toBe(first.caller)
+  })
+})
+

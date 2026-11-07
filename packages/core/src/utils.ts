@@ -154,12 +154,20 @@ function withProp(target: any, prop: string | symbol, value: any) {
   }))
 }
 
+const shadowBases = new WeakMap<object, { base: any; property: string }>()
+
 function createShadow(useSite: Context, target: any, property: string | undefined, receiver: any) {
   if (!property) return receiver
   const value = getPropertyDescriptor(target, property)?.value
   if (!value) return receiver
   const defSite = (value[symbols.shadow] as Context | undefined) ?? value
-  return withProp(receiver, property, useSite.extend({ [symbols.shadow]: defSite }))
+  // A shadow over a shadow for the same property hides it entirely: wrap what it wraps,
+  // or a method calling itself again through `this` stacks one more layer per call.
+  const inner = shadowBases.get(receiver)
+  const base = inner && inner.property === property ? inner.base : receiver
+  const shadow = withProp(base, property, useSite.extend({ [symbols.shadow]: defSite }))
+  shadowBases.set(shadow, { base, property })
+  return shadow
 }
 
 function createShadowMethod(ctx: Context, value: any, outer: any, shadow: {}) {
