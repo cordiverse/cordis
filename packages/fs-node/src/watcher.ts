@@ -123,7 +123,12 @@ export class Watcher {
         },
       })
       watcher.on('error', error => this._error(error))
-      watcher.on('change', path => this._emit('change', resolve(path)))
+      // `change` reports a modified file. A directory is not one, and an entry replaced
+      // by a directory is reported here with its new type.
+      watcher.on('change', (path, stats) => {
+        if (stats?.isDirectory()) return
+        this._emit('change', resolve(path))
+      })
       await new Promise<void>(resolve => watcher.once('ready', () => resolve()))
       this._ready = true
       this._emit('ready')
