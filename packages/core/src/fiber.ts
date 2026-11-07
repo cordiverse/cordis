@@ -45,8 +45,15 @@ Object.defineProperty(ValidationError.prototype, kValidationError, {
 
 export function resolveConfig(runtime: Plugin.Runtime, config: any) {
   if (!runtime.Config) return config
+  const standard = runtime.Config['~standard']
+  // TypeScript says a plugin Config implements Standard Schema V1, but a dynamically loaded
+  // plugin (or a schema dependency resolved to an incompatible copy) can violate that at runtime.
+  // Name the violated contract instead of letting the dereference below throw an opaque TypeError.
+  if (!standard || typeof standard.validate !== 'function') {
+    throw new TypeError('plugin Config must implement Standard Schema V1')
+  }
   // TODO: async validation
-  const result = runtime.Config['~standard'].validate(config)
+  const result = standard.validate(config)
   if ('then' in result) {
     throw new TypeError('Async config validation is not supported')
   }
