@@ -1,5 +1,4 @@
 import { Context, Fiber, FiberState } from 'cordis'
-import { getRuntime, ModuleLoader, unwrapExports } from '@cordisjs/loader-utils'
 import Loader from '@cordisjs/plugin-loader'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -7,6 +6,7 @@ import { dirname, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import Hmr from '../src/index.ts'
+import { getRuntime, ModuleLoader } from '../src/runtime/index.ts'
 
 const testDir = dirname(fileURLToPath(import.meta.url))
 const fixtureDir = resolve(testDir, '__reconcile__')
@@ -396,7 +396,7 @@ export function apply(ctx: Context) {
     await setup()
     const path = fixture('direct.ts', plugin('direct', 'v1'))
     const exports = await runtime.import(pathToFileURL(path).href, import.meta.url)
-    const direct = ctx.plugin(unwrapExports(exports))
+    const direct = ctx.plugin(ctx.loader.unwrapExports(exports))
     await direct
     expect(ctx.bail('reconcile/direct' as any)).to.equal('v1')
 
@@ -416,7 +416,7 @@ export function apply(ctx: Context) {
     const path = fixture('data-impl.ts', plugin('data', 'v1'))
     const url = `data:text/javascript,export * from ${JSON.stringify(pathToFileURL(path).href)}`
     const exports = await runtime.import(url, import.meta.url)
-    await ctx.plugin(unwrapExports(exports))
+    await ctx.plugin(ctx.loader.unwrapExports(exports))
     expect(ctx.bail('reconcile/data' as any)).to.equal('v1')
 
     writeFileSync(path, plugin('data', 'v2'))

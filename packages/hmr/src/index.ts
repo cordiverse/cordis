@@ -1,9 +1,9 @@
 import { Context, Fiber, Plugin, Service } from 'cordis'
-import { getRuntime, ModuleRuntime, unwrapExports } from '@cordisjs/loader-utils'
 import type {} from '@cordisjs/plugin-fs-node'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { handleError } from './error.ts'
+import { getRuntime, ModuleRuntime } from './runtime/index.ts'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import z from 'schemastery'
 
@@ -77,6 +77,16 @@ interface ReconcileUnit {
   attempts: ImportAttempt[]
   /** the evicted modules in the closures of the plugins */
   modules: Set<string>
+}
+
+/** Get the plugin exported by a module namespace. */
+function unwrapExports(exports: any) {
+  if (exports === null || exports === undefined) return exports
+  exports = exports.default ?? exports
+  // https://github.com/evanw/esbuild/issues/2623
+  // https://esbuild.github.io/content-types/#default-interop
+  if (!exports.__esModule) return exports
+  return exports.default ?? exports
 }
 
 function toPath(url: string) {

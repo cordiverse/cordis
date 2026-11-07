@@ -3,7 +3,7 @@ import { createRequire, registerHooks } from 'node:module'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { getRuntime, requireInternal } from '../src/index.ts'
+import { getRuntime, requireInternal } from '../src/runtime/index.ts'
 import { realpathESM, useFixtures } from './utils.ts'
 
 const runtime = getRuntime()!

@@ -4,13 +4,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { getRuntime } from '../src/index.ts'
+import { getRuntime } from '../src/runtime/index.ts'
 
 const runtime = getRuntime()!
 const modules = runtime.modules
 
 // Evaluations are counted on `globalThis`, which every instance of a module shares.
-const counts: Record<string, number> = (globalThis as any).__loaderUtilsModules = {}
+const counts: Record<string, number> = (globalThis as any).__hmrRuntimeModules = {}
 
 let dir: string
 
@@ -21,13 +21,13 @@ function fixture(name: string, content: string) {
 }
 
 function counted(name: string, body = '') {
-  return `globalThis.__loaderUtilsModules[${JSON.stringify(name)}] = (globalThis.__loaderUtilsModules[${JSON.stringify(name)}] ?? 0) + 1\n${body}`
+  return `globalThis.__hmrRuntimeModules[${JSON.stringify(name)}] = (globalThis.__hmrRuntimeModules[${JSON.stringify(name)}] ?? 0) + 1\n${body}`
 }
 
 describe('ModuleCaches', () => {
   beforeAll(() => {
     // module URLs are real paths, e.g. /private/var on macOS
-    dir = realpathSync(mkdtempSync(join(tmpdir(), 'loader-utils-modules-')))
+    dir = realpathSync(mkdtempSync(join(tmpdir(), 'hmr-runtime-modules-')))
   })
 
   afterAll(() => {
@@ -124,8 +124,8 @@ describe('ModuleCaches', () => {
 })
 
 describe('getRuntime', () => {
-  it('provides no runtime once another version of loader-utils has been loaded in the thread', () => {
-    const key = Symbol.for('cordis.loader-utils')
+  it('provides no runtime once another version of HMR has been loaded in the thread', () => {
+    const key = Symbol.for('cordis.hmr.runtime')
     const state = (globalThis as any)[key]
     ;(globalThis as any)[key] = { version: '0.0.0-other' }
     try {

@@ -184,7 +184,7 @@ let runtime: ModuleRuntime | undefined
 /**
  * Get the module runtime of this thread.
  * @returns the runtime, or `undefined` if Node's internal loader is
- * unreachable or another version of loader-utils is loaded in this thread.
+ * unreachable or another version of HMR is loaded in this thread.
  */
 export function getRuntime(): ModuleRuntime | undefined {
   const loader = ModuleLoader.fromInternal()

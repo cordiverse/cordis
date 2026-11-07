@@ -6,6 +6,7 @@ import { dirname, resolve } from 'node:path'
 import { expect, describe, it, beforeAll, afterAll, afterEach, beforeEach } from 'vitest'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import Hmr from '../src/index.ts'
+import { ModuleLoader } from '../src/runtime/index.ts'
 
 const testDir = dirname(fileURLToPath(import.meta.url))
 const templateDir = resolve(testDir, 'fixtures')
@@ -138,8 +139,8 @@ function liveUids(gate: Gate) {
   return gate.fibers.filter(fiber => fiber.uid !== null).map(fiber => fiber.uid)
 }
 
-function dropCached(ctx: Context, name: string) {
-  const cache = ctx.loader.internal?.loadCache
+function dropCached(name: string) {
+  const cache = ModuleLoader.fromInternal()?.loadCache
   if (!cache) return
   for (const key of [...Map.prototype.keys.call(cache) as Iterable<string>]) {
     if (key.includes(name)) Map.prototype.delete.call(cache, key)
@@ -343,7 +344,7 @@ describe('HMR', () => {
       await reloaded
       if (!entry) {
         // The reload above does not reimport a plugin that is no longer an entry.
-        dropCached(ctx, 'plugin-disabled-hmr')
+        dropCached('plugin-disabled-hmr')
         await configTree(ctx).create({ id: 'live', name: './plugin-disabled-hmr' })
       } else if (entry.disabled) {
         await entry.update({ disabled: false })

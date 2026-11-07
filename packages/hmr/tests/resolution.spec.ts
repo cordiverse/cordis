@@ -3,7 +3,7 @@ import { createRequire, registerHooks } from 'node:module'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { getRuntime } from '../src/index.ts'
+import { getRuntime } from '../src/runtime/index.ts'
 import { realpathESM, useFixtures } from './utils.ts'
 
 const runtime = getRuntime()!
@@ -109,9 +109,9 @@ describe('ResolutionCaches', () => {
     `)).to.deep.equal({ before: 1, after: 2 })
   })
 
-  it.runIf(realpathESM)('resolves an ESM import through a retargeted link after loader-utils itself is removed', () => {
+  it.runIf(realpathESM)('resolves an ESM import through a retargeted link after the runtime itself is removed', () => {
     const { path, location, previous, next } = link('esm-removed', 'mjs', `export { version } from 'bar'`, version => `export const version = ${version}`)
-    const library = join(fixtures.dir, 'esm-removed/loader-utils.mjs')
+    const library = join(fixtures.dir, 'esm-removed/runtime.mjs')
     copyFileSync(fixtures.bundle, library)
     expect(runESM('esm-removed', `
       const { symlinkSync, unlinkSync } = await import('node:fs')

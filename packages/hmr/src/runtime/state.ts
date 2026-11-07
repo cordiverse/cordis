@@ -1,4 +1,4 @@
-import pkg from '../package.json' with { type: 'json' }
+import pkg from '../../package.json' with { type: 'json' }
 import type { ManifestState } from './manifests.ts'
 
 const { version } = pkg
@@ -14,8 +14,8 @@ export interface Captured {
 }
 
 /**
- * The state of loader-utils in this thread, shared by every evaluation of
- * the same version, such as one after HMR evicts loader-utils.
+ * The state of the runtime in this thread, shared by every evaluation of the
+ * same version of HMR, such as one after HMR itself is reloaded.
  */
 export interface State {
   version: string
@@ -24,9 +24,9 @@ export interface State {
   manifests?: ManifestState
 }
 
-const key = Symbol.for('cordis.loader-utils')
+const key = Symbol.for('cordis.hmr.runtime')
 
-/** @returns the state, or `undefined` if another version of loader-utils created it. */
+/** @returns the state, or `undefined` if another version of HMR created it. */
 export function getState(): State | undefined {
   const state: State = (globalThis as any)[key] ??= { version }
   if (state.version === version) return state

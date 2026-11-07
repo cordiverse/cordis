@@ -12,7 +12,7 @@ export const realpathESM = (() => {
   return major > 26 || major === 26 && minor >= 1 || major === 24 && minor >= 16
 })()
 
-/** A temporary directory for the tests of a file, with an esbuild bundle of loader-utils in it. */
+/** A temporary directory for the tests of a file, with an esbuild bundle of the HMR runtime in it. */
 export function useFixtures(name: string) {
   const fixtures = {
     /** a real path, as resolved paths are, e.g. /private/var on macOS */
@@ -48,10 +48,10 @@ export function useFixtures(name: string) {
   }
 
   beforeAll(async () => {
-    fixtures.dir = realpathSync(mkdtempSync(join(tmpdir(), `loader-utils-${name}-`)))
-    fixtures.bundle = join(fixtures.dir, 'loader-utils.mjs')
+    fixtures.dir = realpathSync(mkdtempSync(join(tmpdir(), `hmr-runtime-${name}-`)))
+    fixtures.bundle = join(fixtures.dir, 'runtime.mjs')
     await build({
-      entryPoints: [resolve(fileURLToPath(import.meta.url), '../../src/index.ts')],
+      entryPoints: [resolve(fileURLToPath(import.meta.url), '../../src/runtime/index.ts')],
       outfile: fixtures.bundle,
       bundle: true,
       format: 'esm',

@@ -101,7 +101,7 @@ function captureESM(loader: ModuleLoader) {
     resolveCache ??= this
     return get.apply(this, args)
   }
-  const specifier = `${pathToFileURL(process.execPath).href}?cordis-loader-utils-capture=${randomUUID()}`
+  const specifier = `${pathToFileURL(process.execPath).href}?cordis-hmr-capture=${randomUUID()}`
   let complete = true
   try {
     if (loader.version === 'v2') {
