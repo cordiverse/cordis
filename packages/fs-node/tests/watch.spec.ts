@@ -1,5 +1,5 @@
 import { Context, Fiber } from 'cordis'
-import { mkdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { FSWatcher } from 'chokidar'
@@ -315,6 +315,128 @@ describe('Fs', () => {
       symlinkSync(dirname(target), link, 'junction')
       await touch(target, () => seen.length)
       expect([...new Set(seen)]).to.deep.equal([resolve(link, 'file.ts')])
+    }, 15000)
+
+    it('treats the same rule for a link to a directory', async () => {
+      // The predicate is `stats.isDirectory()`, and `stat` follows links, so a file
+      // replaced by a link whose target is a directory reads as a directory too. That is
+      // the second shape the guard removes, and pinning it keeps the catch-set explicit
+      // rather than incidental: if a later change wants the link kept, this is the test
+      // that has to be argued with.
+      const kept = write('became-link/kept.txt')
+      const gone = write('became-link/gone.txt')
+      const target = write('became-link/target/file.ts')
+      const ctx = await setup()
+      const seen: string[] = []
+      const watcher = ctx.fs.watch(resolve(fixture, 'became-link'))
+      watcher.on('change', (filename) => {
+        if (statSync(filename, { throwIfNoEntry: false })?.isDirectory()) seen.push(filename)
+      })
+      await new Promise<void>((r) => watcher.on('ready', () => r()))
+
+      // control: a plain write must arrive, or the silence below means nothing
+      const heard: string[] = []
+      watcher.on('change', (filename) => { heard.push(filename) })
+      await touch(kept, () => heard.length)
+      expect(heard).to.include(kept)
+
+      rmSync(gone)
+      symlinkSync(dirname(target), gone, 'junction')
+      for (let i = 0; i < 12; i++) {
+        writeFileSync(resolve(gone, 'inner.txt'), `v${i}`)
+        await new Promise(r => setTimeout(r, 100))
+      }
+      expect(seen).to.deep.equal([])
+
+      // `kept` is a different path, so a watch gone deaf on `gone` would still pass here:
+      // take the link away and write the path again, more than once, or a fix that drops
+      // only the first report hides.
+      const back: string[] = []
+      watcher.on('change', (filename) => { if (filename === gone) back.push(filename) })
+      rmSync(gone, { recursive: true })
+      writeFileSync(gone, 'back')
+      for (let i = 0; i < 3; i++) {
+        writeFileSync(gone, `back-${i}`)
+        await new Promise(r => setTimeout(r, 150))
+      }
+      expect(back.length).to.be.greaterThan(1)
+    }, 15000)
+
+    it('reports a file, never the directory it became', async () => {
+      const kept = write('became-dir/kept.txt')
+      const gone = write('became-dir/gone.txt')
+      const ctx = await setup()
+      const seen: string[] = []
+      const watcher = ctx.fs.watch(resolve(fixture, 'became-dir'))
+      // judged by what the path is when reported, not by the order of events
+      watcher.on('change', (filename) => {
+        if (statSync(filename, { throwIfNoEntry: false })?.isDirectory()) seen.push(filename)
+      })
+      await new Promise<void>((r) => watcher.on('ready', () => r()))
+
+      // control: without this arriving, the silence below proves nothing
+      const heard: string[] = []
+      watcher.on('change', (filename) => { heard.push(filename) })
+      await touch(kept, () => heard.length)
+      expect(heard).to.include(kept)
+
+      // now a directory, so writes inside it are not file changes
+      rmSync(gone)
+      mkdirSync(gone, { recursive: true })
+      for (let i = 0; i < 12; i++) {
+        writeFileSync(resolve(gone, 'inner.txt'), `v${i}`)
+        await new Promise(r => setTimeout(r, 100))
+      }
+      expect(seen).to.deep.equal([])
+
+      // `kept` is a different path, so a watch gone deaf on `gone` would still pass here:
+      // restore it and write more than once, or a fix dropping only the first report hides.
+      const back: string[] = []
+      watcher.on('change', (filename) => { if (filename === gone) back.push(filename) })
+      rmSync(gone, { recursive: true })
+      writeFileSync(gone, 'back')
+      for (let i = 0; i < 3; i++) {
+        writeFileSync(gone, `back-${i}`)
+        await new Promise(r => setTimeout(r, 150))
+      }
+      expect(back.length).to.be.greaterThan(1)
+    }, 15000)
+
+    // other entry point, same rule: without it a revert only in the file path passes
+    it('reports a file, never the directory it became, when watching the file', async () => {
+      const kept = write('became-dir-file/kept.txt')
+      const ctx = await setup()
+      const seen: string[] = []
+      const watcher = ctx.fs.watch(kept)
+      watcher.on('change', (filename) => {
+        if (statSync(filename, { throwIfNoEntry: false })?.isDirectory()) seen.push(filename)
+      })
+      await new Promise<void>((r) => watcher.on('ready', () => r()))
+
+      // same control as above
+      const heard: string[] = []
+      watcher.on('change', (filename) => { heard.push(filename) })
+      await touch(kept, () => heard.length)
+      expect(heard).to.include(kept)
+
+      rmSync(kept)
+      mkdirSync(kept, { recursive: true })
+      for (let i = 0; i < 12; i++) {
+        writeFileSync(resolve(kept, 'inner.txt'), `v${i}`)
+        await new Promise(r => setTimeout(r, 100))
+      }
+      expect(seen).to.deep.equal([])
+
+      // same reason as above: more than one write, so dropping the first report cannot hide
+      const back: string[] = []
+      watcher.on('change', (filename) => { if (filename === kept) back.push(filename) })
+      rmSync(kept, { recursive: true })
+      writeFileSync(kept, 'back')
+      for (let i = 0; i < 3; i++) {
+        writeFileSync(kept, `back-${i}`)
+        await new Promise(r => setTimeout(r, 150))
+      }
+      expect(back.length).to.be.greaterThan(1)
     }, 15000)
 
     it('keeps no entry with an empty `filter`', async () => {
