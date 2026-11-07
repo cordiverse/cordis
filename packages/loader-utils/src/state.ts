@@ -1,4 +1,5 @@
 import pkg from '../package.json' with { type: 'json' }
+import type { ManifestState } from './manifests.ts'
 
 const { version } = pkg
 
@@ -19,6 +20,8 @@ export interface Captured {
 export interface State {
   version: string
   captured?: Captured
+  /** set once the manifest readers are replaced */
+  manifests?: ManifestState
 }
 
 const key = Symbol.for('cordis.loader-utils')

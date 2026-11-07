@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import Module from 'node:module'
 import { pathToFileURL } from 'node:url'
 import { ModuleLoader, requireInternal } from './internal.ts'
+import { invalidateManifests } from './manifests.ts'
 import { Captured, getState } from './state.ts'
 
 /** The resolution caches that {@link ResolutionCaches.invalidate} can clear in this thread. */
@@ -21,14 +22,23 @@ export class ResolutionCaches {
   }
 
   /**
-   * Make later resolutions observe the file system below `paths`. The caches
-   * are cleared as a whole, since an entry can depend on a manifest outside
-   * `paths`.
+   * Make later resolutions observe the file system below `paths`, which may
+   * be spelled through links. The caches are cleared as a whole, since an
+   * entry can depend on a manifest outside `paths`. A manifest at or below
+   * one of `paths`, as spelled or at the real path of its directory, is read
+   * from disk from now on.
+   *
+   * The first call replaces Node's manifest readers and `Module._load` for
+   * the lifetime of the thread, since Node's manifest caches cannot be
+   * cleared. CJS requests are then resolved before `Module._load`, which
+   * receives them under another key.
    */
   invalidate(paths: Iterable<string>) {
-    if ([...paths].length === 0) return
+    const list = [...paths]
+    if (!list.length) return
     const pathCache: Record<string, string> = (Module as any)._pathCache
     for (const key in pathCache) delete pathCache[key]
+    invalidateManifests(list)
     const captured = this._captured()
     if (!captured) return
     const { resolve, realpath } = captured

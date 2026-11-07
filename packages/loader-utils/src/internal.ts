@@ -136,6 +136,27 @@ export function requireInternal(id: string): any {
   } catch {}
 }
 
+/**
+ * Get an internal binding of Node, through `internal/bootstrap/realm` or,
+ * under `--expose-internals` alone, `internal/test/binding`.
+ * @returns the binding, or `undefined` when it is unreachable.
+ */
+export function internalBinding(id: string): any {
+  const realm = requireInternal('internal/bootstrap/realm')
+  if (realm) return realm.internalBinding(id)
+  // `internal/test/binding` warns when it is loaded
+  const { emitWarning } = process
+  process.emitWarning = function (this: unknown, ...args: any[]) {
+    const type = typeof args[1] === 'string' ? args[1] : args[1]?.type
+    if (type !== 'internal/test/binding') return emitWarning.apply(this, args as any)
+  } as typeof emitWarning
+  try {
+    return requireInternal('internal/test/binding')?.internalBinding(id)
+  } catch {} finally {
+    process.emitWarning = emitWarning
+  }
+}
+
 export namespace ModuleLoader {
   let _cachedLoader: ModuleLoader | undefined
 

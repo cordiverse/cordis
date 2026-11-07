@@ -1,23 +1,14 @@
-import { execFileSync } from 'node:child_process'
-import { copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, rmSync, symlinkSync, unlinkSync } from 'node:fs'
 import { createRequire, registerHooks } from 'node:module'
-import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
-import { build } from 'esbuild'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { dirname, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { describe, expect, it } from 'vitest'
 import { getRuntime } from '../src/index.ts'
+import { realpathESM, useFixtures } from './utils.ts'
 
 const runtime = getRuntime()!
-
-let dir: string
-
-function fixture(path: string, content: string) {
-  path = join(dir, path)
-  mkdirSync(dirname(path), { recursive: true })
-  writeFileSync(path, content)
-  return path
-}
+const fixtures = useFixtures('resolution')
+const { fixture, runESM } = fixtures
 
 /** Install `foo` nested below `<name>` and hoisted; `<name>/index.<ext>` re-exports it. */
 function install(name: string, ext: string, importer: string, exporter: (version: number) => string) {
@@ -28,7 +19,7 @@ function install(name: string, ext: string, importer: string, exporter: (version
   fixture(`${name}/node_modules/foo/index.${ext}`, exporter(1))
   return {
     path: fixture(`${name}/index.${ext}`, importer),
-    root: join(dir, name, 'node_modules/foo'),
+    root: join(fixtures.dir, name, 'node_modules/foo'),
   }
 }
 
@@ -43,65 +34,19 @@ function link(name: string, ext: string, importer: string, exporter: (version: n
     fixture(`${name}/store/bar@${version}/package.json`, pkg)
     fixture(`${name}/store/bar@${version}/index.${ext}`, exporter(version))
   }
-  const location = join(dir, name, 'node_modules/bar')
-  const previous = join(dir, name, 'store/bar@1')
+  const location = join(fixtures.dir, name, 'node_modules/bar')
+  const previous = join(fixtures.dir, name, 'store/bar@1')
   mkdirSync(dirname(location), { recursive: true })
   symlinkSync(previous, location, 'junction')
   return {
     path: fixture(`${name}/index.${ext}`, importer),
     location,
     previous,
-    next: join(dir, name, 'store/bar@2'),
+    next: join(fixtures.dir, name, 'store/bar@2'),
   }
 }
 
-/** Node 24.16+ and 26.1+ pass the ESM realpath cache to `fs.realpathSync`. */
-const realpathESM = (() => {
-  const [major, minor] = process.versions.node.split('.').map(Number)
-  return major > 26 || major === 26 && minor >= 1 || major === 24 && minor >= 16
-})()
-
 describe('ResolutionCaches', () => {
-  let bundle: string
-
-  beforeAll(async () => {
-    // resolved paths are real paths, e.g. /private/var on macOS
-    dir = realpathSync(mkdtempSync(join(tmpdir(), 'loader-utils-resolution-')))
-    bundle = join(dir, 'loader-utils.mjs')
-    await build({
-      entryPoints: [resolve(fileURLToPath(import.meta.url), '../../src/index.ts')],
-      outfile: bundle,
-      bundle: true,
-      format: 'esm',
-      platform: 'node',
-      logLevel: 'silent',
-    })
-  })
-
-  afterAll(() => {
-    rmSync(dir, { recursive: true, force: true })
-  })
-
-  /**
-   * Run `body` as an ES module in a child process, since the test runner
-   * registers asynchronous hooks. `runtime` is in scope; the result of
-   * `body` is printed and returned.
-   */
-  function runESM(name: string, body: string, preamble = '', library = bundle) {
-    const script = fixture(`${name}.mjs`, `
-      import { rmSync } from 'node:fs'
-      ${preamble}
-      import { getRuntime } from ${JSON.stringify(pathToFileURL(library).href)}
-      const runtime = getRuntime()
-      console.log(JSON.stringify(await (async () => { ${body} })()))
-    `)
-    const output = execFileSync(process.execPath, ['--expose-internals', script], {
-      encoding: 'utf8',
-      env: { ...process.env, NODE_OPTIONS: '' },
-    })
-    return JSON.parse(output)
-  }
-
   function moveESM(name: string, preamble = '') {
     const { path, root } = install(name, 'mjs', `export { version } from 'foo'`, version => `export const version = ${version}`)
     return runESM(name, `
@@ -166,8 +111,8 @@ describe('ResolutionCaches', () => {
 
   it.runIf(realpathESM)('resolves an ESM import through a retargeted link after loader-utils itself is removed', () => {
     const { path, location, previous, next } = link('esm-removed', 'mjs', `export { version } from 'bar'`, version => `export const version = ${version}`)
-    const library = join(dir, 'esm-removed/loader-utils.mjs')
-    copyFileSync(bundle, library)
+    const library = join(fixtures.dir, 'esm-removed/loader-utils.mjs')
+    copyFileSync(fixtures.bundle, library)
     expect(runESM('esm-removed', `
       const { symlinkSync, unlinkSync } = await import('node:fs')
       const url = ${JSON.stringify(pathToFileURL(path).href)}
