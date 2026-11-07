@@ -2,13 +2,23 @@ import pkg from '../package.json' with { type: 'json' }
 
 const { version } = pkg
 
+/** Node's private resolution caches, captured once per thread. */
+export interface Captured {
+  resolve?: Map<unknown, unknown>
+  realpath: {
+    esm?: Map<unknown, unknown>
+    /** may be the ESM one */
+    cjs?: Map<unknown, unknown>
+  }
+}
+
 /**
  * The state of loader-utils in this thread, shared by every evaluation of
  * the same version, such as one after HMR evicts loader-utils.
  */
 export interface State {
   version: string
-  resolveCache?: Map<unknown, unknown>
+  captured?: Captured
 }
 
 const key = Symbol.for('cordis.loader-utils')

@@ -1,60 +1,122 @@
+import { randomUUID } from 'node:crypto'
+import fs from 'node:fs'
 import Module from 'node:module'
+import { pathToFileURL } from 'node:url'
 import { ModuleLoader, requireInternal } from './internal.ts'
-import { getState } from './state.ts'
+import { Captured, getState } from './state.ts'
 
-/**
- * Node's caches from a request to the resolved module: `ResolveCache` of the
- * ESM loader and `Module._pathCache` of CommonJS. Neither checks that its
- * result still exists.
- */
+/** The resolution caches that {@link ResolutionCaches.invalidate} can clear in this thread. */
+export interface ResolutionSupport {
+  /** Whether the realpath caches of ESM and CJS are cleared; for ESM, on Node 24.16+ and 26.1+. */
+  realpath: boolean
+}
+
+/** Node's caches from a request to the resolved module. */
 export class ResolutionCaches {
   constructor(private _loader: ModuleLoader) {}
 
+  get support(): ResolutionSupport {
+    const captured = this._captured()
+    return { realpath: !!captured?.realpath.esm && !!captured.realpath.cjs }
+  }
+
   /**
-   * Make later resolutions observe the file system below `paths`, the real
-   * paths that have changed. The caches are cleared as a whole, since an
-   * entry can depend on a manifest outside `paths`.
+   * Make later resolutions observe the file system below `paths`. The caches
+   * are cleared as a whole, since an entry can depend on a manifest outside
+   * `paths`.
    */
   invalidate(paths: Iterable<string>) {
     if ([...paths].length === 0) return
-    const resolveCache = this._resolveCache()
-    if (resolveCache) Map.prototype.clear.call(resolveCache)
     const pathCache: Record<string, string> = (Module as any)._pathCache
     for (const key in pathCache) delete pathCache[key]
+    const captured = this._captured()
+    if (!captured) return
+    const { resolve, realpath } = captured
+    for (const cache of new Set([resolve, realpath.esm, realpath.cjs])) {
+      if (cache) Map.prototype.clear.call(cache)
+    }
   }
 
-  private _resolveCache() {
+  private _captured() {
     const state = getState()
     if (!state) return
-    return state.resolveCache ??= captureResolveCache(this._loader)
+    if (state.captured) return state.captured
+    const { captured, complete } = capture(this._loader)
+    // a failed probe is tried again
+    if (complete) state.captured = captured
+    return captured
   }
 }
 
 /**
- * Capture the private `ResolveCache` as the receiver of its `get` during one
- * resolution. Synchronous hooks are removed meanwhile, since one may skip the
- * default step, which is where the cache is looked up.
+ * Capture the private caches through one ESM and one CJS resolution of the
+ * Node executable, a file that no package update moves.
  */
-function captureResolveCache(loader: ModuleLoader): Map<unknown, unknown> | undefined {
+function capture(loader: ModuleLoader) {
+  const captured: Captured = { realpath: {} }
+  const key: symbol | undefined = requireInternal('internal/fs/utils')?.realpathCacheKey
+  const { realpathSync } = fs
+  let realpathCache: Map<unknown, unknown> | undefined
+  fs.realpathSync = Object.assign(function (this: unknown, ...args: Parameters<typeof realpathSync>) {
+    const options: any = args[1]
+    if (key && options?.[key]) realpathCache ??= options[key]
+    return realpathSync.apply(this, args)
+  }, { native: realpathSync.native }) as typeof realpathSync
+  try {
+    const esm = captureESM(loader)
+    captured.resolve = esm.resolveCache
+    captured.realpath.esm = realpathCache
+    realpathCache = undefined
+    const cjs = captureCJS()
+    captured.realpath.cjs = realpathCache
+    return { captured, complete: esm.complete && cjs }
+  } finally {
+    fs.realpathSync = realpathSync
+  }
+}
+
+/**
+ * A query unique to each attempt misses `ResolveCache`, so that the realpath
+ * step is reached. Synchronous hooks are removed meanwhile, since one may
+ * skip the default step.
+ */
+function captureESM(loader: ModuleLoader) {
   const prototype = requireInternal('internal/modules/esm/module_map')?.ResolveCache?.prototype
-  if (typeof prototype?.get !== 'function') return
+  if (typeof prototype?.get !== 'function') return { complete: true }
   const { get } = prototype
   const hooks: unknown[] | undefined = requireInternal('internal/modules/customization_hooks')?.resolveHooks
   const registered = Array.isArray(hooks) ? hooks.splice(0) : []
-  let instance: Map<unknown, unknown> | undefined
+  let resolveCache: Map<unknown, unknown> | undefined
   prototype.get = function (this: Map<unknown, unknown>, ...args: unknown[]) {
-    instance ??= this
+    resolveCache ??= this
     return get.apply(this, args)
   }
+  const specifier = `${pathToFileURL(process.execPath).href}?cordis-loader-utils-capture=${randomUUID()}`
+  let complete = true
   try {
     if (loader.version === 'v2') {
-      loader.resolveSync(import.meta.url, { specifier: import.meta.url, attributes: {} })
+      loader.resolveSync(specifier, { specifier, attributes: {} })
     } else {
-      loader.resolveSync(import.meta.url, import.meta.url, {})
+      loader.resolveSync(specifier, specifier, {})
     }
-  } catch {} finally {
+  } catch {
+    complete = false
+  } finally {
     prototype.get = get
     hooks?.unshift(...registered)
   }
-  return instance
+  return { resolveCache, complete }
+}
+
+/** An empty `Module._pathCache` makes the lookup reach the realpath step. */
+function captureCJS() {
+  const pathCache = (Module as any)._pathCache
+  ;(Module as any)._pathCache = { __proto__: null }
+  try {
+    return !!(Module as any)._findPath(process.execPath, null, false)
+  } catch {
+    return false
+  } finally {
+    (Module as any)._pathCache = pathCache
+  }
 }
