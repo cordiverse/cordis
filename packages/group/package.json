@@ -1,6 +1,7 @@
 {
   "name": "@cordisjs/plugin-group",
   "version": "1.0.0",
+  "sideEffects": false,
   "type": "module",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",

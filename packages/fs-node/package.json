@@ -2,6 +2,7 @@
   "name": "@cordisjs/plugin-fs-node",
   "description": "Node.js File System Service for Cordis",
   "version": "0.1.0",
+  "sideEffects": false,
   "type": "module",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",

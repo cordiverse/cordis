@@ -2,6 +2,7 @@
   "name": "@cordisjs/plugin-logger-console",
   "description": "Console logger exporter for cordis",
   "version": "1.0.0",
+  "sideEffects": false,
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/shared.d.ts",
