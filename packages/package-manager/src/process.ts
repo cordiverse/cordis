@@ -145,10 +145,16 @@ export function run(file: string, args: string[], options: RunOptions): Promise<
     let stdout = ''
     let output = ''
     let failure: unknown
+    let failed = false
     let killing: Promise<void> | undefined
     let timer: NodeJS.Timeout | undefined
+    const recordFailure = (reason: unknown) => {
+      if (failed) return
+      failed = true
+      failure = reason
+    }
     const terminate = (reason: unknown) => {
-      failure ??= reason
+      recordFailure(reason)
       killing ??= killTree(child)
     }
     const refresh = () => {
@@ -174,7 +180,7 @@ export function run(file: string, args: string[], options: RunOptions): Promise<
     child.stderr!.setEncoding('utf8').on('data', append)
 
     child.on('error', (error) => {
-      failure ??= error
+      recordFailure(error)
       // a process that could not be spawned emits no `close`
       if (child.pid === undefined) {
         clearTimeout(timer)
@@ -186,7 +192,7 @@ export function run(file: string, args: string[], options: RunOptions): Promise<
       clearTimeout(timer)
       // cancellation is possible only until the agent exits
       signal?.removeEventListener('abort', onAbort)
-      if (failure) {
+      if (failed) {
         // a terminated run settles after the whole tree, not only the agent
         await killing
         return reject(failure)
