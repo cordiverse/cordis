@@ -85,6 +85,35 @@ describe('ResolutionCaches', () => {
     }
   })
 
+  it('resolves a later ESM import of a package import after only the manifest changes', async () => {
+    // the targets lie outside the package, so that only the importer is below the root
+    const manifest = (target: string) => JSON.stringify({ name: 'imports', type: 'module', imports: { '#dep': target } })
+    for (const version of [1, 2]) {
+      fixture(`node_modules/imports-${version}/package.json`, JSON.stringify({ name: `imports-${version}`, type: 'module', exports: './index.mjs' }))
+      fixture(`node_modules/imports-${version}/index.mjs`, `export const version = ${version}`)
+    }
+    const path = fixture('imports/package.json', manifest('imports-1'))
+    const lazy = fixture('imports/lazy.mjs', `export const load = () => import('#dep')`)
+    const { load } = await importModule(pathToFileURL(lazy).href, import.meta.url)
+    expect(await load()).to.have.property('version', 1)
+    fixture('imports/package.json', manifest('imports-2'))
+    invalidateResolution([path])
+    expect(await load()).to.have.property('version', 2)
+  })
+
+  it('resolves a later ESM import to a package added below the importer', async () => {
+    const pkg = JSON.stringify({ name: 'qux', type: 'module', exports: './index.mjs' })
+    fixture('shadow/node_modules/qux/package.json', pkg)
+    fixture('shadow/node_modules/qux/index.mjs', 'export const version = 1')
+    const lazy = fixture('shadow/app/lazy.mjs', `export const load = () => import('qux')`)
+    const { load } = await importModule(pathToFileURL(lazy).href, import.meta.url)
+    expect(await load()).to.have.property('version', 1)
+    fixture('shadow/app/node_modules/qux/package.json', pkg)
+    fixture('shadow/app/node_modules/qux/index.mjs', 'export const version = 2')
+    invalidateResolution([join(fixtures.dir, 'shadow/app/node_modules/qux')])
+    expect(await load()).to.have.property('version', 2)
+  })
+
   it('resolves a CommonJS require to the hoisted copy after the nested one is removed', () => {
     const { path, root } = install('cjs', 'cjs', `module.exports = require('foo')`, version => `exports.version = ${version}`)
     const require = createRequire(import.meta.url)

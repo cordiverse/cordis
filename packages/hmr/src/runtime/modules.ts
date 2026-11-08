@@ -58,6 +58,16 @@ export class ModuleCaches {
   }
 
   /**
+   * The exports of the CJS module of `url`, or `undefined` if there is no
+   * such module or it has not finished loading.
+   */
+  exports(url: string): unknown {
+    const path = toPath(url)
+    const module = path ? this._cjs[path] : undefined
+    if (module?.loaded) return module.exports
+  }
+
+  /**
    * The direct dependencies of a module: the modules linked by its module
    * jobs in every type slot, and the children of its CJS module. A job that
    * failed to link contributes no dependencies.

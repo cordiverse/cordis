@@ -3,7 +3,7 @@ import type {} from '@cordisjs/plugin-fs-node'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { handleError } from './error.ts'
-import { activate, invalidateResolution, ModuleCaches, ModuleLoader } from './runtime/index.ts'
+import { activate, invalidateResolution, ModuleCaches, ModuleLoader, Resolution, resolveRequest } from './runtime/index.ts'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import z from 'schemastery'
 
@@ -14,6 +14,9 @@ declare module 'cordis' {
 }
 
 type Awaitable<T> = T | Promise<T>
+
+// A specifier that is a URL, e.g. `file:` or `data:`.
+const scheme = /^[a-z][a-z\d+.-]*:/i
 
 // A Windows drive-letter path, e.g. `C:\app\cordis.yml` or `C:/app/cordis.yml`.
 const driveLetter = /^[A-Za-z]:[\\/]/
@@ -55,6 +58,8 @@ interface StalePlugin {
   url: string
   /** every module that exports the plugin */
   urls: string[]
+  /** the modules of `urls` that no other module of `urls` imports, including `url` */
+  entries: string[]
   /** the plugin before the change */
   plugin: Plugin
   /** the closure of the plugin in the old module graph */
@@ -217,7 +222,14 @@ class Hmr extends Service {
    * whose files are the root or lie below it are changed. Module URLs are
    * real paths, so a root is matched against them as it is: the caller passes
    * the real path under which modules were loaded, such as the previous
-   * target of a link.
+   * target of a link. For a package, the caller also passes its location,
+   * such as the link itself or a directory where a package is added, since
+   * Node resolves package names through it.
+   *
+   * Later resolutions observe the file system below the roots. A stale
+   * plugin whose module is no longer where the import that loaded it now
+   * resolves, e.g. after its package exports another entry or a link is
+   * retargeted, is replaced from the module that the import resolves to.
    *
    * A changed module that no plugin depends on is still evicted from the
    * module cache: its next import, such as a dynamic one, gets the new code,
@@ -341,25 +353,57 @@ class Hmr extends Service {
   }
 
   /**
-   * Find every loaded module that exports a registered plugin. When anything
-   * in the dependency tree of such a module changes, the module is imported
-   * again and the plugin is replaced.
+   * Find every loaded module that exports a registered plugin, through its
+   * ESM namespace or the exports of its CJS module, so that a plugin that
+   * only `require()` has loaded is found too. When anything in the dependency
+   * tree of such a module changes, the module is imported again and the
+   * plugin is replaced.
    */
   private _discover(declined: Set<string>) {
     const candidates = new Map<string, Plugin>()
     for (const url of this._modules.urls()) {
       if (declined.has(url) || isBuiltin(url)) continue
-      let plugin: Plugin | undefined
-      try {
-        // reading a binding that has not been initialized throws
-        plugin = unwrapExports(this._modules.namespace(url))
-      } catch {
-        continue
+      for (const exports of [() => this._modules.namespace(url), () => this._modules.exports(url)]) {
+        let plugin: Plugin | undefined
+        try {
+          // reading a binding that has not been initialized throws
+          plugin = unwrapExports(exports())
+        } catch {
+          continue
+        }
+        if (!plugin || !this.ctx.registry.has(plugin)) continue
+        candidates.set(url, plugin)
+        break
       }
-      if (!plugin || !this.ctx.registry.has(plugin)) continue
-      candidates.set(url, plugin)
     }
     return candidates
+  }
+
+  /**
+   * Import a module of a stale plugin again. Its resolutions that the
+   * transaction has removed from the resolve cache are resolved again, so
+   * that a module that has moved, e.g. to a new `exports` target or through
+   * a retargeted link, is imported at its new URL. A resolution counts if
+   * its parent is not evicted, since an evicted parent resolves its imports
+   * again by itself, and if its specifier is not a URL or an absolute path,
+   * which resolves to itself. Without one, the module is imported at its
+   * URL. Resolutions that now lead to different modules are ambiguous: the
+   * fibers of the plugin do not record the import that each of them comes
+   * from.
+   */
+  private async _import(url: string, removed: Resolution[], evicted: Set<string>) {
+    const sources = removed.filter(({ specifier, parentURL, url: resolved }) => {
+      return resolved === url && !evicted.has(parentURL) && !isAbsolute(specifier) && !scheme.test(specifier)
+    })
+    if (!sources.length) return this._loader.import(url, import.meta.url, {})
+    const targets = new Set(sources.map(source => resolveRequest(this._loader, source)))
+    if (targets.size > 1) {
+      throw new Error(`the imports of ${this._relative(url)} now resolve to different modules: `
+        + [...targets].map(url => this._relative(url)).join(', '))
+    }
+    // through the request, which records it in the resolve cache again
+    const [{ specifier, parentURL, attributes }] = sources
+    return this._loader.import(specifier, parentURL, attributes)
   }
 
   /**
@@ -408,7 +452,7 @@ class Hmr extends Service {
     if (!roots.size) return result
 
     // also when the roots match no loaded module, e.g. a changed manifest
-    invalidateResolution(roots)
+    const removed = invalidateResolution(roots)
 
     const changed = new Set<string>()
     for (const url of this._match(roots)) {
@@ -458,12 +502,13 @@ class Hmr extends Service {
 
       // Use a module that no other module of the plugin imports.
       // Ambiguous aliases are deferred to the module/plugin identity work.
-      const outermost = urls.find(url => !urls.some(other => other !== url && closures.get(other)!.has(url)))
-      const url = outermost ?? urls[0]
+      const outermost = urls.filter(url => !urls.some(other => other !== url && closures.get(other)!.has(url)))
+      const url = outermost[0] ?? urls[0]
       stalePlugins.push({
         url,
         plugin: exported.get(url)!,
         urls,
+        entries: outermost.length ? outermost : [url],
         modules,
       })
     }
@@ -489,12 +534,13 @@ class Hmr extends Service {
       const before = caches.urls()
       const attempt: ImportAttempt = { stale, loaded: [], failed: false }
       try {
-        // Import the other modules of the plugin too, so that their failures
-        // abort its unit as well.
-        for (const url of stale.urls) {
-          if (url !== stale.url) await this._loader.import(url, import.meta.url, {})
+        // Import the other entries of the plugin too, so that their failures
+        // abort its unit as well. A module that another entry imports is
+        // imported through it, also when it has moved.
+        for (const url of stale.entries) {
+          if (url !== stale.url) await this._import(url, removed, evicted)
         }
-        const exports = unwrapExports(await this._loader.import(stale.url, import.meta.url, {}))
+        const exports = unwrapExports(await this._import(stale.url, removed, evicted))
         if (!this.ctx.registry.resolve(exports)) {
           throw new Error(`invalid plugin at ${this._relative(stale.url)}, `
             + `expect function or object with an "apply" method, received ${typeof exports}`)

@@ -1,12 +1,13 @@
 import { Context, Fiber, FiberState } from 'cordis'
 import Loader from '@cordisjs/plugin-loader'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import Hmr from '../src/index.ts'
 import { ModuleLoader } from '../src/runtime/index.ts'
+import { realpathESM } from './utils.ts'
 
 const testDir = dirname(fileURLToPath(import.meta.url))
 const fixtureDir = resolve(testDir, '__reconcile__')
@@ -61,9 +62,9 @@ describe('Hmr.reconcile', () => {
     fiber = undefined
   })
 
-  async function setup() {
+  async function setup(baseUrl = import.meta.url) {
     ctx = new Context()
-    fiber = await ctx.plugin(Loader, { baseUrl: import.meta.url })
+    fiber = await ctx.plugin(Loader, { baseUrl })
     hmr = await ctx.plugin(Hmr)
     return ctx
   }
@@ -823,6 +824,100 @@ exports.apply = (ctx) => ctx.on('reconcile/hoisted', () => value)
     expect(result.importFailures).to.deep.equal([])
     expect(result.settledFibers).to.have.length(1)
     expect(ctx.bail('reconcile/hoisted' as any)).to.equal('hoisted')
+  })
+
+  describe('a plugin package', () => {
+    const name = (value: string) => `export const apply = ctx => ctx.on('reconcile/moved', () => '${value}')\n`
+
+    /** Write a package of the given files below `__reconcile__`. */
+    function install(path: string, files: Record<string, string>) {
+      const dir = resolve(fixtureDir, path)
+      mkdirSync(dir, { recursive: true })
+      for (const [file, content] of Object.entries(files)) writeFileSync(resolve(dir, file), content)
+      return dir
+    }
+
+    /** Link `<from>/node_modules/<name>` to `<target>`, as an isolated layout does. */
+    function link(from: string, target: string) {
+      const location = resolve(fixtureDir, from, 'node_modules/reconcile-linked')
+      mkdirSync(dirname(location), { recursive: true })
+      try {
+        unlinkSync(location)
+      } catch {}
+      symlinkSync(resolve(fixtureDir, target), location, 'junction')
+      return location
+    }
+
+    const linked = (value: string) => ({
+      'package.json': '{ "name": "reconcile-linked", "type": "module", "exports": "./index.mjs" }',
+      'index.mjs': name(value),
+    })
+
+    it('replaces it with the entry that it newly exports, also after an earlier transaction', async () => {
+      await setup(pathToFileURL(fixtureDir + sep).href)
+      const manifest = (entry: string) => `{ "name": "reconcile-entry", "type": "module", "exports": "./${entry}" }`
+      const dir = install('node_modules/reconcile-entry', { 'package.json': manifest('a.mjs'), 'a.mjs': name('a1'), 'b.mjs': name('b') })
+      const id = await ctx.loader.create({ name: 'reconcile-entry' })
+      await ctx.loader.store[id]!.innerFiber!.await()
+      expect(ctx.bail('reconcile/moved' as any)).to.equal('a1')
+
+      await ctx.hmr.reconcile(() => [fixture('moved-unrelated.ts', '')])
+      // the old entry changes too, so that importing it would also replace the plugin
+      install('node_modules/reconcile-entry', { 'package.json': manifest('b.mjs'), 'a.mjs': name('a2') })
+      const result = await ctx.hmr.reconcile(() => [dir])
+
+      expect(result.settledFibers).to.have.length(1)
+      expect(ctx.bail('reconcile/moved' as any)).to.equal('b')
+    })
+
+    it.runIf(realpathESM)('replaces it with the version that a retargeted link selects', async () => {
+      await setup(pathToFileURL(fixtureDir + sep).href)
+      install('store/linked@1', linked('v1'))
+      install('store/linked@2', linked('v2'))
+      const location = link('.', 'store/linked@1')
+      const id = await ctx.loader.create({ name: 'reconcile-linked' })
+      await ctx.loader.store[id]!.innerFiber!.await()
+      expect(ctx.bail('reconcile/moved' as any)).to.equal('v1')
+
+      // the previous version stays installed, as when another package uses it
+      link('.', 'store/linked@2')
+      const result = await ctx.hmr.reconcile(() => [location, resolve(fixtureDir, 'store/linked@1')])
+
+      expect(result.settledFibers).to.have.length(1)
+      expect(ctx.bail('reconcile/moved' as any)).to.equal('v2')
+    })
+
+    it.runIf(realpathESM)('keeps it when its imports now resolve to different versions', async () => {
+      await setup()
+      install('store/linked@1', linked('v1'))
+      install('store/linked@2', linked('v2'))
+      const location = link('dual-a', 'store/linked@1')
+      link('dual-b', 'store/linked@1')
+      const parent = (dir: string) => pathToFileURL(resolve(fixtureDir, dir) + sep).href
+      const exports = await importModule('reconcile-linked', parent('dual-a'))
+      expect(await importModule('reconcile-linked', parent('dual-b'))).to.equal(exports)
+      await ctx.plugin(ctx.loader.unwrapExports(exports))
+
+      link('dual-a', 'store/linked@2')
+      const result = await ctx.hmr.reconcile(() => [location, resolve(fixtureDir, 'store/linked@1')])
+
+      // the fibers of the plugin do not record which import each comes from
+      expect(result.importFailures).to.have.length(1)
+      expect(ctx.bail('reconcile/moved' as any)).to.equal('v1')
+    })
+  })
+
+  it('replaces a plugin that only require() has loaded', async () => {
+    await setup()
+    const path = fixture('required.cjs', `exports.apply = ctx => ctx.on('reconcile/required', () => 'v1')\n`)
+    await ctx.plugin(createRequire(import.meta.url)(path))
+    expect(ctx.bail('reconcile/required' as any)).to.equal('v1')
+
+    writeFileSync(path, `exports.apply = ctx => ctx.on('reconcile/required', () => 'v2')\n`)
+    const result = await ctx.hmr.reconcile(() => [path])
+
+    expect(result.settledFibers).to.have.length(1)
+    expect(ctx.bail('reconcile/required' as any)).to.equal('v2')
   })
 
   it('runs transactions one at a time', async () => {
