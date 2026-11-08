@@ -166,6 +166,29 @@ describe('Association', () => {
       session.bar = 100
       expect(session.bar).to.equal(101)
     })
+
+    // Object mixins do not name an injectable service. Named service mixins
+    // must still enforce injection on associated accessors.
+    class BarService extends Service {
+      constructor(ctx: Context) {
+        super(ctx, 'bar')
+        ctx.mixin('bar', { bar: 'session.bar' })
+      }
+
+      get bar() {
+        return 42
+      }
+    }
+
+    const namedRoot = new Context()
+    await namedRoot.plugin(Foo)
+    await namedRoot.plugin(BarService)
+    await namedRoot.inject(['foo'], async (ctx) => {
+      expect(() => ctx.foo.session().bar).to.throw()
+      await ctx.inject(['bar'], (ctx) => {
+        expect(ctx.foo.session().bar).to.equal(42)
+      })
+    })
   })
 
   it('associated access follows the service fiber', async () => {
