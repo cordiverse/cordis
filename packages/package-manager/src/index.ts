@@ -43,8 +43,8 @@ class PackageManager extends Service {
     this.root = root
   }
 
-  agent(): Promise<AgentInfo> {
-    return detectAgent(this.root, createEnv())
+  async agent(): Promise<AgentInfo> {
+    return (await detectAgent(this.root, createEnv())).info
   }
 
   install(changes: DependencyChanges | [string, string | null][], options: PackageManager.InstallOptions = {}) {
@@ -58,7 +58,7 @@ class PackageManager extends Service {
     options.signal?.throwIfAborted()
     const root = this.root
     const env = createEnv()
-    const agent = await detectAgent(root, env)
+    const { info: agent, readState } = await detectAgent(root, env)
     const adapter = adapters[agent.kind]
     if (!adapter.lockfiles.some(file => existsSync(resolve(root, file)))) {
       throw new Error(`${root} has no lockfile, expected ${adapter.lockfiles.join(' or ')}`)
@@ -67,7 +67,7 @@ class PackageManager extends Service {
     const manifestPath = resolve(root, 'package.json')
     const original = await readFile(manifestPath, 'utf8')
     const manifest = JSON.parse(original)
-    const before = await adapter.readState(root)
+    const before = await readState(root)
     const backup = await FileBackup.create(['package.json', ...adapter.lockfiles, ...adapter.restoredFiles].map(file => resolve(root, file)))
     options.signal?.throwIfAborted()
 
@@ -80,7 +80,7 @@ class PackageManager extends Service {
     try {
       await writeFile(manifestPath, stringifyManifest(applyChanges(manifest, changes), original))
       await run(agent.executable, adapter.installArgs, { ...runOptions, signal: options.signal })
-      return { agent, ...diffState(root, before, await adapter.readState(root)) }
+      return { agent, ...diffState(root, before, await readState(root)) }
     } catch (error) {
       try {
         await backup.restore()

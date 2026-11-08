@@ -1,10 +1,19 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { Env, run, which } from './process.ts'
-import { InstallState, readYarnBerryState, readYarnClassicState, readNpmState, readPnpmState } from './state.ts'
+import { InstallState, readNpmState, readPnpmState, readYarnBerryState, readYarnClassicState } from './state.ts'
+import {
+  isInRange, PNPM_ISOLATED_VERSIONS, readPnpmIsolatedState, readYarnBerryIsolatedState, YARN_PNPM_LINKER_VERSIONS,
+} from './isolated.ts'
 
 export type AgentName = 'npm' | 'pnpm' | 'yarn'
 export type AgentKind = 'npm' | 'pnpm' | 'yarn-classic' | 'yarn-berry'
+/**
+ * The layout of `node_modules`. A hoisted layout installs packages in place,
+ * while an isolated layout installs every package in a store entry and links
+ * it into the `node_modules` folders from which it is resolved.
+ */
+export type AgentLayout = 'hoisted' | 'isolated'
 
 export interface AgentInfo {
   kind: AgentKind
@@ -12,6 +21,17 @@ export interface AgentInfo {
   spec: string
   version: string
   executable: string
+  layout: AgentLayout
+}
+
+export interface Layout {
+  name: AgentLayout
+  readState(root: string): Promise<InstallState>
+}
+
+export interface Agent {
+  info: AgentInfo
+  readState(root: string): Promise<InstallState>
 }
 
 export interface Adapter {
@@ -24,21 +44,25 @@ export interface Adapter {
   lockfiles: string[]
   /** the other files of the project root that are restored after a failed installation */
   restoredFiles: string[]
-  checkLayout(info: AgentInfo, root: string, env: Env, manifest: any): Promise<void>
-  readState(root: string): Promise<InstallState>
+  /** Detect the layout, and reject an unsupported one before the project is modified. */
+  detectLayout(info: Omit<AgentInfo, 'layout'>, root: string, env: Env, manifest: any): Promise<Layout>
 }
 
-async function getConfig(info: AgentInfo, root: string, env: Env, key: string) {
+type PartialInfo = Omit<AgentInfo, 'layout'>
+
+async function getConfig(info: PartialInfo, root: string, env: Env, key: string) {
   const { stdout } = await run(info.executable, ['config', 'get', key], { cwd: root, env, timeout: 60000 })
   return stdout.trim().split(/\r?\n/).pop()?.trim()
 }
 
-function assertLayout(info: AgentInfo, key: string, value: string | undefined, expected: string) {
-  if (value === expected) return
-  throw new Error(`${info.spec} is configured with ${key} "${value}", only "${expected}" is supported`)
+/** Select the option of a configured value, and reject a value without an option. */
+function selectOption<T>(info: PartialInfo, key: string, value: string | undefined, options: Record<string, T>): T {
+  if (Object.hasOwn(options, value!)) return options[value!]
+  const expected = Object.keys(options).map(name => `"${name}"`).join(' or ')
+  throw new Error(`${info.spec} is configured with ${key} "${value}", only ${expected} is supported`)
 }
 
-async function getYarnClassicLayout(info: AgentInfo, root: string, env: Env, manifest: any) {
+async function getYarnClassicLayout(info: PartialInfo, root: string, env: Env, manifest: any) {
   const { stdout } = await run(info.executable, ['config', 'list', '--json'], { cwd: root, env, timeout: 60000 })
   // the yarn configuration, then the npm configuration
   const [yarnrc = {}, npmrc = {}] = stdout.split(/\r?\n/).flatMap((line) => {
@@ -80,29 +104,46 @@ export const adapters: Record<AgentKind, Adapter> = {
     recoverArgs: ['install', '--no-audit', '--no-fund', '--prefer-offline'],
     lockfiles: ['package-lock.json', 'npm-shrinkwrap.json'],
     restoredFiles: ['.npmrc'],
-    async checkLayout(info, root, env) {
-      assertLayout(info, 'install-strategy', await getConfig(info, root, env, 'install-strategy'), 'hoisted')
+    async detectLayout(info, root, env) {
+      return selectOption(info, 'install-strategy', await getConfig(info, root, env, 'install-strategy'), {
+        hoisted: { name: 'hoisted', readState: readNpmState },
+      })
     },
-    readState: readNpmState,
   },
   'pnpm': {
     // In CI, pnpm defaults to a frozen lockfile, and it asks before purging
-    // a modules directory created with other settings.
+    // a modules directory created with other settings. pnpm 11 skips an
+    // installation whose lockfile and manifests are unchanged since the last
+    // successful one, which the recovery restores.
     installArgs: ['install', '--no-frozen-lockfile', '--config.confirmModulesPurge=false'],
-    recoverArgs: ['install', '--frozen-lockfile', '--prefer-offline', '--config.confirmModulesPurge=false'],
+    recoverArgs: ['install', '--frozen-lockfile', '--prefer-offline', '--config.confirmModulesPurge=false', '--config.optimisticRepeatInstall=false'],
     lockfiles: ['pnpm-lock.yaml'],
     restoredFiles: ['pnpm-workspace.yaml', '.npmrc'],
-    async checkLayout(info, root, env) {
-      assertLayout(info, 'node-linker', await getConfig(info, root, env, 'node-linker'), 'hoisted')
+    async detectLayout(info, root, env) {
+      const linker = await getConfig(info, root, env, 'node-linker')
+      // pnpm prints `undefined` for the default
+      const layout = selectOption<AgentLayout>(info, 'node-linker', linker === 'undefined' ? 'isolated' : linker, {
+        hoisted: 'hoisted',
+        isolated: 'isolated',
+      })
+      if (layout === 'hoisted') return { name: 'hoisted', readState: readPnpmState }
+      // The state after the installation is read by the rules of this version.
+      if (!isInRange(info.version, PNPM_ISOLATED_VERSIONS)) {
+        const [min, max] = PNPM_ISOLATED_VERSIONS
+        throw new Error(`${info.spec} is configured with node-linker "isolated", which is only supported for pnpm >=${min} <${max}`)
+      }
+      if (await getConfig(info, root, env, 'enable-global-virtual-store') === 'true') {
+        throw new Error(`${info.spec} is configured with enable-global-virtual-store, only a virtual store in the project is supported`)
+      }
+      return { name: 'isolated', readState: readPnpmIsolatedState }
     },
-    readState: readPnpmState,
   },
   'yarn-classic': {
     installArgs: ['install', '--non-interactive'],
     recoverArgs: ['install', '--non-interactive', '--frozen-lockfile', '--prefer-offline'],
     lockfiles: ['yarn.lock'],
     restoredFiles: ['.yarnrc', '.npmrc'],
-    async checkLayout(info, root, env, manifest) {
+    async detectLayout(info, root, env, manifest) {
       const { pnp, modulesFolder, metaFolder } = await getYarnClassicLayout(info, root, env, manifest)
       if (pnp) {
         throw new Error(`${info.spec} is configured with Plug'n'Play, only node_modules is supported`)
@@ -114,8 +155,8 @@ export const adapters: Record<AgentKind, Adapter> = {
         // the install state would be written to `.yarn-meta` instead
         throw new Error(`${info.spec} is configured with enable-meta-folder, only the install state in node_modules is supported`)
       }
+      return { name: 'hoisted', readState: readYarnClassicState }
     },
-    readState: readYarnClassicState,
   },
   'yarn-berry': {
     // In CI, yarn berry defaults to immutable installations.
@@ -123,14 +164,23 @@ export const adapters: Record<AgentKind, Adapter> = {
     recoverArgs: ['install', '--immutable'],
     lockfiles: ['yarn.lock'],
     restoredFiles: ['.yarnrc.yml', '.yarn/install-state.gz'],
-    async checkLayout(info, root, env) {
-      assertLayout(info, 'nodeLinker', await getConfig(info, root, env, 'nodeLinker'), 'node-modules')
+    async detectLayout(info, root, env) {
+      const layout = selectOption<AgentLayout>(info, 'nodeLinker', await getConfig(info, root, env, 'nodeLinker'), {
+        'node-modules': 'hoisted',
+        'pnpm': 'isolated',
+      })
+      if (layout === 'hoisted') return { name: 'hoisted', readState: readYarnBerryState }
+      if (!isInRange(info.version, YARN_PNPM_LINKER_VERSIONS)) {
+        const [min, max] = YARN_PNPM_LINKER_VERSIONS
+        throw new Error(`${info.spec} is configured with nodeLinker "pnpm", which is only supported for yarn >=${min} <${max}`)
+      }
+      const installStatePath = resolve(root, await getConfig(info, root, env, 'installStatePath') || '.yarn/install-state.gz')
+      return { name: 'isolated', readState: root => readYarnBerryIsolatedState(root, installStatePath) }
     },
-    readState: readYarnBerryState,
   },
 }
 
-export async function detectAgent(root: string, env: Env): Promise<AgentInfo> {
+export async function detectAgent(root: string, env: Env): Promise<Agent> {
   const manifestPath = resolve(root, 'package.json')
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
   const spec = manifest.packageManager
@@ -153,7 +203,7 @@ export async function detectAgent(root: string, env: Env): Promise<AgentInfo> {
   }
 
   const kind: AgentKind = name !== 'yarn' ? name : major === 1 ? 'yarn-classic' : 'yarn-berry'
-  const info: AgentInfo = { kind, name, spec, version, executable }
-  await adapters[kind].checkLayout(info, root, env, manifest)
-  return info
+  const partial: PartialInfo = { kind, name, spec, version, executable }
+  const layout = await adapters[kind].detectLayout(partial, root, env, manifest)
+  return { info: { ...partial, layout: layout.name }, readState: layout.readState }
 }

@@ -18,12 +18,19 @@ export interface PackageState {
   /** the name in the installed manifest, which differs from the directory name for an alias */
   name: string
   version?: string
-  /** An identifier of the content. Two states with equal resolutions have equal contents. */
+  /**
+   * An identifier of the content. Two states with equal resolutions have
+   * equal contents. In an isolated layout, it is the real directory of a
+   * package in the store, since the name of a store entry identifies the
+   * content of its package.
+   */
   resolution: string
   /**
    * Whether the install state does not record the content, as for a `file:`,
-   * `link:`, `portal:` or workspace dependency, a package bundled in one, and
-   * a yarn classic package whose version has several sources.
+   * `link:`, `portal:` or workspace dependency, a package bundled in one, a
+   * yarn classic package whose version has several sources, and in an
+   * isolated layout, a package outside the store or a store entry that the
+   * agent updates in place.
    */
   local: boolean
   /**
@@ -36,7 +43,7 @@ export interface PackageState {
 
 export type InstallState = Map<string, PackageState>
 
-async function readText(path: string) {
+export async function readText(path: string) {
   try {
     return await readFile(path, 'utf8')
   } catch (error: any) {
@@ -45,7 +52,7 @@ async function readText(path: string) {
   }
 }
 
-async function readName(dir: string): Promise<string | undefined> {
+export async function readName(dir: string): Promise<string | undefined> {
   const text = await readText(resolve(dir, 'package.json'))
   if (!text) return
   try {
