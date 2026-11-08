@@ -46,6 +46,10 @@ export interface Resolution {
   attributes: Record<string, string>
   parentURL: string
   url: string
+  /** the serialized request, as the key of the entry */
+  key: string
+  /** the cached result, as the value of the entry */
+  result: unknown
 }
 
 /**
@@ -64,7 +68,8 @@ export interface Resolution {
  *
  * The entries kept in the resolve cache record the requests that resolved to
  * each module; the removed ones are returned, so that a module can be
- * imported again through the requests that resolved to it.
+ * imported again through the requests that resolved to it, and so that they
+ * can be put back through {@link restoreResolutions}.
  */
 export function invalidateResolution(paths: Iterable<string>): Resolution[] {
   const list = [...paths]
@@ -114,13 +119,29 @@ function removeResolutions(cache: Map<unknown, unknown>, paths: string[]) {
       const url: unknown = imports[key]?.url
       const request = parseKey(key)
       if (!affects(parentURL, request, url)) continue
+      const result = imports[key]
       delete imports[key]
       if (request && typeof url === 'string' && typeof parentURL === 'string') {
-        removed.push({ ...request, parentURL, url })
+        removed.push({ ...request, parentURL, url, key, result })
       }
     }
   }
   return removed
+}
+
+/**
+ * Put resolutions that {@link invalidateResolution} has removed back into the
+ * resolve cache, as `ResolveCache` of `internal/modules/esm/module_map` sets
+ * them, replacing the entries that their requests have got since.
+ */
+export function restoreResolutions(resolutions: Iterable<Resolution>) {
+  const cache = getCaptured()?.resolve
+  if (!cache) return
+  for (const { parentURL, key, result } of resolutions) {
+    let imports = Map.prototype.get.call(cache, parentURL) as Record<string, unknown> | undefined
+    if (!imports) Map.prototype.set.call(cache, parentURL, imports = { __proto__: null })
+    imports[key] = result
+  }
 }
 
 /**
@@ -142,10 +163,11 @@ function parseKey(key: string) {
 }
 
 /**
- * The package that `path` is the location of, if it is `<dir>/node_modules/<name>`,
- * and the directory below which a package name resolves to it.
+ * The package that `path` is the location of, if it is `<dir>/node_modules/<name>`
+ * or its manifest, and the directory below which a package name resolves to it.
  */
 export function locatePackage(path: string) {
+  if (basename(path) === 'package.json') path = dirname(path)
   const scoped = basename(dirname(path)).startsWith('@')
   const modules = scoped ? dirname(dirname(path)) : dirname(path)
   if (basename(modules) !== 'node_modules') return
@@ -154,7 +176,7 @@ export function locatePackage(path: string) {
 }
 
 /** The package name of a bare specifier. */
-export function packageName(specifier: string) {
+function packageName(specifier: string) {
   if (/^(?:[./#]|[a-z][a-z\d+.-]*:)/i.test(specifier)) return
   const [scope, name] = specifier.split('/', 2)
   return scope.startsWith('@') ? name && `${scope}/${name}` : scope
@@ -179,7 +201,7 @@ function within(roots: Set<string>, path: string | undefined) {
 }
 
 /** Resolve a recorded request again, with the synchronous hooks. */
-export function resolveRequest(loader: ModuleLoader, { specifier, attributes, parentURL }: Resolution): string {
+export function resolveRequest(loader: ModuleLoader, { specifier, attributes, parentURL }: Pick<Resolution, 'specifier' | 'attributes' | 'parentURL'>): string {
   return loader.version === 'v2'
     ? loader.resolveSync(parentURL, { specifier, attributes }).url
     : loader.resolveSync(specifier, parentURL, attributes).url

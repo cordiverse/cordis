@@ -870,6 +870,83 @@ exports.apply = (ctx) => ctx.on('reconcile/hoisted', () => value)
       expect(ctx.bail('reconcile/moved' as any)).to.equal('b')
     })
 
+    /** Load a plugin package `<pkg>` whose manifest exports `a.mjs`. */
+    async function loadEntry(pkg: string) {
+      await setup(pathToFileURL(fixtureDir + sep).href)
+      const dir = install(`node_modules/${pkg}`, { 'package.json': entry(pkg, 'a.mjs'), 'a.mjs': name('a1') })
+      const id = await ctx.loader.create({ name: pkg })
+      await ctx.loader.store[id]!.innerFiber!.await()
+      expect(ctx.bail('reconcile/moved' as any)).to.equal('a1')
+      return dir
+    }
+
+    const entry = (pkg: string, file: string, extra = {}) => JSON.stringify({ name: pkg, type: 'module', exports: `./${file}`, ...extra })
+
+    it('replaces it with the entry that it newly exports after a change confined to its manifest', async () => {
+      const dir = await loadEntry('reconcile-metadata')
+      writeFileSync(resolve(dir, 'package.json'), entry('reconcile-metadata', 'a.mjs', { description: 'v2' }))
+      await ctx.hmr.reconcile(() => [resolve(dir, 'package.json')])
+
+      install('node_modules/reconcile-metadata', { 'package.json': entry('reconcile-metadata', 'b.mjs'), 'a.mjs': name('a2'), 'b.mjs': name('b') })
+      const result = await ctx.hmr.reconcile(() => [dir])
+
+      expect(result.settled).to.have.length(1)
+      expect(ctx.bail('reconcile/moved' as any)).to.equal('b')
+    })
+
+    it('replaces it with the entry that its manifest newly exports', async () => {
+      const dir = await loadEntry('reconcile-manifest')
+      install('node_modules/reconcile-manifest', { 'package.json': entry('reconcile-manifest', 'b.mjs'), 'b.mjs': name('b') })
+      const result = await ctx.hmr.reconcile(() => [resolve(dir, 'package.json'), resolve(dir, 'b.mjs')])
+
+      expect(result.settled).to.have.length(1)
+      expect(ctx.bail('reconcile/moved' as any)).to.equal('b')
+    })
+
+    it('replaces it with the entry that it newly exports once the entry is fixed, also after HMR restarts', async () => {
+      const dir = await loadEntry('reconcile-retry')
+      install('node_modules/reconcile-retry', { 'package.json': entry('reconcile-retry', 'b.mjs'), 'b.mjs': `throw new Error('broken')\n` })
+      const first = await ctx.hmr.reconcile(() => [dir])
+      expect(first.aborted).to.have.length(1)
+      expect(ctx.bail('reconcile/moved' as any)).to.equal('a1')
+
+      await hmr!.dispose()
+      hmr = await ctx.plugin(Hmr)
+      install('node_modules/reconcile-retry', { 'b.mjs': name('b') })
+      // the retry includes the change that moved the entry
+      const result = await ctx.hmr.reconcile(() => [resolve(dir, 'package.json'), resolve(dir, 'b.mjs')])
+
+      expect(result.aborted).to.deep.equal([])
+      expect(result.settled).to.have.length(1)
+      expect(ctx.bail('reconcile/moved' as any)).to.equal('b')
+    })
+
+    it('aborts it with a plugin that imports a module that its new entry newly imports', async () => {
+      const dir = await loadEntry('reconcile-joined')
+      const shared = fixture('joined-shared.mjs', `export const value = 'v1'\n`)
+      const other = fixture('joined-other.mjs', `
+import { value } from './joined-shared.mjs'
+export const apply = ctx => ctx.on('reconcile/joined', () => value)
+`)
+      const id = await ctx.loader.create({ name: './joined-other.mjs' })
+      await ctx.loader.store[id]!.innerFiber!.await()
+
+      install('node_modules/reconcile-joined', {
+        'package.json': entry('reconcile-joined', 'b.mjs'),
+        'b.mjs': `import { value } from '../../joined-shared.mjs'\nexport const apply = ctx => ctx.on('reconcile/moved', () => value)\n`,
+      })
+      writeFileSync(shared, `export const value = 'v2'\n`)
+      writeFileSync(other, `import './joined-shared.mjs'\nthrow new Error('broken')\n`)
+      const result = await ctx.hmr.reconcile(() => [dir, shared, other])
+
+      // the closures of both plugins share the evicted module in the new module graph
+      expect(result.aborted).to.have.length(1)
+      expect(result.settled.length).to.equal(0)
+      expect(ctx.bail('reconcile/moved' as any)).to.equal('a1')
+      expect(ctx.bail('reconcile/joined' as any)).to.equal('v1')
+      expect((await importModule(pathToFileURL(shared).href, import.meta.url) as any).value).to.equal('v1')
+    })
+
     it.runIf(realpathESM)('replaces it with the version that a retargeted link selects', async () => {
       await setup(pathToFileURL(fixtureDir + sep).href)
       install('store/linked@1', linked('v1'))
@@ -934,6 +1011,23 @@ export const apply = ctx => ctx.on('reconcile/shadow-esm', () => value)
 
       expect(result.settled).to.have.length(1)
       expect(ctx.bail('reconcile/shadow-esm' as any)).to.equal('nested')
+    })
+
+    it('replaces a plugin that requires it, given its manifest', async () => {
+      await setup()
+      install('reconcile-shadow-manifest', '.', 'hoisted', 'cjs')
+      mkdirSync(resolve(fixtureDir, 'shadow-manifest'), { recursive: true })
+      await load('shadow-manifest/plugin.cjs', `
+const { value } = require('reconcile-shadow-manifest')
+exports.apply = ctx => ctx.on('reconcile/shadow-manifest', () => value)
+`)
+      expect(ctx.bail('reconcile/shadow-manifest' as any)).to.equal('hoisted')
+
+      const location = install('reconcile-shadow-manifest', 'shadow-manifest', 'nested', 'cjs')
+      const result = await ctx.hmr.reconcile(() => [resolve(location, 'package.json')])
+
+      expect(result.settled).to.have.length(1)
+      expect(ctx.bail('reconcile/shadow-manifest' as any)).to.equal('nested')
     })
 
     it('replaces a plugin that requires it', async () => {

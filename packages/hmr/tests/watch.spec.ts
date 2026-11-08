@@ -85,9 +85,9 @@ describe('Hmr with fs', () => {
     reconcile.mockRestore()
   })
 
-  async function setup(config: Partial<Hmr.WatchConfig> = {}, base?: string) {
+  async function setup(config: Partial<Hmr.WatchConfig> = {}, base?: string, baseUrl = import.meta.url) {
     ctx = new Context()
-    ctx.baseUrl = import.meta.url
+    ctx.baseUrl = baseUrl
     fiber = await ctx.plugin(Loader)
     await ctx.plugin(FakeFs)
     hmr = await ctx.plugin(Hmr, { base, watch: { enabled: true, debounce: 50, ...config } })
@@ -245,6 +245,71 @@ export const apply = 'not a function'`))
     expect((await first).aborted).to.have.length(1)
     await second
     expect(ctx.bail('hmr-watch/queued' as any)).to.equal('v2')
+  })
+
+  it('retries an entry that a manifest has moved with the next batch', async () => {
+    await setup({}, undefined, pathToFileURL(fixtureDir + sep).href)
+    const dir = resolve(fixtureDir, 'node_modules/hmr-watch-entry')
+    mkdirSync(dir, { recursive: true })
+    const manifest = resolve(dir, 'package.json')
+    const entry = resolve(dir, 'b.mjs')
+    const exports = (file: string) => JSON.stringify({ name: 'hmr-watch-entry', type: 'module', exports: `./${file}` })
+    const apply = (value: string) => `export const apply = ctx => ctx.on('hmr-watch/entry', () => '${value}')\n`
+    writeFileSync(manifest, exports('a.mjs'))
+    writeFileSync(resolve(dir, 'a.mjs'), apply('a'))
+    const id = await ctx.loader.create({ name: 'hmr-watch-entry' })
+    await ctx.loader.store[id]!.innerFiber!.await()
+
+    // one window: the manifest moves the entry to a module that fails
+    writeFileSync(manifest, exports('b.mjs'))
+    writeFileSync(entry, `throw new Error('broken')\n`)
+    let reloaded = nextReload()
+    change(manifest)
+    change(entry)
+    expect((await reloaded).aborted).to.have.length(1)
+    expect(ctx.bail('hmr-watch/entry' as any)).to.equal('a')
+
+    // the next window only repairs the new entry
+    writeFileSync(entry, apply('b'))
+    reloaded = nextReload()
+    change(entry)
+    await reloaded
+    expect(ctx.bail('hmr-watch/entry' as any)).to.equal('b')
+  })
+
+  it('retries an importer of a package that a nearer package shadows with the next batch', async () => {
+    await setup({}, undefined, pathToFileURL(fixtureDir + sep).href)
+    const install = (dir: string, source: string) => {
+      const path = resolve(fixtureDir, dir, 'node_modules/hmr-watch-dep')
+      mkdirSync(path, { recursive: true })
+      writeFileSync(resolve(path, 'package.json'), '{ "name": "hmr-watch-dep", "type": "module", "exports": "./index.mjs" }')
+      writeFileSync(resolve(path, 'index.mjs'), source)
+      return path
+    }
+    install('.', `export const value = 'hoisted'\n`)
+    mkdirSync(resolve(fixtureDir, 'shadow'), { recursive: true })
+    writeFileSync(resolve(fixtureDir, 'shadow/plugin.mjs'), `
+import { value } from 'hmr-watch-dep'
+export const apply = ctx => ctx.on('hmr-watch/shadow', () => value)
+`)
+    const id = await ctx.loader.create({ name: './shadow/plugin.mjs' })
+    await ctx.loader.store[id]!.innerFiber!.await()
+    expect(ctx.bail('hmr-watch/shadow' as any)).to.equal('hoisted')
+
+    // one window: a nearer package is added, whose entry fails
+    const dir = install('shadow', `throw new Error('broken')\n`)
+    let reloaded = nextReload()
+    change(resolve(dir, 'package.json'))
+    change(resolve(dir, 'index.mjs'))
+    expect((await reloaded).aborted).to.have.length(1)
+    expect(ctx.bail('hmr-watch/shadow' as any)).to.equal('hoisted')
+
+    // the next window only repairs its entry
+    writeFileSync(resolve(dir, 'index.mjs'), `export const value = 'nested'\n`)
+    reloaded = nextReload()
+    change(resolve(dir, 'index.mjs'))
+    await reloaded
+    expect(ctx.bail('hmr-watch/shadow' as any)).to.equal('nested')
   })
 
   it('only reports a change to a host module', async () => {
