@@ -1,7 +1,7 @@
-import { Context, Events } from '../src'
+import { Context, Events } from '../src/index.ts'
 import { expect, describe, it } from 'vitest'
 import { mock } from 'node:test'
-import { event, Filter, Session } from './utils'
+import { event, Filter, Session } from './utils.ts'
 
 export function createArray<T>(length: number, create: (index: number) => T) {
   return [...new Array(length).keys()].map(create)
@@ -15,6 +15,37 @@ function setup() {
 }
 
 describe('Events', () => {
+  it('deprecated dispatch returns bound callbacks that respect later removal', () => {
+    const { root } = setup()
+    const name = Symbol('legacy')
+    const target = {}
+    const callback = mock.fn(function (this: object, value: string) {
+      expect(this).to.equal(target)
+      return value
+    })
+    const dispose = root.on(name, callback)
+    const [invoke] = root.events.dispatch('bail', [target, name])
+
+    expect(invoke('value')).to.equal('value')
+    dispose()
+    expect(invoke('removed')).to.be.undefined
+    expect(callback.mock.calls).to.have.length(1)
+  })
+
+  it('deprecated waterfall dispatch continues past a removed callback', () => {
+    const { root } = setup()
+    const name = Symbol('legacy waterfall')
+    const callback = mock.fn()
+    const dispose = root.on(name, callback)
+    const [invoke] = root.events.dispatch('waterfall', [name])
+    const next = mock.fn(() => 'continued')
+
+    dispose()
+    expect(invoke('value', next)).to.equal('continued')
+    expect(callback.mock.calls).to.have.length(0)
+    expect(next.mock.calls).to.have.length(1)
+  })
+
   it('supports symbol event names across dispatch modes', async () => {
     const { root } = setup()
     const event = Symbol('event')
@@ -100,6 +131,152 @@ describe('Events', () => {
     expect(callback.mock.calls).to.have.length(1)
   })
 
+  it('ctx.once() runs once when an earlier listener emits recursively', () => {
+    const { root } = setup()
+    let nested = false
+    root.on(event, () => {
+      if (nested) return
+      nested = true
+      root.emit(event)
+    })
+    const callback = mock.fn()
+    root.once(event, callback)
+
+    root.emit(event)
+    expect(callback.mock.calls).to.have.length(1)
+  })
+
+  it('ctx.once() runs once across concurrent serial dispatches', async () => {
+    const { root } = setup()
+    const barrier = Promise.withResolvers<void>()
+    root.on(event, () => barrier.promise)
+    const callback = mock.fn()
+    root.once(event, callback)
+
+    const first = root.serial(event)
+    const second = root.serial(event)
+    barrier.resolve()
+    await Promise.all([first, second])
+    expect(callback.mock.calls).to.have.length(1)
+  })
+
+  it.each(['emit', 'parallel', 'serial', 'bail'] as const)('%s skips listeners removed during dispatch', async (mode) => {
+    const { root } = setup()
+    let dispose!: () => void
+    root.on(event, () => { dispose() })
+    const removed = mock.fn()
+    dispose = root.on(event, removed)
+    const remaining = mock.fn()
+    root.on(event, remaining)
+
+    await root[mode](event)
+    expect(removed.mock.calls).to.have.length(0)
+    expect(remaining.mock.calls).to.have.length(1)
+  })
+
+  it.each(['emit', 'parallel', 'serial', 'bail'] as const)('%s defers added listeners until the next dispatch', async (mode) => {
+    const { root } = setup()
+    const added = mock.fn()
+    root.on(event, () => { root.on(event, added) })
+
+    await root[mode](event)
+    expect(added.mock.calls).to.have.length(0)
+    await root[mode](event)
+    expect(added.mock.calls).to.have.length(1)
+  })
+
+  it('skips a listener disposed by an earlier plugin during dispatch', async () => {
+    const { root } = setup()
+    let child!: ReturnType<Context['plugin']>
+    root.on(event, async () => { await child.dispose() })
+    const removed = mock.fn()
+    child = root.plugin((ctx: Context) => { ctx.on(event, removed) })
+    await child
+
+    await root.serial(event)
+    expect(removed.mock.calls).to.have.length(0)
+  })
+
+  it('waterfall continues past a removed listener', () => {
+    const { root } = setup()
+    let dispose!: () => void
+    root.on('test/waterfall', (value, next) => {
+      dispose()
+      return value + next()
+    })
+    const removed = mock.fn<Events['test/waterfall']>((value, next) => value + next())
+    dispose = root.on('test/waterfall', removed)
+    const remaining = mock.fn<Events['test/waterfall']>((value, next) => value + next())
+    root.on('test/waterfall', remaining)
+    const terminal = mock.fn(() => 2)
+
+    expect(root.waterfall('test/waterfall', 1, terminal)).to.equal(4)
+    expect(removed.mock.calls).to.have.length(0)
+    expect(remaining.mock.calls).to.have.length(1)
+    expect(terminal.mock.calls).to.have.length(1)
+  })
+
+  it('waterfall defers added listeners until the next dispatch', () => {
+    const { root } = setup()
+    const added = mock.fn<Events['test/waterfall']>((value, next) => value + next())
+    root.on('test/waterfall', (value, next) => {
+      root.on('test/waterfall', added)
+      return next()
+    })
+
+    expect(root.waterfall('test/waterfall', 1, () => 2)).to.equal(2)
+    expect(added.mock.calls).to.have.length(0)
+    expect(root.waterfall('test/waterfall', 1, () => 2)).to.equal(3)
+    expect(added.mock.calls).to.have.length(1)
+  })
+
+  it('waterfall continues after a recursive dispatch has consumed a once listener', () => {
+    const { root } = setup()
+    let nested = false
+    root.on('test/waterfall', (value, next) => {
+      if (!nested) {
+        nested = true
+        root.waterfall('test/waterfall', value, () => 2)
+      }
+      return next()
+    })
+    const once = mock.fn<Events['test/waterfall']>((value, next) => value + next())
+    root.once('test/waterfall', once)
+    root.on('test/waterfall', (value, next) => value + next())
+
+    expect(root.waterfall('test/waterfall', 1, () => 2)).to.equal(3)
+    expect(once.mock.calls).to.have.length(1)
+  })
+
+  it('internal/update continues past a removed fiber listener', async () => {
+    const { root } = setup()
+    const removed = mock.fn()
+    const remaining = mock.fn()
+    const loaded: number[] = []
+    const child = root.plugin((ctx: Context, config: { n: number }) => {
+      loaded.push(config.n)
+      let dispose!: () => void
+      ctx.on('internal/update', (config, next) => {
+        dispose()
+        return next()
+      })
+      dispose = ctx.on('internal/update', (config, next) => {
+        removed()
+        return next()
+      })
+      ctx.on('internal/update', (config, next) => {
+        remaining()
+        return next()
+      })
+    }, { n: 0 })
+    await child
+
+    await child.update({ n: 1 })
+    expect(removed.mock.calls).to.have.length(0)
+    expect(remaining.mock.calls).to.have.length(1)
+    expect(loaded).to.deep.equal([0, 1])
+  })
+
   it('ctx.parallel()', async () => {
     const { root } = setup()
     await root.parallel(event)
@@ -125,9 +302,21 @@ describe('Events', () => {
     })
     const error = await root.parallel(event).catch(e => e)
     expect(error).to.be.instanceof(AggregateError)
+    expect(error.message).to.equal('one or more listeners of event "custom-event" failed')
     expect(error.errors.map((e: Error) => e.message)).to.have.members(['test', 'async'])
     expect(settled).to.be.true
     dispose()
+  })
+
+  it('ctx.parallel() labels symbol events', async () => {
+    const { root } = setup()
+    const event = Symbol('parallel')
+    root.on(event, () => {
+      throw new Error('test')
+    })
+    const error = await root.parallel(event).catch(e => e)
+    expect(error).to.be.instanceof(AggregateError)
+    expect(error.message).to.equal('one or more listeners of event Symbol(parallel) failed')
   })
 
   it('ctx.emit()', async () => {
@@ -278,5 +467,91 @@ describe('Events', () => {
     expect(await root.waterfall('test/async-waterfall', 1, terminal)).to.equal(4)
     expect(callback.mock.calls).to.have.length(2)
     expect(terminal.mock.calls).to.have.length(2)
+  })
+
+  describe('internal/update', () => {
+    it('does not accumulate across reloads', async () => {
+      const { root } = setup()
+      const calls: number[] = []
+      const fiber = root.plugin((ctx: Context, _: { n: number }) => {
+        ctx.on('internal/update', (config, next) => {
+          calls.push(config.n)
+          return next()
+        })
+      }, { n: 0 })
+
+      await fiber
+      await fiber.update({ n: 1 })
+      await fiber.update({ n: 2 })
+      await fiber.update({ n: 3 })
+      expect(calls).to.deep.equal([1, 2, 3])
+    })
+
+    it('can be disposed explicitly', async () => {
+      const { root } = setup()
+      const calls: number[] = []
+      let dispose!: () => void
+      const fiber = root.plugin((ctx: Context, _: { n: number }) => {
+        dispose = ctx.on('internal/update', (config, next) => {
+          calls.push(config.n)
+          return next()
+        })
+      }, { n: 0 })
+
+      await fiber
+      dispose()
+      await fiber.update({ n: 1 })
+      expect(calls).to.deep.equal([])
+    })
+
+    it('runs prepended listeners first', async () => {
+      const { root } = setup()
+      const order: string[] = []
+      let dispose!: () => void
+      const fiber = root.plugin((ctx: Context, _: { n: number }) => {
+        const listen = (name: string, prepend?: boolean) => {
+          return ctx.on('internal/update', (config, next) => {
+            order.push(name)
+            return next()
+          }, { prepend })
+        }
+        listen('a')
+        dispose = listen('b', true)
+        listen('c')
+        listen('d', true)
+      }, { n: 0 })
+
+      await fiber
+      await fiber.update({ n: 1 })
+      expect(order).to.deep.equal(['d', 'b', 'a', 'c'])
+
+      order.length = 0
+      dispose()
+      await fiber.update({ n: 2 })
+      expect(order).to.deep.equal(['d', 'a', 'c'])
+    })
+
+    it('global listeners are not tied to a child fiber reload', async () => {
+      const { root } = setup()
+      const globalCalls: number[] = []
+      const localCalls: number[] = []
+      root.on('internal/update', (config, next) => {
+        globalCalls.push(config.n)
+        return next()
+      }, { global: true })
+
+      const fiber = root.plugin((ctx: Context, _: { n: number }) => {
+        ctx.on('internal/update', (config, next) => {
+          localCalls.push(config.n)
+          return next()
+        })
+      }, { n: 0 })
+
+      await fiber
+      await fiber.update({ n: 1 })
+      await fiber.update({ n: 2 })
+      expect(globalCalls).to.deep.equal([1, 2])
+      expect(localCalls).to.deep.equal([1, 2])
+    })
   })
 })

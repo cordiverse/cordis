@@ -1,10 +1,10 @@
-import { Context } from '../src'
+import { Context } from '../src/index.ts'
 
 declare const ctx: Context
 declare const dynamicEvent: symbol
 declare const ready: unique symbol
 
-declare module '../src/events' {
+declare module '../src/events.ts' {
   interface Events {
     [ready](count: number): string
   }

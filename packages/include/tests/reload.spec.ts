@@ -4,7 +4,7 @@ import LoggerConsole from '@cordisjs/plugin-logger-console'
 import { expect, describe, it, afterEach } from 'vitest'
 import { readFile, rm, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import Include from '../src'
+import Include from '../src/index.ts'
 
 function waitFor(condFn: () => any, timeout = 5000, interval = 20): Promise<void> {
   return new Promise<void>((resolve, reject) => {
@@ -78,6 +78,19 @@ describe('Include reload', () => {
     // the new entry loads, and the overlay is applied to the new parse too
     await waitFor(() => app.ctx.bail('test/get-extra'))
     expect(app.ctx.bail('test/get-value')).to.be.undefined
+  }, 10000)
+
+  it('rebuilds an entry whose name changes in the file', async () => {
+    const app = await setup('tmp-reload-rename.yml', INNER)
+    await waitFor(() => app.ctx.bail('test/get-value'))
+
+    await writeFile(app.filename, '- id: inner\n  name: ./extra-plugin\n')
+    await app.include().refresh()
+
+    await waitFor(() => app.ctx.bail('test/get-extra'))
+    expect(app.ctx.bail('test/get-value')).to.be.undefined
+    // the old plugin is not taken for a self-dispose
+    expect(await readFile(app.filename, 'utf8')).to.equal('- id: inner\n  name: ./extra-plugin\n')
   }, 10000)
 
   it('reverts an entry when its patch is removed', async () => {

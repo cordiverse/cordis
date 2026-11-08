@@ -1,36 +1,50 @@
 import { defineProperty } from 'cosmokit'
-import type { Context, Service } from '.'
+import type { Context } from './context.ts'
+import type { Service } from './service.ts'
 
+/**
+ * An ordered list whose entries are removed through the disposers returned on insertion.
+ */
 export class DisposableList<T extends WeakKey> {
   private sn = 0
-  private map = new Map<number, T>()
+  private head = new Map<number, T>()
+  private tail = new Map<number, T>()
   private weak = new WeakMap<T, number>()
 
   get length() {
-    return this.map.size
+    return this.head.size + this.tail.size
   }
 
   push(value: T) {
     const sn = ++this.sn
-    this.map.set(sn, value)
+    this.tail.set(sn, value)
     this.weak.set(value, sn)
-    return () => this.map.delete(sn)
+    return () => this.tail.delete(sn)
+  }
+
+  unshift(value: T) {
+    const sn = -++this.sn
+    this.head.set(sn, value)
+    this.weak.set(value, sn)
+    return () => this.head.delete(sn)
   }
 
   delete(value: T) {
     const sn = this.weak.get(value)
     if (!sn) return false
-    return this.map.delete(sn)
+    return (sn < 0 ? this.head : this.tail).delete(sn)
   }
 
   clear() {
-    const values = [...this.map.values()]
-    this.map.clear()
-    return values.reverse()
+    const values = [...this]
+    this.head.clear()
+    this.tail.clear()
+    return values
   }
 
-  [Symbol.iterator]() {
-    return this.map.values()
+  [Symbol.iterator](): IterableIterator<T> {
+    if (!this.head.size) return this.tail.values()
+    return [...this.head.values()].reverse().concat([...this.tail.values()]).values()
   }
 
   [Symbol.for('nodejs.util.inspect.custom')]() {
@@ -50,11 +64,12 @@ export const symbols = {
   caller: Symbol.for('cordis.caller'),
   receiver: Symbol.for('cordis.receiver'),
   original: Symbol.for('cordis.original'),
-  metadata: Symbol.for('cordis.metadata'),
+  decorator: Symbol.for('cordis.decorator'),
   initHooks: Symbol.for('cordis.initHooks'),
   checkProto: Symbol.for('cordis.checkProto'),
 
   // context symbols
+  root: Symbol.for('cordis.root') as typeof Context.root,
   effect: Symbol.for('cordis.effect') as typeof Context.effect,
   filter: Symbol.for('cordis.filter') as typeof Context.filter,
   isolate: Symbol.for('cordis.isolate') as typeof Context.isolate,
@@ -63,11 +78,12 @@ export const symbols = {
   // service symbols
   init: Symbol.for('cordis.init') as typeof Service.init,
   check: Symbol.for('cordis.check') as typeof Service.check,
-  config: Symbol.for('cordis.config') as typeof Service.config,
   invoke: Symbol.for('cordis.invoke') as typeof Service.invoke,
+  metadata: Symbol.for('cordis.metadata') as typeof Service.metadata,
   extend: Symbol.for('cordis.extend') as typeof Service.extend,
   tracker: Symbol.for('cordis.tracker') as typeof Service.tracker,
-  resolveConfig: Symbol.for('cordis.resolveConfig') as typeof Service.resolveConfig,
+  mergeIntercept: Symbol.for('cordis.mergeIntercept') as typeof Service.mergeIntercept,
+  resolveIntercept: Symbol.for('cordis.resolveIntercept') as typeof Service.resolveIntercept,
 }
 
 const GeneratorFunction = function* () {}.constructor

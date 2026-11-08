@@ -4,6 +4,11 @@ on:
   push:
   pull_request:
 
+concurrency:
+  # Each push to `main` gets its own group, so every commit there is built and published.
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.run_id || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     runs-on: ubuntu-latest

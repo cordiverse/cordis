@@ -1,7 +1,7 @@
-import { Context, Service } from '../src'
-import { Message } from '../src/logger'
+import { Context, Service } from '../src/index.ts'
+import { Message } from '../src/logger.ts'
 import { describe, expect, it } from 'vitest'
-import { sleep } from './utils'
+import { sleep } from './utils.ts'
 
 function setup() {
   const ctx = new Context()
@@ -151,5 +151,24 @@ describe('Logger', () => {
     await ctx.plugin(FooService)
     await sleep()
     expect(captured.map(m => m.name)).toContain('foo:driver')
+  })
+
+  it('logs an error whose errors array is empty', () => {
+    const { ctx, captured } = setup()
+    const error = new Error('empty aggregate')
+    ;(error as any).errors = []
+    ctx.logger.warn(error)
+    expect(captured).toHaveLength(1)
+    expect(captured[0].args[0]).toBe(error)
+  })
+
+  it('flattens an aggregate error into its members', () => {
+    const { ctx, captured } = setup()
+    const inner = new Error('inner')
+    const outer = new Error('outer')
+    ;(outer as any).errors = [inner]
+    ctx.logger.warn(outer)
+    expect(captured).toHaveLength(1)
+    expect(captured[0].args[0]).toBe(inner)
   })
 })

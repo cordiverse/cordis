@@ -1,7 +1,7 @@
 import { Awaitable, defineProperty, Promisify } from 'cosmokit'
-import { Context } from './context'
-import { Fiber, FiberState } from './fiber'
-import { DisposableList, symbols } from './utils'
+import { Context } from './context.ts'
+import { Fiber, FiberState, resolveConfig } from './fiber.ts'
+import { DisposableList, symbols } from './utils.ts'
 
 export function isBailed(value: any) {
   return value !== null && value !== false && value !== undefined
@@ -13,7 +13,7 @@ export type ThisType<F> = F extends (this: infer T, ...args: any) => any ? T : n
 
 export type DispatchMode = 'emit' | 'parallel' | 'serial' | 'bail' | 'waterfall'
 
-declare module './context' {
+declare module './context.ts' {
   export interface Context {
     /* eslint-disable max-len */
     parallel<K extends keyof Events>(name: K, ...args: Parameters<Events[K]>): Promise<void>
@@ -40,6 +40,7 @@ export interface EventOptions {
 export interface Hook extends EventOptions {
   ctx: Context
   callback: (...args: any[]) => any
+  removed?: boolean
 }
 
 export class EventsService {
@@ -55,18 +56,31 @@ export class EventsService {
       if (name === 'internal/update' && !options.global) {
         const hooks = this.fiber._hooks['internal/update'] ??= new DisposableList()
         const method = options.prepend ? 'unshift' : 'push'
-        return hooks[method](listener)
+        return this.fiber.effect(() => {
+          let removed = false
+          const dispose = hooks[method](function (this: Fiber, config: any, next: () => any) {
+            return removed ? next() : listener.call(this, config, next)
+          })
+          return () => {
+            removed = true
+            return dispose()
+          }
+        }, 'ctx.on("internal/update")')
       }
     })
 
-    this.on('internal/update', function (config, noSave, next) {
+    this.on('internal/update', function (config, next) {
       const cbs = [...this._hooks['internal/update'] || []]
       const _next = () => {
         const cb = cbs.shift() ?? next
-        return cb.call(this, config, noSave, _next)
+        return cb.call(this, config, _next)
       }
       return _next()
     }, { global: true, prepend: true })
+
+    this.on('internal/config', (fiber, next) => {
+      return resolveConfig(fiber.runtime!, next())
+    })
   }
 
   private _resolve(type: string, args: any[]) {
@@ -76,57 +90,74 @@ export class EventsService {
       this.emit('internal/dispatch', type, name, args, thisArg)
     }
     const filter = thisArg?.[Context.filter]
-    return [thisArg, (this._hooks[name] || [])
-      .filter(hook => hook.global || !filter || filter.call(thisArg, hook.ctx)).map(hook => hook.callback)] as const
+    const hooks = (this._hooks[name] || [])
+      .filter(hook => hook.global || !filter || filter.call(thisArg, hook.ctx))
+    return [thisArg, hooks, name] as const
   }
 
   /** @deprecated */
   dispatch(type: string, args: any[]) {
-    const [thisArg, callbacks] = this._resolve(type, args)
-    return callbacks.map(callback => callback.bind(thisArg))
+    const [thisArg, hooks] = this._resolve(type, args)
+    return hooks.map(hook => (...args: any[]) => {
+      if (hook.removed) {
+        if (type === 'waterfall') return args.at(-1)()
+        return
+      }
+      return Reflect.apply(hook.callback, thisArg, args)
+    })
   }
 
   async parallel(...args: any[]) {
-    const [thisArg, callbacks] = this._resolve('emit', args)
-    const results = await Promise.allSettled(callbacks.map(async callback => Reflect.apply(callback, thisArg, args)))
+    const [thisArg, hooks, name] = this._resolve('parallel', args)
+    const results = await Promise.allSettled(hooks.map(async (hook) => {
+      if (!hook.removed) return Reflect.apply(hook.callback, thisArg, args)
+    }))
     const errors = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
-    if (errors.length) throw new AggregateError(errors.map(error => error.reason))
+    if (!errors.length) return
+    const label = typeof name === 'symbol' ? String(name) : `"${name}"`
+    throw new AggregateError(errors.map(error => error.reason), `one or more listeners of event ${label} failed`)
   }
 
   emit(...args: any[]) {
-    const [thisArg, callbacks] = this._resolve('emit', args)
-    for (const callback of callbacks) Reflect.apply(callback, thisArg, args)
+    const [thisArg, hooks] = this._resolve('emit', args)
+    for (const hook of hooks) {
+      if (!hook.removed) Reflect.apply(hook.callback, thisArg, args)
+    }
   }
 
   async serial(...args: any[]) {
-    const [thisArg, callbacks] = this._resolve('serial', args)
-    for (const callback of callbacks) {
-      const result = await Reflect.apply(callback, thisArg, args)
+    const [thisArg, hooks] = this._resolve('serial', args)
+    for (const hook of hooks) {
+      if (hook.removed) continue
+      const result = await Reflect.apply(hook.callback, thisArg, args)
       if (isBailed(result)) return result
     }
   }
 
   bail(...args: any[]) {
-    const [thisArg, callbacks] = this._resolve('bail', args)
-    for (const callback of callbacks) {
-      const result = Reflect.apply(callback, thisArg, args)
+    const [thisArg, hooks] = this._resolve('bail', args)
+    for (const hook of hooks) {
+      if (hook.removed) continue
+      const result = Reflect.apply(hook.callback, thisArg, args)
       if (isBailed(result)) return result
     }
   }
 
   waterfall(...args: any[]) {
-    const [thisArg, callbacks] = this._resolve('waterfall', args)
+    const [thisArg, hooks] = this._resolve('waterfall', args)
     const inner = args.pop()
+    let index = 0
     const dispatch = () => {
-      const callback = callbacks.shift()
-      if (!callback) return inner()
+      while (hooks[index]?.removed) index++
+      const hook = hooks[index++]
+      if (!hook) return inner()
       let called = false
       const next = () => {
         if (called) throw new Error('next() called multiple times')
         called = true
         return dispatch()
       }
-      return Reflect.apply(callback, thisArg, [...args, next])
+      return Reflect.apply(hook.callback, thisArg, [...args, next])
     }
     return dispatch()
   }
@@ -135,15 +166,17 @@ export class EventsService {
     const method = options.prepend ? 'unshift' : 'push'
     return this.ctx.fiber.effect(() => {
       const hooks = this._hooks[name] ??= []
-      hooks[method]({ ctx: this.ctx, callback, ...options })
-      return () => this.unregister(name, callback)
+      const hook = { ctx: this.ctx, callback, ...options }
+      hooks[method](hook)
+      return () => this.unregister(name, hook)
     }, label)
   }
 
-  private unregister(name: string | symbol, callback: any) {
+  private unregister(name: string | symbol, hook: Hook) {
+    hook.removed = true
     const hooks = this._hooks[name]
     if (!hooks) return
-    const index = hooks.findIndex(hook => hook.callback === callback)
+    const index = hooks.indexOf(hook)
     if (index >= 0) {
       hooks.splice(index, 1)
       if (!hooks.length) delete this._hooks[name]
@@ -178,9 +211,12 @@ export class EventsService {
 export interface Events {
   [key: symbol]: (...args: any[]) => any
   'internal/plugin'(fiber: Fiber): void
+  'internal/replace'(fiber: Fiber): void
   'internal/status'(fiber: Fiber, oldValue: FiberState): void
   'internal/service'(this: Context, name: string, value: any): void
-  'internal/update'(this: Fiber, config: any, noSave: boolean, next: () => Awaitable<void>): Awaitable<void>
+  'internal/update'(this: Fiber, resolvedConfig: any, next: () => Awaitable<void>): Awaitable<void>
+  'internal/commit'(fiber: Fiber, originalConfig: any): void
+  'internal/config'(fiber: Fiber, next: () => any): any
   'internal/get'(ctx: Context, name: string, error: Error, next: () => any): any
   'internal/set'(ctx: Context, name: string, value: any, error: Error, next: () => boolean): boolean
   'internal/listener'(this: Context, name: string, listener: any, prepend: boolean): void

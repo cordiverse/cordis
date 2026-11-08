@@ -1,5 +1,5 @@
 import { Context, Service } from 'cordis'
-import { Inject } from '../src'
+import { Inject } from '../src/index.ts'
 import { expect, describe, it } from 'vitest'
 import { mock } from 'node:test'
 

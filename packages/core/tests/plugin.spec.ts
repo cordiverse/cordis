@@ -1,8 +1,8 @@
-import { Context, Service } from '../src'
+import { Context, Service } from '../src/index.ts'
 import { expect, describe, it } from 'vitest'
 import { mock } from 'node:test'
 import { inspect } from 'util'
-import { event, getHookSnapshot, sleep } from './utils'
+import { event, getHookSnapshot, sleep } from './utils.ts'
 
 describe('Plugin', () => {
   it('apply functional plugin', async () => {
@@ -133,10 +133,9 @@ describe('Plugin', () => {
 
     const root = new Context()
     const before = getHookSnapshot(root)
-    await root.plugin(plugin)
+    const fiber = await root.plugin(plugin)
     const after = getHookSnapshot(root)
-    root.registry.delete(plugin)
-    await sleep()
+    await fiber.dispose()
     expect(before).to.deep.equal(getHookSnapshot(root))
     await root.plugin(plugin)
     expect(after).to.deep.equal(getHookSnapshot(root))

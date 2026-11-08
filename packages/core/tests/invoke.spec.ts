@@ -1,5 +1,5 @@
 import { expect, describe, it } from 'vitest'
-import { Context, Service } from '../src'
+import { Context, Service } from '../src/index.ts'
 
 describe('Functional Service', () => {
   it('functional service', async () => {

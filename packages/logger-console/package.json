@@ -2,6 +2,7 @@
   "name": "@cordisjs/plugin-logger-console",
   "description": "Console logger exporter for cordis",
   "version": "1.0.0",
+  "sideEffects": false,
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/shared.d.ts",
@@ -34,10 +35,10 @@
     "plugin"
   ],
   "devDependencies": {
-    "cordis": "^4.0.0-rc.10"
+    "cordis": "^4.0.0-rc.12"
   },
   "peerDependencies": {
-    "cordis": "^4.0.0-rc.10"
+    "cordis": "^4.0.0-rc.12"
   },
   "dependencies": {
     "cosmokit": "^1.8.1",

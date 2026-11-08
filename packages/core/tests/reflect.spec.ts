@@ -1,6 +1,7 @@
 import { expect, describe, it } from 'vitest'
 import { mock } from 'node:test'
-import { Context } from '../src'
+import { types } from 'node:util'
+import { Context, FiberState } from '../src/index.ts'
 
 describe('Reflect', () => {
   it('Context.is()', () => {
@@ -39,8 +40,8 @@ describe('Reflect', () => {
     expect(root.get('foo')).to.be.ok
     // bar is a mixin
     expect(root.get('bar')).to.be.undefined
-    // root is a property
-    expect(root.get('root')).to.be.undefined
+    // baseUrl is a property
+    expect(root.get('baseUrl')).to.be.undefined
 
     root.inject(['foo'], (ctx) => {
       warn.mock.resetCalls()
@@ -75,6 +76,47 @@ describe('Reflect', () => {
     expect(source.value).to.equal(2)
   })
 
+  it('access error', async () => {
+    const root = new Context()
+    root.provide('foo')
+    root.set('foo', { bar: 1 })
+
+    function capture(callback: () => void) {
+      try {
+        callback()
+      } catch (error) {
+        return error as Error
+      }
+      throw new Error('expected an access error')
+    }
+
+    function getBar(ctx: Context) {
+      return ctx.bar
+    }
+
+    function setBar(ctx: Context) {
+      ctx.bar = 0
+    }
+
+    const fiber = await root.inject(['foo'], (ctx) => {
+      for (const [name, callback] of [['getBar', getBar], ['setBar', setBar]] as const) {
+        const error = capture(() => callback(ctx))
+        expect(types.isNativeError(error)).to.equal(true)
+        expect(error.stack!.split('\n')[1]).to.match(new RegExp(`^\\s+at ${name} `))
+      }
+    })
+    await fiber.dispose()
+
+    function getFoo() {
+      return fiber.ctx.foo
+    }
+
+    const error = capture(getFoo)
+    expect(types.isNativeError(error)).to.equal(true)
+    expect(error.message).to.equal('cannot get required service "foo" in inactive context')
+    expect(error.stack!.split('\n')[1]).to.match(/^\s+at getFoo /)
+  })
+
   it('service inject leak', async () => {
     const root = new Context()
     root.provide('foo')
@@ -83,5 +125,24 @@ describe('Reflect', () => {
     expect(fiber.ctx.foo).to.be.ok
     await fiber.dispose()
     expect(() => fiber.ctx.foo).to.throw('cannot get required service "foo" in inactive context')
+  })
+
+  it('does not load a fiber disposed during service notification', async () => {
+    const root = new Context()
+    const apply = mock.fn((ctx: Context, config: { id: number }) => {})
+    const plugin = { inject: ['foo'], apply }
+    const fiber1 = root.plugin(plugin, { id: 1 })
+    const fiber2 = root.plugin(plugin, { id: 2 })
+    root.on('internal/status', (fiber) => {
+      if (fiber === Object.getPrototypeOf(fiber1) && fiber.state === FiberState.LOADING) {
+        fiber2.dispose()
+      }
+    })
+
+    root.provide('foo', {})
+    await fiber1
+    expect(apply.mock.calls.map(call => call.arguments[1].id)).to.deep.equal([1])
+    expect(fiber2.state).to.equal(FiberState.DISPOSED)
+    await root.fiber.dispose()
   })
 })

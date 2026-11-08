@@ -1,17 +1,19 @@
-import { defineProperty } from 'cosmokit'
-import { Context } from './context'
-import { createCallable, joinPrototype, symbols, Tracker } from './utils'
+import { defineProperty, isNullable } from 'cosmokit'
+import { Context } from './context.ts'
+import { locate } from './reflect.ts'
+import { createCallable, joinPrototype, symbols, Tracker } from './utils.ts'
 
 export abstract class Service<out T = never> {
   static readonly init: unique symbol = symbols.init
   static readonly check: unique symbol = symbols.check
-  static readonly config: unique symbol = symbols.config
   static readonly invoke: unique symbol = symbols.invoke
+  static readonly metadata: unique symbol = symbols.metadata
   static readonly extend: unique symbol = symbols.extend
   static readonly tracker: unique symbol = symbols.tracker
-  static readonly resolveConfig: unique symbol = symbols.resolveConfig
+  static readonly mergeIntercept: unique symbol = symbols.mergeIntercept
+  static readonly resolveIntercept: unique symbol = symbols.resolveIntercept
 
-  declare [symbols.config]: T
+  declare [symbols.metadata]: T
 
   public name!: string
 
@@ -48,22 +50,23 @@ export abstract class Service<out T = never> {
     return Object.assign(self, props)
   }
 
-  [symbols.resolveConfig](base?: T, head?: T): T {
+  [symbols.mergeIntercept](...values: T[]): T {
+    return Object.assign({}, ...values)
+  }
+
+  [symbols.resolveIntercept](): T {
+    const values: T[] = []
     let intercept = this.ctx[Context.intercept]
-    const configs: any[] = []
     while (this.name in intercept) {
       if (Object.hasOwn(intercept, this.name)) {
-        configs.unshift(intercept[this.name])
+        values.unshift(intercept[this.name])
       }
       intercept = Object.getPrototypeOf(intercept)
     }
-    if (base) configs.unshift(base)
-    if (head) configs.push(head)
-    if (this['Config']?.merge) {
-      return this['Config'].merge(...configs)
-    } else {
-      return Object.assign({}, ...configs)
-    }
+    const value = locate((this as any)[symbols.caller] ?? this.ctx, this.name)?.fiber?.inject[this.name]
+    if (!isNullable(value)) values.unshift(value)
+    const merge = this[symbols.mergeIntercept] ?? Service.prototype[symbols.mergeIntercept]
+    return merge.apply(this, values)
   }
 
   static [Symbol.hasInstance](instance: any) {

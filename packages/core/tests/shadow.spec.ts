@@ -1,4 +1,4 @@
-import { Context, Service, symbols } from '../src'
+import { Context, Service, symbols } from '../src/index.ts'
 import { describe, expect, it } from 'vitest'
 
 describe('Traceable caller', () => {
@@ -152,6 +152,44 @@ describe('Traceable caller', () => {
       expect((ctx['outer'] as Outer).create().probe()).toEqual(['outer', 'hello'])
       expect((ctx['outer'] as Outer).create().depth()).toBe(1)
     })
+  })
+
+  it('resolves same-name own provisions at their definition sites', async () => {
+    const first = Symbol('first')
+    const second = Symbol('second')
+    class Probe extends Service {
+      constructor(ctx: Context, public tag: string) {
+        super(ctx, 'foo')
+      }
+
+      inspect() {
+        return [this.ctx.foo.tag, this.ctx[Context.isolate].foo]
+      }
+    }
+
+    class Relay extends Service {
+      static inject = ['foo']
+
+      constructor(ctx: Context) {
+        super(ctx, 'relay')
+      }
+
+      inspect() {
+        return this.ctx.foo.inspect()
+      }
+    }
+
+    const root = new Context()
+    await root.plugin((ctx) => {
+      new Probe(ctx.isolate('foo', first), 'first')
+      new Probe(ctx.isolate('foo', second), 'second')
+    })
+    await root.isolate('foo', first).plugin(Relay)
+    // The use site changes, while the definition sites of the relay and the
+    // probe it injects stay in the first realm.
+    expect((root.isolate('foo', second)['relay'] as Relay).inspect()).toEqual(['first', second])
+    expect(root.isolate('foo', second).foo.inspect()).toEqual(['second', second])
+    await root.fiber.dispose()
   })
 
   it('keeps unchecked access for services provided on the root ctx', async () => {
