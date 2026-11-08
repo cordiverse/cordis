@@ -66,6 +66,16 @@ describe('ModuleCaches', () => {
     expect(modules.namespace(fixture('namespace-unloaded.mjs', ''))).to.be.undefined
   })
 
+  it('reads the exports of a CommonJS module that has finished loading only', () => {
+    let early: unknown = 'unread'
+    const url = fixture('exports.cjs', 'exports.value = 1\nglobalThis.__hmrReadExports()')
+    ;(globalThis as any).__hmrReadExports = () => early = modules.exports(url)
+    createRequire(import.meta.url)(fileURLToPath(url))
+    expect(early).to.be.undefined
+    expect(modules.exports(url)).to.have.property('value', 1)
+    expect(modules.exports(fixture('exports-unloaded.cjs', ''))).to.be.undefined
+  })
+
   it('evaluates an evicted module again on its next import', async () => {
     const url = fixture('evict.mjs', counted('evict', 'export const value = 1'))
     const cjs = fixture('evict.cjs', counted('evict.cjs', 'module.exports = 1'))
@@ -98,6 +108,14 @@ describe('ModuleCaches', () => {
     expect(modules.has(url)).to.be.false
   })
 
+  it('lets a module that failed to load be imported again after a sweep', async () => {
+    const url = fixture('sweep.json', '{"value":')
+    await expect(loader.import(url, import.meta.url, { type: 'json' })).rejects.toThrow()
+    fixture('sweep.json', '{"value":1}')
+    await modules.sweep()
+    expect(await loader.import(url, import.meta.url, { type: 'json' })).to.have.nested.property('default.value', 1)
+  })
+
   it('lets a module that failed to evaluate be imported again after a sweep', async () => {
     const url = fixture('sweep.mjs', 'throw new Error("broken")')
     await expect(importModule(url, import.meta.url)).rejects.toThrow('broken')
@@ -118,8 +136,13 @@ describe('ModuleCaches', () => {
   it('keeps the jobs that have not failed through a sweep', async () => {
     const url = fixture('sweep-kept.mjs', counted('sweep-kept'))
     await importModule(url, import.meta.url)
+    // a job in progress has not failed either
+    const pendingURL = fixture('sweep-pending.mjs', counted('sweep-pending', 'export const state = {}'))
+    const pending = importModule(pendingURL, import.meta.url)
     await modules.sweep()
     await importModule(url, import.meta.url)
     expect(counts['sweep-kept']).to.equal(1)
+    expect((await importModule(pendingURL, import.meta.url)).state).to.equal((await pending).state)
+    expect(counts['sweep-pending']).to.equal(1)
   })
 })

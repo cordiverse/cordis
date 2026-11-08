@@ -246,13 +246,13 @@ function setup(paths: Set<string>) {
     }
   }
 
-  // Node's private request cache maps a parent and a request to a file while
-  // the file is loaded. Before the installation, a hook may have
-  // resolved any request to any file, so the native `_load` receives a
-  // request with the parent only under a key derived from its resolution,
-  // which no request has been recorded under, and which always resolves to
-  // the same file. A resolution error propagates, as it would from the
-  // native `_load` on a cache miss.
+  // Node's private request cache maps `parent.path` and a request to a file,
+  // and cannot be cleared; an entry recorded earlier may name a file that the
+  // request no longer resolves to. A request with a parent is therefore:
+  // - resolved first, through the synchronous hooks; an error propagates, as
+  //   from the native `_load` on a cache miss;
+  // - passed to the native `_load` as the key `\0<target>`, under which no
+  //   request has been recorded and which always resolves to `target`.
   const load: Load = function (this: unknown, request, parent, isMain, ...args) {
     if (!parent) return original.load.call(this, request, parent, isMain, ...args)
     const result: Resolution = resolveForCJSWithHooks
@@ -262,10 +262,10 @@ function setup(paths: Set<string>) {
     const target = result.url ?? result.filename
     const hooked = !!resolveHooks?.length
     const builtin = isBuiltin(target) ? target.replace(/^node:/, '') : undefined
-    // The native `_load` loads a `node:` request for a builtin before it looks
-    // up `Module._cache`, and a builtin that requires the scheme only for such
-    // a request. It is kept as the request, under a parent path that only
-    // these requests are recorded under, always for the builtin.
+    // A `node:` request for a builtin is passed on as is: only for it does the
+    // native `_load` load the builtin before it looks up `Module._cache`, and
+    // a builtin that requires the scheme, such as `node:test`, loads only so.
+    // It is recorded under a parent path that only these requests use.
     if (builtin !== undefined && target.startsWith('node:') && (request === target || !isBuiltin(builtin))) {
       return inBucket(parent, () => hooked
         ? loadAs.call(this, target, result, parent, isMain, args)

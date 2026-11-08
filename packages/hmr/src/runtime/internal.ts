@@ -64,14 +64,7 @@ export interface ModuleJob {
   run(): Promise<{ module: ModuleWrap }>
 }
 
-/**
- * Node 22/23 ModuleLoader interface.
- *
- * Key methods:
- * - getModuleJobForImport(specifier, parentURL, importAttributes)
- * - resolve(specifier, parentURL, importAttributes) → Promise<ResolveResult>
- * - resolveSync(specifier, parentURL, importAttributes) → ResolveResult
- */
+/** The ModuleLoader of Node before 24.12. */
 export interface ModuleLoaderV1 {
   version: 'v1'
   loadCache: LoadCache
@@ -98,9 +91,7 @@ export const enum ModulePhase {
 export type ModuleRequestType = unknown // internal symbols
 
 /**
- * Node 24+ ModuleLoader interface.
- *
- * Breaking changes from v1:
+ * The ModuleLoader of Node 24.12 and later. Changes from v1:
  * - getModuleJobForImport removed → getOrCreateModuleJob(parentURL, request, requestType)
  * - resolve removed (became private #resolve) → resolveSync(parentURL, request)
  * - Parameter order reversed for resolveSync, request object { specifier, attributes }
@@ -160,15 +151,9 @@ export namespace ModuleLoader {
   let _cachedLoader: ModuleLoader | undefined
 
   /**
-   * Locate and classify the running Node internal module loader.
-   *
-   * The shape is decided by which module-job API the loader owns, never by the
-   * Node version: v2 landed in 24.12.0, so a major-version test mistags every
-   * 24.0–24.11.1 loader as v2 and makes consumers call `resolveSync` with
-   * reversed parameters. Arity is not usable either — `resolveSync` reports 2
-   * under both shapes. A loader owning neither API is left unclassified rather
-   * than guessed, so consumers take their documented no-internals path.
-   * @returns the classified loader, or `undefined` when none is reachable or its shape is unknown.
+   * Get the running ESM loader of Node, classified by the module-job API that
+   * it owns, since its interface changed within Node 24.
+   * @returns the classified loader, or `undefined` when none is reachable or it owns neither API.
    */
   export function fromInternal(): ModuleLoader | undefined {
     if (_cachedLoader) return _cachedLoader

@@ -16,12 +16,12 @@ function toPath(url: string) {
  * cache. A module is identified by its URL. A CJS module imported through
  * `import()` is in both caches under the URL of its file.
  *
- * The load cache is a `LoadCache`, whose entries are `{ [type]: ModuleJob }`,
- * one job per value of the `type` import attribute. Its own `delete(url)` only
- * clears the `javascript` slot and keeps the entry. `LoadCache` extends Node's
- * internal `SafeMap`, which carries the Map internal slots, so the methods of
- * `Map.prototype` apply to whole entries although `loadCache instanceof Map`
- * is false.
+ * The load cache, Node's `LoadCache`, is accessed through `Map.prototype`:
+ * - an entry is `{ [type]: ModuleJob }`, one job per value of the `type`
+ *   import attribute;
+ * - its own `delete(url)` only clears the `javascript` slot and keeps the entry;
+ * - it extends Node's internal `SafeMap`, which has the internal slots of
+ *   `Map`, although `loadCache instanceof Map` is false.
  */
 export class ModuleCaches {
   private _cjs = createRequire(import.meta.url).cache

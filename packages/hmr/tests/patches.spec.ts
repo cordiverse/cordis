@@ -1,4 +1,4 @@
-import { mkdirSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { createRequire, registerHooks } from 'node:module'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -67,16 +67,6 @@ describe('manifests', () => {
     }
   })
 
-  it('resolves a CommonJS require after `main` is updated in place', () => {
-    const { dir, old, update } = baz('cjs-main', 'cjs', 'main')
-    const path = fixture('cjs-main/index.cjs', `module.exports = require('baz')`)
-    expect(require(path)).to.have.property('version', 1)
-    update()
-    modules.evict([url(path), old])
-    invalidateResolution([dir])
-    expect(require(path)).to.have.property('version', 2)
-  })
-
   it('resolves a later CommonJS require after a change confined to the manifest', () => {
     const { manifest, update } = baz('cjs-lazy', 'cjs', 'main')
     const path = fixture('cjs-lazy/lazy.cjs', `module.exports = () => require('baz').version`)
@@ -118,27 +108,40 @@ describe('manifests', () => {
     expect(require(path)).to.have.property('version', 2)
   })
 
-  it('resolves an ESM import after `exports` is updated in place', async () => {
-    const { dir, manifest, old } = baz('esm-exports', 'mjs', 'exports')
-    const path = fixture('esm-exports/index.mjs', `export { version } from 'baz'`)
-    expect(await importModule(url(path), import.meta.url)).to.have.property('version', 1)
-    writeFileSync(manifest, JSON.stringify({ name: 'baz', exports: './b.mjs' }))
-    modules.evict([url(path), old])
-    invalidateResolution([dir])
-    expect(await importModule(url(path), import.meta.url)).to.have.property('version', 2)
-  })
-
-  it('imports a module in the format of a `type` updated in place', async () => {
-    const dir = join(fixtures.dir, 'esm-type/node_modules/baz')
-    fixture('esm-type/node_modules/baz/package.json', '{"name":"baz","type":"commonjs","main":"index.js"}')
-    const index = fixture('esm-type/node_modules/baz/index.js', 'exports.version = 1')
-    const path = fixture('esm-type/index.mjs', `import baz from 'baz'\nexport const version = baz.version`)
-    expect(await importModule(url(path), import.meta.url)).to.have.property('version', 1)
-    writeFileSync(join(dir, 'package.json'), '{"name":"baz","type":"module","main":"index.js"}')
-    writeFileSync(index, 'export default { version: 2 }')
-    modules.evict([url(path), url(index)])
-    invalidateResolution([dir])
-    expect(await importModule(url(path), import.meta.url)).to.have.property('version', 2)
+  // in a thread without hooks, which may decide the format themselves
+  it('reads the format of a file from the manifests added and removed around it', () => {
+    // a manifest above `node_modules` is outside the scope of the package
+    fixture('scope/package.json', '{"type":"module"}')
+    const outer = fixture('scope/node_modules/pkg/package.json', '{"name":"pkg","type":"module"}')
+    const inner = join(fixtures.dir, 'scope/node_modules/pkg/sub/package.json')
+    const files = [fixture('scope/node_modules/pkg/sub/esm.js', ''), fixture('scope/node_modules/pkg/sub/cjs.js', '')]
+    expect(runESM('scope', `
+      const { writeFileSync } = await import('node:fs')
+      const { createRequire } = await import('node:module')
+      const { pathToFileURL } = await import('node:url')
+      const [esm, cjs] = ${JSON.stringify(files)}
+      const load = async (version, format, paths) => {
+        for (const path of [esm, cjs]) {
+          writeFileSync(path, format === 'module' ? \`export default \${version}\` : \`module.exports = \${version}\`)
+        }
+        modules.evict([esm, cjs].map(path => pathToFileURL(path).href))
+        invalidateResolution(paths)
+        const imported = await importModule(pathToFileURL(esm).href, import.meta.url)
+        const required = createRequire(import.meta.url)(cjs)
+        return [imported.default, format === 'module' ? required.default : required]
+      }
+      const inner = ${JSON.stringify(inner)}
+      const outer = ${JSON.stringify(outer)}
+      const results = [await load(1, 'module', [])]
+      writeFileSync(inner, '{"type":"commonjs"}')
+      results.push(await load(2, 'commonjs', [inner]))
+      rmSync(inner)
+      results.push(await load(3, 'module', [inner]))
+      // without a manifest in the package, the syntax decides
+      rmSync(outer)
+      results.push(await load(4, 'commonjs', [outer]))
+      return results
+    `)).to.deep.equal([[1, 1], [2, 2], [3, 3], [4, 4]])
   })
 
   it.runIf(realpathESM)('resolves an ESM import through a retargeted link whose manifest differs', async () => {
@@ -328,9 +331,11 @@ describe('manifests', () => {
     `, { activate: false })).to.deep.equal({ before: 1, code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' })
   })
 
-  it('keeps reading the manifests that a disposed HMR has invalidated', () => {
+  it('takes over the manifests that a disposed HMR has invalidated, in another copy of the runtime', () => {
     const { manifest } = baz('takeover', 'cjs', 'main')
     const path = fixture('takeover/lazy.cjs', `module.exports = () => require('baz').version`)
+    const library = join(fixtures.dir, 'takeover/runtime.mjs')
+    copyFileSync(fixtures.bundle, library)
     // the first require precedes the first invalidation, so that Node caches the manifest
     expect(runESM('takeover', `
       const { writeFileSync } = await import('node:fs')
@@ -340,10 +345,17 @@ describe('manifests', () => {
       const before = lazy()
       writeFileSync(${JSON.stringify(manifest)}, ${JSON.stringify(JSON.stringify({ name: 'baz', main: './b.cjs' }))})
       invalidateResolution([${JSON.stringify(manifest)}])
+      const next = await import(${JSON.stringify(url(library))})
+      let refused = false
+      try {
+        next.activate()
+      } catch {
+        refused = true
+      }
       deactivate()
-      activate()
-      return { before, after: lazy() }
-    `, { activate: false })).to.deep.equal({ before: 1, after: 2 })
+      next.activate()
+      return { before, refused, after: lazy() }
+    `, { activate: false })).to.deep.equal({ before: 1, refused: true, after: 2 })
   })
 
   it('refuses to take over replacements that another wrapper has covered', () => {

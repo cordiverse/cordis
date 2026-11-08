@@ -49,7 +49,7 @@ function link(name: string, ext: string, importer: string, exporter: (version: n
   }
 }
 
-describe('ResolutionCaches', () => {
+describe('invalidateResolution', () => {
   async function moveESM(name: string) {
     const { path, root } = install(name, 'mjs', `export { version } from 'foo'`, version => `export const version = ${version}`)
     const url = pathToFileURL(path).href
@@ -101,6 +101,51 @@ describe('ResolutionCaches', () => {
     expect(await load()).to.have.property('version', 2)
   })
 
+  it('resolves a later ESM import after only the manifest changes, keeping the static bindings', async () => {
+    const manifest = (entry: string) => JSON.stringify({ name: 'quux', type: 'module', exports: `./${entry}.mjs` })
+    const path = fixture('later/node_modules/quux/package.json', manifest('a'))
+    fixture('later/node_modules/quux/a.mjs', 'export const version = 1')
+    fixture('later/node_modules/quux/b.mjs', 'export const version = 2')
+    const importer = fixture('later/importer.mjs', `
+      export { version } from 'quux'
+      export const load = () => import('quux')
+      export const where = () => import.meta.resolve('quux')
+    `)
+    const namespace = await importModule(pathToFileURL(importer).href, import.meta.url)
+    expect(namespace.version).to.equal(1)
+    fixture('later/node_modules/quux/package.json', manifest('b'))
+    invalidateResolution([path])
+    expect(namespace.version).to.equal(1)
+    expect(await namespace.load()).to.have.property('version', 2)
+    expect(namespace.where()).to.equal(pathToFileURL(join(dirname(path), 'b.mjs')).href)
+  })
+
+  it.runIf(realpathESM)('keeps resolving the version that another importer links', async () => {
+    for (const version of [1, 2]) {
+      fixture(`versions/store/bar@${version}/package.json`, JSON.stringify({ name: 'bar', type: 'module', exports: './index.mjs' }))
+      fixture(`versions/store/bar@${version}/index.mjs`, `export const version = ${version}`)
+    }
+    const previous = join(fixtures.dir, 'versions/store/bar@1')
+    const importers = ['a', 'b'].map((name) => {
+      const location = join(fixtures.dir, `versions/${name}/node_modules/bar`)
+      mkdirSync(dirname(location), { recursive: true })
+      symlinkSync(previous, location, 'junction')
+      const lazy = fixture(`versions/${name}/lazy.mjs`, `export const load = () => import('bar')`)
+      return { location, lazy }
+    })
+    const [a, b] = await Promise.all(importers.map(async ({ lazy }) => {
+      return (await importModule(pathToFileURL(lazy).href, import.meta.url)).load
+    }))
+    expect((await a()).version).to.equal(1)
+    expect((await b()).version).to.equal(1)
+
+    unlinkSync(importers[0].location)
+    symlinkSync(join(fixtures.dir, 'versions/store/bar@2'), importers[0].location, 'junction')
+    invalidateResolution([importers[0].location, previous])
+    expect((await a()).version).to.equal(2)
+    expect((await b()).version).to.equal(1)
+  })
+
   it('resolves a later ESM import to a package added below the importer', async () => {
     const pkg = JSON.stringify({ name: 'qux', type: 'module', exports: './index.mjs' })
     fixture('shadow/node_modules/qux/package.json', pkg)
@@ -130,17 +175,6 @@ describe('ResolutionCaches', () => {
 
   it.runIf(typeof registerHooks === 'function')('reports realpath support under a synchronous hook that short-circuits file URLs', () => {
     expect(runESM('support-hooks', 'return getResolutionSupport()', { preamble: shortCircuit })).to.deep.equal({ realpath: realpathESM })
-  })
-
-  it.runIf(realpathESM)('resolves an ESM import through a link that is retargeted', async () => {
-    const { path, location, previous, next } = link('esm-link', 'mjs', `export { version } from 'bar'`, version => `export const version = ${version}`)
-    const url = pathToFileURL(path).href
-    expect(await importModule(url, import.meta.url)).to.have.property('version', 1)
-    modules.evict([url, pathToFileURL(join(previous, 'index.mjs')).href])
-    unlinkSync(location)
-    symlinkSync(next, location, 'junction')
-    invalidateResolution([previous])
-    expect(await importModule(url, import.meta.url)).to.have.property('version', 2)
   })
 
   it.runIf(realpathESM)('resolves an ESM import through a retargeted link after the runtime itself is removed', () => {
@@ -192,16 +226,5 @@ describe('ResolutionCaches', () => {
       }
       return { before, after: require(path).version }
     `)).to.deep.equal({ before: 1, after: 2 })
-  })
-
-  it('resolves a CommonJS require through a link that is retargeted', () => {
-    const { path, location, previous, next } = link('cjs-link', 'cjs', `module.exports = require('bar')`, version => `exports.version = ${version}`)
-    const require = createRequire(import.meta.url)
-    expect(require(path)).to.have.property('version', 1)
-    modules.evict([pathToFileURL(path).href, pathToFileURL(join(previous, 'index.cjs')).href])
-    unlinkSync(location)
-    symlinkSync(next, location, 'junction')
-    invalidateResolution([previous])
-    expect(require(path)).to.have.property('version', 2)
   })
 })

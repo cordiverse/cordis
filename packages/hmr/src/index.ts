@@ -169,10 +169,11 @@ class Hmr extends Service {
     this._modules = new ModuleCaches(loader)
     ctx.effect(() => activate())
 
-    // On Windows, a drive-letter path is converted with `pathToFileURL`.
-    // `new URL()` would read its `C:` as a URL scheme, which `fileURLToPath` rejects.
-    // Without a `baseUrl`, file URLs are still decoded as URLs; ordinary
-    // paths are resolved against the working directory.
+    // `base` is resolved:
+    // - on Windows, as a drive-letter path through `pathToFileURL`, since
+    //   `new URL()` would read `C:` as a URL scheme;
+    // - as a URL against `ctx.baseUrl`, or as a file URL without one;
+    // - otherwise, against the working directory.
     this.baseDir = process.platform === 'win32' && config.base && driveLetter.test(config.base)
       ? fileURLToPath(pathToFileURL(config.base))
       : ctx.baseUrl || config.base?.startsWith('file:')
@@ -183,8 +184,9 @@ class Hmr extends Service {
   }
 
   /**
-   * Reconcile the changes collected over each debounce window. A change to a
-   * host module is only reported, since restarting is up to the host.
+   * Reconcile the changes collected over each debounce window. Skipped
+   * changes are reported, since restarting is up to the host. The files that
+   * concern an aborted unit are retried with the next batch.
    */
   private _watch(ctx: Context) {
     const { enabled, files, debounce } = this.config.watch
@@ -210,7 +212,6 @@ class Hmr extends Service {
       retained.clear()
       stashed.clear()
       try {
-        // This waits behind a running transaction.
         const result = await this.reconcile(() => files)
         if (result.skipped.length) {
           this.ctx.logger.warn([
@@ -218,9 +219,9 @@ class Hmr extends Service {
             ...result.skipped.flatMap(({ urls, reason }) => urls.map(url => `- ${this._relative(url)} (${reason})`)),
           ].join('\n'))
         }
-        // An aborted unit has been logged by the transaction itself. Its
-        // changes are retried with the next batch, which may only repair a
-        // module that the unit newly imports.
+        // An aborted unit has been logged by the transaction itself. The next
+        // batch may only repair a module that the unit newly imports, so the
+        // files that changed the unit are retained.
         const paths = result.aborted.flatMap(({ urls }) => urls.flatMap(url => toPath(url) ?? []))
         for (const file of files) {
           if (paths.some(path => covers(file, path))) retained.add(file)
@@ -257,22 +258,19 @@ class Hmr extends Service {
    * `callback`, is rejected. If `callback` throws, the transaction rejects
    * with its error and the module caches are left as they are.
    *
-   * A root is an absolute path of a file or a directory. The loaded modules
-   * whose files are the root or lie below it are changed. Module URLs are
-   * real paths, so a root is matched against them as it is: the caller passes
-   * the real path under which modules were loaded, such as the previous
-   * target of a link. For a package, the caller also passes its location,
-   * such as the link itself or a directory where a package is added, since
-   * Node resolves package names through it.
+   * A root is an absolute path of a file or a directory:
+   * - the loaded modules whose files are the root or lie below it are
+   *   changed. Module URLs are real paths, so the caller passes the real path
+   *   under which modules were loaded, such as the previous target of a link;
+   * - later resolutions observe the file system below it. For a package, the
+   *   caller also passes its location, such as a link or a directory where a
+   *   package is added, since Node resolves package names through it.
    *
-   * Later resolutions observe the file system below the roots. A plugin
-   * whose module is no longer where the import that loaded it now resolves,
-   * e.g. after its package exports another entry or a link is retargeted, is
-   * replaced from the module that the import resolves to.
-   *
-   * A changed module that no plugin depends on is still evicted from the
-   * module cache: its next import, such as a dynamic one, gets the new code,
-   * while existing references keep the old one.
+   * A plugin whose module is no longer where the import that loaded it now
+   * resolves, e.g. after its package exports another entry or a link is
+   * retargeted, is replaced from the module that the import resolves to. A
+   * changed module that no plugin depends on is evicted too: its next import
+   * gets the new code, while existing references keep the old one.
    *
    * Every transaction first removes the module jobs that failed to load, link
    * or evaluate, whether or not their files changed, so that the next import
@@ -394,9 +392,7 @@ class Hmr extends Service {
   /**
    * Find every loaded module that exports a registered plugin, through its
    * ESM namespace or the exports of its CJS module, so that a plugin that
-   * only `require()` has loaded is found too. When anything in the dependency
-   * tree of such a module changes, the module is imported again and the
-   * plugin is replaced.
+   * only `require()` has loaded is found too.
    */
   private _discover(declined: Set<string>) {
     const candidates = new Map<string, Plugin>()
@@ -422,11 +418,12 @@ class Hmr extends Service {
    * Locate a module of a stale plugin again through the removed resolutions
    * to it, so that a module that has moved, e.g. to a new `exports` target or
    * through a retargeted link, is imported at its new URL. A resolution
-   * counts if it records a request and if its parent is not evicted, since an
-   * evicted parent resolves its imports again by itself. Without one, the
-   * module is imported at its URL. Resolutions that now lead to different
-   * modules are ambiguous: the fibers of the plugin do not record the import
-   * that each of them comes from.
+   * counts if it records a request and its parent is not evicted, since an
+   * evicted parent resolves its imports again by itself:
+   * - without one, the module is imported at its URL;
+   * - if every request now resolves to one module, it is imported through a
+   *   request;
+   * - otherwise, the plugin is skipped as `AmbiguousImport`.
    */
   private _locate(url: string, removed: Resolution[], evicted: Set<string>) {
     const sources = removed.filter((resolution) => {
@@ -441,18 +438,19 @@ class Hmr extends Service {
   }
 
   /**
-   * The loaded modules outside `matched` that a removed resolution now
-   * resolves past. An ESM parent that links the previous result is changed,
-   * so that it resolves its imports again. Otherwise the module was imported
-   * dynamically, such as a plugin entry, and is changed itself, so that it is
-   * imported again where the request now leads. A resolution that fails now
-   * counts as resolving past its result.
+   * The loaded modules outside `matched` that are changed because a request
+   * now resolves elsewhere. For a removed ESM resolution whose request now
+   * resolves to another module, or fails:
+   * - if its parent links the previous result, the parent is changed, so that
+   *   it resolves its imports again;
+   * - otherwise the previous result was imported dynamically, such as a
+   *   plugin entry, and is changed itself, so that it is imported again where
+   *   the request now leads.
    *
-   * CJS records no request, so a CJS module below `<dir>` is changed if a
-   * root is `<dir>/node_modules/<name>`, which a package added there may
-   * shadow, and a child of the module belongs to a package `<name>` in a
-   * `node_modules` above `<dir>`; reloading a module that requested the child
-   * otherwise is only unnecessary.
+   * CJS records no request. A CJS module below `<dir>` is changed if a root is
+   * `<dir>/node_modules/<name>` and a child of the module belongs to a package
+   * `<name>` in a `node_modules` above `<dir>`, which the new package may
+   * shadow; a module that requested the child otherwise is reloaded needlessly.
    */
   private async _moved(roots: Set<string>, matched: Set<string>, removed: Resolution[]) {
     const moved = new Set<string>()
@@ -496,8 +494,6 @@ class Hmr extends Service {
   private _match(roots: Set<string>) {
     const matched = new Set<string>()
     const used = new Set<string>()
-    // A module is loaded if it is in either module cache. In Node 24, a CJS
-    // module imported via import() is in both of them.
     for (const url of this._modules.urls()) {
       let path = toPath(url)
       if (!path) continue
@@ -540,8 +536,6 @@ class Hmr extends Service {
     const matched = this._match(roots)
     const changed = new Set<string>()
     for (const url of new Set([...matched, ...await this._moved(roots, matched, removed)])) {
-      // A change to a host module or to a loaded native addon cannot be
-      // applied in place. It is skipped, and restarting is up to the caller.
       if (this.hostModules.has(url)) {
         result.skipped.push({ urls: [url], reason: Hmr.SkipReason.HostModule })
       } else if (isNativeAddon(url)) {
@@ -586,8 +580,9 @@ class Hmr extends Service {
         owned.add(url)
       }
 
-      // Use a module that no other module of the plugin imports.
-      // Ambiguous aliases are deferred to the module/plugin identity work.
+      // The replacement is taken from a module that no other module of the
+      // plugin imports. Stage 1 imports the other such modules too and checks
+      // that they export the same plugin.
       const outermost = urls.filter(url => !urls.some(other => other !== url && closures.get(other)!.has(url)))
       const url = outermost[0] ?? urls[0]
       stalePlugins.push({
@@ -603,17 +598,14 @@ class Hmr extends Service {
       if (!owned.has(url)) this.ctx.logger.debug('evict %C (no dependent plugin)', this._relative(url))
     }
 
-    // A CJS module imported via import() is in both caches, and both are
-    // cleared, so that neither serves the old module.
     const backup = caches.evict(evicted)
 
-    // Stage 1: import the new modules of every stale plugin.
-    // Plugin validity is checked here, where the only mutated state is the
-    // module cache and no plugin has been touched yet. Moving this check
-    // earlier is what allows the later stages to have no rollback at all: a malformed
-    // export can no longer fail halfway through swapping instances.
-    // No cache entry is restored before every plugin has been imported, so
-    // that no new module links against an old module that has been evicted.
+    // Stage 1: import the new modules of every stale plugin. Only the caches
+    // have changed so far, and restoring them undoes a failure:
+    // - the new plugins are validated here, so that stages 2 and 3 need no
+    //   rollback;
+    // - no cache entry is restored before every plugin has been imported, so
+    //   that no new module links against an evicted one.
     const retained = caches.urls()
     const attempts: ImportAttempt[] = []
     for (const stale of stalePlugins) {
@@ -642,7 +634,6 @@ class Hmr extends Service {
           throw new Error(`invalid plugin at ${this._relative(stale.url)}, `
             + `expect function or object with an "apply" method, received ${typeof exports}`)
         }
-        // the fibers of the plugin do not record which module each comes from
         if (others.some(other => other !== exports)) {
           throw new SkipError(Hmr.SkipReason.AmbiguousExport)
         }
@@ -670,12 +661,9 @@ class Hmr extends Service {
       return edges
     }
 
-    // A unit is a connected component of the stale plugins, where two plugins
-    // are connected if their closures share an evicted module. The closure of a
-    // plugin is taken in both the old module graph and the new one, so that
-    // every evicted module that is imported again belongs to a single unit.
     // A unit is aborted if an attempt failed, and otherwise skipped if an
-    // attempt cannot be applied in place. Both are restored alike.
+    // attempt cannot be applied in place. Both are kept: their modules are
+    // restored alike.
     const units = await this._partition(attempts, evicted, newEdges, retained)
     const aborted = units.filter(unit => unit.attempts.some(attempt => attempt.failed))
     const skipped = units.filter(unit => !aborted.includes(unit) && unit.attempts.some(attempt => attempt.skip))
@@ -695,12 +683,12 @@ class Hmr extends Service {
       for (const unit of kept.filter(overlaps)) unit.modules.add(url)
     }
 
-    // A module first loaded in stage 1 is removed from the caches if it reaches
-    // a module to be restored in the new module graph, since it has been linked
-    // against the new version. Any other one is kept, including one loaded by an
-    // aborted or skipped unit, so that a committed unit that imported it, statically or
-    // dynamically, shares its instance with later imports. A job of it that
-    // failed is removed at the start of the next transaction.
+    // A module first loaded in stage 1:
+    // - is evicted if it reaches a restored module in the new module graph,
+    //   since it has been linked against the new version;
+    // - is kept otherwise, also if a kept unit loaded it, so that a committed
+    //   unit that imported it shares its instance with later imports.
+    // A job of it that failed is removed by the sweep of the next transaction.
     const restored = new Set(kept.flatMap(unit => [...unit.modules]))
     for (const url of attempts.flatMap(attempt => attempt.loaded)) {
       const reached = await closure([url], newEdges, url => retained.has(url))
@@ -708,10 +696,9 @@ class Hmr extends Service {
     }
     backup.restore(restored)
     // The resolutions to and from the restored modules are restored too, so
-    // that the resolve cache records the requests that loaded them. A request
-    // from a parent that is not restored still resolves to a restored module,
-    // e.g. the import of a plugin entry, unless the parent has been replaced
-    // and resolves its imports again by itself.
+    // that the resolve cache records the requests that loaded them, e.g. the
+    // import of a plugin entry. A replaced parent resolves its imports again
+    // by itself.
     const replaced = new Set([...evicted].filter(url => !restored.has(url)))
     restoreResolutions(removed.filter(({ parentURL, url }) => {
       return (restored.has(url) || restored.has(parentURL)) && !replaced.has(url) && !replaced.has(parentURL)
