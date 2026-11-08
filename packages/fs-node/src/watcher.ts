@@ -105,8 +105,6 @@ export class Watcher {
     const isFile = !statSync(filename, { throwIfNoEntry: false })?.isDirectory()
     const root = isFile ? dirname(filename) : filename
     const keep = options.filter && toPredicate(options.filter)
-    // chokidar omits the stats in some calls, so the type found by an earlier call is kept.
-    const isDirectoryMap = new Map<string, boolean>()
     this.dispose = ctx.effect(async () => {
       const watcher = watch(root, {
         ignoreInitial: true,
@@ -117,18 +115,11 @@ export class Watcher {
           if (path === root) return false
           if (isFile) return path !== filename
           if (!keep) return false
-          // The stats of a symbolic link, from `lstat()` in a scan, do not tell
-          // the type of its target, which a later call with `stat()` does. A
-          // type known before, as of a file the link replaced, is dropped.
-          if (stats?.isSymbolicLink()) {
-            isDirectoryMap.delete(path)
-          } else if (stats) {
-            isDirectoryMap.set(path, stats.isDirectory())
-          }
-          const isDirectory = isDirectoryMap.get(path)
-          // decided by a later call with the stats
-          if (isDirectory === undefined) return false
-          return !keep(relative(root, path).split(sep).join('/'), isDirectory)
+          // Without the stats, or with the `lstat()` of a symbolic link, the type
+          // is unknown, so the entry is kept; chokidar tests it again with the
+          // stats of `stat()` before it is watched.
+          if (!stats || stats.isSymbolicLink()) return false
+          return !keep(relative(root, path).split(sep).join('/'), stats.isDirectory())
         },
       })
       watcher.on('error', error => this._error(error))
