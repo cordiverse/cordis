@@ -167,7 +167,7 @@ describe('Hmr with fs', () => {
     change(b)
     const result = await reloaded
 
-    expect(result.settledFibers).to.have.length(2)
+    expect(result.settled).to.have.length(2)
     expect(ctx.bail('hmr-watch/a' as any)).to.equal('v2')
     expect(ctx.bail('hmr-watch/b' as any)).to.equal('v2')
     await new Promise(r => setTimeout(r, 100))
@@ -194,7 +194,7 @@ ${body}
     let reloaded = nextReload()
     change(dep)
     change(path)
-    expect((await reloaded).importFailures).to.have.length(1)
+    expect((await reloaded).aborted).to.have.length(1)
     expect(ctx.bail('hmr-watch/retry' as any)).to.equal('v1')
 
     // the next window only repairs the plugin
@@ -242,7 +242,7 @@ export const apply = 'not a function'`))
     await new Promise(r => setTimeout(r, 150))
     release()
 
-    expect((await first).importFailures).to.have.length(1)
+    expect((await first).aborted).to.have.length(1)
     await second
     expect(ctx.bail('hmr-watch/queued' as any)).to.equal('v2')
   })

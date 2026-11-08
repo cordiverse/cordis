@@ -83,11 +83,14 @@ export class ModuleCaches {
       }
       for (const child of linked) edges.add(child.url)
     }))
-    const path = toPath(url)
-    for (const child of (path && this._cjs[path]?.children) || []) {
-      edges.add(pathToFileURL(child.filename).href)
-    }
+    for (const child of this.children(url)) edges.add(child)
     return edges
+  }
+
+  /** The URLs of the children of the CJS module of `url`. */
+  children(url: string) {
+    const path = toPath(url)
+    return ((path && this._cjs[path]?.children) || []).map(child => pathToFileURL(child.filename).href)
   }
 
   /**

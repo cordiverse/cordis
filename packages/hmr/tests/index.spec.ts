@@ -185,7 +185,7 @@ describe('HMR', () => {
       // nested two fiber levels below it
       treeDep.modify(c => c.replace("version = 'tree-v1'", "version = 'tree-v2'"))
       const result = await ctx.hmr.reconcile(() => [treeDep.path])
-      expect(result.settledFibers.map(fiber => fiber.state)).to.not.include(FiberState.FAILED)
+      expect(result.settled.map(fiber => fiber.state)).to.not.include(FiberState.FAILED)
 
       expect(ctx.bail('hmr-test/get-tree')).to.equal('tree-v2')
       expect(ctx.bail('hmr-test/get-nested')).to.equal('tree-v2')
@@ -211,7 +211,7 @@ describe('HMR', () => {
       stats.stallTreeInit = 0
       treeDep.write(treeDep.original.replace("version = 'tree-v1'", "version = 'tree-v3'"))
       const results = await Promise.all([first, ctx.hmr.reconcile(() => [treeDep.path])])
-      expect(results.flatMap(result => result.settledFibers).map(fiber => fiber.state)).to.not.include(FiberState.FAILED)
+      expect(results.flatMap(result => result.settled).map(fiber => fiber.state)).to.not.include(FiberState.FAILED)
 
       expect(ctx.bail('hmr-test/get-tree')).to.equal('tree-v3')
 
@@ -302,7 +302,7 @@ describe('HMR', () => {
       pluginMulti.modify(c => c.replace("version = 'multi-v1'", "version = 'multi-v2'"))
       const result = await ctx.hmr.reconcile(() => [pluginMulti.path])
 
-      expect(result.settledFibers).to.have.length(2)
+      expect(result.settled).to.have.length(2)
       // exactly one new instance per entry, each with its own config intact
       expect([...stats.multiApplies].sort()).to.deep.equal(['a:multi-v2', 'b:multi-v2'])
     }, 15000)

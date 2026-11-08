@@ -94,13 +94,11 @@ function removeResolutions(cache: Map<unknown, unknown>, paths: string[]) {
     path = resolve(path)
     if (basename(path) === 'package.json') path = dirname(path)
     roots.add(path)
-    const scoped = basename(dirname(path)).startsWith('@')
-    const modules = scoped ? dirname(dirname(path)) : dirname(path)
-    if (basename(modules) !== 'node_modules') continue
-    const name = scoped ? `${basename(dirname(path))}/${basename(path)}` : basename(path)
-    let dirs = locations.get(name)
-    if (!dirs) locations.set(name, dirs = new Set())
-    dirs.add(dirname(modules))
+    const location = locatePackage(path)
+    if (!location) continue
+    let dirs = locations.get(location.name)
+    if (!dirs) locations.set(location.name, dirs = new Set())
+    dirs.add(location.dir)
   }
   const affects = (parentURL: unknown, request: { specifier: string } | undefined, url: unknown) => {
     // a result that cannot be read is removed
@@ -143,8 +141,20 @@ function parseKey(key: string) {
   }
 }
 
+/**
+ * The package that `path` is the location of, if it is `<dir>/node_modules/<name>`,
+ * and the directory below which a package name resolves to it.
+ */
+export function locatePackage(path: string) {
+  const scoped = basename(dirname(path)).startsWith('@')
+  const modules = scoped ? dirname(dirname(path)) : dirname(path)
+  if (basename(modules) !== 'node_modules') return
+  const name = scoped ? `${basename(dirname(path))}/${basename(path)}` : basename(path)
+  return { name, dir: dirname(modules) }
+}
+
 /** The package name of a bare specifier. */
-function packageName(specifier: string) {
+export function packageName(specifier: string) {
   if (/^(?:[./#]|[a-z][a-z\d+.-]*:)/i.test(specifier)) return
   const [scope, name] = specifier.split('/', 2)
   return scope.startsWith('@') ? name && `${scope}/${name}` : scope

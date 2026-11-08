@@ -19,11 +19,11 @@ const result = await ctx.hmr.reconcile(async () => {
 
 `reconcile(callback)` runs `callback` as the body of a transaction and reconciles the roots that it resolves to: absolute paths of files or directories. Module URLs are real paths, so the caller passes the real directories under which modules were loaded. For a package, the caller also passes its location, such as a link or a directory where a package is added, since Node.js resolves package names through it.
 
-The result reports:
+Each change is applied, aborted or skipped, and the result reports:
 
-- `settledFibers`: the replaced fibers; a fiber whose new plugin fails to apply is left `FAILED`;
-- `importFailures`: one entry for each unit that was aborted, with its evicted modules and the error;
-- `skippedHostModules`: the changed modules that can only be applied by restarting the process.
+- `settled`: the replaced fibers; a fiber whose new plugin fails to apply is left `FAILED`;
+- `aborted`: the units whose new modules fail to import or export no plugin, with their evicted modules and the error. The old plugins keep running, and a watch retries the files in the next batch;
+- `skipped`: the changes that cannot be applied in place, with their modules and a `Hmr.SkipReason`. A restart applies them.
 
 ## Mechanism
 
@@ -34,11 +34,11 @@ A transaction runs the following steps. Transactions run one at a time, and one 
    - an entry of the ESM resolve cache is removed if its result or its parent lies below a root, or if it resolves a package name from below a directory to which a root adds that package as `node_modules/<name>`; a root that is a `package.json` stands for its directory;
    - the CJS path cache and the realpath caches are cleared as a whole;
    - a `package.json` at or below a root, as spelled or at the real path of its directory, is read from disk from then on.
-3. **Matching.** The loaded modules of the ESM load cache and of the CJS module cache whose files are a root or lie below one are changed. A changed host module, i.e. a module that the main entry point reaches statically, and a changed native addon are reported in `skippedHostModules`.
+3. **Matching.** The loaded modules of the ESM load cache and of the CJS module cache whose files are a root or lie below one are changed. If a root adds a package as `<dir>/node_modules/<name>`, the loaded modules below `<dir>` that import `<name>` from elsewhere are changed too, so that they resolve it again: an ESM module whose removed resolution of `<name>` now leads to another module, and a CJS module with a child in a package `<name>` above `<dir>`. A changed host module, i.e. a module that the main entry point reaches statically, and a changed native addon are skipped.
 4. **Module graph.** The edges of a module are the modules linked by its ESM jobs of every `type` attribute and the children of its CJS module. The changed modules and every module that imports one are evicted; the graph is traversed through `node_modules`.
 5. **Plugin discovery.** A module exports a plugin if its ESM namespace, or the exports of its CJS module that has finished loading, unwrap to a registered plugin. A plugin is stale if its module graph contains an evicted module. Stale plugins whose closures share an evicted module form a unit.
-6. **Import.** The new modules of every stale plugin are imported. A module of a plugin whose resolution step 2 removed is imported through the imports that resolved to it from modules that are not evicted, resolved again, so that an entry that has moved is followed, e.g. after a package exports another entry or a link is retargeted. If an import fails, its unit is aborted: the module caches of the unit are restored and the old plugins keep running.
-7. **Replacement.** The plugins of the units that imported are replaced through `registry.replace()`, in one synchronous step, and their fibers are awaited together.
+6. **Import.** The new modules of every stale plugin are imported. A module of a plugin whose resolution step 2 removed is imported through the imports that resolved to it from modules that are not evicted, resolved again, so that an entry that has moved is followed, e.g. after a package exports another entry or a link is retargeted. If an import fails, its unit is aborted. If the imports of a plugin module now resolve to different modules, or the modules that exported a plugin now export different values, its unit is skipped. The module caches of an aborted or skipped unit are restored, and its old plugins keep running.
+7. **Replacement.** The plugins of the other units are replaced through `registry.replace()`, in one synchronous step, and their fibers are awaited together.
 
 With `watch.enabled` and the `fs` service, changes below `base` that match `watch.files` are collected over `watch.debounce` milliseconds and reconciled. The files of an aborted unit are retained for the next batch.
 
@@ -48,18 +48,24 @@ Node.js caches package manifests in native code and caches the file of a CJS req
 
 ## Limitations
 
-### Changes that are reported instead of applied
+### Changes that are skipped
 
-Some changes cannot be applied in place exactly. HMR detects them and reports them in the result instead of applying them, so that the caller can decide whether to restart the process:
+Some changes cannot be applied in place. HMR detects them, restores the affected modules and reports them in `skipped`, so that the caller can decide whether to restart the process. `Hmr.SkipReason` tells them apart:
 
-- a changed host module or native addon is reported in `skippedHostModules`;
-- a plugin module that several imports resolved to, which now resolve to different modules, aborts its unit and is reported in `importFailures`. For example, two importers resolve `foo` to `foo@1` through their own links, and an update retargets only one of them to `foo@2`: the fibers of the plugin do not record which import each of them comes from.
+- `HostModule`: a module that the main entry point reaches statically, which runs once;
+- `NativeAddon`: a native addon, which a process cannot load again;
+- `AmbiguousImport`: the imports that resolved to a plugin module now resolve to different modules. For example, two importers resolve `foo` to `foo@1` through their own links, and an update retargets only one of them to `foo@2`;
+- `AmbiguousExport`: the modules that exported one plugin now export different values. For example, `a.mjs` and `b.mjs` re-exported one plugin, and `b.mjs` now exports another one.
 
-The following changes are detectable in the same way, but are currently applied without a report:
+In the last two cases, the fibers of the plugin do not record which import or module each of them comes from, so that no replacement is correct for all of them.
 
-- **An entry without a recorded import.** A plugin module is imported again at its previous URL if no import recorded in the ESM resolve cache resolved to it: a plugin that code which is not reloaded obtained through `require()`, e.g. `ctx.plugin(require('foo'))`, or whose import a synchronous resolve hook answered without the default resolution of Node.js. If a root covers the manifest of its package, a change that moves the entry, such as a new `exports` target or a retargeted link, is not followed.
-- **Shadowing.** A package added at `<dir>/node_modules/<name>` does not change any loaded file, so a loaded module below `<dir>` that imports `<name>` statically keeps the previous package. Resolutions made after the transaction observe the added package when its location is a root.
-- **A plugin that several modules export.** Its replacement is taken from one of them. If the new modules export different plugins, e.g. `a.mjs` and `b.mjs` re-exported one plugin and `b.mjs` now exports another one, the fibers registered from `b.mjs` receive the plugin of `a.mjs`.
+The following case is detectable as well, but is currently applied without a report:
+
+- **An entry without a recorded import.** HMR follows a moved plugin entry through the imports that resolved to it. These imports are recorded in the ESM resolve cache. Two kinds of entries have no such record:
+  - a plugin loaded through `require()` in code that HMR does not reload, e.g. `ctx.plugin(require('foo'))`;
+  - a plugin whose import a synchronous resolve hook answered by itself.
+
+  HMR imports such an entry again at its previous URL. If an update of its package moves the entry, e.g. to a new `exports` target or through a retargeted link, the plugin is replaced from the previous entry file, or fails to import if that file is removed.
 
 ### Requirements
 

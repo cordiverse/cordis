@@ -1,9 +1,9 @@
 import { Context, Fiber, Plugin, Service } from 'cordis'
 import type {} from '@cordisjs/plugin-fs-node'
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { dirname, isAbsolute, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { handleError } from './error.ts'
-import { activate, invalidateResolution, ModuleCaches, ModuleLoader, Resolution, resolveRequest } from './runtime/index.ts'
+import { activate, invalidateResolution, locatePackage, ModuleCaches, ModuleLoader, packageName, Resolution, resolveRequest } from './runtime/index.ts'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import z from 'schemastery'
 
@@ -66,6 +66,18 @@ interface StalePlugin {
   modules: Set<string>
 }
 
+/** A change found in stage 1 that cannot be applied in place, reported in `skipped`. */
+class SkipError extends Error {
+  constructor(public reason: Hmr.SkipReason) {
+    super(reason)
+  }
+}
+
+/** Whether `path` is `dir` or lies below it. */
+function contains(dir: string, path: string) {
+  return path === dir || path.startsWith(dir.endsWith(sep) ? dir : dir + sep)
+}
+
 /** The import of a stale plugin in stage 1. */
 interface ImportAttempt {
   stale: StalePlugin
@@ -73,11 +85,13 @@ interface ImportAttempt {
   replacement?: Plugin
   failed: boolean
   error?: unknown
+  /** why the plugin cannot be replaced in place, if it cannot */
+  skip?: Hmr.SkipReason
   /** the modules that were not cached before this import, other than evicted modules */
   loaded: string[]
 }
 
-/** A set of stale plugins that commit or abort together. */
+/** A set of stale plugins that commit, abort or are skipped together. */
 interface ReconcileUnit {
   attempts: ImportAttempt[]
   /** the evicted modules in the closures of the plugins */
@@ -173,14 +187,14 @@ class Hmr extends Service {
       try {
         // This waits behind a running transaction.
         const result = await this.reconcile(() => files)
-        if (result.skippedHostModules.length) {
+        if (result.skipped.length) {
           this.ctx.logger.warn([
-            'skipped host modules:',
-            ...result.skippedHostModules.map(url => '- ' + this._relative(url)),
+            'skipped changes, which apply after a restart:',
+            ...result.skipped.flatMap(({ urls, reason }) => urls.map(url => `- ${this._relative(url)} (${reason})`)),
           ].join('\n'))
         }
-        // an import failure has been logged by the transaction itself
-        for (const { urls } of result.importFailures) {
+        // an aborted unit has been logged by the transaction itself
+        for (const { urls } of result.aborted) {
           for (const url of urls) {
             const path = toPath(url)
             if (path && files.has(path)) retained.add(path)
@@ -398,12 +412,55 @@ class Hmr extends Service {
     if (!sources.length) return this._loader.import(url, import.meta.url, {})
     const targets = new Set(sources.map(source => resolveRequest(this._loader, source)))
     if (targets.size > 1) {
-      throw new Error(`the imports of ${this._relative(url)} now resolve to different modules: `
-        + [...targets].map(url => this._relative(url)).join(', '))
+      throw new SkipError(Hmr.SkipReason.AmbiguousImport)
     }
     // through the request, which records it in the resolve cache again
     const [{ specifier, parentURL, attributes }] = sources
     return this._loader.import(specifier, parentURL, attributes)
+  }
+
+  /**
+   * The loaded modules that a package added at a root shadows: a module below
+   * `<dir>` that imports `<name>`, if a root is `<dir>/node_modules/<name>`.
+   * They are changed, so that they resolve their imports again. An ESM import
+   * is one of the removed resolutions that the module links and that now
+   * resolves to another module. CJS records no request, so a CJS module is
+   * shadowed if a child belongs to a package `<name>` in a `node_modules`
+   * above `<dir>`; reloading a module that requested the child otherwise is
+   * only unnecessary.
+   */
+  private async _shadowed(roots: Set<string>, removed: Resolution[]) {
+    const locations = [...roots].flatMap(root => locatePackage(root) ?? [])
+    const shadowed = new Set<string>()
+    if (!locations.length) return shadowed
+    for (const resolution of removed) {
+      const parent = toPath(resolution.parentURL)
+      const name = packageName(resolution.specifier)
+      if (!parent || !locations.some(location => location.name === name && contains(location.dir, parent))) continue
+      if (!(await this._modules.edges(resolution.parentURL)).has(resolution.url)) continue
+      let url: string | undefined
+      try {
+        url = resolveRequest(this._loader, resolution)
+      } catch {}
+      if (url !== resolution.url) shadowed.add(resolution.parentURL)
+    }
+    for (const url of this._modules.urls()) {
+      const path = toPath(url)
+      if (!path) continue
+      for (const { name, dir } of locations) {
+        if (!contains(dir, path)) continue
+        const marker = `${sep}node_modules${sep}${name.split('/').join(sep)}${sep}`
+        const shadows = this._modules.children(url).some((child) => {
+          const childPath = toPath(child)
+          const index = childPath?.lastIndexOf(marker) ?? -1
+          if (index === -1) return false
+          const above = childPath!.slice(0, index)
+          return above !== dir && contains(above, dir)
+        })
+        if (shadows) shadowed.add(url)
+      }
+    }
+    return shadowed
   }
 
   /**
@@ -437,7 +494,7 @@ class Hmr extends Service {
   }
 
   private async _reconcile(callback: () => Awaitable<Iterable<string>>): Promise<Hmr.Result> {
-    const result: Hmr.Result = { settledFibers: [], importFailures: [], skippedHostModules: [] }
+    const result: Hmr.Result = { settled: [], aborted: [], skipped: [] }
     const roots = new Set<string>()
     for (const root of await callback()) {
       if (typeof root !== 'string' || !isAbsolute(root)) {
@@ -455,11 +512,13 @@ class Hmr extends Service {
     const removed = invalidateResolution(roots)
 
     const changed = new Set<string>()
-    for (const url of this._match(roots)) {
+    for (const url of new Set([...this._match(roots), ...await this._shadowed(roots, removed)])) {
       // A change to a host module or to a loaded native addon cannot be
       // applied in place. It is skipped, and restarting is up to the caller.
-      if (this.hostModules.has(url) || isNativeAddon(url)) {
-        result.skippedHostModules.push(url)
+      if (this.hostModules.has(url)) {
+        result.skipped.push({ urls: [url], reason: Hmr.SkipReason.HostModule })
+      } else if (isNativeAddon(url)) {
+        result.skipped.push({ urls: [url], reason: Hmr.SkipReason.NativeAddon })
       } else {
         changed.add(url)
       }
@@ -537,19 +596,28 @@ class Hmr extends Service {
         // Import the other entries of the plugin too, so that their failures
         // abort its unit as well. A module that another entry imports is
         // imported through it, also when it has moved.
+        const others: unknown[] = []
         for (const url of stale.entries) {
-          if (url !== stale.url) await this._import(url, removed, evicted)
+          if (url !== stale.url) others.push(unwrapExports(await this._import(url, removed, evicted)))
         }
         const exports = unwrapExports(await this._import(stale.url, removed, evicted))
         if (!this.ctx.registry.resolve(exports)) {
           throw new Error(`invalid plugin at ${this._relative(stale.url)}, `
             + `expect function or object with an "apply" method, received ${typeof exports}`)
         }
+        // the fibers of the plugin do not record which module each comes from
+        if (others.some(other => other !== exports)) {
+          throw new SkipError(Hmr.SkipReason.AmbiguousExport)
+        }
         attempt.replacement = exports
       } catch (error) {
-        handleError(this.ctx, error)
-        attempt.failed = true
-        attempt.error = error
+        if (error instanceof SkipError) {
+          attempt.skip = error.reason
+        } else {
+          handleError(this.ctx, error)
+          attempt.failed = true
+          attempt.error = error
+        }
       }
       for (const url of caches.urls()) {
         if (!before.has(url) && !evicted.has(url)) attempt.loaded.push(url)
@@ -569,12 +637,16 @@ class Hmr extends Service {
     // are connected if their closures share an evicted module. The closure of a
     // plugin is taken in both the old module graph and the new one, so that
     // every evicted module that is imported again belongs to a single unit.
+    // A unit is aborted if an attempt failed, and otherwise skipped if an
+    // attempt cannot be applied in place. Both are restored alike.
     const units = await this._partition(attempts, evicted, newEdges, retained)
     const aborted = units.filter(unit => unit.attempts.some(attempt => attempt.failed))
-    const committed = units.filter(unit => !aborted.includes(unit))
+    const skipped = units.filter(unit => !aborted.includes(unit) && unit.attempts.some(attempt => attempt.skip))
+    const committed = units.filter(unit => !aborted.includes(unit) && !skipped.includes(unit))
+    const kept = [...aborted, ...skipped]
 
-    // An evicted module outside every unit is restored with the aborted units
-    // it reaches in the old module graph, so that it links against the modules
+    // An evicted module outside every unit is restored with the kept units it
+    // reaches in the old module graph, so that it links against the modules
     // they restore. If it also reaches a committed unit, neither version is
     // consistent with the caches, and it is left evicted.
     const unowned = new Set(evicted)
@@ -583,16 +655,16 @@ class Hmr extends Service {
       const reached = await closure([url], oldEdges, url => !evicted.has(url))
       const overlaps = (unit: ReconcileUnit) => [...unit.modules].some(url => reached.has(url))
       if (committed.some(overlaps)) continue
-      for (const unit of aborted.filter(overlaps)) unit.modules.add(url)
+      for (const unit of kept.filter(overlaps)) unit.modules.add(url)
     }
 
     // A module first loaded in stage 1 is removed from the caches if it reaches
     // a module to be restored in the new module graph, since it has been linked
     // against the new version. Any other one is kept, including one loaded by an
-    // aborted unit, so that a committed unit that imported it, statically or
+    // aborted or skipped unit, so that a committed unit that imported it, statically or
     // dynamically, shares its instance with later imports. A job of it that
     // failed is removed at the start of the next transaction.
-    const restored = new Set(aborted.flatMap(unit => [...unit.modules]))
+    const restored = new Set(kept.flatMap(unit => [...unit.modules]))
     for (const url of attempts.flatMap(attempt => attempt.loaded)) {
       const reached = await closure([url], newEdges, url => retained.has(url))
       if ([...reached].some(url => restored.has(url))) caches.evict([url])
@@ -601,7 +673,11 @@ class Hmr extends Service {
 
     for (const unit of aborted) {
       const failure = unit.attempts.find(attempt => attempt.failed)!
-      result.importFailures.push({ urls: [...unit.modules], error: failure.error })
+      result.aborted.push({ urls: [...unit.modules], error: failure.error })
+    }
+    for (const unit of skipped) {
+      const skip = unit.attempts.find(attempt => attempt.skip)!
+      result.skipped.push({ urls: [...unit.modules], reason: skip.skip! })
     }
 
     // Stage 2: replace the plugins in place (synchronous).
@@ -631,7 +707,7 @@ class Hmr extends Service {
     // keeps its parent and config, so the next change to the file retries it.
     await Promise.all(fibers.map(fiber => fiber.await().catch(() => {})))
     // a fiber below another restarted fiber may have been disposed by it
-    result.settledFibers = fibers.filter(fiber => fiber.uid !== null)
+    result.settled = fibers.filter(fiber => fiber.uid !== null)
 
     return result
   }
@@ -662,16 +738,17 @@ namespace Hmr {
     }).description('Watch'),
   })
 
-  /** The running state is brought in line with the changes, as far as they can be applied. */
+  /**
+   * The running state is brought in line with the changes, as far as they can
+   * be applied. Each change is applied, aborted or skipped.
+   */
   export interface Result {
-    settledFibers: Fiber[]
-    importFailures: ImportFailure[]
-    /**
-     * The URLs of the changed host modules and native addons, which can only be
-     * applied by restarting the process. They are skipped, while the other
-     * changes are applied.
-     */
-    skippedHostModules: string[]
+    /** the replaced fibers; a fiber whose new plugin fails to apply is left `FAILED` */
+    settled: Fiber[]
+    /** the units whose new modules fail to import; a later transaction retries them */
+    aborted: Abort[]
+    /** the changes that cannot be applied in place; a restart applies them */
+    skipped: Skip[]
   }
 
   /**
@@ -679,11 +756,40 @@ namespace Hmr {
    * Nothing in the unit is applied, and its module cache is restored. The
    * other units of the transaction are not affected.
    */
-  export interface ImportFailure {
+  export interface Abort {
     /** the evicted modules of the unit, whose cache entries are restored */
     urls: string[]
     /** the first error raised while importing the unit */
     error: unknown
+  }
+
+  /**
+   * A change that cannot be applied in place. The other changes are applied.
+   * The modules of a skipped unit are restored, as those of an aborted one.
+   */
+  export interface Skip {
+    /** the changed module, or the evicted modules of the unit */
+    urls: string[]
+    reason: SkipReason
+  }
+
+  /** Why a change cannot be applied in place. */
+  export const enum SkipReason {
+    /** The module is reached statically from the main entry point, which runs once. */
+    HostModule = 'host-module',
+    /** The module is a native addon, which a process cannot load again. */
+    NativeAddon = 'native-addon',
+    /**
+     * The imports that resolved to a plugin module now resolve to different
+     * modules, e.g. after only one of two links to a package is retargeted.
+     * A fiber does not record which import it comes from.
+     */
+    AmbiguousImport = 'ambiguous-import',
+    /**
+     * The modules that exported one plugin now export different values. A
+     * fiber does not record which module it comes from.
+     */
+    AmbiguousExport = 'ambiguous-export',
   }
 }
 
