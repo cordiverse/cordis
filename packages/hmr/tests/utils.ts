@@ -35,8 +35,9 @@ export function useFixtures(name: string) {
     },
 
     /**
-     * Run `body` as an ES module in a child process, since the test runner
-     * registers asynchronous hooks. `activate`, `loader`, `modules`,
+     * Run `body` as an ES module in a child process, for a case that needs a
+     * thread where nothing is installed or captured yet, or that changes the
+     * state of the process, such as its hooks. `activate`, `loader`, `modules`,
      * `importModule`, `invalidateResolution` and `getResolutionSupport` are in
      * scope, and the replacements are activated unless `activate` is false.
      * The result of `body` is printed and returned.

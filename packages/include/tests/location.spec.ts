@@ -433,7 +433,8 @@ describe('Include source locations', () => {
       const app = await start('tmp-location-dep.yml', '- id: a\n  name: ./missing-dep-plugin\n')
 
       const [stack] = app.stacks()
-      expect(stack).toMatch(/^Error \[ERR_MODULE_NOT_FOUND\]: Cannot find package 'missing-dependency' imported from .+missing-dep-plugin\.ts\n/)
+      // Node's own error rather than a `ModuleNotFoundError`; whether its header carries the code depends on the hooks in effect
+      expect(stack).toMatch(/^Error(?: \[ERR_MODULE_NOT_FOUND\])?: Cannot find package 'missing-dependency' imported from .+missing-dep-plugin\.ts\n/)
       expect(stack).not.toContain('(at name')
     }, 10000)
 
@@ -460,7 +461,7 @@ describe('Include source locations', () => {
         expect(stacks.find(stack => stack.includes('at a ('))).toContain(`(at name, ${at(app.filename, source, './missing-plugin')})`)
         expect(stacks.find(stack => stack.includes('at b ('))).toContain(`(at name, ${at(app.filename, source, 'missing-package')})`)
         const dependency = stacks.find(stack => stack.includes('missing-dependency'))
-        expect(dependency).toMatch(/^Error \[ERR_MODULE_NOT_FOUND\]: /)
+        expect(dependency).toMatch(/^Error(?: \[ERR_MODULE_NOT_FOUND\])?: /)
         expect(dependency).not.toContain('(at name')
       } finally {
         loader.internal = internal

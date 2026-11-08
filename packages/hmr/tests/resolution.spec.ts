@@ -50,18 +50,15 @@ function link(name: string, ext: string, importer: string, exporter: (version: n
 }
 
 describe('ResolutionCaches', () => {
-  function moveESM(name: string, preamble = '') {
+  async function moveESM(name: string) {
     const { path, root } = install(name, 'mjs', `export { version } from 'foo'`, version => `export const version = ${version}`)
-    return runESM(name, `
-      const url = ${JSON.stringify(pathToFileURL(path).href)}
-      const root = ${JSON.stringify(root)}
-      const before = (await importModule(url, import.meta.url)).version
-      modules.evict([url, ${JSON.stringify(pathToFileURL(join(root, 'index.mjs')).href)}])
-      rmSync(root, { recursive: true })
-      invalidateResolution([root])
-      const after = (await importModule(url, import.meta.url)).version
-      return { before, after }
-    `, { preamble })
+    const url = pathToFileURL(path).href
+    const before = (await importModule(url, import.meta.url)).version
+    modules.evict([url, pathToFileURL(join(root, 'index.mjs')).href])
+    rmSync(root, { recursive: true })
+    invalidateResolution([root])
+    const after = (await importModule(url, import.meta.url)).version
+    return { before, after }
   }
 
   const shortCircuit = `import { registerHooks } from 'node:module'
@@ -71,12 +68,21 @@ describe('ResolutionCaches', () => {
         : nextResolve(specifier, context),
     })`
 
-  it('resolves an ESM import to the hoisted copy after the nested one is removed', () => {
-    expect(moveESM('esm')).to.deep.equal({ before: 1, after: 2 })
+  it('resolves an ESM import to the hoisted copy after the nested one is removed', async () => {
+    expect(await moveESM('esm')).to.deep.equal({ before: 1, after: 2 })
   })
 
-  it.runIf(typeof registerHooks === 'function')('resolves an ESM import to the hoisted copy under a synchronous hook that short-circuits file URLs', () => {
-    expect(moveESM('esm-hooks', shortCircuit)).to.deep.equal({ before: 1, after: 2 })
+  it.runIf(typeof registerHooks === 'function')('resolves an ESM import to the hoisted copy under a synchronous hook that short-circuits file URLs', async () => {
+    const hooks = registerHooks({
+      resolve: (specifier, context, nextResolve) => specifier.startsWith('file:')
+        ? { url: specifier, shortCircuit: true }
+        : nextResolve(specifier, context),
+    })
+    try {
+      expect(await moveESM('esm-hooks')).to.deep.equal({ before: 1, after: 2 })
+    } finally {
+      hooks.deregister()
+    }
   })
 
   it('resolves a CommonJS require to the hoisted copy after the nested one is removed', () => {
@@ -97,19 +103,15 @@ describe('ResolutionCaches', () => {
     expect(runESM('support-hooks', 'return getResolutionSupport()', { preamble: shortCircuit })).to.deep.equal({ realpath: realpathESM })
   })
 
-  it.runIf(realpathESM)('resolves an ESM import through a link that is retargeted', () => {
+  it.runIf(realpathESM)('resolves an ESM import through a link that is retargeted', async () => {
     const { path, location, previous, next } = link('esm-link', 'mjs', `export { version } from 'bar'`, version => `export const version = ${version}`)
-    expect(runESM('esm-link', `
-      const { symlinkSync, unlinkSync } = await import('node:fs')
-      const url = ${JSON.stringify(pathToFileURL(path).href)}
-      const before = (await importModule(url, import.meta.url)).version
-      modules.evict([url, ${JSON.stringify(pathToFileURL(join(previous, 'index.mjs')).href)}])
-      unlinkSync(${JSON.stringify(location)})
-      symlinkSync(${JSON.stringify(next)}, ${JSON.stringify(location)}, 'junction')
-      invalidateResolution([${JSON.stringify(previous)}])
-      const after = (await importModule(url, import.meta.url)).version
-      return { before, after }
-    `)).to.deep.equal({ before: 1, after: 2 })
+    const url = pathToFileURL(path).href
+    expect(await importModule(url, import.meta.url)).to.have.property('version', 1)
+    modules.evict([url, pathToFileURL(join(previous, 'index.mjs')).href])
+    unlinkSync(location)
+    symlinkSync(next, location, 'junction')
+    invalidateResolution([previous])
+    expect(await importModule(url, import.meta.url)).to.have.property('version', 2)
   })
 
   it.runIf(realpathESM)('resolves an ESM import through a retargeted link after the runtime itself is removed', () => {

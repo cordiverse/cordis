@@ -6,7 +6,9 @@ import { describe, expect, it } from 'vitest'
 import { activate, invalidateResolution, ModuleCaches, ModuleLoader, requireInternal } from '../src/runtime/index.ts'
 import { realpathESM, useFixtures } from './utils.ts'
 
-const modules = new ModuleCaches(ModuleLoader.fromInternal()!)
+const loader = ModuleLoader.fromInternal()!
+const modules = new ModuleCaches(loader)
+const importModule = (specifier: string, parentURL: string) => loader.import(specifier, parentURL, {})
 activate()
 const fixtures = useFixtures('manifests')
 const { fixture, runESM } = fixtures
@@ -116,38 +118,30 @@ describe('manifests', () => {
     expect(require(path)).to.have.property('version', 2)
   })
 
-  it('resolves an ESM import after `exports` is updated in place', () => {
+  it('resolves an ESM import after `exports` is updated in place', async () => {
     const { dir, manifest, old } = baz('esm-exports', 'mjs', 'exports')
     const path = fixture('esm-exports/index.mjs', `export { version } from 'baz'`)
-    expect(runESM('esm-exports', `
-      const { writeFileSync } = await import('node:fs')
-      const before = (await importModule(${JSON.stringify(url(path))}, import.meta.url)).version
-      writeFileSync(${JSON.stringify(manifest)}, ${JSON.stringify(JSON.stringify({ name: 'baz', exports: './b.mjs' }))})
-      modules.evict([${JSON.stringify(url(path))}, ${JSON.stringify(old)}])
-      invalidateResolution([${JSON.stringify(dir)}])
-      const after = (await importModule(${JSON.stringify(url(path))}, import.meta.url)).version
-      return { before, after }
-    `)).to.deep.equal({ before: 1, after: 2 })
+    expect(await importModule(url(path), import.meta.url)).to.have.property('version', 1)
+    writeFileSync(manifest, JSON.stringify({ name: 'baz', exports: './b.mjs' }))
+    modules.evict([url(path), old])
+    invalidateResolution([dir])
+    expect(await importModule(url(path), import.meta.url)).to.have.property('version', 2)
   })
 
-  it('imports a module in the format of a `type` updated in place', () => {
+  it('imports a module in the format of a `type` updated in place', async () => {
     const dir = join(fixtures.dir, 'esm-type/node_modules/baz')
     fixture('esm-type/node_modules/baz/package.json', '{"name":"baz","type":"commonjs","main":"index.js"}')
     const index = fixture('esm-type/node_modules/baz/index.js', 'exports.version = 1')
     const path = fixture('esm-type/index.mjs', `import baz from 'baz'\nexport const version = baz.version`)
-    expect(runESM('esm-type', `
-      const { writeFileSync } = await import('node:fs')
-      const before = (await importModule(${JSON.stringify(url(path))}, import.meta.url)).version
-      writeFileSync(${JSON.stringify(join(dir, 'package.json'))}, '{"name":"baz","type":"module","main":"index.js"}')
-      writeFileSync(${JSON.stringify(index)}, 'export default { version: 2 }')
-      modules.evict([${JSON.stringify(url(path))}, ${JSON.stringify(url(index))}])
-      invalidateResolution([${JSON.stringify(dir)}])
-      const after = (await importModule(${JSON.stringify(url(path))}, import.meta.url)).version
-      return { before, after }
-    `)).to.deep.equal({ before: 1, after: 2 })
+    expect(await importModule(url(path), import.meta.url)).to.have.property('version', 1)
+    writeFileSync(join(dir, 'package.json'), '{"name":"baz","type":"module","main":"index.js"}')
+    writeFileSync(index, 'export default { version: 2 }')
+    modules.evict([url(path), url(index)])
+    invalidateResolution([dir])
+    expect(await importModule(url(path), import.meta.url)).to.have.property('version', 2)
   })
 
-  it.runIf(realpathESM)('resolves an ESM import through a retargeted link whose manifest differs', () => {
+  it.runIf(realpathESM)('resolves an ESM import through a retargeted link whose manifest differs', async () => {
     for (const version of [1, 2]) {
       fixture(`esm-link/store/bar@${version}/package.json`, `{"name":"bar","exports":"./v${version}.mjs"}`)
       fixture(`esm-link/store/bar@${version}/v${version}.mjs`, `export const version = ${version}`)
@@ -157,16 +151,12 @@ describe('manifests', () => {
     mkdirSync(dirname(location), { recursive: true })
     symlinkSync(previous, location, 'junction')
     const path = fixture('esm-link/index.mjs', `export { version } from 'bar'`)
-    expect(runESM('esm-link', `
-      const { symlinkSync, unlinkSync } = await import('node:fs')
-      const before = (await importModule(${JSON.stringify(url(path))}, import.meta.url)).version
-      unlinkSync(${JSON.stringify(location)})
-      symlinkSync(${JSON.stringify(join(fixtures.dir, 'esm-link/store/bar@2'))}, ${JSON.stringify(location)}, 'junction')
-      modules.evict([${JSON.stringify(url(path))}, ${JSON.stringify(url(join(previous, 'v1.mjs')))}])
-      invalidateResolution([${JSON.stringify(previous)}, ${JSON.stringify(location)}])
-      const after = (await importModule(${JSON.stringify(url(path))}, import.meta.url)).version
-      return { before, after }
-    `)).to.deep.equal({ before: 1, after: 2 })
+    expect(await importModule(url(path), import.meta.url)).to.have.property('version', 1)
+    unlinkSync(location)
+    symlinkSync(join(fixtures.dir, 'esm-link/store/bar@2'), location, 'junction')
+    modules.evict([url(path), url(join(previous, 'v1.mjs'))])
+    invalidateResolution([previous, location])
+    expect(await importModule(url(path), import.meta.url)).to.have.property('version', 2)
   })
 
   it.runIf(typeof registerHooks === 'function')('requires a request that only a synchronous hook resolves', () => {
