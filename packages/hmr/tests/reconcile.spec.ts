@@ -106,6 +106,23 @@ describe('Hmr.reconcile', () => {
     }
   })
 
+  it('collects the host modules of a main entry started through a link', async () => {
+    mkdirSync(resolve(fixtureDir, 'host-real'), { recursive: true })
+    const main = fixture('host-real/main.mjs', `import './dep.mjs'\n`)
+    const dep = fixture('host-real/dep.mjs', '')
+    await importModule(pathToFileURL(main).href, import.meta.url)
+    // a bin shim may be a link, through which Node loads the real path
+    symlinkSync(resolve(fixtureDir, 'host-real'), resolve(fixtureDir, 'host-link'), 'junction')
+    const argv = process.argv[1]
+    process.argv[1] = resolve(fixtureDir, 'host-link/main.mjs')
+    try {
+      await setup()
+    } finally {
+      process.argv[1] = argv
+    }
+    expect([...ctx.hmr.hostModules]).to.include.members([pathToFileURL(main).href, pathToFileURL(dep).href])
+  })
+
   it('replaces an entry plugin in place', async () => {
     await setup()
     const path = await load('entry.ts', plugin('entry', 'v1', `

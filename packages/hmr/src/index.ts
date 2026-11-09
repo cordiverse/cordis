@@ -1,6 +1,7 @@
 import { Context, Fiber, Plugin, Service } from 'cordis'
 import type {} from '@cordisjs/plugin-fs-node'
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { handleError } from './error.ts'
 import {
@@ -243,8 +244,13 @@ class Hmr extends Service {
   async* [Service.init]() {
     // Collect host modules: framework modules reachable from the main entry.
     // process.argv[1] is undefined in REPL, node -e, and some packed binaries.
+    // It may be a link, such as a bin shim, while module URLs are real paths.
     if (process.argv[1]) {
-      const mainUrl = pathToFileURL(resolve(process.argv[1])).href
+      let main = resolve(process.argv[1])
+      try {
+        main = realpathSync(main)
+      } catch {}
+      const mainUrl = pathToFileURL(main).href
       if (this._modules.has(mainUrl)) {
         this.hostModules = await closure([mainUrl], url => this._modules.edges(url))
       }

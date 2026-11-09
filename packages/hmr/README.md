@@ -71,6 +71,7 @@ The following case is detectable as well, but is currently applied without a rep
 
 - Node.js internals are reachable through `--expose-internals` or `node-addon-require-builtin`; otherwise HMR fails to start.
 - ESM resolution through a retargeted link observes the new target on Node.js 24.16+ and 26.1+. On earlier versions, the ESM realpath cache cannot be obtained, and an update that retargets a link, which is every update in an isolated layout, may keep importing the previous target.
+- Node.js runs without `--preserve-symlinks` and `--preserve-symlinks-main`, so that module URLs are real paths. Roots are matched against them, and a module loaded through two links would otherwise have two URLs.
 - Module hooks are synchronous, registered with `module.registerHooks()`. Asynchronous hooks registered with `module.register()` move ESM resolution to a separate thread, whose caches HMR cannot reach.
 - No other code replaces `Module._load` or the methods through which Node.js reads package manifests while HMR runs. A wrapper installed before HMR receives, for a CJS request with a parent, a key that HMR derives from the resolution instead of the original request; a replacement installed after HMR that does not call it bypasses HMR, and the next HMR fails to start, since it cannot restore the methods.
 - At most one HMR instance is active in a thread, and it affects the caches of that thread only, not those of worker threads.
