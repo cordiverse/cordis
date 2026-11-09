@@ -1,10 +1,12 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { Env, run, which } from './process.ts'
-import { InstallState, readNpmState, readPnpmState, readYarnBerryState, readYarnClassicState } from './state.ts'
-import {
-  isInRange, PNPM_ISOLATED_VERSIONS, readPnpmIsolatedState, readYarnBerryIsolatedState, YARN_PNPM_LINKER_VERSIONS,
-} from './isolated.ts'
+import { readNpmState } from './readers/npm.ts'
+import { PNPM_ISOLATED_VERSIONS, readPnpmHoistedState, readPnpmIsolatedState } from './readers/pnpm.ts'
+import { readYarnBerryHoistedState, readYarnBerryIsolatedState, YARN_PNPM_LINKER_VERSIONS } from './readers/yarn-berry.ts'
+import { readYarnClassicState } from './readers/yarn-classic.ts'
+import { InstallState } from './state.ts'
+import { isInRange } from './version.ts'
 
 export type AgentName = 'npm' | 'pnpm' | 'yarn'
 export type AgentKind = 'npm' | 'pnpm' | 'yarn-classic' | 'yarn-berry'
@@ -24,16 +26,13 @@ export interface AgentInfo {
   layout: AgentLayout
 }
 
+/** A detected layout and the reader of its install state. */
 export interface Layout {
   name: AgentLayout
   readState(root: string): Promise<InstallState>
 }
 
-export interface Agent {
-  info: AgentInfo
-  readState(root: string): Promise<InstallState>
-}
-
+/** The capabilities of a kind of agent, independent of a project. */
 export interface Adapter {
   installArgs: string[]
   recoverArgs: string[]
@@ -49,6 +48,13 @@ export interface Adapter {
 }
 
 type PartialInfo = Omit<AgentInfo, 'layout'>
+
+/** The agent of a project with its detected layout. */
+export interface Agent {
+  info: AgentInfo
+  adapter: Adapter
+  readState(): Promise<InstallState>
+}
 
 async function getConfig(info: PartialInfo, root: string, env: Env, key: string) {
   const { stdout } = await run(info.executable, ['config', 'get', key], { cwd: root, env, timeout: 60000 })
@@ -112,9 +118,10 @@ export const adapters: Record<AgentKind, Adapter> = {
   },
   'pnpm': {
     // In CI, pnpm defaults to a frozen lockfile, and it asks before purging
-    // a modules directory created with other settings. pnpm 11 skips an
-    // installation whose lockfile and manifests are unchanged since the last
-    // successful one, which the recovery restores.
+    // a modules directory created with other settings. The recovery disables
+    // `optimisticRepeatInstall` of pnpm 11, which skips an installation whose
+    // lockfile and manifests equal those of the last successful installation,
+    // as the restored files do.
     installArgs: ['install', '--no-frozen-lockfile', '--config.confirmModulesPurge=false'],
     recoverArgs: ['install', '--frozen-lockfile', '--prefer-offline', '--config.confirmModulesPurge=false', '--config.optimisticRepeatInstall=false'],
     lockfiles: ['pnpm-lock.yaml'],
@@ -126,8 +133,8 @@ export const adapters: Record<AgentKind, Adapter> = {
         hoisted: 'hoisted',
         isolated: 'isolated',
       })
-      if (layout === 'hoisted') return { name: 'hoisted', readState: readPnpmState }
-      // The state after the installation is read by the rules of this version.
+      if (layout === 'hoisted') return { name: 'hoisted', readState: readPnpmHoistedState }
+      // this version writes the state after the installation
       if (!isInRange(info.version, PNPM_ISOLATED_VERSIONS)) {
         const [min, max] = PNPM_ISOLATED_VERSIONS
         throw new Error(`${info.spec} is configured with node-linker "isolated", which is only supported for pnpm >=${min} <${max}`)
@@ -169,7 +176,7 @@ export const adapters: Record<AgentKind, Adapter> = {
         'node-modules': 'hoisted',
         'pnpm': 'isolated',
       })
-      if (layout === 'hoisted') return { name: 'hoisted', readState: readYarnBerryState }
+      if (layout === 'hoisted') return { name: 'hoisted', readState: readYarnBerryHoistedState }
       if (!isInRange(info.version, YARN_PNPM_LINKER_VERSIONS)) {
         const [min, max] = YARN_PNPM_LINKER_VERSIONS
         throw new Error(`${info.spec} is configured with nodeLinker "pnpm", which is only supported for yarn >=${min} <${max}`)
@@ -204,6 +211,7 @@ export async function detectAgent(root: string, env: Env): Promise<Agent> {
 
   const kind: AgentKind = name !== 'yarn' ? name : major === 1 ? 'yarn-classic' : 'yarn-berry'
   const partial: PartialInfo = { kind, name, spec, version, executable }
-  const layout = await adapters[kind].detectLayout(partial, root, env, manifest)
-  return { info: { ...partial, layout: layout.name }, readState: layout.readState }
+  const adapter = adapters[kind]
+  const layout = await adapter.detectLayout(partial, root, env, manifest)
+  return { info: { ...partial, layout: layout.name }, adapter, readState: () => layout.readState(root) }
 }
