@@ -90,7 +90,7 @@ export async function readPnpmHoistedState(root: string): Promise<InstallState> 
         version: version.includes(':') ? undefined : version,
         resolution: `${depPath} ${JSON.stringify(resolution ?? null)}`,
         local,
-        realPath: await locate(location, local),
+        realpath: await locate(location, local),
       })
     }
   }
@@ -102,8 +102,7 @@ export async function readPnpmHoistedState(root: string): Promise<InstallState> 
         if (!reference?.startsWith('link:')) continue
         const location = posix.join(importer, 'node_modules', name)
         const target = resolve(root, importer, reference.slice(5))
-        const realPath = await locate(location, true)
-        state.set(location, { name: await readName(target) ?? name, resolution: reference, local: true, realPath })
+        state.set(location, { name: await readName(target) ?? name, resolution: reference, local: true, realpath: await locate(location, true) })
       }
     }
   }
@@ -169,7 +168,7 @@ function createVirtualStore(store: string, version: string | undefined, modules:
       const directory = toFilename(depPath, maxLength)
       const dependenciesLocation = join(store, directory, 'node_modules')
       const { name, version, local } = parsed
-      entry = { directory, dependenciesLocation, target: { name, version, realPath: join(dependenciesLocation, name), local } }
+      entry = { directory, dependenciesLocation, target: { name, version, realpath: join(dependenciesLocation, name), local } }
     }
     entries.set(depPath, entry)
     return entry
@@ -198,8 +197,8 @@ function createVirtualStore(store: string, version: string | undefined, modules:
      *   of the lockfile that names the entry, and otherwise by its name, so
      *   that an entry of unknown source is local.
      */
-    isLocal(realPath: string) {
-      const rel = relative(store, realPath)
+    isLocal(realDir: string) {
+      const rel = relative(store, realDir)
       if (!rel || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return true
       const directory = rel.split(sep)[0]
       return getLocalByDirectory().get(directory) ?? mayBeFileDirectory(directory, maxLength)
@@ -260,8 +259,8 @@ export async function readPnpmIsolatedState(root: string): Promise<InstallState>
 
   /** the target of a `link:` dependency, whose real directory Node resolves through every link */
   const getLinked = async (path: string, alias: string): Promise<Target> => {
-    const realPath = await realpath(path).catch(() => path)
-    return { name: projectNames.get(path) ?? await manifests.readName(realPath) ?? alias, realPath, local: true }
+    const realDir = await realpath(path).catch(() => path)
+    return { name: projectNames.get(path) ?? await manifests.readName(realDir) ?? alias, realpath: realDir, local: true }
   }
 
   /** the target that the records give to a reference of a dependent in a directory */
@@ -277,14 +276,14 @@ export async function readPnpmIsolatedState(root: string): Promise<InstallState>
    * lockfile may not describe a link that a filtered installation left.
    */
   const fromLink = async (location: string, alias: string): Promise<Target | undefined> => {
-    const realPath = await realpath(location).catch(() => undefined)
-    if (!realPath) return
-    const manifest = await manifests.readManifest(realPath)
+    const realDir = await realpath(location).catch(() => undefined)
+    if (!realDir) return
+    const manifest = await manifests.readManifest(realDir)
     return {
       name: manifest?.name ?? alias,
       version: manifest?.version,
-      realPath,
-      local: store.isLocal(realPath),
+      realpath: realDir,
+      local: store.isLocal(realDir),
     }
   }
 
@@ -320,7 +319,7 @@ export async function readPnpmIsolatedState(root: string): Promise<InstallState>
   for (const [depPath, snapshot] of Object.entries(lock.snapshots ?? {})) {
     const entry = store.getEntry(depPath)
     if (!entry) continue
-    add(entry.target.realPath, entry.target)
+    add(entry.target.realpath, entry.target)
     for (const field of snapshotFields) {
       for (const [alias, reference] of Object.entries(snapshot?.[field] ?? {})) {
         // the location of the package itself
@@ -349,7 +348,7 @@ export async function readPnpmIsolatedState(root: string): Promise<InstallState>
       if (!type) continue
       const location = join(hoistFolder(type), name)
       // a filtered installation does not hoist a workspace that it did not install
-      addLink(location, filtered ? fromLink(location, name) : { name, realPath: resolve(dir), local: true })
+      addLink(location, filtered ? fromLink(location, name) : { name, realpath: resolve(dir), local: true })
     }
   }
 

@@ -177,7 +177,7 @@ function toPosix(path: string) {
 
 interface ScannedPackage {
   version: string
-  realPath: string
+  realpath: string
 }
 
 /**
@@ -189,7 +189,7 @@ function scanPackages(dir: string) {
   const visit = (location: string) => {
     const manifest = join(dir, location, 'package.json')
     if (!existsSync(manifest)) return
-    result[location] = { version: JSON.parse(readFileSync(manifest, 'utf8')).version, realPath: realpathSync(join(dir, location)) }
+    result[location] = { version: JSON.parse(readFileSync(manifest, 'utf8')).version, realpath: realpathSync(join(dir, location)) }
   }
   const walk = (folder: string) => {
     for (const dirent of readdirSync(join(dir, folder), { withFileTypes: true })) {
@@ -245,7 +245,7 @@ function expectDiff(dir: string, result: PackageManager.InstallResult, before: R
   expect(locations(dir, result.removed)).to.deep.equal(keys.filter(key => !(key in after)))
   expect(locations(dir, result.updated)).to.deep.equal(keys.filter((key) => {
     if (!(key in before) || !(key in after)) return false
-    return before[key].version !== after[key].version || before[key].realPath !== after[key].realPath
+    return before[key].version !== after[key].version || before[key].realpath !== after[key].realpath
   }))
   for (const change of [...result.added, ...result.updated]) {
     expect(change.after).to.include(after[toPosix(relative(realpathSync(dir), change.path))])
@@ -383,7 +383,7 @@ describe.each(fixtures)('$name', (fixture) => {
     try {
       const added = await pm.install({ 'local-alias': `${protocol}:./local` })
       const change = added.added.find(change => toPosix(relative(realpathSync(dir), change.path)) === location)
-      expect(change?.after).to.include({ name: 'local-real-name', local: true, realPath: realpathSync(change!.path) })
+      expect(change?.after).to.include({ name: 'local-real-name', local: true, realpath: realpathSync(change!.path) })
       // the content of a local package is not recorded, so that every installation updates it
       const updated = await pm.install([])
       expect(locations(dir, updated.updated)).to.include(location)

@@ -83,8 +83,7 @@ export async function readYarnClassicState(root: string): Promise<InstallState> 
     const manifest = JSON.parse(manifestText)
     const key = nameOf(location)
     if (dirent.isSymbolicLink()) {
-      const realPath = await locate(location, true)
-      state.set(location, { name: manifest.name ?? key, resolution: `link:${await readlink(dir)}`, local: true, realPath })
+      state.set(location, { name: manifest.name ?? key, resolution: `link:${await readlink(dir)}`, local: true, realpath: await locate(location, true) })
       return
     }
     // A bundled package is not resolved from the lockfile, whose entries of
@@ -104,7 +103,7 @@ export async function readYarnClassicState(root: string): Promise<InstallState> 
       name: manifest.name ?? key,
       version: manifest.version,
       ...identity,
-      realPath: await locate(location, identity.local),
+      realpath: await locate(location, identity.local),
     })
     // Every package below a bundled one comes with the same bundler.
     const bundled = manifest.bundleDependencies ?? manifest.bundledDependencies

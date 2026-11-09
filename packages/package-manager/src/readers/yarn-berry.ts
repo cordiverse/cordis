@@ -41,7 +41,7 @@ export async function readYarnBerryHoistedState(root: string): Promise<InstallSt
       if (!location) continue
       // the ident of a local package is that of its dependency, which may be an alias
       const name = local ? await readName(resolve(root, location)) ?? ident : ident
-      state.set(location, { name, version, resolution: locator, local, realPath: await locate(location, local) })
+      state.set(location, { name, version, resolution: locator, local, realpath: await locate(location, local) })
     }
   }
   return state
@@ -168,10 +168,10 @@ export async function readYarnBerryIsolatedState(root: string, installStatePath:
         // Node resolves the real directory of a local package, e.g. a `portal:`
         // to a symlinked directory, through every link, while a package in the
         // store is a real directory.
-        const realPath = local ? await realpath(location).catch(() => location) : location
+        const realDir = local ? await realpath(location).catch(() => location) : location
         // a dependency on a local directory, whose ident is that of the dependency, which may be an alias
-        const name = devirtualize(pkg.reference).startsWith('npm:') ? stringifyIdent(pkg) : await readName(realPath) ?? stringifyIdent(pkg)
-        return { name, version: pkg.version ?? undefined, realPath, local }
+        const name = devirtualize(pkg.reference).startsWith('npm:') ? stringifyIdent(pkg) : await readName(realDir) ?? stringifyIdent(pkg)
+        return { name, version: pkg.version ?? undefined, realpath: realDir, local }
       })())
     }
     return target
@@ -183,7 +183,7 @@ export async function readYarnBerryIsolatedState(root: string, installStatePath:
    */
   const getDependenciesFolder = async (pkg: YarnPackage, dependenciesLocation: string) => {
     if (pkg.linkType !== 'SOFT') return dependenciesLocation
-    return join((await getTarget(pkg)).realPath, relative(locationOf(pkg), dependenciesLocation))
+    return join((await getTarget(pkg)).realpath, relative(locationOf(pkg), dependenciesLocation))
   }
 
   const tasks: Promise<void>[] = []
@@ -216,7 +216,7 @@ export async function readYarnBerryIsolatedState(root: string, installStatePath:
       if (!linksItself) addLink(join(folder, stringifyIdent(pkg)), pkg)
     } else if (pkg.linkType === 'HARD') {
       // a package in the store is a `node_modules` entry itself
-      tasks.push(getTarget(pkg).then(target => add(target.realPath, target)))
+      tasks.push(getTarget(pkg).then(target => add(target.realpath, target)))
     }
   }
 

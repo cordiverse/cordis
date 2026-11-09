@@ -69,8 +69,8 @@ describe('pnpm isolated', () => {
     const location = 'node_modules/.pnpm/beta@1.0.0/node_modules/alpha'
     const diff = diffState(dir, before, after)
     expect(diff.updated.map(change => change.path)).to.deep.equal([join(dir, location)])
-    expect(diff.updated[0].before?.realPath.endsWith(join('.pnpm/alpha@1.0.0/node_modules/alpha'))).to.equal(true)
-    expect(diff.updated[0].after?.realPath.endsWith(join('.pnpm/alpha@1.1.0/node_modules/alpha'))).to.equal(true)
+    expect(diff.updated[0].before?.realpath.endsWith(join('.pnpm/alpha@1.0.0/node_modules/alpha'))).to.equal(true)
+    expect(diff.updated[0].after?.realpath.endsWith(join('.pnpm/alpha@1.1.0/node_modules/alpha'))).to.equal(true)
     expect(before.get(location)).to.include({ version: '1.0.0', local: false })
     expect(after.get(location)).to.include({ version: '1.1.0', local: false })
   })
@@ -81,7 +81,7 @@ describe('pnpm isolated', () => {
     expect(state.get('packages/foo/node_modules/alpha')).to.include({
       name: 'alpha',
       version: '1.0.0',
-      realPath: join(realpathSync(dir), 'node_modules/.pnpm/alpha@1.0.0/node_modules/alpha'),
+      realpath: join(realpathSync(dir), 'node_modules/.pnpm/alpha@1.0.0/node_modules/alpha'),
     })
   })
 
@@ -91,7 +91,7 @@ describe('pnpm isolated', () => {
     })
     const state = await readPnpmIsolatedState(dir)
     expect(state.get('node_modules/copied')).to.include({ name: 'local', local: true })
-    expect(state.get('node_modules/linked')).to.include({ name: 'local', local: true, realPath: join(realpathSync(dir), 'local') })
+    expect(state.get('node_modules/linked')).to.include({ name: 'local', local: true, realpath: join(realpathSync(dir), 'local') })
   })
 
   it('reads a link against a project without `.modules.yaml`', async () => {
@@ -100,7 +100,7 @@ describe('pnpm isolated', () => {
       files: { 'local/package.json': { name: 'local', version: '1.0.0' } },
     })
     const state = await readPnpmIsolatedState(dir)
-    expect(state.get('node_modules/linked')).to.include({ name: 'local', local: true, realPath: join(realpathSync(dir), 'local') })
+    expect(state.get('node_modules/linked')).to.include({ name: 'local', local: true, realpath: join(realpathSync(dir), 'local') })
   })
 
   it('omits an optional dependency that the installation excludes', async () => {
@@ -135,7 +135,7 @@ describe('pnpm isolated', () => {
     expect(state.get('packages/other/node_modules/beta')).to.include({
       name: 'beta',
       version: '1.0.0',
-      realPath: realpathSync(join(dir, 'node_modules/.pnpm/beta@1.0.0/node_modules/beta')),
+      realpath: realpathSync(join(dir, 'node_modules/.pnpm/beta@1.0.0/node_modules/beta')),
     })
   })
 
@@ -150,7 +150,7 @@ describe('pnpm isolated', () => {
     expect(state.get('packages/other/node_modules/dep')).to.include({
       name: 'old-package',
       local: true,
-      realPath: realpathSync(join(dir, 'local')),
+      realpath: realpathSync(join(dir, 'local')),
     })
   })
 
@@ -163,7 +163,7 @@ describe('pnpm isolated', () => {
     const state = await readPnpmIsolatedState(dir)
     expect(state.get('packages/other/node_modules/dep')).to.include({
       local: true,
-      realPath: realpathSync(join(dir, 'node_modules/.pnpm/dep@file+local/node_modules/dep')),
+      realpath: realpathSync(join(dir, 'node_modules/.pnpm/dep@file+local/node_modules/dep')),
     })
   })
 
@@ -227,7 +227,7 @@ describe('pnpm isolated', () => {
     })
     symlinkSync(join(dir, 'real'), join(dir, 'aliased'), 'junction')
     const state = await readPnpmIsolatedState(dir)
-    expect(state.get('node_modules/linked')).to.include({ name: 'local', realPath: realpathSync(join(dir, 'real')) })
+    expect(state.get('node_modules/linked')).to.include({ name: 'local', realpath: realpathSync(join(dir, 'real')) })
   })
 
   it('rejects the state of an unsupported version of pnpm', async () => {

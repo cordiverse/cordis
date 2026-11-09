@@ -35,6 +35,6 @@ describe('npm', () => {
     })
     symlinkSync('../shared', join(dir, 'project/node_modules'), 'dir')
     const state = await readNpmState(join(dir, 'project'))
-    expect(state.get('node_modules/alpha')?.realPath).to.equal(realpathSync(join(dir, 'shared/alpha')))
+    expect(state.get('node_modules/alpha')?.realpath).to.equal(realpathSync(join(dir, 'shared/alpha')))
   })
 })

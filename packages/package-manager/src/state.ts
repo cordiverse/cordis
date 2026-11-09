@@ -27,7 +27,7 @@ export interface PackageState {
    * resolves modules. It differs from the location for a link at the location
    * or at an ancestor, and a removed link keeps its last target.
    */
-  realPath: string
+  realpath: string
 }
 
 /** The packages of a project by location, i.e. the path relative to the project root with `/` as the separator. */
@@ -50,7 +50,7 @@ export function nameOf(location: string) {
 export interface Target {
   name: string
   version?: string
-  realPath: string
+  realpath: string
   local: boolean
 }
 
@@ -61,9 +61,9 @@ export interface Target {
  */
 export function createIsolatedState(realRoot: string) {
   const state: InstallState = new Map()
-  const add = (path: string, { name, version, realPath, local }: Target) => {
+  const add = (path: string, { name, version, realpath, local }: Target) => {
     const location = relative(realRoot, path).split(sep).join('/')
-    state.set(location, { name, version, resolution: local ? `link:${realPath}` : realPath, local, realPath })
+    state.set(location, { name, version, resolution: local ? `link:${realpath}` : realpath, local, realpath })
   }
   return { state, add }
 }
@@ -104,7 +104,7 @@ export function diffState(root: string, before: InstallState, after: InstallStat
       diff.removed.push(change)
     } else if (change.after.local || change.before.resolution !== change.after.resolution) {
       diff.updated.push(change)
-    } else if (change.before.realPath !== change.after.realPath) {
+    } else if (change.before.realpath !== change.after.realpath) {
       // the same content at another real directory, e.g. below a replaced link
       diff.updated.push(change)
     }

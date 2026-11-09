@@ -42,12 +42,11 @@ export async function readNpmState(root: string): Promise<InstallState> {
     if (entry.link) {
       // the name is recorded by the target entry, if it differs from the directory name
       const name = packages[entry.resolved!]?.name ?? await readName(resolve(root, entry.resolved!)) ?? nameOf(location)
-      state.set(location, { name, resolution: `link:${entry.resolved}`, local: true, realPath: await locate(location, true) })
+      state.set(location, { name, resolution: `link:${entry.resolved}`, local: true, realpath: await locate(location, true) })
       continue
     }
     const identity = identify(location)
-    const realPath = await locate(location, identity.local)
-    state.set(location, { name: entry.name ?? nameOf(location), version: entry.version, ...identity, realPath })
+    state.set(location, { name: entry.name ?? nameOf(location), version: entry.version, ...identity, realpath: await locate(location, identity.local) })
   }
   return state
 }
