@@ -1,5 +1,4 @@
 import { createRequire, LoadHookContext } from 'node:module'
-import { Dict } from 'cosmokit'
 
 export type ModuleFormat = 'builtin' | 'commonjs' | 'json' | 'module' | 'wasm'
 export type ModuleSource = string | ArrayBuffer
@@ -17,7 +16,7 @@ export interface LoadResult {
 type LoadCacheData = ModuleJob // | Function
 
 /** @see https://github.com/nodejs/node/blob/main/lib/internal/modules/esm/module_map.js */
-interface LoadCache extends Omit<Map<string, Dict<LoadCacheData>>, 'get' | 'set' | 'has'> {
+interface LoadCache extends Omit<Map<string, Record<string, LoadCacheData>>, 'get' | 'set' | 'has'> {
   get(url: string, type?: string): LoadCacheData | undefined
   set(url: string, type?: string, job?: LoadCacheData): this
   has(url: string, type?: string): boolean
@@ -30,7 +29,7 @@ interface LoadCache extends Omit<Map<string, Dict<LoadCacheData>>, 'get' | 'set'
  * so it misses a job imported `with { type: 'json' }`.
  */
 export function getModuleJobs(loadCache: LoadCache, url: string): ModuleJob[] {
-  const entry: Dict<LoadCacheData> | undefined = Map.prototype.get.call(loadCache, url)
+  const entry: Record<string, LoadCacheData> | undefined = Map.prototype.get.call(loadCache, url)
   return Object.values(entry ?? {}).filter(Boolean)
 }
 
@@ -65,14 +64,7 @@ export interface ModuleJob {
   run(): Promise<{ module: ModuleWrap }>
 }
 
-/**
- * Node 22/23 ModuleLoader interface.
- *
- * Key methods:
- * - getModuleJobForImport(specifier, parentURL, importAttributes)
- * - resolve(specifier, parentURL, importAttributes) → Promise<ResolveResult>
- * - resolveSync(specifier, parentURL, importAttributes) → ResolveResult
- */
+/** The ModuleLoader of Node before 24.12. */
 export interface ModuleLoaderV1 {
   version: 'v1'
   loadCache: LoadCache
@@ -99,9 +91,7 @@ export const enum ModulePhase {
 export type ModuleRequestType = unknown // internal symbols
 
 /**
- * Node 24+ ModuleLoader interface.
- *
- * Breaking changes from v1:
+ * The ModuleLoader of Node 24.12 and later. Changes from v1:
  * - getModuleJobForImport removed → getOrCreateModuleJob(parentURL, request, requestType)
  * - resolve removed (became private #resolve) → resolveSync(parentURL, request)
  * - Parameter order reversed for resolveSync, request object { specifier, attributes }
@@ -119,31 +109,51 @@ export interface ModuleLoaderV2 {
 
 export type ModuleLoader = ModuleLoaderV1 | ModuleLoaderV2
 
+/**
+ * Load an internal module of Node, through `--expose-internals` or
+ * `node-addon-require-builtin`.
+ * @returns the module, or `undefined` when it is unreachable.
+ */
+export function requireInternal(id: string): any {
+  const require = createRequire(import.meta.url)
+  if (process.execArgv.includes('--expose-internals')) {
+    try {
+      return require(id)
+    } catch {}
+  }
+  try {
+    return require('node-addon-require-builtin').requireBuiltin(id)
+  } catch {}
+}
+
+/**
+ * Get an internal binding of Node, through `internal/bootstrap/realm` or,
+ * under `--expose-internals` alone, `internal/test/binding`.
+ * @returns the binding, or `undefined` when it is unreachable.
+ */
+export function internalBinding(id: string): any {
+  const realm = requireInternal('internal/bootstrap/realm')
+  if (realm) return realm.internalBinding(id)
+  // `internal/test/binding` warns when it is loaded
+  const { emitWarning } = process
+  process.emitWarning = function (this: unknown, ...args: any[]) {
+    const type = typeof args[1] === 'string' ? args[1] : args[1]?.type
+    if (type !== 'internal/test/binding') return emitWarning.apply(this, args as any)
+  } as typeof emitWarning
+  try {
+    return requireInternal('internal/test/binding')?.internalBinding(id)
+  } catch {} finally {
+    process.emitWarning = emitWarning
+  }
+}
+
 export namespace ModuleLoader {
   let _cachedLoader: ModuleLoader | undefined
 
-  function requireInternal(id: string): any {
-    const require = createRequire(import.meta.url)
-    if (process.execArgv.includes('--expose-internals')) {
-      try {
-        return require(id)
-      } catch {}
-    }
-    try {
-      return require('node-addon-require-builtin').requireBuiltin(id)
-    } catch {}
-  }
-
   /**
-   * Locate and classify the running Node internal module loader.
-   *
-   * The shape is decided by which module-job API the loader owns, never by the
-   * Node version: v2 landed in 24.12.0, so a major-version test mistags every
-   * 24.0–24.11.1 loader as v2 and makes consumers call `resolveSync` with
-   * reversed parameters. Arity is not usable either — `resolveSync` reports 2
-   * under both shapes. A loader owning neither API is left unclassified rather
-   * than guessed, so consumers take their documented no-internals path.
-   * @returns the classified loader, or `undefined` when none is reachable or its shape is unknown.
+   * Get the running ESM loader of Node, classified by the module-job API that
+   * it owns, since its interface changed within Node 24.
+   * @returns the classified loader, or `undefined` when none is reachable or it owns neither API.
    */
   export function fromInternal(): ModuleLoader | undefined {
     if (_cachedLoader) return _cachedLoader

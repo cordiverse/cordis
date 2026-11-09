@@ -62,7 +62,6 @@
   },
   "dependencies": {
     "@babel/code-frame": "^7.29.0",
-    "@cordisjs/loader-utils": "^0.1.0",
     "schemastery": "^3.18.0"
   }
 }

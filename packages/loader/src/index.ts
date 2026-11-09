@@ -1,11 +1,11 @@
 import { Context, Fiber, FiberState, Service, ValidationError } from 'cordis'
 import { Awaitable, defineProperty } from 'cosmokit'
-import { ModuleLoader, unwrapExports } from '@cordisjs/loader-utils'
 import { Entry, EntryOptions } from './config/entry.ts'
 import { EntryGroup } from './config/group.ts'
 import isolate from './config/isolate.ts'
 import { EntryChange, EntryTree } from './config/tree.ts'
 import { interpolate } from './config/utils.ts'
+import { getInternalLoader, unwrapExports } from './internal.ts'
 
 export * from './config/entry.ts'
 export * from './config/group.ts'
@@ -53,7 +53,7 @@ export class Loader extends EntryTree {
     : { startTime: Date.now() }
 
   public name = 'loader'
-  public internal = ModuleLoader.fromInternal()
+  public internal = getInternalLoader()
 
   constructor(ctx: Context, public config: Loader.Config = {}) {
     super(ctx)

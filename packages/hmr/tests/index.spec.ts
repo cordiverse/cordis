@@ -6,6 +6,7 @@ import { dirname, resolve } from 'node:path'
 import { expect, describe, it, beforeAll, afterAll, afterEach, beforeEach } from 'vitest'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import Hmr from '../src/index.ts'
+import { ModuleLoader } from '../src/runtime/index.ts'
 
 const testDir = dirname(fileURLToPath(import.meta.url))
 const templateDir = resolve(testDir, 'fixtures')
@@ -138,8 +139,8 @@ function liveUids(gate: Gate) {
   return gate.fibers.filter(fiber => fiber.uid !== null).map(fiber => fiber.uid)
 }
 
-function dropCached(ctx: Context, name: string) {
-  const cache = ctx.loader.internal?.loadCache
+function dropCached(name: string) {
+  const cache = ModuleLoader.fromInternal()?.loadCache
   if (!cache) return
   for (const key of [...Map.prototype.keys.call(cache) as Iterable<string>]) {
     if (key.includes(name)) Map.prototype.delete.call(cache, key)
@@ -184,7 +185,7 @@ describe('HMR', () => {
       // nested two fiber levels below it
       treeDep.modify(c => c.replace("version = 'tree-v1'", "version = 'tree-v2'"))
       const result = await ctx.hmr.reconcile(() => [treeDep.path])
-      expect(result.settledFibers.map(fiber => fiber.state)).to.not.include(FiberState.FAILED)
+      expect(result.settled.map(fiber => fiber.state)).to.not.include(FiberState.FAILED)
 
       expect(ctx.bail('hmr-test/get-tree')).to.equal('tree-v2')
       expect(ctx.bail('hmr-test/get-nested')).to.equal('tree-v2')
@@ -210,7 +211,7 @@ describe('HMR', () => {
       stats.stallTreeInit = 0
       treeDep.write(treeDep.original.replace("version = 'tree-v1'", "version = 'tree-v3'"))
       const results = await Promise.all([first, ctx.hmr.reconcile(() => [treeDep.path])])
-      expect(results.flatMap(result => result.settledFibers).map(fiber => fiber.state)).to.not.include(FiberState.FAILED)
+      expect(results.flatMap(result => result.settled).map(fiber => fiber.state)).to.not.include(FiberState.FAILED)
 
       expect(ctx.bail('hmr-test/get-tree')).to.equal('tree-v3')
 
@@ -301,7 +302,7 @@ describe('HMR', () => {
       pluginMulti.modify(c => c.replace("version = 'multi-v1'", "version = 'multi-v2'"))
       const result = await ctx.hmr.reconcile(() => [pluginMulti.path])
 
-      expect(result.settledFibers).to.have.length(2)
+      expect(result.settled).to.have.length(2)
       // exactly one new instance per entry, each with its own config intact
       expect([...stats.multiApplies].sort()).to.deep.equal(['a:multi-v2', 'b:multi-v2'])
     }, 15000)
@@ -343,7 +344,7 @@ describe('HMR', () => {
       await reloaded
       if (!entry) {
         // The reload above does not reimport a plugin that is no longer an entry.
-        dropCached(ctx, 'plugin-disabled-hmr')
+        dropCached('plugin-disabled-hmr')
         await configTree(ctx).create({ id: 'live', name: './plugin-disabled-hmr' })
       } else if (entry.disabled) {
         await entry.update({ disabled: false })
