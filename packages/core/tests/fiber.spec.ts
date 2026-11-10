@@ -90,6 +90,66 @@ describe('Fiber', () => {
     expect(callback.mock.calls).to.have.length(1)
   })
 
+  it('exposes the error of a failed fiber', async () => {
+    const root = new Context()
+    ;(root.logger as any).error = mock.fn()
+    const fiber = root.plugin(() => {
+      throw new Error('boom')
+    })
+    await sleep()
+    expect(fiber.state).to.equal(FiberState.FAILED)
+    expect(fiber.error).to.be.instanceOf(Error)
+    expect(fiber.error).to.have.property('message', 'boom')
+  })
+
+  it('clears the error when a failed fiber recovers', async () => {
+    const root = new Context()
+    ;(root.logger as any).error = mock.fn()
+    const apply = mock.fn(() => {
+      throw new Error('boom')
+    })
+    const fiber = root.plugin(apply)
+    await sleep()
+    expect(fiber.error).to.be.instanceOf(Error)
+
+    apply.mock.mockImplementationOnce(() => {})
+    await fiber.update(undefined)
+    expect(fiber.error).to.equal(undefined)
+    expect(fiber.state).to.equal(FiberState.ACTIVE)
+  })
+
+  it('reports unresolved injected services', async () => {
+    const root = new Context()
+    const fiber = root.inject(['foo', 'bar'], () => {})
+    await sleep()
+    expect(fiber.state).to.equal(FiberState.PENDING)
+    expect(fiber.missing).to.deep.equal(['foo', 'bar'])
+
+    const disposeFoo = root.provide('foo', 1)
+    await sleep()
+    expect(fiber.state).to.equal(FiberState.PENDING)
+    expect(fiber.missing).to.deep.equal(['bar'])
+
+    root.provide('bar', 2)
+    await sleep()
+    expect(fiber.state).to.equal(FiberState.ACTIVE)
+    expect(fiber.missing).to.deep.equal([])
+
+    await disposeFoo()
+    await sleep()
+    expect(fiber.state).to.equal(FiberState.PENDING)
+    expect(fiber.missing).to.deep.equal(['foo'])
+  })
+
+  it('reports no missing services for a disposed fiber', async () => {
+    const root = new Context()
+    const fiber = root.inject(['foo'], () => {})
+    await sleep()
+    expect(fiber.missing).to.deep.equal(['foo'])
+    await fiber.dispose()
+    expect(fiber.missing).to.deep.equal([])
+  })
+
   it('failed fiber does not re-enter on dependency refresh', async () => {
     const root = new Context()
     ;(root.logger as any).error = mock.fn()
