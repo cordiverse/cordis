@@ -33,7 +33,7 @@ class Bar extends Service {
 describe('Intercept', () => {
   it('merge context intercepts from outer to inner', async () => {
     const root = new Context()
-    await root.plugin(Foo)
+    await root.use(Foo)
     expect(root.foo.config()).to.deep.equal({})
     const ctx = root.intercept('foo', { a: 1, b: 1 }).intercept('foo', { b: 2 })
     expect(ctx.foo.config()).to.deep.equal({ a: 1, b: 2 })
@@ -41,7 +41,7 @@ describe('Intercept', () => {
 
   it('merge injected config under context intercepts', async () => {
     const root = new Context()
-    await root.plugin(Foo)
+    await root.use(Foo)
     let config!: Config
     await root.intercept('foo', { b: 2 }).inject({ foo: { a: 1, b: 1 } }, (ctx) => {
       config = ctx.intercept('foo', { c: 3 }).foo.config()
@@ -51,11 +51,11 @@ describe('Intercept', () => {
 
   it('take injected config from the declaring fiber', async () => {
     const root = new Context()
-    await root.plugin(Foo)
+    await root.use(Foo)
     const configs: Config[] = []
     await root.inject({ foo: { a: 1 } }, async (ctx) => {
       // no declaration of its own, so the access is admitted by the outer fiber
-      await ctx.plugin((ctx) => {
+      await ctx.use((ctx) => {
         configs.push(ctx.foo.config())
       })
       // the nearest declaration wins, and the outer one is not merged in
@@ -68,12 +68,12 @@ describe('Intercept', () => {
 
   it('stop looking for injected config at an isolation boundary', async () => {
     const root = new Context()
-    await root.plugin(Foo)
+    await root.use(Foo)
     const label = Symbol('foo')
-    await root.isolate('foo', label).plugin(Foo)
+    await root.isolate('foo', label).use(Foo)
     let config!: Config
     await root.inject({ foo: { a: 1 } }, async (ctx) => {
-      await ctx.plugin((ctx) => {
+      await ctx.use((ctx) => {
         config = ctx.isolate('foo', label).get('foo').config()
       })
     })
@@ -82,7 +82,7 @@ describe('Intercept', () => {
 
   it('take no injected config for own provisions', async () => {
     const root = new Context()
-    await root.plugin(Foo)
+    await root.use(Foo)
     let configs!: Config[]
     await root.inject({ foo: { a: 1 } }, (ctx) => {
       const isolated = ctx.isolate('foo')
@@ -95,8 +95,8 @@ describe('Intercept', () => {
 
   it('take injected config from the def site', async () => {
     const root = new Context()
-    await root.plugin(Foo)
-    await root.plugin(Bar)
+    await root.use(Foo)
+    await root.use(Bar)
     expect(root.intercept('foo', { b: 1 }).bar.config()).to.deep.equal({ a: 2, b: 1 })
   })
 
@@ -108,7 +108,7 @@ describe('Intercept', () => {
     }
 
     const root = new Context()
-    await root.plugin(Tagged)
+    await root.use(Tagged)
     let config!: Config
     await root.intercept('foo', { tags: ['outer'] }).inject({ foo: { tags: ['inject'] } }, (ctx) => {
       config = ctx.intercept('foo', { tags: ['inner'] }).foo.config()

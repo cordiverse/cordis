@@ -1,5 +1,5 @@
 {
-  "name": "@cordisjs/plugin-package-manager",
+  "name": "@cordisjs/package-manager",
   "description": "Package Manager Service for Cordis",
   "version": "0.1.0",
   "sideEffects": false,
@@ -22,7 +22,7 @@
   "homepage": "https://cordis.io/",
   "keywords": [
     "cordis",
-    "plugin",
+    "component",
     "package",
     "manager",
     "npm",

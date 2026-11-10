@@ -1,1 +1,1 @@
-# @cordisjs/plugin-loader
+# @cordisjs/loader

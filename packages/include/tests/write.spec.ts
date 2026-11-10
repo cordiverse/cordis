@@ -2,7 +2,7 @@ import { expect, describe, it, beforeAll, afterAll, afterEach } from 'vitest'
 import { writeFile } from 'node:fs/promises'
 import { createRequire, syncBuiltinESMExports } from 'node:module'
 import * as yaml from 'yaml'
-import { harness, plugin } from './utils.ts'
+import { harness, component } from './utils.ts'
 
 /**
  * Failure injection for `rename`. Every scheduled failure rejects with the
@@ -48,7 +48,7 @@ describe('Include write', () => {
   })
 
   it('retries a rename that fails transiently', async () => {
-    const app = await setup('tmp-write-retry.yml', [plugin('a', 1)])
+    const app = await setup('tmp-write-retry.yml', [component('a', 1)])
     renames.calls = 0
     renames.failures = 2
 
@@ -62,10 +62,10 @@ describe('Include write', () => {
   }, 10000)
 
   it('never overwrites a change that lands while it waits to retry', async () => {
-    const app = await setup('tmp-write-race.yml', [plugin('a', 1), plugin('b', 1)])
+    const app = await setup('tmp-write-race.yml', [component('a', 1), component('b', 1)])
     renames.calls = 0
     renames.failures = 1
-    renames.beforeFail = () => writeFile(app.filename, yaml.stringify([plugin('a', 1), plugin('b', 2)]))
+    renames.beforeFail = () => writeFile(app.filename, yaml.stringify([component('a', 1), component('b', 2)]))
 
     await app.update('a', { config: { tag: 'a', value: 2 } })
     await app.settle()
@@ -81,7 +81,7 @@ describe('Include write', () => {
   }, 10000)
 
   it('does not retry other errors, but still flushes on dispose', async () => {
-    const app = await setup('tmp-write-fatal.yml', [plugin('a', 1)])
+    const app = await setup('tmp-write-fatal.yml', [component('a', 1)])
     const text = await app.text()
     renames.calls = 0
     renames.failures = 1
@@ -100,7 +100,7 @@ describe('Include write', () => {
   }, 10000)
 
   it('gives up after a bounded number of attempts and keeps the change', async () => {
-    const app = await setup('tmp-write-bounded.yml', [plugin('a', 1)])
+    const app = await setup('tmp-write-bounded.yml', [component('a', 1)])
     const text = await app.text()
     renames.calls = 0
     renames.failures = Infinity

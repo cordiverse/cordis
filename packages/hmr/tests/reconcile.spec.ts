@@ -1,5 +1,5 @@
 import { Context, Fiber, FiberState } from 'cordis'
-import Loader from '@cordisjs/plugin-loader'
+import Loader from '@cordisjs/loader'
 import { mkdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, resolve, sep } from 'node:path'
@@ -19,7 +19,7 @@ const importModule = (specifier: string, parentURL: string) => loader.import(spe
 // Counters must survive module reloads, so they live on `globalThis`.
 const stats: any = (globalThis as any).__hmrReconcile = {}
 
-function plugin(name: string, value: string, body = '') {
+function component(name: string, value: string, body = '') {
   return `
 import { Context } from 'cordis'
 
@@ -64,8 +64,8 @@ describe('Hmr.reconcile', () => {
 
   async function setup(baseUrl = import.meta.url) {
     ctx = new Context()
-    fiber = await ctx.plugin(Loader, { baseUrl })
-    hmr = await ctx.plugin(Hmr)
+    fiber = await ctx.use(Loader, { baseUrl })
+    hmr = await ctx.use(Hmr)
     return ctx
   }
 
@@ -80,7 +80,7 @@ describe('Hmr.reconcile', () => {
     ctx = new Context()
     const spy = vi.spyOn(ModuleLoader, 'fromInternal').mockReturnValue(undefined)
     try {
-      fiber = ctx.plugin(Hmr)
+      fiber = ctx.use(Hmr)
       await fiber.await().catch(() => {})
     } finally {
       spy.mockRestore()
@@ -91,13 +91,13 @@ describe('Hmr.reconcile', () => {
 
   it('starts one instance at a time in a thread', async () => {
     await setup()
-    const second = new Context().plugin(Hmr)
+    const second = new Context().use(Hmr)
     await second.await().catch(() => {})
     expect(second.state).to.equal(FiberState.FAILED)
 
     await hmr!.dispose()
     hmr = undefined
-    const third = new Context().plugin(Hmr)
+    const third = new Context().use(Hmr)
     try {
       await third.await()
       expect(third.state).to.equal(FiberState.ACTIVE)
@@ -123,22 +123,22 @@ describe('Hmr.reconcile', () => {
     expect([...ctx.hmr.hostModules]).to.include.members([pathToFileURL(main).href, pathToFileURL(dep).href])
   })
 
-  it('replaces an entry plugin in place', async () => {
+  it('replaces an entry component in place', async () => {
     await setup()
-    const path = await load('entry.ts', plugin('entry', 'v1', `
+    const path = await load('entry.ts', component('entry', 'v1', `
   ctx.effect(() => () => stats.entryDisposed = true)`))
     const entry = [...ctx.loader.entries()].find(entry => entry.options.name === './__reconcile__/entry.ts')!
     const inner = entry.innerFiber!
     expect(ctx.bail('reconcile/entry' as any)).to.equal('v1')
 
-    writeFileSync(path, plugin('entry', 'v2'))
+    writeFileSync(path, component('entry', 'v2'))
     const result = await ctx.hmr.reconcile(() => [path])
 
     expect(result.settled).to.have.length(1)
     expect(result.settled[0].state).to.equal(FiberState.ACTIVE)
     expect(result.aborted).to.deep.equal([])
     expect(stats.entryDisposed).to.equal(true)
-    // the entry keeps its fiber, which now runs the new plugin
+    // the entry keeps its fiber, which now runs the new component
     expect(entry.innerFiber).to.equal(inner)
     expect(Object.getPrototypeOf(inner)).to.equal(result.settled[0])
     expect(entry.disabled).to.equal(false)
@@ -147,9 +147,9 @@ describe('Hmr.reconcile', () => {
 
   it('imports a module again after it failed in an aborted attempt', async () => {
     await setup()
-    const path = await load('added-entry.ts', plugin('added', 'v1'))
+    const path = await load('added-entry.ts', component('added', 'v1'))
     const added = fixture('added-dep.ts', `throw new Error('added v1')\n`)
-    writeFileSync(path, `import './added-dep.ts'\n` + plugin('added', 'v2'))
+    writeFileSync(path, `import './added-dep.ts'\n` + component('added', 'v2'))
     expect((await ctx.hmr.reconcile(() => [path])).aborted).to.have.length(1)
 
     // only the entry is reconciled again, as the caller knows no more
@@ -177,7 +177,7 @@ export const value = 'ready'
 
   it('keeps the job of a module when its job of another type fails', async () => {
     await setup()
-    // the failing plugin is imported first, so that it creates the cache entry of the shared module
+    // the failing component is imported first, so that it creates the cache entry of the shared module
     const failing = await load('slot-failing.mjs', `export function apply() {}\n`)
     const importer = await load('slot-importer.mjs', `export function apply() {}\n`)
     const shared = fixture('slot-shared.mjs', `export default {}\n`)
@@ -258,7 +258,7 @@ export default class ReconcileService extends Service {
     expect(ctx.get('reconcileService').value).to.equal('v2')
   })
 
-  it('replaces a plugin when one of its dependencies changes', async () => {
+  it('replaces a component when one of its dependencies changes', async () => {
     await setup()
     const dep = fixture('dep.ts', `export const value = 'v1'\n`)
     fixture('common.ts', `export const value = 'common'\n`)
@@ -271,7 +271,7 @@ export function apply(ctx: Context) {
   ctx.on('reconcile/dependent' as any, () => value)
 }
 `)
-    // shares an unchanged module with the dependent plugin, but not the changed one
+    // shares an unchanged module with the dependent component, but not the changed one
     await load('sibling.ts', `
 import { Context } from 'cordis'
 import './common.ts'
@@ -295,7 +295,7 @@ export function apply(ctx: Context) {
   it('replaces the inner fiber of an entry with an injection scope in place', async () => {
     await setup()
     ctx.provide('reconcileScope', {})
-    const path = fixture('scoped.ts', plugin('scoped', 'v1'))
+    const path = fixture('scoped.ts', component('scoped', 'v1'))
     const id = await ctx.loader.create({ name: './__reconcile__/scoped.ts', inject: ['reconcileScope'] })
     const entry = ctx.loader.store[id]!
     await ctx.loader.await()
@@ -304,7 +304,7 @@ export function apply(ctx: Context) {
     expect(outer).to.be.ok
     expect(ctx.bail('reconcile/scoped' as any)).to.equal('v1')
 
-    writeFileSync(path, plugin('scoped', 'v2'))
+    writeFileSync(path, component('scoped', 'v2'))
     const result = await ctx.hmr.reconcile(() => [path])
 
     expect(result.settled).to.have.length(1)
@@ -315,7 +315,7 @@ export function apply(ctx: Context) {
     expect(ctx.bail('reconcile/scoped' as any)).to.equal('v2')
   })
 
-  it('replaces the plugins below a directory root', async () => {
+  it('replaces the components below a directory root', async () => {
     await setup()
     mkdirSync(resolve(fixtureDir, 'root'), { recursive: true })
     mkdirSync(resolve(fixtureDir, 'root-sibling'), { recursive: true })
@@ -347,18 +347,18 @@ export function apply(ctx: Context) {
     ['a file URL', () => pathToFileURL(resolve(fixtureDir, 'relative.ts')).href],
   ])('rejects %s as a root', async (_, root) => {
     await setup()
-    const path = await load('relative.ts', plugin('relative', 'v1'))
+    const path = await load('relative.ts', component('relative', 'v1'))
 
-    writeFileSync(path, plugin('relative', 'v2'))
+    writeFileSync(path, component('relative', 'v2'))
     await expect(ctx.hmr.reconcile(() => [root()])).rejects.toThrow(TypeError)
     expect(ctx.bail('reconcile/relative' as any)).to.equal('v1')
   })
 
   it('rejects with the error of the callback', async () => {
     await setup()
-    const path = await load('callback.ts', plugin('callback', 'v1'))
+    const path = await load('callback.ts', component('callback', 'v1'))
 
-    writeFileSync(path, plugin('callback', 'v2'))
+    writeFileSync(path, component('callback', 'v2'))
     await expect(ctx.hmr.reconcile(() => {
       throw new Error('callback failed')
     })).rejects.toThrow('callback failed')
@@ -391,41 +391,41 @@ export function apply(ctx: Context) {
     expect(order).to.deep.equal(['callback', 'second'])
   })
 
-  it('replaces a plugin that no entry manages', async () => {
+  it('replaces a component that no entry manages', async () => {
     await setup()
-    const path = fixture('direct.ts', plugin('direct', 'v1'))
+    const path = fixture('direct.ts', component('direct', 'v1'))
     const exports = await importModule(pathToFileURL(path).href, import.meta.url)
-    const direct = ctx.plugin(ctx.loader.unwrapExports(exports))
+    const direct = ctx.use(ctx.loader.unwrapExports(exports))
     await direct
     expect(ctx.bail('reconcile/direct' as any)).to.equal('v1')
 
-    writeFileSync(path, plugin('direct', 'v2'))
+    writeFileSync(path, component('direct', 'v2'))
     const result = await ctx.hmr.reconcile(() => [path])
 
     expect(result.settled).to.have.length(1)
-    // the fiber returned by `ctx.plugin()` stays valid
+    // the fiber returned by `ctx.use()` stays valid
     expect(Object.getPrototypeOf(direct)).to.equal(result.settled[0])
     expect(direct.state).to.equal(FiberState.ACTIVE)
     expect(ctx.bail('reconcile/direct' as any)).to.equal('v2')
   })
 
   // The `data:` module has no path, but re-importing it picks up its changed dependency.
-  it('replaces a plugin exported from a data: URL', async () => {
+  it('replaces a component exported from a data: URL', async () => {
     await setup()
-    const path = fixture('data-impl.ts', plugin('data', 'v1'))
+    const path = fixture('data-impl.ts', component('data', 'v1'))
     const url = `data:text/javascript,export * from ${JSON.stringify(pathToFileURL(path).href)}`
     const exports = await importModule(url, import.meta.url)
-    await ctx.plugin(ctx.loader.unwrapExports(exports))
+    await ctx.use(ctx.loader.unwrapExports(exports))
     expect(ctx.bail('reconcile/data' as any)).to.equal('v1')
 
-    writeFileSync(path, plugin('data', 'v2'))
+    writeFileSync(path, component('data', 'v2'))
     const result = await ctx.hmr.reconcile(() => [path])
 
     expect(result.settled).to.have.length(1)
     expect(ctx.bail('reconcile/data' as any)).to.equal('v2')
   })
 
-  it('refreshes a disabled plugin for when it is enabled again', async () => {
+  it('refreshes a disabled component for when it is enabled again', async () => {
     await setup()
     const dep = fixture('disabled-dep.ts', `export const value = 'v1'\n`)
     fixture('disabled.ts', `
@@ -448,7 +448,7 @@ export function apply(ctx: Context) {
     expect(ctx.bail('reconcile/disabled' as any)).to.equal('v2')
   })
 
-  it('keeps the metadata of an entry that re-exports the changed plugin', async () => {
+  it('keeps the metadata of an entry that re-exports the changed component', async () => {
     await setup()
     ctx.provide('reconcileGate', {})
     const implementation = fixture('reexport-impl.mjs', `
@@ -469,7 +469,7 @@ export const Config = {
 `)
     const entryUrl = pathToFileURL(entry).href
     const original = await importModule(entryUrl, import.meta.url)
-    await ctx.plugin(original, {})
+    await ctx.use(original, {})
 
     writeFileSync(implementation, `
 export function apply(ctx, config) {
@@ -487,7 +487,7 @@ export function apply(ctx, config) {
     expect(ctx.registry.get(refreshed)).to.equal(result.settled[0].runtime)
   })
 
-  it('refreshes a module that no plugin depends on for its next import', async () => {
+  it('refreshes a module that no component depends on for its next import', async () => {
     await setup()
     const orphan = fixture('orphan.ts', 'export const value = 1\n')
     const url = pathToFileURL(orphan).href
@@ -506,7 +506,7 @@ export function apply(ctx, config) {
 
   it('does not apply a unit whose module fails to import', async () => {
     await setup()
-    const path = await load('abort.ts', plugin('abort', 'v1'))
+    const path = await load('abort.ts', component('abort', 'v1'))
 
     writeFileSync(path, 'export function apply(ctx {{{ BROKEN')
     const result = await ctx.hmr.reconcile(() => [path])
@@ -517,14 +517,14 @@ export function apply(ctx, config) {
     expect(ctx.bail('reconcile/abort' as any)).to.equal('v1')
 
     // the module cache is restored, so the next change is applied normally
-    writeFileSync(path, plugin('abort', 'v2'))
+    writeFileSync(path, component('abort', 'v2'))
     await ctx.hmr.reconcile(() => [path])
     expect(ctx.bail('reconcile/abort' as any)).to.equal('v2')
   })
 
-  it('does not apply a unit whose module does not export a plugin', async () => {
+  it('does not apply a unit whose module does not export a component', async () => {
     await setup()
-    const path = await load('invalid.ts', plugin('invalid', 'v1', `
+    const path = await load('invalid.ts', component('invalid', 'v1', `
   ctx.effect(() => () => stats.invalidDisposed = true)`))
 
     writeFileSync(path, `export const apply = 'not a function'\n`)
@@ -539,11 +539,11 @@ export function apply(ctx, config) {
   it('applies a unit when another unit fails to import', async () => {
     await setup()
     fixture('unit-common.ts', `export const value = 'common'\n`)
-    const shared = (name: string, value: string) => `import './unit-common.ts'\n` + plugin(name, value)
+    const shared = (name: string, value: string) => `import './unit-common.ts'\n` + component(name, value)
     const broken = await load('unit-broken.ts', shared('broken', 'v1'))
     const healthy = await load('unit-healthy.ts', shared('healthy', 'v1'))
 
-    // the two plugins only share an unchanged module
+    // the two components only share an unchanged module
     writeFileSync(broken, 'export function apply(ctx {{{ BROKEN')
     writeFileSync(healthy, shared('healthy', 'v2'))
     const result = await ctx.hmr.reconcile(() => [broken, healthy])
@@ -562,7 +562,7 @@ export function apply(ctx, config) {
     expect(ctx.bail('reconcile/broken' as any)).to.equal('v2')
   })
 
-  it('aborts plugins that share a changed module together', async () => {
+  it('aborts components that share a changed module together', async () => {
     await setup()
     const dep = fixture('joint-dep.ts', `export const value = 'v1'\n`)
     const dependent = (name: string, body = '') => `
@@ -587,11 +587,11 @@ export function apply(ctx: Context) {
     expect(ctx.bail('reconcile/right' as any)).to.equal('v1')
   })
 
-  it('aborts a plugin that newly imports a changed module of a failed unit', async () => {
+  it('aborts a component that newly imports a changed module of a failed unit', async () => {
     await setup()
     const dep = fixture('adopt-dep.ts', `export const value = 'v1'\n`)
-    const owner = await load('adopt-owner.ts', `import './adopt-dep.ts'\n` + plugin('owner', 'v1'))
-    const adopter = await load('adopt-adopter.ts', plugin('adopter', 'v1'))
+    const owner = await load('adopt-owner.ts', `import './adopt-dep.ts'\n` + component('owner', 'v1'))
+    const adopter = await load('adopt-adopter.ts', component('adopter', 'v1'))
 
     // the adopter is unrelated to the owner before the change
     writeFileSync(dep, `export const value = 'v2'\n`)
@@ -618,8 +618,8 @@ export function apply(ctx: Context) {
 
   it('shares a module first loaded by a failed unit with a unit that imports it dynamically', async () => {
     await setup()
-    const failing = await load('dynamic-failing.ts', plugin('failing', 'v1'))
-    const importer = await load('dynamic-importer.ts', plugin('importer', 'v1'))
+    const failing = await load('dynamic-failing.ts', component('failing', 'v1'))
+    const importer = await load('dynamic-importer.ts', component('importer', 'v1'))
     const shared = pathToFileURL(resolve(fixtureDir, 'dynamic-shared.ts')).href
 
     fixture('dynamic-shared.ts', `export const state = {}\n`)
@@ -641,7 +641,7 @@ export function apply(ctx: Context) {
     expect(ctx.bail('reconcile/importer' as any)).to.equal(state)
   })
 
-  it('restores a changed module outside every plugin with the failed unit it imports', async () => {
+  it('restores a changed module outside every component with the failed unit it imports', async () => {
     await setup()
     const dep = fixture('outside-dep.ts', `export const value = 'v1'\n`)
     const outside = fixture('outside.ts', `
@@ -650,7 +650,7 @@ export const derived = value
 `)
     const url = pathToFileURL(outside).href
     await importModule(url, import.meta.url)
-    const owner = await load('outside-owner.ts', `import './outside-dep.ts'\n` + plugin('owner', 'v1'))
+    const owner = await load('outside-owner.ts', `import './outside-dep.ts'\n` + component('owner', 'v1'))
 
     // the new module depends on an export that only the new dependency has
     writeFileSync(dep, `export const value = 'v2'\nexport const extra = '!'\n`)
@@ -667,11 +667,11 @@ export const derived = value + extra
     expect(derived).to.equal('v1')
   })
 
-  it('leaves a fiber failed when the new plugin fails to apply', async () => {
+  it('leaves a fiber failed when the new component fails to apply', async () => {
     await setup()
-    const path = await load('failed.ts', plugin('failed', 'v1'))
+    const path = await load('failed.ts', component('failed', 'v1'))
 
-    writeFileSync(path, plugin('failed', 'v2', `throw new Error('apply failed')`))
+    writeFileSync(path, component('failed', 'v2', `throw new Error('apply failed')`))
     const result = await ctx.hmr.reconcile(() => [path])
 
     expect(result.settled).to.have.length(1)
@@ -679,7 +679,7 @@ export const derived = value + extra
     await expect(result.settled[0].await()).rejects.toThrow('apply failed')
 
     // the next change retries it
-    writeFileSync(path, plugin('failed', 'v3'))
+    writeFileSync(path, component('failed', 'v3'))
     const retried = await ctx.hmr.reconcile(() => [path])
     expect(retried.settled).to.have.length(1)
     expect(ctx.bail('reconcile/failed' as any)).to.equal('v3')
@@ -688,13 +688,13 @@ export const derived = value + extra
   it('skips a changed host module below a root and applies the other changes', async () => {
     await setup()
     mkdirSync(resolve(fixtureDir, 'host'), { recursive: true })
-    const path = await load('host/host.ts', plugin('host', 'v1'))
-    const other = await load('host/other.ts', plugin('other', 'v1'))
+    const path = await load('host/host.ts', component('host', 'v1'))
+    const other = await load('host/other.ts', component('other', 'v1'))
     const url = pathToFileURL(path).href
     ctx.hmr.hostModules.add(url)
 
-    writeFileSync(path, plugin('host', 'v2'))
-    writeFileSync(other, plugin('other', 'v2'))
+    writeFileSync(path, component('host', 'v2'))
+    writeFileSync(other, component('other', 'v2'))
     const result = await ctx.hmr.reconcile(() => [resolve(fixtureDir, 'host')])
 
     expect(result.skipped).to.deep.equal([{ urls: [url], reason: Hmr.SkipReason.HostModule }])
@@ -710,7 +710,7 @@ export const derived = value + extra
     const cache = createRequire(import.meta.url).cache
     cache[addon] = { id: addon, filename: addon, loaded: true, children: [], exports: { value: 'v1' } } as any
     try {
-      await load('addon-plugin.cjs', `
+      await load('addon-component.cjs', `
 const { value } = require('./addon.node')
 exports.apply = (ctx) => ctx.on('reconcile/addon', () => value)
 `)
@@ -726,7 +726,7 @@ exports.apply = (ctx) => ctx.on('reconcile/addon', () => value)
     }
   })
 
-  it('replaces a plugin when a module inside a package changes', async () => {
+  it('replaces a component when a module inside a package changes', async () => {
     await setup()
     const dir = resolve(fixtureDir, 'node_modules/reconcile-shared')
     mkdirSync(dir, { recursive: true })
@@ -744,7 +744,7 @@ export function apply(ctx: Context) {
 `)
     expect(ctx.bail('reconcile/package' as any)).to.equal('v1')
 
-    // the changed module is not imported by the plugin directly
+    // the changed module is not imported by the component directly
     writeFileSync(lib, `export const value = 'v2'\n`)
     const result = await ctx.hmr.reconcile(() => [lib])
 
@@ -752,7 +752,7 @@ export function apply(ctx: Context) {
     expect(ctx.bail('reconcile/package' as any)).to.equal('v2')
   })
 
-  it('replaces a plugin whose nested dependency is removed in favor of a hoisted copy', async () => {
+  it('replaces a component whose nested dependency is removed in favor of a hoisted copy', async () => {
     await setup()
     const install = (dir: string, value: string) => {
       mkdirSync(dir, { recursive: true })
@@ -776,7 +776,7 @@ exports.apply = (ctx) => ctx.on('reconcile/hoisted', () => value)
     expect(ctx.bail('reconcile/hoisted' as any)).to.equal('hoisted')
   })
 
-  describe('a plugin package', () => {
+  describe('a component package', () => {
     const name = (value: string) => `export const apply = ctx => ctx.on('reconcile/moved', () => '${value}')\n`
 
     /** Write a package of the given files below `__reconcile__`. */
@@ -809,7 +809,7 @@ exports.apply = (ctx) => ctx.on('reconcile/hoisted', () => value)
       return JSON.stringify({ name: pkg, type: 'module', [field]: `./${file}`, ...extra })
     }
 
-    /** Load a plugin package `<pkg>` whose manifest points `field` to `a.mjs`. */
+    /** Load a component package `<pkg>` whose manifest points `field` to `a.mjs`. */
     async function loadEntry(pkg: string, field: Field = 'exports') {
       await setup(pathToFileURL(fixtureDir + sep).href)
       const dir = install(`node_modules/${pkg}`, { 'package.json': entry(pkg, 'a.mjs', field), 'a.mjs': name('a1') })
@@ -822,7 +822,7 @@ exports.apply = (ctx) => ctx.on('reconcile/hoisted', () => value)
     it.each(['exports', 'main'] as const)('replaces it with the module that its `%s` newly points to', async (field) => {
       const pkg = `reconcile-${field}`
       const dir = await loadEntry(pkg, field)
-      // the previous entry changes too, so that importing it would also replace the plugin
+      // the previous entry changes too, so that importing it would also replace the component
       install(`node_modules/${pkg}`, { 'package.json': entry(pkg, 'b.mjs', field), 'a.mjs': name('a2'), 'b.mjs': name('b') })
       const result = await ctx.hmr.reconcile(() => [dir])
 
@@ -870,7 +870,7 @@ exports.apply = (ctx) => ctx.on('reconcile/hoisted', () => value)
       expect(ctx.bail('reconcile/moved' as any)).to.equal('a1')
 
       await hmr!.dispose()
-      hmr = await ctx.plugin(Hmr)
+      hmr = await ctx.use(Hmr)
       install('node_modules/reconcile-retry', { 'b.mjs': name('b') })
       // the retry includes the change that moved the entry
       const result = await ctx.hmr.reconcile(() => [resolve(dir, 'package.json'), resolve(dir, 'b.mjs')])
@@ -880,7 +880,7 @@ exports.apply = (ctx) => ctx.on('reconcile/hoisted', () => value)
       expect(ctx.bail('reconcile/moved' as any)).to.equal('b')
     })
 
-    it('aborts it with a plugin that imports a module that its new entry newly imports', async () => {
+    it('aborts it with a component that imports a module that its new entry newly imports', async () => {
       const dir = await loadEntry('reconcile-joined')
       const shared = fixture('joined-shared.mjs', `export const value = 'v1'\n`)
       const other = fixture('joined-other.mjs', `
@@ -898,7 +898,7 @@ export const apply = ctx => ctx.on('reconcile/joined', () => value)
       writeFileSync(other, `import './joined-shared.mjs'\nthrow new Error('broken')\n`)
       const result = await ctx.hmr.reconcile(() => [dir, shared, other])
 
-      // the closures of both plugins share the evicted module in the new module graph
+      // the closures of both components share the evicted module in the new module graph
       expect(result.aborted).to.have.length(1)
       expect(result.settled).to.have.length(0)
       expect(ctx.bail('reconcile/moved' as any)).to.equal('a1')
@@ -932,12 +932,12 @@ export const apply = ctx => ctx.on('reconcile/joined', () => value)
       const parent = (dir: string) => pathToFileURL(resolve(fixtureDir, dir) + sep).href
       const exports = await importModule('reconcile-linked', parent('dual-a'))
       expect(await importModule('reconcile-linked', parent('dual-b'))).to.equal(exports)
-      await ctx.plugin(ctx.loader.unwrapExports(exports))
+      await ctx.use(ctx.loader.unwrapExports(exports))
 
       link('dual-a', 'store/linked@2')
       const result = await ctx.hmr.reconcile(() => [location, resolve(fixtureDir, 'store/linked@1')])
 
-      // the fibers of the plugin do not record which import each comes from
+      // the fibers of the component do not record which import each comes from
       expect(result.aborted).to.deep.equal([])
       expect(result.skipped.map(skip => skip.reason)).to.deep.equal([Hmr.SkipReason.AmbiguousImport])
       expect(ctx.bail('reconcile/moved' as any)).to.equal('v1')
@@ -955,11 +955,11 @@ export const apply = ctx => ctx.on('reconcile/joined', () => value)
       return path
     }
 
-    it('replaces a plugin that imports it', async () => {
+    it('replaces a component that imports it', async () => {
       await setup()
       install('reconcile-shadow-esm', '.', 'hoisted', 'mjs')
       mkdirSync(resolve(fixtureDir, 'shadow-esm'), { recursive: true })
-      await load('shadow-esm/plugin.mjs', `
+      await load('shadow-esm/component.mjs', `
 import { value } from 'reconcile-shadow-esm'
 export const apply = ctx => ctx.on('reconcile/shadow-esm', () => value)
 `)
@@ -975,12 +975,12 @@ export const apply = ctx => ctx.on('reconcile/shadow-esm', () => value)
     it.each([
       ['location', (location: string) => location],
       ['manifest', (location: string) => resolve(location, 'package.json')],
-    ])('replaces a plugin that requires it, given its %s', async (kind, root) => {
+    ])('replaces a component that requires it, given its %s', async (kind, root) => {
       const name = `reconcile-shadow-${kind}`
       await setup()
       install(name, '.', 'hoisted', 'cjs')
       mkdirSync(resolve(fixtureDir, name), { recursive: true })
-      await load(`${name}/plugin.cjs`, `
+      await load(`${name}/component.cjs`, `
 const { value } = require('${name}')
 exports.apply = ctx => ctx.on('reconcile/${name}', () => value)
 `)
@@ -994,7 +994,7 @@ exports.apply = ctx => ctx.on('reconcile/${name}', () => value)
     })
   })
 
-  it('skips a plugin whose exporting modules now export different plugins', async () => {
+  it('skips a component whose exporting modules now export different components', async () => {
     await setup()
     const impl = (value: string) => `export default { apply: ctx => ctx.on('reconcile/split', () => '${value}') }\n`
     const path = fixture('split-impl.mjs', impl('v1'))
@@ -1006,20 +1006,20 @@ exports.apply = ctx => ctx.on('reconcile/${name}', () => value)
     writeFileSync(other, impl('other'))
     const result = await ctx.hmr.reconcile(() => [path, other])
 
-    // the fibers of the plugin do not record which module each comes from
+    // the fibers of the component do not record which module each comes from
     expect(result.settled).to.have.length(0)
     expect(result.skipped.map(skip => skip.reason)).to.deep.equal([Hmr.SkipReason.AmbiguousExport])
     expect(ctx.bail('reconcile/split' as any)).to.equal('v1')
   })
 
-  it('replaces a plugin that only require() has loaded when its dependency changes', async () => {
+  it('replaces a component that only require() has loaded when its dependency changes', async () => {
     await setup()
     const dep = fixture('required-dep.cjs', `exports.value = 'v1'\n`)
     const path = fixture('required.cjs', `
 const { value } = require('./required-dep.cjs')
 exports.apply = ctx => ctx.on('reconcile/required', () => value)
 `)
-    await ctx.plugin(createRequire(import.meta.url)(path))
+    await ctx.use(createRequire(import.meta.url)(path))
     expect(ctx.bail('reconcile/required' as any)).to.equal('v1')
 
     writeFileSync(dep, `exports.value = 'v2'\n`)
@@ -1031,13 +1031,13 @@ exports.apply = ctx => ctx.on('reconcile/required', () => value)
 
   it('runs transactions one at a time', async () => {
     await setup()
-    const slow = await load('queue-slow.ts', plugin('slow', 'v1'))
-    const fast = await load('queue-fast.ts', plugin('fast', 'v1'))
+    const slow = await load('queue-slow.ts', component('slow', 'v1'))
+    const fast = await load('queue-fast.ts', component('fast', 'v1'))
 
-    writeFileSync(slow, plugin('slow', 'v2', `
+    writeFileSync(slow, component('slow', 'v2', `
   await new Promise(resolve => setTimeout(resolve, 300))
   stats.slowDone = performance.now()`))
-    writeFileSync(fast, plugin('fast', 'v2', `stats.fastApplied = performance.now()`))
+    writeFileSync(fast, component('fast', 'v2', `stats.fastApplied = performance.now()`))
     const [first, second] = await Promise.all([
       ctx.hmr.reconcile(() => [slow]),
       ctx.hmr.reconcile(() => [fast]),
@@ -1056,13 +1056,13 @@ exports.apply = ctx => ctx.on('reconcile/required', () => value)
   stats.later = new Promise(resolve => stats.open = resolve)
     .then(() => ctx.hmr.reconcile(() => []))
     .then(() => 'resolved', (error) => error.message)`
-    const path = await load('nested.ts', plugin('nested', 'v1', body).replace(
+    const path = await load('nested.ts', component('nested', 'v1', body).replace(
       `export const name`,
       `export const inject = ['hmr']\n\nexport const name`,
     ))
     expect(await stats.nested).to.equal('resolved')
 
-    writeFileSync(path, plugin('nested', 'v2', body).replace(
+    writeFileSync(path, component('nested', 'v2', body).replace(
       `export const name`,
       `export const inject = ['hmr']\n\nexport const name`,
     ))

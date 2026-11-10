@@ -1,6 +1,6 @@
 import { Context, Fiber, Service } from 'cordis'
-import Loader from '@cordisjs/plugin-loader'
-import Fs, { WatchOptions } from '@cordisjs/plugin-fs-node'
+import Loader from '@cordisjs/loader'
+import Fs, { WatchOptions } from '@cordisjs/fs-node'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, resolve, sep } from 'node:path'
 import { format } from 'node:util'
@@ -11,7 +11,7 @@ import Hmr from '../src/index.ts'
 const testDir = dirname(fileURLToPath(import.meta.url))
 const fixtureDir = resolve(testDir, '__watch__')
 
-function plugin(name: string, value: string) {
+function component(name: string, value: string) {
   return `
 import { Context } from 'cordis'
 
@@ -29,7 +29,7 @@ interface Watch {
   listeners: ((filename: string) => void)[]
 }
 
-// stands in for `@cordisjs/plugin-fs-node`, so that changes are reported by hand
+// stands in for `@cordisjs/fs-node`, so that changes are reported by hand
 class FakeFs extends Service {
   static watches: Watch[] = []
 
@@ -88,9 +88,9 @@ describe('Hmr with fs', () => {
   async function setup(config: Partial<Hmr.WatchConfig> = {}, base?: string, baseUrl = import.meta.url) {
     ctx = new Context()
     ctx.baseUrl = baseUrl
-    fiber = await ctx.plugin(Loader)
-    await ctx.plugin(FakeFs)
-    hmr = await ctx.plugin(Hmr, { base, watch: { enabled: true, debounce: 50, ...config } })
+    fiber = await ctx.use(Loader)
+    await ctx.use(FakeFs)
+    hmr = await ctx.use(Hmr, { base, watch: { enabled: true, debounce: 50, ...config } })
   }
 
   async function load(name: string, content: string) {
@@ -111,7 +111,7 @@ describe('Hmr with fs', () => {
     async function create(base?: string, baseUrl: string | null = import.meta.url) {
       ctx = new Context()
       ctx.baseUrl = baseUrl ?? undefined
-      fiber = await ctx.plugin(Hmr, { base })
+      fiber = await ctx.use(Hmr, { base })
       // a trailing separator does not matter
       return resolve(ctx.hmr.baseDir)
     }
@@ -157,12 +157,12 @@ describe('Hmr with fs', () => {
 
   it('reconciles the changes of one debounce window as a batch', async () => {
     await setup()
-    const a = await load('batch-a.ts', plugin('a', 'v1'))
-    const b = await load('batch-b.ts', plugin('b', 'v1'))
+    const a = await load('batch-a.ts', component('a', 'v1'))
+    const b = await load('batch-b.ts', component('b', 'v1'))
 
     const reloaded = nextReload()
-    writeFileSync(a, plugin('a', 'v2'))
-    writeFileSync(b, plugin('b', 'v2'))
+    writeFileSync(a, component('a', 'v2'))
+    writeFileSync(b, component('b', 'v2'))
     change(a)
     change(b)
     const result = await reloaded
@@ -188,7 +188,7 @@ ${body}
   ctx.on('hmr-watch/retry' as any, () => value)
 }`))
 
-    // one window: the dependency changes, but the plugin no longer exports one
+    // one window: the dependency changes, but the component no longer exports one
     writeFileSync(dep, `export const value = 'v2'\n`)
     writeFileSync(path, dependent(`export const apply = 'not a function'`))
     let reloaded = nextReload()
@@ -197,7 +197,7 @@ ${body}
     expect((await reloaded).aborted).to.have.length(1)
     expect(ctx.bail('hmr-watch/retry' as any)).to.equal('v1')
 
-    // the next window only repairs the plugin
+    // the next window only repairs the component
     writeFileSync(path, dependent(`export function apply(ctx: Context) {
   ctx.on('hmr-watch/retry' as any, () => value)
 }`))
@@ -222,7 +222,7 @@ ${body}
 }`)
     const path = await load('queued.ts', valid)
 
-    // the first batch holds while importing the plugin, and then fails
+    // the first batch holds while importing the component, and then fails
     let release!: () => void
     const gate = (globalThis as any).__hmrWatchGate = { entered: false, hold: new Promise<void>(r => release = r) }
     writeFileSync(dep, `export const value = 'v2'\n`)
@@ -288,11 +288,11 @@ export const apply = 'not a function'`))
     }
     install('.', `export const value = 'hoisted'\n`)
     mkdirSync(resolve(fixtureDir, 'shadow'), { recursive: true })
-    writeFileSync(resolve(fixtureDir, 'shadow/plugin.mjs'), `
+    writeFileSync(resolve(fixtureDir, 'shadow/component.mjs'), `
 import { value } from 'hmr-watch-dep'
 export const apply = ctx => ctx.on('hmr-watch/shadow', () => value)
 `)
-    const id = await ctx.loader.create({ name: './shadow/plugin.mjs' })
+    const id = await ctx.loader.create({ name: './shadow/component.mjs' })
     await ctx.loader.store[id]!.innerFiber!.await()
     expect(ctx.bail('hmr-watch/shadow' as any)).to.equal('hoisted')
 
@@ -314,7 +314,7 @@ export const apply = ctx => ctx.on('hmr-watch/shadow', () => value)
 
   it('only reports a change to a host module', async () => {
     await setup()
-    const path = await load('host.ts', plugin('host', 'v1'))
+    const path = await load('host.ts', component('host', 'v1'))
     ctx.hmr.hostModules.add(pathToFileURL(path).href)
     const warnings: string[] = []
     ctx.logger.exporter({
@@ -324,24 +324,24 @@ export const apply = ctx => ctx.on('hmr-watch/shadow', () => value)
     })
 
     const reloaded = nextReload()
-    writeFileSync(path, plugin('host', 'v2'))
+    writeFileSync(path, component('host', 'v2'))
     change(path)
     await reloaded
     await vi.waitFor(() => expect(warnings.some(warning => warning.includes('host.ts'))).to.equal(true))
     expect(ctx.bail('hmr-watch/host' as any)).to.equal('v1')
   })
 
-  it('reloads a plugin when its file changes on disk', async () => {
+  it('reloads a component when its file changes on disk', async () => {
     ctx = new Context()
     ctx.baseUrl = import.meta.url
-    fiber = await ctx.plugin(Loader)
-    await ctx.plugin(Fs)
-    hmr = await ctx.plugin(Hmr, { watch: { enabled: true, files: ['__watch__'], debounce: 50 } })
-    const path = await load('disk.ts', plugin('disk', 'v1'))
+    fiber = await ctx.use(Loader)
+    await ctx.use(Fs)
+    hmr = await ctx.use(Hmr, { watch: { enabled: true, files: ['__watch__'], debounce: 50 } })
+    const path = await load('disk.ts', component('disk', 'v1'))
 
     // some platforms report changes late, so the file is rewritten until one is seen
     await vi.waitFor(() => {
-      writeFileSync(path, plugin('disk', 'v2'))
+      writeFileSync(path, component('disk', 'v2'))
       expect(ctx.bail('hmr-watch/disk' as any)).to.equal('v2')
     }, { timeout: 5000, interval: 200 })
   })

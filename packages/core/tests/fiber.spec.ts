@@ -52,7 +52,7 @@ describe('Fiber', () => {
         super(ctx, 'foo')
       }
     }
-    const provider = await root.plugin(Foo)
+    const provider = await root.use(Foo)
     const fiber = root.inject(['foo'], async () => {
       await sleep(1000)
       return () => sleep(1000)
@@ -68,18 +68,18 @@ describe('Fiber', () => {
     expect(fiber.state).to.equal(FiberState.PENDING)
   }))
 
-  it('plugin error', async () => {
+  it('component error', async () => {
     const root = new Context()
     const callback = mock.fn()
     const error = mock.fn()
     ;(root.logger as any).error = error
     const apply = mock.fn((ctx: Context, config: { foo?: boolean } | undefined) => {
       ctx.on(event, callback)
-      if (!config?.foo) throw new Error('plugin error')
+      if (!config?.foo) throw new Error('component error')
     })
 
-    const fiber1 = root.plugin(apply)
-    const fiber2 = root.plugin(apply, { foo: true })
+    const fiber1 = root.use(apply)
+    const fiber2 = root.use(apply, { foo: true })
     await sleep()
     expect(fiber1.state).to.equal(FiberState.FAILED)
     expect(fiber2.state).to.equal(FiberState.ACTIVE)
@@ -123,7 +123,7 @@ describe('Fiber', () => {
     const root = new Context()
     ;(root.logger as any).error = mock.fn()
     const { promise, resolve } = Promise.withResolvers<void>()
-    const fiber = root.plugin(async (_ctx: Context, config: { fixed: boolean }) => {
+    const fiber = root.use(async (_ctx: Context, config: { fixed: boolean }) => {
       if (!config.fixed) throw new Error('boom')
       await promise
     }, { fixed: false })
@@ -144,7 +144,7 @@ describe('Fiber', () => {
   it('update surfaces a failed recovery to its caller', async () => {
     const root = new Context()
     ;(root.logger as any).error = mock.fn()
-    const fiber = root.plugin((_ctx: Context, config: { message: string }) => {
+    const fiber = root.use((_ctx: Context, config: { message: string }) => {
       throw new Error(config.message)
     }, { message: 'initial failure' })
     await expect(fiber.await()).rejects.toThrow('initial failure')
@@ -157,7 +157,7 @@ describe('Fiber', () => {
     const root = new Context()
     ;(root.logger as any).error = mock.fn()
     const apply = mock.fn(() => {})
-    const fiber = root.plugin(apply)
+    const fiber = root.use(apply)
     await fiber
     apply.mock.mockImplementationOnce(() => {
       throw new Error('boom')
@@ -172,7 +172,7 @@ describe('Fiber', () => {
     const root = new Context()
     ;(root.logger as any).error = mock.fn()
     const apply = mock.fn(() => {})
-    const fiber = root.plugin(apply)
+    const fiber = root.use(apply)
     await fiber
     apply.mock.mockImplementationOnce(() => {
       throw new Error('boom')
@@ -189,11 +189,11 @@ describe('Fiber', () => {
     const dispose = mock.fn(() => {
       throw new Error('test')
     })
-    const plugin = (ctx: Context) => {
+    const component = (ctx: Context) => {
       return dispose
     }
 
-    const fiber = await root.plugin(plugin)
+    const fiber = await root.use(component)
     expect(dispose.mock.calls).to.have.length(0)
     await expect(fiber.dispose()).resolves.toBeUndefined()
     await sleep()
@@ -232,7 +232,7 @@ describe('Fiber', () => {
     const root = new Context()
     ;(root.logger as any).error = mock.fn()
 
-    const fiber = root.plugin(() => {
+    const fiber = root.use(() => {
       throw new Error('boom')
     })
     const target = Object.getPrototypeOf(fiber)
@@ -263,7 +263,7 @@ describe('Fiber', () => {
 
   it('keeps the active dispose sequence stable', async () => {
     const root = new Context()
-    const fiber = root.plugin(() => {})
+    const fiber = root.use(() => {})
     await fiber.await()
 
     const target = Object.getPrototypeOf(fiber)
@@ -293,7 +293,7 @@ describe('Fiber', () => {
     const root = new Context()
     const callback = mock.fn()
 
-    const fiber = root.plugin(callback, { msg: 'hello' })
+    const fiber = root.use(callback, { msg: 'hello' })
     await fiber
     expect(callback.mock.calls).to.have.length(1)
     expect(callback.mock.calls[0].arguments[1]).to.deep.equal({ msg: 'hello' })
@@ -312,7 +312,7 @@ describe('Fiber', () => {
   it('restart wrapped fiber', async () => {
     const root = new Context()
     const callback = mock.fn()
-    const fiber = root.plugin(callback)
+    const fiber = root.use(callback)
 
     await fiber
     await fiber.restart()
@@ -343,8 +343,8 @@ describe('Fiber', () => {
     }
 
     const root = new Context()
-    const provider = root.plugin(Provider, { value: 1 })
-    const consumer = root.plugin(Consumer, { mode: 'old' })
+    const provider = root.use(Provider, { value: 1 })
+    const consumer = root.use(Consumer, { mode: 'old' })
 
     await provider
     await consumer
@@ -386,19 +386,19 @@ describe('Fiber: config validation', () => {
     ;(root.logger as any).error = mock.fn()
     const apply = mock.fn(() => {})
 
-    const fiber = root.plugin({ apply, Config }, { ok: false })
+    const fiber = root.use({ apply, Config }, { ok: false })
     await sleep()
 
     expect(apply.mock.calls).to.have.length(0)
     expect(fiber.state).to.equal(FiberState.FAILED)
   })
 
-  it('keep a running plugin on update', async () => {
+  it('keep a running component on update', async () => {
     const root = new Context()
     ;(root.logger as any).error = mock.fn()
     const apply = mock.fn(() => {})
 
-    const fiber = root.plugin({ apply, Config }, { ok: true })
+    const fiber = root.use({ apply, Config }, { ok: true })
     await fiber
     expect(apply.mock.calls).to.have.length(1)
 
@@ -422,7 +422,7 @@ describe('Fiber: config validation', () => {
     expect(error.message).to.equal('invalid config:\n  - not a number (at items.0)\n  - required')
   })
 
-  // listeners see what the plugin would see, while the fiber keeps the source
+  // listeners see what the component would see, while the fiber keeps the source
   it('pass the resolved config to listeners', async () => {
     const root = new Context()
     const received: any[] = []
@@ -435,7 +435,7 @@ describe('Fiber: config validation', () => {
       })
     })
 
-    const fiber = root.plugin({ apply, Config }, { ok: true })
+    const fiber = root.use({ apply, Config }, { ok: true })
     await fiber
     expect(applied).to.deep.equal([{ ok: true, resolved: true }])
 
@@ -449,7 +449,7 @@ describe('Fiber: config validation', () => {
     const root = new Context()
     const received: any[] = []
     const applied: any[] = []
-    const fiber = await root.plugin({
+    const fiber = await root.use({
       Config,
       apply(ctx: Context, config: any) {
         applied.push(config)

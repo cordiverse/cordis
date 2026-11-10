@@ -11,7 +11,7 @@ describe('EntryTree.commit: change reports', () => {
   let foo!: Mock<Function>
 
   beforeAll(async () => {
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     loader = root.loader as any
     foo = loader.mock('foo', () => {})
   })
@@ -26,7 +26,7 @@ describe('EntryTree.commit: change reports', () => {
   it('create reports a created entry with its id assigned', async () => {
     id = await loader.create({ name: 'foo', config: { a: 1 } })
     group = await loader.create({
-      name: '@cordisjs/plugin-group',
+      name: '@cordisjs/group',
       group: true,
       config: [],
     })
@@ -69,7 +69,7 @@ describe('EntryTree.commit: change reports', () => {
     expect(loader.changes[0].from).to.be.undefined
   })
 
-  it('fiber.update from inside the plugin reports a config change', async () => {
+  it('fiber.update from inside the component reports a config change', async () => {
     const fiber = loader.expectFiber(id)
     await fiber.update({ a: 5 })
 
@@ -92,7 +92,7 @@ describe('EntryTree.commit: change reports', () => {
 
   it('does not mistake a child fiber disposing itself for the entry (#19)', async () => {
     loader.mock('parent', (ctx: Context) => {
-      const child = ctx.plugin(() => {})
+      const child = ctx.use(() => {})
       child.dispose()
     })
     const parent = await loader.create({ name: 'parent' })
@@ -108,13 +108,13 @@ describe('EntryTree.commit: change reports', () => {
     expect(foo.mock.calls.length).to.be.greaterThan(0)
     await loader.read([
       { id: 'x', name: 'foo' },
-      { id: group, name: '@cordisjs/plugin-group', group: true, config: [] },
+      { id: group, name: '@cordisjs/group', group: true, config: [] },
     ])
     loader.changes = []
 
     // a removal driven by the config file is a read, so nothing is reported
     await loader.read([
-      { id: group, name: '@cordisjs/plugin-group', group: true, config: [] },
+      { id: group, name: '@cordisjs/group', group: true, config: [] },
     ])
     await sleep()
     expect(loader.changes).to.have.length(0)
@@ -130,7 +130,7 @@ describe('EntryGroup.remove: file-driven moves', () => {
   let foo!: Mock<Function>
 
   beforeAll(async () => {
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     loader = root.loader as any
     foo = loader.mock('foo', () => dispose)
   })
@@ -138,12 +138,12 @@ describe('EntryGroup.remove: file-driven moves', () => {
   it('keeps an entry that another group adopted', async () => {
     await loader.read([
       { id: 'x', name: 'foo' },
-      { id: 'g', name: '@cordisjs/plugin-group', group: true, config: [] },
+      { id: 'g', name: '@cordisjs/group', group: true, config: [] },
     ])
     expect(foo.mock.calls).to.have.length(1)
 
     await loader.read([
-      { id: 'g', name: '@cordisjs/plugin-group', group: true, config: [{ id: 'x', name: 'foo' }] },
+      { id: 'g', name: '@cordisjs/group', group: true, config: [{ id: 'x', name: 'foo' }] },
     ])
     await sleep()
 
@@ -174,12 +174,12 @@ describe('EntryTree.update: cross-tree moves', () => {
     }
 
     async [Service.init]() {
-      await this.root.update([{ id: 'g', name: '@cordisjs/plugin-group', group: true, config: [] }])
+      await this.root.update([{ id: 'g', name: '@cordisjs/group', group: true, config: [] }])
     }
   }
 
   beforeAll(async () => {
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     loader = root.loader as any
     foo = loader.mock('foo', () => {})
     loader.modules['tree'] = Tree
@@ -250,7 +250,7 @@ describe('EntryTree.update: cross-tree moves', () => {
   it('transfers the members of a moved group', async () => {
     const { id: tree, subtree } = await setup()
     const group = await loader.create({
-      name: '@cordisjs/plugin-group',
+      name: '@cordisjs/group',
       group: true,
       config: [{ id: 'member', name: 'foo' }],
     })
@@ -295,7 +295,7 @@ describe('EntryTree.update: cross-tree moves', () => {
 describe('EntryTree disposal', () => {
   it('does not persist child disposal while the tree loses its loader', async () => {
     const root = new Context()
-    const loader = await root.plugin(MockLoader)
+    const loader = await root.use(MockLoader)
     const commit = mock.fn()
     let tree!: EntryTree
     class Tree extends EntryTree {
@@ -317,7 +317,7 @@ describe('EntryTree disposal', () => {
         }
       }
     }
-    const fiber = await loader.ctx.plugin(Tree)
+    const fiber = await loader.ctx.use(Tree)
     const options = tree.root.data[0]
     await loader.dispose()
     expect(options.disabled).toBeUndefined()

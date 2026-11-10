@@ -1,6 +1,6 @@
 import { Context, Fiber, Message } from 'cordis'
-import Loader from '@cordisjs/plugin-loader'
-import LoggerConsole from '@cordisjs/plugin-logger-console'
+import Loader from '@cordisjs/loader'
+import LoggerConsole from '@cordisjs/logger-console'
 import { expect, describe, it, afterEach } from 'vitest'
 import { readFile, rm, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -15,9 +15,9 @@ function waitFor(condFn: () => any, timeout = 5000, interval = 20): Promise<void
   })
 }
 
-const INNER = '- id: inner\n  name: ./test-plugin\n'
-const INNER_EXTRA = '- id: inner\n  name: ./test-plugin\n- id: extra\n  name: ./extra-plugin\n'
-const NOT_AN_ARRAY = 'inner: ./test-plugin\n'
+const INNER = '- id: inner\n  name: ./test-component\n'
+const INNER_EXTRA = '- id: inner\n  name: ./test-component\n- id: extra\n  name: ./extra-component\n'
+const NOT_AN_ARRAY = 'inner: ./test-component\n'
 const UNPARSABLE = '- {\n'
 
 interface Harness {
@@ -42,14 +42,14 @@ describe('Include reload', () => {
     filename = fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url))
     await writeFile(filename, content)
     ctx = new Context()
-    await ctx.plugin(LoggerConsole)
+    await ctx.use(LoggerConsole)
     const messages: Message[] = []
     ctx.logger.exporter({ export: message => messages.push(message) })
-    fiber = await ctx.plugin(Loader, {
+    fiber = await ctx.use(Loader, {
       baseUrl: import.meta.url,
     })
     const id = await ctx.loader.create({
-      name: '@cordisjs/plugin-include',
+      name: '@cordisjs/include',
       config: {
         path: `./fixtures/${name}`,
         ...config,
@@ -84,13 +84,13 @@ describe('Include reload', () => {
     const app = await setup('tmp-reload-rename.yml', INNER)
     await waitFor(() => app.ctx.bail('test/get-value'))
 
-    await writeFile(app.filename, '- id: inner\n  name: ./extra-plugin\n')
+    await writeFile(app.filename, '- id: inner\n  name: ./extra-component\n')
     await app.include().refresh()
 
     await waitFor(() => app.ctx.bail('test/get-extra'))
     expect(app.ctx.bail('test/get-value')).to.be.undefined
-    // the old plugin is not taken for a self-dispose
-    expect(await readFile(app.filename, 'utf8')).to.equal('- id: inner\n  name: ./extra-plugin\n')
+    // the old component is not taken for a self-dispose
+    expect(await readFile(app.filename, 'utf8')).to.equal('- id: inner\n  name: ./extra-component\n')
   }, 10000)
 
   it('reverts an entry when its patch is removed', async () => {
@@ -134,7 +134,7 @@ describe('Include reload', () => {
   it('never overwrites an existing but unparsable file with initial', async () => {
     const app = await setup('tmp-reload-initial.yml', UNPARSABLE, {
       initial: [
-        { id: 'extra', name: './extra-plugin' },
+        { id: 'extra', name: './extra-component' },
       ],
     })
     await new Promise(r => setTimeout(r, 500))

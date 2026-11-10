@@ -1,5 +1,5 @@
 {
-  "name": "@cordisjs/plugin-logger-console",
+  "name": "@cordisjs/logger-console",
   "description": "Console logger exporter for cordis",
   "version": "1.0.0",
   "sideEffects": false,
@@ -32,7 +32,7 @@
     "cordis",
     "logger",
     "console",
-    "plugin"
+    "component"
   ],
   "devDependencies": {
     "cordis": "^4.0.0-rc.12"

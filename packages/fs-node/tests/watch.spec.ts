@@ -59,7 +59,7 @@ describe('Fs', () => {
   })
 
   afterEach(async () => {
-    // watches end with the plugins that inject `fs`
+    // watches end with the components that inject `fs`
     await fiber?.dispose()
     fiber = undefined
   })
@@ -71,7 +71,7 @@ describe('Fs', () => {
   async function setup(baseUrl: string | null = import.meta.url) {
     const root = new Context()
     root.baseUrl = baseUrl ?? undefined
-    fiber = await root.plugin(Fs)
+    fiber = await root.use(Fs)
     let ctx!: Context
     await root.inject(['fs'], (inner) => { ctx = inner })
     return ctx
@@ -391,7 +391,7 @@ describe('Fs', () => {
       const ctx = await setup()
       let calls = 0
       let others = 0
-      const inner = await ctx.plugin({
+      const inner = await ctx.use({
         inject: ['fs'],
         apply: (ctx: Context) => {
           ctx.fs.watch(path).on('change', () => { calls++ })

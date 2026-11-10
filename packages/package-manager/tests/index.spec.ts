@@ -106,7 +106,7 @@ function createProject(files: Record<string, string>) {
 
 async function setup(dir: string) {
   const root = new Context()
-  await root.plugin(PackageManager, { base: dir, timeout: 120000 })
+  await root.use(PackageManager, { base: dir, timeout: 120000 })
   let ctx!: Context
   await root.inject(['packageManager'], (inner) => { ctx = inner })
   return ctx.packageManager

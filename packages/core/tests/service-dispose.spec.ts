@@ -30,7 +30,7 @@ function fixture() {
 describe('Service disposal', () => {
   it.each(['consumer', 'provider', 'root'])('releases an injected binding after providing the same name in another realm (%s)', async (action) => {
     const root = new Context()
-    const provider = await root.plugin(ctx => ctx.provide('foo', { value: 1 }))
+    const provider = await root.use(ctx => ctx.provide('foo', { value: 1 }))
     const consumer = await root.inject(['foo'], (ctx) => {
       ctx.isolate('foo').provide('foo', { outer: ctx.foo })
     })
@@ -49,7 +49,7 @@ describe('Service disposal', () => {
     const root = new Context()
     const gate = Promise.withResolvers<void>()
     const timeline: string[] = []
-    const provider = await root.plugin(() => {})
+    const provider = await root.use(() => {})
     const withdraw = provider.ctx.provide('foo', {})
     const consumer = await root.inject(['foo'], () => async () => {
       await gate.promise
@@ -73,7 +73,7 @@ describe('Service disposal', () => {
   it('withdraws one binding without waiting for another binding from the same provider', async () => {
     const root = new Context()
     const gate = Promise.withResolvers<void>()
-    const provider = await root.plugin(() => {})
+    const provider = await root.use(() => {})
     const withdraw = provider.ctx.provide('foo', {})
     provider.ctx.provide('bar', {})
     const first = await root.inject(['foo'], () => {})
@@ -95,7 +95,7 @@ describe('Service disposal', () => {
   it.each(['provider', 'root', 'provider first', 'consumer first', 'restart'])(
     'retains resources during consumer cleanup (%s)', async (action) => {
       const { root, Provider, gate, timeline, isClosed } = fixture()
-      const provider = await root.plugin(Provider)
+      const provider = await root.use(Provider)
       const consumer = await root.inject(['foo'], (ctx) => {
         ctx.effect(() => async () => {
           await gate.promise
@@ -131,8 +131,8 @@ describe('Service disposal', () => {
   it('retains transitive dependencies while a consumer providing another service drains', async () => {
     const { root, Provider, gate, timeline, isClosed } = fixture()
     const fibers: Fiber[] = []
-    const owner = await root.plugin((ctx) => {
-      fibers.push(ctx.plugin(Provider))
+    const owner = await root.use((ctx) => {
+      fibers.push(ctx.use(Provider))
       fibers.push(ctx.inject(['foo'], (ctx) => {
         ctx.provide('bar', {})
         return () => ctx.foo.read()
@@ -157,7 +157,7 @@ describe('Service disposal', () => {
     const { root, Provider, gate, timeline, isClosed } = fixture()
     const error = new Error('setup failed')
     const log = vi.spyOn(root.logger, 'error').mockImplementation(() => {})
-    const provider = await root.plugin(Provider)
+    const provider = await root.use(Provider)
     const consumer = root.inject(['foo'], async function* (ctx) {
       timeline.push('setup started')
       yield () => {
@@ -185,7 +185,7 @@ describe('Service disposal', () => {
     const { root, Provider, timeline } = fixture()
     const error = new Error('cleanup failed')
     const log = vi.spyOn(root.logger, 'error').mockImplementation(() => {})
-    await root.plugin(Provider)
+    await root.use(Provider)
     await root.inject(['foo'], ctx => () => {
       ctx.foo.read()
       throw error
@@ -199,7 +199,7 @@ describe('Service disposal', () => {
   it('keeps provider listeners alive through the final consumer event', async () => {
     const root = new Context()
     const received = vi.fn()
-    await root.plugin((ctx) => {
+    await root.use((ctx) => {
       ctx.provide('foo', {})
       ctx.on('custom-event', received)
     })
@@ -215,8 +215,8 @@ describe('Service disposal', () => {
     const { root, Provider, gate, isClosed } = fixture()
     const independent = vi.fn()
     const sibling = vi.fn()
-    await root.plugin(Provider)
-    await root.plugin((ctx) => {
+    await root.use(Provider)
+    await root.use((ctx) => {
       ctx.provide('bar', {})
       return independent
     })
@@ -242,8 +242,8 @@ describe('Service disposal', () => {
     let closed = false
     let provider!: Fiber
     let consumer!: Fiber
-    const owner = await root.plugin((ctx) => {
-      provider = ctx.plugin((ctx) => {
+    const owner = await root.use((ctx) => {
+      provider = ctx.use((ctx) => {
         ctx.effect(function* () {
           yield ctx.effect(() => () => {
             closed = true
@@ -272,10 +272,10 @@ describe('Service disposal', () => {
     const root = new Context()
     const read = vi.fn()
     let child!: Fiber
-    const owner = await root.plugin((ctx) => {
+    const owner = await root.use((ctx) => {
       ctx.provide('foo', { read })
       ctx.effect(function* () {
-        child = ctx.plugin(ctx => () => ctx.foo.read())
+        child = ctx.use(ctx => () => ctx.foo.read())
         yield child.dispose
       })
     })
@@ -286,10 +286,10 @@ describe('Service disposal', () => {
 
   it('retains an ancestor injection until its child finishes cleanup', async () => {
     const { root, Provider, gate, timeline, isClosed } = fixture()
-    await root.plugin(Provider)
+    await root.use(Provider)
     let child!: Fiber
     await root.inject(['foo'], (ctx) => {
-      child = ctx.plugin(ctx => async () => {
+      child = ctx.use(ctx => async () => {
         await gate.promise
         ctx.foo.read()
       })
@@ -306,7 +306,7 @@ describe('Service disposal', () => {
 
   it('waits for a child that explicitly injects its parent service', async () => {
     const { root, Provider, gate, timeline, isClosed } = fixture()
-    const provider = await root.plugin(Provider)
+    const provider = await root.use(Provider)
     await provider.ctx.inject(['foo'], ctx => async () => {
       await gate.promise
       ctx.foo.read()
@@ -327,7 +327,7 @@ describe('Service disposal', () => {
     const second = Symbol('second')
     const closed = vi.fn()
     const read = vi.fn()
-    const provider = await root.plugin((ctx) => {
+    const provider = await root.use((ctx) => {
       ctx.isolate('foo', first).provide('foo', { read })
       ctx.isolate('foo', second).provide('foo', {})
       return closed
@@ -357,7 +357,7 @@ describe('Service disposal', () => {
     const oldCleanup = Promise.withResolvers<void>()
     const newSetup = Promise.withResolvers<void>()
     const versions: number[] = []
-    const provider = await root.plugin(() => {})
+    const provider = await root.use(() => {})
     const withdraw = provider.ctx.provide('foo', { version: 1 })
     const consumer = await root.inject(['foo'], async (ctx) => {
       versions.push(ctx.foo.version)
@@ -386,7 +386,7 @@ describe('Service disposal', () => {
   it.each([false, true])('waits for current and withdrawn bindings during provider disposal (withdrawn first: %s)', async (withdrawnFirst) => {
     const { root, Provider, gate, timeline, isClosed } = fixture()
     const current = Promise.withResolvers<void>()
-    const provider = await root.plugin(Provider)
+    const provider = await root.use(Provider)
     const withdraw = provider.ctx.provide('bar', {})
     await root.inject(['foo'], ctx => async () => {
       await current.promise

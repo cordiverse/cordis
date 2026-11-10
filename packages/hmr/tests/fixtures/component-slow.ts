@@ -3,9 +3,9 @@ import { version } from './drain-dep.ts'
 
 const stats: any = ((globalThis as any).__hmrTest ??= {})
 
-export const name = 'plugin-slow'
+export const name = 'component-slow'
 
-/** Models a plugin that owns an exclusive resource and releases it slowly. */
+/** Models a component that owns an exclusive resource and releases it slowly. */
 export function apply(ctx: Context) {
   if (stats.slowHeld) stats.slowOverlaps = (stats.slowOverlaps ?? 0) + 1
   stats.slowHeld = true

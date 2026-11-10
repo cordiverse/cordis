@@ -9,7 +9,7 @@ describe('Loader: disabled js expression', () => {
   // object — reading it as a value disables the entry whatever it says
   it('evaluates the expression instead of treating the node as truthy', async () => {
     const root = new Context()
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     const loader = root.loader as any
     loader.mock('plug', () => {})
 
@@ -32,7 +32,7 @@ describe('Loader: basic support', () => {
   let qux!: Mock<Function>
 
   beforeAll(async () => {
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     loader = root.loader as any
 
     foo = loader.mock('foo', (ctx: Context) => ctx.on('internal/update', () => {}))
@@ -46,7 +46,7 @@ describe('Loader: basic support', () => {
       name: 'foo',
     }, {
       id: '2',
-      name: '@cordisjs/plugin-group',
+      name: '@cordisjs/group',
       config: [{
         id: '3',
         name: 'bar',
@@ -87,7 +87,7 @@ describe('Loader: basic support', () => {
     expect(qux.mock.calls).to.have.length(1)
   })
 
-  it('plugin self-update', async () => {
+  it('component self-update', async () => {
     loader.expectFiber('1').update({ a: 3 })
     await sleep()
     expect(loader.data).to.deep.equal([{
@@ -100,7 +100,7 @@ describe('Loader: basic support', () => {
     }])
   })
 
-  it('plugin self-dispose', async () => {
+  it('component self-dispose', async () => {
     loader.expectFiber('1').dispose()
     await sleep()
     expect(loader.data).to.deep.equal([{
@@ -126,7 +126,7 @@ describe('Loader: intercept config', () => {
   const { promise, resolve } = Promise.withResolvers<void>()
 
   beforeAll(async () => {
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     loader = root.loader as any
 
     loader.mock('foo', () => promise)
@@ -176,7 +176,7 @@ describe('Loader: entry failure', () => {
   let loader!: MockLoader
 
   beforeAll(async () => {
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     loader = root.loader as any
 
     loader.mock('bad', () => {
@@ -235,7 +235,7 @@ describe('Loader: config interpolation', () => {
   let consumer!: Mock<Function>
 
   beforeAll(async () => {
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     loader = root.loader as any
 
     loader.mock('provider', (ctx: Context, config: { value: number }) => {
@@ -289,25 +289,25 @@ describe('Loader: config interpolation', () => {
   })
 })
 
-// a plugin created inside an entry inherits `entry` through the context
+// a component created inside an entry inherits `entry` through the context
 // prototype chain, but its config comes from code rather than the config file
-describe('Loader: nested plugin config', () => {
+describe('Loader: nested component config', () => {
   const root = new Context()
 
   let loader!: MockLoader
   let child!: Mock<Function>
 
   beforeAll(async () => {
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     loader = root.loader as any
 
     child = loader.mock('child', () => {})
   })
 
-  it('skip nested plugins', async () => {
+  it('skip nested components', async () => {
     const config = { value: { __jsExpr: 'foo.value' } }
     loader.mock('parent', (ctx: Context) => {
-      ctx.plugin(child, config)
+      ctx.use(child, config)
     })
 
     await loader.read([{ id: '1', name: 'parent' }])
@@ -329,7 +329,7 @@ describe('Loader: failed entry recovery', () => {
   let fail = true
 
   beforeAll(async () => {
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     ;(root.logger as any).error = mock.fn()
     loader = root.loader as any
 
@@ -374,7 +374,7 @@ describe('Loader: pending entry update', () => {
   let loader!: MockLoader
 
   beforeAll(async () => {
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     loader = root.loader as any
 
     Object.assign(loader.mock('foo', () => {}), { inject: ['never'] })
@@ -426,7 +426,7 @@ describe('Loader: parent teardown', () => {
   }
 
   beforeAll(async () => {
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     loader = root.loader as any
 
     loader.mock('bar', () => {})
@@ -447,10 +447,10 @@ describe('Loader: parent teardown', () => {
   })
 })
 
-describe('Loader: replaced plugin', () => {
-  it('keeps the entry of a plugin replaced in place', async () => {
+describe('Loader: replaced component', () => {
+  it('keeps the entry of a component replaced in place', async () => {
     const root = new Context()
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     const loader = root.loader as any as MockLoader
     const foo = loader.mock('foo', () => {})
     await loader.read([{ id: '1', name: 'foo', config: { a: 1 } }])

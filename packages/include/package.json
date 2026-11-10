@@ -1,5 +1,5 @@
 {
-  "name": "@cordisjs/plugin-include",
+  "name": "@cordisjs/include",
   "version": "1.2.0",
   "sideEffects": false,
   "type": "module",
@@ -20,13 +20,13 @@
   },
   "homepage": "https://cordis.io/",
   "peerDependencies": {
-    "@cordisjs/plugin-loader": "^1.0.0-rc.9",
+    "@cordisjs/loader": "^1.0.0-rc.9",
     "cordis": "^4.0.0-rc.12"
   },
   "devDependencies": {
-    "@cordisjs/plugin-fs-node": "^0.1.0",
-    "@cordisjs/plugin-loader": "^1.0.0-rc.9",
-    "@cordisjs/plugin-logger-console": "^1.0.0",
+    "@cordisjs/fs-node": "^0.1.0",
+    "@cordisjs/loader": "^1.0.0-rc.9",
+    "@cordisjs/logger-console": "^1.0.0",
     "cordis": "^4.0.0-rc.12"
   },
   "dependencies": {

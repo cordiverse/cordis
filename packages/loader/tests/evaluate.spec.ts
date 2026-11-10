@@ -12,7 +12,7 @@ describe('Loader: entry evaluation context', () => {
   let seen: { intercept?: any; inject?: any } = {}
 
   beforeAll(async () => {
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     loader = root.loader as any
 
     loader.mock('settings', (ctx: Context, config: any) => {
@@ -80,7 +80,7 @@ describe('Loader: entry evaluation context', () => {
     expect(worker.mock.calls).to.have.length(1)
   })
 
-  it('decides disabled before the plugin dependencies', async () => {
+  it('decides disabled before the component dependencies', async () => {
     await loader.read([settings({ enabled: false }), {
       id: 'needy',
       name: 'needy',
@@ -131,7 +131,7 @@ describe('Loader: entry evaluation context', () => {
     const inject = { settings: { namespace: { __jsExpr: 'env.namespace' } } }
     await loader.read([{ id: 'env', name: 'env', config: { namespace: 'ns' } }, settings({}), {
       id: 'group',
-      name: '@cordisjs/plugin-group',
+      name: '@cordisjs/group',
       group: true,
       inject: ['env'],
       config: [{ id: 'worker', name: 'worker', inject }],
@@ -157,7 +157,7 @@ describe('Loader: entry evaluation context', () => {
     expect(worker.mock.calls).to.have.length(0)
   })
 
-  it('keeps an inject value on the outer fiber when the plugin declares the service itself', async () => {
+  it('keeps an inject value on the outer fiber when the component declares the service itself', async () => {
     const own = Object.assign(loader.mock('own', () => {}), { inject: { settings: { own: 1 } } })
     await loader.read([settings({}), {
       id: 'own',
@@ -168,11 +168,11 @@ describe('Loader: entry evaluation context', () => {
     const entry = loader.store.own
     expect(own.mock.calls).to.have.length(1)
     expect(entry.outerFiber!.inject).to.deep.equal({ settings: { namespace: 'ns' } })
-    // the plugin keeps its own declaration; the entry configures it through `intercept`
+    // the component keeps its own declaration; the entry configures it through `intercept`
     expect(entry.innerFiber!.inject).to.deep.equal({ settings: { own: 1 } })
   })
 
-  it('evaluates intercept with the entry inject, for the plugin only', async () => {
+  it('evaluates intercept with the entry inject, for the component only', async () => {
     await loader.read([settings({ proxy: 'p1' }), {
       id: 'worker',
       name: 'worker',
@@ -267,7 +267,7 @@ describe('Loader: entry evaluation context', () => {
     expect(worker.mock.calls).to.have.length(3)
   })
 
-  it('disposes the outer fiber when the plugin disposes itself', async () => {
+  it('disposes the outer fiber when the component disposes itself', async () => {
     await loader.read([settings({}), {
       id: 'worker',
       name: 'worker',
@@ -301,7 +301,7 @@ describe('Loader: entry evaluation context', () => {
   it('keeps a group structural and passes its verdict to the children', async () => {
     await loader.read([settings({ enabled: false }), {
       id: 'group',
-      name: '@cordisjs/plugin-group',
+      name: '@cordisjs/group',
       group: true,
       inject: ['settings'],
       disabled: { __jsExpr: '!settings.enabled' },
@@ -321,7 +321,7 @@ describe('Loader: entry evaluation context', () => {
   it('keeps the entry isolate without an inject', async () => {
     await loader.read([settings({ enabled: true }), {
       id: 'group',
-      name: '@cordisjs/plugin-group',
+      name: '@cordisjs/group',
       group: true,
       inject: ['settings'],
       config: [{
@@ -400,7 +400,7 @@ describe('Loader: entry evaluation context', () => {
     })
     await loader.create({
       id: 'owner',
-      name: group ? '@cordisjs/plugin-group' : 'worker',
+      name: group ? '@cordisjs/group' : 'worker',
       group,
       inject: ['settings'],
       disabled: { __jsExpr: '!settings.enabled' },
@@ -446,7 +446,7 @@ describe('Loader: entry evaluation context', () => {
     const entry = loader.store.worker
     expect(state.count).to.equal(1)
 
-    // a failing expression disables the plugin and is reported once
+    // a failing expression disables the component and is reported once
     await loader.update('worker', { disabled: { __jsExpr: '(settings.count++, settings.missing.value)' } })
     await loader.await()
     expect(state.count).to.equal(2)
@@ -495,7 +495,7 @@ describe('Loader: entry evaluation context', () => {
 
   it('keeps a disabled group verdict undecided when its dependency disappears', async () => {
     await loader.read([settings({ enabled: false }), {
-      id: 'owner', name: '@cordisjs/plugin-group', group: true, inject: ['settings'],
+      id: 'owner', name: '@cordisjs/group', group: true, inject: ['settings'],
       disabled: { __jsExpr: '!settings.enabled' }, config: [{ id: 'child', name: 'worker' }],
     }])
     const owner = loader.store.owner
@@ -519,7 +519,7 @@ describe('Loader: entry evaluation context', () => {
       child.disabled = { __jsExpr: 'false' }
     }
     await loader.read([settings({}), ...['a', 'b'].map(id => ({
-      id, name: '@cordisjs/plugin-group', group: true, inject: ['env'], isolate: { env: id },
+      id, name: '@cordisjs/group', group: true, inject: ['env'], isolate: { env: id },
       config: id === 'a' ? [child] : [],
     })), ...['a', 'b'].map(id => ({
       id: `env-${id}`, name: 'env', isolate: { env: id }, config: { enabled: id === 'a', namespace: id },
@@ -624,7 +624,7 @@ describe('Loader: entry evaluation boundaries', () => {
   let seen: { intercept?: any; config?: any } = {}
 
   beforeAll(async () => {
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     loader = root.loader as any
     loader.mock('settings', (ctx: Context, config: any) => {
       ctx.provide('settings', { ...config })
@@ -646,7 +646,7 @@ describe('Loader: entry evaluation boundaries', () => {
   const settings = (config: any) => ({ id: 'settings', name: 'settings', config })
   const proxy = (expr: string) => ({ http: { proxy: { __jsExpr: expr } } })
 
-  it('does not start the plugin when intercept cannot be evaluated', async () => {
+  it('does not start the component when intercept cannot be evaluated', async () => {
     await loader.read([settings({}), {
       id: 'worker',
       name: 'worker',
@@ -658,7 +658,7 @@ describe('Loader: entry evaluation boundaries', () => {
     expect(worker.mock.calls).to.have.length(0)
   })
 
-  it('disposes the plugin when intercept stops evaluating on an update', async () => {
+  it('disposes the component when intercept stops evaluating on an update', async () => {
     await loader.read([settings({ proxy: 'p1' }), {
       id: 'worker',
       name: 'worker',
@@ -673,7 +673,7 @@ describe('Loader: entry evaluation boundaries', () => {
     expect(entry.disabled).to.equal(true)
     expect(entry.innerFiber!.uid).to.equal(null)
 
-    // a later update does not restart the plugin with the previous table
+    // a later update does not restart the component with the previous table
     await loader.update('worker', { config: { tag: 'v2' } })
     await loader.await()
     expect(entry.innerFiber!.uid).to.equal(null)
@@ -689,14 +689,14 @@ describe('Loader: entry evaluation boundaries', () => {
   it('stops a group whose intercept stops evaluating on an update', async () => {
     await loader.read([settings({ proxy: 'p1' }), {
       id: 'group',
-      name: '@cordisjs/plugin-group',
+      name: '@cordisjs/group',
       group: true,
       inject: ['settings'],
       intercept: proxy('settings.proxy'),
       config: [{ id: 'worker', name: 'worker' }],
     }])
     const group = loader.store.group
-    // an expression on a group reaches the plugins of its children
+    // an expression on a group reaches the components of its children
     expect(seen.intercept.http).to.deep.equal({ proxy: 'p1' })
 
     await loader.update('group', { intercept: proxy('settings.missing.value') })
@@ -742,7 +742,7 @@ describe('Loader: entry evaluation boundaries', () => {
     expect(worker.mock.calls).to.have.length(0)
   })
 
-  it('evaluates config with the plugin inject', async () => {
+  it('evaluates config with the component inject', async () => {
     const own = Object.assign(loader.mock('own', (_: Context, config: any) => {
       seen = { config }
     }), { inject: ['settings'] })

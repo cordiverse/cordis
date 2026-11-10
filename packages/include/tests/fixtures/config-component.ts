@@ -1,6 +1,6 @@
 import { Context } from 'cordis'
 
-export const name = 'config-plugin'
+export const name = 'config-component'
 
 /** Tags of every apply, in order, so tests can count restarts. */
 export const applied: string[] = []

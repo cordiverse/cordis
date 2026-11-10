@@ -27,10 +27,10 @@ describe('Decorator', () => {
     }
 
     const root = new Context()
-    await root.plugin(Bar)
+    await root.use(Bar)
     expect(callback.mock.calls).to.have.length(0)
     expect(dispose.mock.calls).to.have.length(0)
-    const fiber = await root.plugin(Foo)
+    const fiber = await root.use(Foo)
     expect(callback.mock.calls).to.have.length(1)
     expect(dispose.mock.calls).to.have.length(0)
     await fiber.dispose()

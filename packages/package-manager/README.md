@@ -1,1 +1,1 @@
-# @cordisjs/plugin-package-manager
+# @cordisjs/package-manager

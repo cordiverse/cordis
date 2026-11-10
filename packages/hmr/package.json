@@ -1,5 +1,5 @@
 {
-  "name": "@cordisjs/plugin-hmr",
+  "name": "@cordisjs/hmr",
   "description": "Transactional Hot Module Replacement for Cordis",
   "version": "1.1.2",
   "sideEffects": false,
@@ -22,7 +22,7 @@
   "homepage": "https://cordis.io/",
   "keywords": [
     "cordis",
-    "plugin",
+    "component",
     "hmr",
     "hot",
     "module",
@@ -32,7 +32,7 @@
   "yakumo": {
     "tsc": {
       "ignore": [
-        "@cordisjs/plugin-include"
+        "@cordisjs/include"
       ]
     }
   },
@@ -52,10 +52,10 @@
     }
   },
   "devDependencies": {
-    "@cordisjs/plugin-fs-node": "^0.1.0",
-    "@cordisjs/plugin-include": "^1.2.0",
-    "@cordisjs/plugin-loader": "^1.0.0-rc.9",
-    "@cordisjs/plugin-logger-console": "^1.0.0",
+    "@cordisjs/fs-node": "^0.1.0",
+    "@cordisjs/include": "^1.2.0",
+    "@cordisjs/loader": "^1.0.0-rc.9",
+    "@cordisjs/logger-console": "^1.0.0",
     "@types/babel__code-frame": "^7.27.0",
     "cordis": "^4.0.0-rc.12",
     "esbuild": "^0.27.3"

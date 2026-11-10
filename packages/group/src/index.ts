@@ -1,3 +1,3 @@
-import { Group } from '@cordisjs/plugin-loader'
+import { Group } from '@cordisjs/loader'
 
 export default Group

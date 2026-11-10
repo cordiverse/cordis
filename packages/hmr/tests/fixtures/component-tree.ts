@@ -1,17 +1,17 @@
 import { Context, Service } from 'cordis'
-import { EntryGroup, EntryTree } from '@cordisjs/plugin-loader'
+import { EntryGroup, EntryTree } from '@cordisjs/loader'
 import { version } from './tree-dep.ts'
 
-export const name = 'plugin-tree'
+export const name = 'component-tree'
 
 /**
- * A minimal entry tree host, in the shape of `@cordisjs/plugin-include`:
+ * A minimal entry tree host, in the shape of `@cordisjs/include`:
  * its fiber owns a subtree of entries, so those entries are fiber descendants
- * of this plugin and rebuilding it rebuilds all of them.
+ * of this component and rebuilding it rebuilds all of them.
  *
  * The subtree hangs off an extra plain fiber, so the nested entry is two
  * levels down and its direct parent is never itself reloaded — the same shape
- * as a real `group: true` entry, whose plugin lives in node_modules and is
+ * as a real `group: true` entry, whose component lives in node_modules and is
  * therefore excluded from reloads. This is what distinguishes an ancestor
  * walk from a parent-only check.
  */
@@ -26,13 +26,13 @@ export default class Tree extends EntryTree {
 
   async* [Service.init]() {
     this.ctx.on('hmr-test/get-tree', () => version)
-    await this.ctx.plugin((ctx: Context) => {
+    await this.ctx.use((ctx: Context) => {
       this.group = new EntryGroup(ctx, this)
     })
     yield () => this.group?.stop()
     await this.group!.update([{
       id: 'nested',
-      name: './plugin-nested',
+      name: './component-nested',
     }] as any)
 
     // Optional stall, used by a test to keep this fiber initializing while a

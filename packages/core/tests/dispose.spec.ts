@@ -4,10 +4,10 @@ import { mock } from 'node:test'
 import { sleep, withTimers } from './utils.ts'
 
 describe('Effects', () => {
-  it('dispose by plugin', async () => {
+  it('dispose by component', async () => {
     const root = new Context()
     const dispose = mock.fn()
-    const fiber = await root.plugin((ctx) => {
+    const fiber = await root.use((ctx) => {
       ctx.effect(() => dispose, 'test')
     })
     expect(fiber.getEffects()).to.deep.equal([

@@ -32,11 +32,11 @@ function slots(ctx: Context, name: string): Slot[] {
   return found
 }
 
-async function boot(plugins: Record<string, (ctx: Context, config?: any) => void>) {
+async function boot(components: Record<string, (ctx: Context, config?: any) => void>) {
   const root = new Context()
-  await root.plugin(MockLoader)
+  await root.use(MockLoader)
   const loader = root.loader as MockLoader
-  for (const [name, plugin] of Object.entries(plugins)) loader.mock(name, plugin)
+  for (const [name, component] of Object.entries(components)) loader.mock(name, component)
   return { root, loader }
 }
 

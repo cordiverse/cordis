@@ -1,4 +1,4 @@
-import { EntryChange, EntryOptions } from '@cordisjs/plugin-loader'
+import { EntryChange, EntryOptions } from '@cordisjs/loader'
 import { deepEqual, Dict, omit } from 'cosmokit'
 
 /** One tree-side mutation that has not reached the file yet, keyed by entry id. */

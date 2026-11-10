@@ -174,11 +174,11 @@ describe('helper preparation', () => {
 })
 
 describe('EntryTree.import without internals', () => {
-  // Plugins are loaded through `entry.parent.tree`, which carries the tree's own
+  // Components are loaded through `entry.parent.tree`, which carries the tree's own
   // base url; the `ctx.loader` accessor rebinds `ctx` to whoever reads it.
   async function treeFor(baseUrl: string) {
     const ctx = new Context()
-    await ctx.plugin(Loader, { baseUrl })
+    await ctx.use(Loader, { baseUrl })
     ctx.loader.internal = undefined
     return ctx.loader.root.tree
   }
@@ -193,17 +193,17 @@ describe('EntryTree.import without internals', () => {
 
   it('still resolves relative specifiers against the base url', async () => {
     const { root, baseUrl } = await fixture()
-    await writeFile(join(root, 'src', 'plugin.js'), 'export const tag = "relative"\n')
+    await writeFile(join(root, 'src', 'component.js'), 'export const tag = "relative"\n')
     const tree = await treeFor(baseUrl)
-    expect((await tree.import('./plugin.js')).tag).to.equal('relative')
+    expect((await tree.import('./component.js')).tag).to.equal('relative')
     expect(existsSync(join(root, '.cordis'))).to.be.false
   })
 
   it.runIf(process.platform === 'win32')('accepts a drive-letter path', async () => {
     const { root, baseUrl } = await fixture()
-    const pluginPath = join(root, 'src', 'abs-plugin.mjs')
-    await writeFile(pluginPath, 'export const tag = "win-abs"\n')
+    const componentPath = join(root, 'src', 'abs-component.mjs')
+    await writeFile(componentPath, 'export const tag = "win-abs"\n')
     const tree = await treeFor(baseUrl)
-    expect((await tree.import(pluginPath)).tag).to.equal('win-abs')
+    expect((await tree.import(componentPath)).tag).to.equal('win-abs')
   })
 })

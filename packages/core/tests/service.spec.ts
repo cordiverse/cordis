@@ -24,7 +24,7 @@ describe('Service', () => {
     expect(callback.mock.calls).to.have.length(0)
 
     // inject should be blocked by `Service.init`
-    root.plugin(Foo)
+    root.use(Foo)
     await sleep()
     expect(callback.mock.calls).to.have.length(0)
 
@@ -56,7 +56,7 @@ describe('Service', () => {
     root.provide('counter')
     root.set('counter', new Counter(root))
 
-    await root.plugin(Foo)
+    await root.use(Foo)
     root.foo.increase()
     expect(root.foo.value).to.equal(1)
     expect(warning.mock.calls).to.have.length(0)
@@ -92,7 +92,7 @@ describe('Service', () => {
     root.provide('counter')
     root.set('counter', new Counter(root))
 
-    await root.plugin(Foo)
+    await root.use(Foo)
     root.foo.increase()
     expect(root.foo.value).to.equal(1)
 
@@ -116,11 +116,11 @@ describe('Service', () => {
 
     const root = new Context()
     const before = getHookSnapshot(root)
-    const fiber = await root.plugin(Test)
+    const fiber = await root.use(Test)
     const after = getHookSnapshot(root)
     await fiber.dispose()
     expect(before).to.deep.equal(getHookSnapshot(root))
-    root.plugin(Test)
+    root.use(Test)
     expect(after).to.deep.equal(getHookSnapshot(root))
   })
 
@@ -153,9 +153,9 @@ describe('Service', () => {
     }
 
     const root = new Context()
-    await root.plugin(Foo)
-    await root.plugin(Bar)
-    await root.plugin(Qux)
+    await root.use(Foo)
+    await root.use(Bar)
+    await root.use(Qux)
     await sleep()
     expect(foo.mock.calls).to.have.length(1)
     expect(bar.mock.calls).to.have.length(1)
@@ -190,8 +190,8 @@ describe('Service', () => {
   it('dispose dependents before provider', async () => {
     const root = new Context()
     const seq: string[] = []
-    const fiber = root.plugin((ctx) => {
-      ctx.plugin(Foo, seq)
+    const fiber = root.use((ctx) => {
+      ctx.use(Foo, seq)
       ctx.inject(['foo'], dependent(seq))
     })
     await sleep()
@@ -202,7 +202,7 @@ describe('Service', () => {
   it('dispose dependents before provider restarts', async () => {
     const root = new Context()
     const seq: string[] = []
-    const fiber = root.plugin(Foo, seq)
+    const fiber = root.use(Foo, seq)
     const callback = mock.fn(dependent(seq))
     root.inject(['foo'], callback)
     await sleep()
@@ -222,7 +222,7 @@ describe('Service', () => {
       callback()
       return dispose
     })
-    const fiber = root.plugin((ctx) => {
+    const fiber = root.use((ctx) => {
       ctx.isolate('foo', label).provide('foo', {})
     })
     await sleep()

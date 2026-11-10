@@ -38,8 +38,8 @@ describe('Traceable caller', () => {
     }
 
     const root = new Context()
-    await root.plugin(Inner)
-    await root.plugin(Outer)
+    await root.use(Inner)
+    await root.use(Outer)
 
     let result!: ReturnType<Outer['inspect']>
     await root.inject(['outer'], (ctx) => {
@@ -80,8 +80,8 @@ describe('Traceable caller', () => {
     }
 
     const root = new Context()
-    await root.plugin(Inner)
-    await root.plugin(Outer)
+    await root.use(Inner)
+    await root.use(Outer)
 
     const message = 'cannot get property "inner" without inject'
     expect(() => root['outer'].probe()).toThrow(message)
@@ -141,8 +141,8 @@ describe('Traceable caller', () => {
     }
 
     const root = new Context()
-    await root.plugin(Inner)
-    await root.plugin(Outer)
+    await root.use(Inner)
+    await root.use(Outer)
 
     // the holder's own ctx is a shadow, but the shadow it is accessed through
     // must stay exactly one level deep
@@ -180,11 +180,11 @@ describe('Traceable caller', () => {
     }
 
     const root = new Context()
-    await root.plugin((ctx) => {
+    await root.use((ctx) => {
       new Probe(ctx.isolate('foo', first), 'first')
       new Probe(ctx.isolate('foo', second), 'second')
     })
-    await root.isolate('foo', first).plugin(Relay)
+    await root.isolate('foo', first).use(Relay)
     // The use site changes, while the definition sites of the relay and the
     // probe it injects stay in the first realm.
     expect((root.isolate('foo', second)['relay'] as Relay).inspect()).toEqual(['first', second])
@@ -217,7 +217,7 @@ describe('Traceable caller', () => {
     }
 
     const root = new Context()
-    await root.plugin(Inner)
+    await root.use(Inner)
     root.provide('rooted', new Rooted(root))
 
     expect((root['rooted'] as Rooted).probe()).toBe('hello')
@@ -257,7 +257,7 @@ describe('Traceable caller', () => {
 
     const root = new Context()
     root.provide('probe', new Probe(root))
-    await root.plugin(Outer)
+    await root.use(Outer)
 
     let result!: ReturnType<Outer['inspect']>
     await root.inject(['outer'], (ctx) => {
@@ -299,8 +299,8 @@ describe('Traceable caller', () => {
     }
 
     const root = new Context()
-    await root.plugin(Callable)
-    await root.plugin(Outer)
+    await root.use(Callable)
+    await root.use(Outer)
 
     let caller!: Context
     await root.inject(['outer'], (ctx) => {
@@ -310,14 +310,14 @@ describe('Traceable caller', () => {
     expect(caller).toBe(outerOrigin!)
   })
 
-  it('strips service shadow before creating plugins', async () => {
+  it('strips service shadow before creating components', async () => {
     class Loader extends Service {
       constructor(ctx: Context) {
         super(ctx, 'loader')
       }
 
-      load(plugin: any) {
-        return this.ctx.plugin(plugin)
+      load(component: any) {
+        return this.ctx.use(component)
       }
     }
 
@@ -335,7 +335,7 @@ describe('Traceable caller', () => {
     }
 
     const root = new Context()
-    await root.plugin(Loader)
+    await root.use(Loader)
     await root.inject(['loader'], async (ctx) => {
       const loader = ctx['loader'] as any
       await loader.load(Server)

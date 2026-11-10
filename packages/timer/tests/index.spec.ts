@@ -8,9 +8,9 @@ function withContext(callback: (ctx: Context) => any, config?: { now?: number | 
   return async () => {
     const ctx = new Context()
     vi.useFakeTimers(config)
-    await ctx.plugin(Timer)
+    await ctx.use(Timer)
     try {
-      await ctx.plugin({ inject: ['timer'], apply: callback })
+      await ctx.use({ inject: ['timer'], apply: callback })
     } finally {
       vi.useRealTimers()
     }
@@ -211,7 +211,7 @@ describe('ctx.timer', () => {
     it('async iterator (context dispose)', withContext(async (ctx) => {
       const callback = mock.fn()
       let iterator!: AsyncIterableIterator<void>
-      const fiber = await ctx.plugin({
+      const fiber = await ctx.use({
         inject: ['timer'],
         apply: (ctx) => {
           iterator = ctx.interval(1000)
@@ -239,7 +239,7 @@ describe('ctx.timer', () => {
 
     it('async iterator (context dispose with concurrent reads)', withContext(async (ctx) => {
       let iterator!: AsyncIterableIterator<void>
-      const fiber = await ctx.plugin({
+      const fiber = await ctx.use({
         inject: ['timer'],
         apply: (ctx) => {
           iterator = ctx.interval(1000)
@@ -300,7 +300,7 @@ describe('ctx.timer', () => {
     it('context dispose', withContext(async (ctx) => {
       const callback = mock.fn()
       let throttled!: () => void
-      const fiber = await ctx.plugin({
+      const fiber = await ctx.use({
         inject: ['timer'],
         apply: (ctx) => {
           throttled = ctx.throttle(callback, 1000)
@@ -370,7 +370,7 @@ describe('ctx.timer', () => {
     it('context dispose', withContext(async (ctx) => {
       const callback = mock.fn()
       let debounced!: () => void
-      const fiber = await ctx.plugin({
+      const fiber = await ctx.use({
         inject: ['timer'],
         apply: (ctx) => {
           debounced = ctx.debounce(callback, 1000)

@@ -4,7 +4,7 @@ import { Context } from './context.ts'
 import { Fiber } from './fiber.ts'
 import { buildOuterStack, DisposableList, symbols, withProps } from './utils.ts'
 
-function isApplicable(object: Plugin) {
+function isApplicable(object: Component) {
   return object && typeof object === 'object' && typeof object.apply === 'function'
 }
 
@@ -60,12 +60,12 @@ export namespace Inject {
   }
 }
 
-export type Plugin<T = any> =
-  | Plugin.Function<T>
-  | Plugin.Constructor<T>
-  | Plugin.Object<T>
+export type Component<T = any> =
+  | Component.Function<T>
+  | Component.Constructor<T>
+  | Component.Object<T>
 
-export namespace Plugin {
+export namespace Component {
   export interface Base<T = any> {
     name?: string
     Config?: StandardSchemaV1<any, T>
@@ -101,7 +101,7 @@ export namespace Plugin {
 
 type Spread<T> = undefined extends T ? [config?: T] : [config: T]
 
-type GetPluginParameters<P> =
+type GetComponentParameters<P> =
   | P extends (ctx: Context, ...args: infer R) => any
   ? R
   : P extends new (ctx: Context, ...args: infer R) => any
@@ -110,22 +110,24 @@ type GetPluginParameters<P> =
   ? R
   : never
 
-type GetPluginConfig<P> =
-  | P extends Plugin.Transform<infer S, any>
+type GetComponentConfig<P> =
+  | P extends Component.Transform<infer S, any>
   ? S
-  : GetPluginParameters<P>[0]
+  : GetComponentParameters<P>[0]
 
 declare module './context.ts' {
   export interface Context {
-    inject(deps: Inject, callback: Plugin.Function<void>): Fiber & PromiseLike<Fiber>
-    plugin<P extends Plugin>(plugin: P, ...args: Spread<GetPluginConfig<P>>): Fiber & PromiseLike<Fiber>
+    inject(deps: Inject, callback: Component.Function<void>): Fiber & PromiseLike<Fiber>
+    use<P extends Component>(component: P, ...args: Spread<GetComponentConfig<P>>): Fiber & PromiseLike<Fiber>
+    /** @deprecated Use `ctx.use()` instead. */
+    plugin<P extends Component>(component: P, ...args: Spread<GetComponentConfig<P>>): Fiber & PromiseLike<Fiber>
   }
 }
 
 export class RegistryService {
   private _counter = 0
-  private _internal = new Map<Function, Plugin.Runtime>()
-  private _aliases = new WeakMap<Function, Plugin>()
+  private _internal = new Map<Function, Component.Runtime>()
+  private _aliases = new WeakMap<Function, Component>()
 
   constructor(public ctx: Context) {
     defineProperty(this, symbols.tracker, {
@@ -142,51 +144,51 @@ export class RegistryService {
     return this._internal.size
   }
 
-  resolve(plugin: Plugin): Function | undefined {
-    // plugin.apply may throw
+  resolve(component: Component): Function | undefined {
+    // component.apply may throw
     try {
-      if (typeof plugin === 'function') return plugin
-      if (isApplicable(plugin)) return plugin.apply
+      if (typeof component === 'function') return component
+      if (isApplicable(component)) return component.apply
     } catch {}
   }
 
-  private _forward(plugin: Plugin): [key: Function, plugin: Plugin] | undefined {
-    let key = this.resolve(plugin)
+  private _forward(component: Component): [key: Function, component: Component] | undefined {
+    let key = this.resolve(component)
     while (key) {
       const next = this._aliases.get(key)
-      if (!next) return [key, plugin]
-      plugin = next
+      if (!next) return [key, component]
+      component = next
       key = this.resolve(next)
     }
   }
 
-  private _create(callback: Function, plugin: Plugin) {
-    let name = plugin.name
+  private _create(callback: Function, component: Component) {
+    let name = component.name
     if (name === 'apply') name = undefined
-    const runtime: Plugin.Runtime = { name, callback, fibers: new DisposableList(), Config: plugin.Config }
+    const runtime: Component.Runtime = { name, callback, fibers: new DisposableList(), Config: component.Config }
     this._internal.set(callback, runtime)
     return runtime
   }
 
-  get(plugin: Plugin) {
-    const key = this._forward(plugin)?.[0]
+  get(component: Component) {
+    const key = this._forward(component)?.[0]
     return key && this._internal.get(key)
   }
 
-  has(plugin: Plugin) {
-    const key = this._forward(plugin)?.[0]
+  has(component: Component) {
+    const key = this._forward(component)?.[0]
     return !!key && this._internal.has(key)
   }
 
-  _unregister(runtime: Plugin.Runtime) {
+  _unregister(runtime: Component.Runtime) {
     this._internal.delete(runtime.callback)
   }
 
-  replace(oldPlugin: Plugin, newPlugin: Plugin): Fiber[] {
-    const source = this._forward(oldPlugin)
-    if (!source) throw new Error('invalid plugin, expect function or object with an "apply" method, received ' + typeof oldPlugin)
-    const key = this.resolve(newPlugin)
-    if (!key) throw new Error('invalid plugin, expect function or object with an "apply" method, received ' + typeof newPlugin)
+  replace(oldComponent: Component, newComponent: Component): Fiber[] {
+    const source = this._forward(oldComponent)
+    if (!source) throw new Error('invalid component, expect function or object with an "apply" method, received ' + typeof oldComponent)
+    const key = this.resolve(newComponent)
+    if (!key) throw new Error('invalid component, expect function or object with an "apply" method, received ' + typeof newComponent)
 
     // `next` is an implementation of its own again
     this._aliases.delete(key)
@@ -195,15 +197,15 @@ export class RegistryService {
     let target = this._internal.get(key)
     if (oldKey !== key) {
       this._internal.delete(oldKey)
-      this._aliases.set(oldKey, newPlugin)
+      this._aliases.set(oldKey, newComponent)
     }
 
     const fibers = runtime ? [...runtime.fibers] : []
     if (!fibers.length) return fibers
-    target ??= this._create(key, newPlugin)
+    target ??= this._create(key, newComponent)
 
     for (const fiber of fibers) {
-      fiber._replace(target, Inject.resolve(newPlugin.inject))
+      fiber._replace(target, Inject.resolve(newComponent.inject))
     }
     return fibers
   }
@@ -220,18 +222,23 @@ export class RegistryService {
     return this._internal.entries()
   }
 
-  forEach(callback: (value: Plugin.Runtime, key: Function) => void) {
+  forEach(callback: (value: Component.Runtime, key: Function) => void) {
     return this._internal.forEach(callback)
   }
 
-  inject(inject: Inject, callback: Plugin.Function<void>) {
-    return this.plugin({ inject, apply: callback, name: callback.name })
+  inject(inject: Inject, callback: Component.Function<void>) {
+    return this.use({ inject, apply: callback, name: callback.name })
   }
 
-  plugin(plugin: Plugin, config?: any, getOuterStack = buildOuterStack()) {
-    // check if it's a valid plugin
-    const forwarded = this._forward(plugin)
-    if (!forwarded) throw new Error('invalid plugin, expect function or object with an "apply" method, received ' + typeof plugin)
+  /** @deprecated Use `registry.use()` instead. */
+  plugin(component: Component, config?: any, getOuterStack = buildOuterStack()) {
+    return this.use(component, config, getOuterStack)
+  }
+
+  use(component: Component, config?: any, getOuterStack = buildOuterStack()) {
+    // check if it's a valid component
+    const forwarded = this._forward(component)
+    if (!forwarded) throw new Error('invalid component, expect function or object with an "apply" method, received ' + typeof component)
     this.ctx.fiber.assertActive()
 
     const [callback, target] = forwarded

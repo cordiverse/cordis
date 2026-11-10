@@ -6,7 +6,7 @@ import { EntryGroup } from './group.ts'
 import { EntryValidationError, SourceLocation, validateOptions } from './utils.ts'
 import { createResolve } from '../resolve.ts'
 
-// A Windows drive-letter path, e.g. `C:\app\plugin.js` or `C:/app/plugin.js`.
+// A Windows drive-letter path, e.g. `C:\app\component.js` or `C:/app/component.js`.
 const driveLetter = /^[A-Za-z]:[\\/]/
 
 // Node names the modules only in the message:

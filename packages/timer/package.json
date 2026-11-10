@@ -1,5 +1,5 @@
 {
-  "name": "@cordisjs/plugin-timer",
+  "name": "@cordisjs/timer",
   "description": "Timer service for cordis",
   "version": "1.1.4",
   "sideEffects": false,
@@ -32,7 +32,7 @@
     "cordis",
     "timer",
     "service",
-    "plugin"
+    "component"
   ],
   "devDependencies": {
     "cordis": "^4.0.0-rc.12"

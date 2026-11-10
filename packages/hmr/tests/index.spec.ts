@@ -1,6 +1,6 @@
 import { Context, Fiber, FiberState } from 'cordis'
-import Loader from '@cordisjs/plugin-loader'
-import Logger from '@cordisjs/plugin-logger-console'
+import Loader from '@cordisjs/loader'
+import Logger from '@cordisjs/logger-console'
 import { cpSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { expect, describe, it, beforeAll, afterAll, afterEach, beforeEach } from 'vitest'
@@ -59,10 +59,10 @@ function waitFor(condFn: () => boolean | any, timeout = 8000, interval = 100): P
 async function createContext(group: string, configFile: string): Promise<{ ctx: Context; fiber: Fiber<Context> }> {
   const dir = copyFixtures(group)
   const ctx = new Context()
-  await ctx.plugin(Logger)
-  const fiber = await ctx.plugin(Loader)
+  await ctx.use(Logger)
+  const fiber = await ctx.use(Loader)
   await ctx.loader.create({
-    name: '@cordisjs/plugin-include',
+    name: '@cordisjs/include',
     config: {
       path: pathToFileURL(resolve(dir, configFile)).href,
     },
@@ -130,7 +130,7 @@ function disarm(gate: Gate | undefined) {
   gate.release?.()
 }
 
-// the instances of plugin-nested.ts that have been applied and not disposed
+// the instances of component-nested.ts that have been applied and not disposed
 function liveNested(stats: any) {
   return (stats.nestedApplied ?? 0) - (stats.nestedDisposed ?? 0)
 }
@@ -253,7 +253,7 @@ describe('HMR', () => {
       expect((stats.slowOverlaps ?? 0) - overlaps).to.equal(0)
     }, 15000)
 
-    it('should not delay an unrelated plugin behind a slow one', async () => {
+    it('should not delay an unrelated component behind a slow one', async () => {
       const stats = (globalThis as any).__hmrTest
       await waitFor(() => ctx.bail('hmr-test/get-fast') === 'drain-v1')
 
@@ -263,7 +263,7 @@ describe('HMR', () => {
       const fastAppliedAt = stats.fastAppliedAt
       await reloaded
 
-      // plugin-fast must come back inside the window during which plugin-slow
+      // component-fast must come back inside the window during which component-slow
       // is still draining: waiting for the whole batch to drain would push it
       // past `slowReleasedAt`.
       expect(fastAppliedAt).to.be.greaterThanOrEqual(stats.slowDisposeStartedAt)
@@ -271,10 +271,10 @@ describe('HMR', () => {
     }, 15000)
   })
 
-  describe('plugin with multiple entries', () => {
+  describe('component with multiple entries', () => {
     let ctx: Context
     let fiber: Fiber<Context>
-    const pluginMulti = fixture('multi', 'plugin-multi.ts')
+    const componentMulti = fixture('multi', 'component-multi.ts')
 
     beforeAll(async () => {
       const result = await createContext('multi', 'cordis-multi-entry.yml')
@@ -283,8 +283,8 @@ describe('HMR', () => {
     }, 10000)
 
     afterEach(async () => {
-      pluginMulti.restore()
-      await ctx.hmr.reconcile(() => [pluginMulti.path])
+      componentMulti.restore()
+      await ctx.hmr.reconcile(() => [componentMulti.path])
     })
 
     afterAll(async () => {
@@ -299,8 +299,8 @@ describe('HMR', () => {
       expect(ctx.bail('hmr-test/get-multi', 'b')).to.equal('multi-v1')
 
       stats.multiApplies = []
-      pluginMulti.modify(c => c.replace("version = 'multi-v1'", "version = 'multi-v2'"))
-      const result = await ctx.hmr.reconcile(() => [pluginMulti.path])
+      componentMulti.modify(c => c.replace("version = 'multi-v1'", "version = 'multi-v2'"))
+      const result = await ctx.hmr.reconcile(() => [componentMulti.path])
 
       expect(result.settled).to.have.length(2)
       // exactly one new instance per entry, each with its own config intact
@@ -309,7 +309,7 @@ describe('HMR', () => {
   })
 
   describe('entry changed during unload', () => {
-    const plugin = fixture('disabled', 'plugin-disabled-hmr.ts')
+    const component = fixture('disabled', 'component-disabled-hmr.ts')
     let ctx: Context
     let root: Fiber
     let gate: Gate
@@ -339,13 +339,13 @@ describe('HMR', () => {
       } catch {
         entry = undefined
       }
-      plugin.restore()
-      const reloaded = ctx.hmr.reconcile(() => [plugin.path])
+      component.restore()
+      const reloaded = ctx.hmr.reconcile(() => [component.path])
       await reloaded
       if (!entry) {
-        // The reload above does not reimport a plugin that is no longer an entry.
-        dropCached('plugin-disabled-hmr')
-        await configTree(ctx).create({ id: 'live', name: './plugin-disabled-hmr' })
+        // The reload above does not reimport a component that is no longer an entry.
+        dropCached('component-disabled-hmr')
+        await configTree(ctx).create({ id: 'live', name: './component-disabled-hmr' })
       } else if (entry.disabled) {
         await entry.update({ disabled: false })
       }
@@ -362,8 +362,8 @@ describe('HMR', () => {
       const entry = findEntry(ctx, 'live')
       const previous = entry.innerFiber!
       const inside = arm(gate)
-      plugin.modify(content => content.replace("value = 'initial'", "value = 'should-not-live'"))
-      const reloaded = ctx.hmr.reconcile(() => [plugin.path])
+      component.modify(content => content.replace("value = 'initial'", "value = 'should-not-live'"))
+      const reloaded = ctx.hmr.reconcile(() => [component.path])
       await inside
 
       await entry.update({ disabled: true })
@@ -382,8 +382,8 @@ describe('HMR', () => {
       const entry = findEntry(ctx, 'live')
       const previous = entry.innerFiber!
       const inside = arm(gate)
-      plugin.modify(content => content.replace("value = 'initial'", "value = 'removed-value'"))
-      const reloaded = ctx.hmr.reconcile(() => [plugin.path])
+      component.modify(content => content.replace("value = 'initial'", "value = 'removed-value'"))
+      const reloaded = ctx.hmr.reconcile(() => [component.path])
       await inside
 
       entry.parent.remove(entry.options.id)
@@ -403,8 +403,8 @@ describe('HMR', () => {
       const entry = findEntry(ctx, 'live')
       const previous = entry.innerFiber!
       const inside = arm(gate)
-      plugin.modify(content => content.replace("value = 'initial'", "value = 'second-init'"))
-      const reloaded = ctx.hmr.reconcile(() => [plugin.path])
+      component.modify(content => content.replace("value = 'initial'", "value = 'second-init'"))
+      const reloaded = ctx.hmr.reconcile(() => [component.path])
       await inside
 
       let releaseFirst!: () => void
@@ -462,18 +462,18 @@ describe('HMR', () => {
       }
     }, 15000)
 
-    it('rebuilds a child of an active host that reused the plugin', async () => {
+    it('rebuilds a child of an active host that reused the component', async () => {
       const entry = findEntry(ctx, 'live')
       const previous = entry.innerFiber!
-      await configTree(ctx).create({ id: 'host', name: './plugin-host' })
+      await configTree(ctx).create({ id: 'host', name: './component-host' })
       const host = findEntry(ctx, 'host')
       const hostRoot = host.innerFiber!
       await waitFor(() => liveUids(gate).length === 2)
       const appliesBefore = gate.applies
 
       const inside = arm(gate)
-      plugin.modify(content => content.replace("value = 'initial'", "value = 'from-host'"))
-      const reloaded = ctx.hmr.reconcile(() => [plugin.path])
+      component.modify(content => content.replace("value = 'initial'", "value = 'from-host'"))
+      const reloaded = ctx.hmr.reconcile(() => [component.path])
       await inside
       await waitFor(() => gate.acquired === 0)
       gate.release?.()
@@ -502,14 +502,14 @@ describe('HMR', () => {
       })
       let host: ReturnType<typeof findEntry> | undefined
       try {
-        await configTree(ctx).create({ id: 'host', name: './plugin-host' })
+        await configTree(ctx).create({ id: 'host', name: './component-host' })
         host = findEntry(ctx, 'host')
         const hostRoot = host.innerFiber!
         await waitFor(() => liveUids(gate).length === 2)
 
         const inside = arm(gate)
-        plugin.modify(content => content.replace("value = 'initial'", "value = 'host-replaced'"))
-        const reloaded = ctx.hmr.reconcile(() => [plugin.path])
+        component.modify(content => content.replace("value = 'initial'", "value = 'host-replaced'"))
+        const reloaded = ctx.hmr.reconcile(() => [component.path])
         await inside
         await waitFor(() => gate.acquired === 0)
 

@@ -1,6 +1,6 @@
-# @cordisjs/plugin-hmr
+# @cordisjs/hmr
 
-Transactional hot module replacement for Cordis. After files or packages change, HMR imports the new modules of the affected plugins and replaces the running plugins in place: a fiber keeps its identity and config, so that a reference to it, such as the return value of `ctx.plugin()`, stays valid.
+Transactional hot module replacement for Cordis. After files or packages change, HMR imports the new modules of the affected components and replaces the running components in place: a fiber keeps its identity and config, so that a reference to it, such as the return value of `ctx.use()`, stays valid.
 
 HMR reaches Node.js internals through `--expose-internals` or [`node-addon-require-builtin`](https://www.npmjs.com/package/node-addon-require-builtin), and fails to start without them.
 
@@ -8,7 +8,7 @@ HMR reaches Node.js internals through `--expose-internals` or [`node-addon-requi
 
 ```ts
 // reload on file changes, through the `fs` service
-ctx.plugin(Hmr, { watch: { enabled: true } })
+ctx.use(Hmr, { watch: { enabled: true } })
 
 // reconcile programmatically, e.g. after a package installation
 const result = await ctx.hmr.reconcile(async () => {
@@ -21,8 +21,8 @@ const result = await ctx.hmr.reconcile(async () => {
 
 Each change is applied, aborted or skipped, and the result reports:
 
-- `settled`: the replaced fibers; a fiber whose new plugin fails to apply is left `FAILED`;
-- `aborted`: the units whose new modules fail to import or export no plugin, with their evicted modules and the error. The old plugins keep running, and a watch retries the files in the next batch;
+- `settled`: the replaced fibers; a fiber whose new component fails to apply is left `FAILED`;
+- `aborted`: the units whose new modules fail to import or export no component, with their evicted modules and the error. The old components keep running, and a watch retries the files in the next batch;
 - `skipped`: the changes that cannot be applied in place, with their modules and a `Hmr.SkipReason`. A restart applies them.
 
 ## Mechanism
@@ -34,11 +34,11 @@ A transaction runs the following steps. Transactions run one at a time, and one 
    - an entry of the ESM resolve cache is removed if its result or its parent lies below a root, or if it resolves a package name from below a directory to which a root adds that package as `node_modules/<name>`; a root that is a `package.json` stands for its directory;
    - the CJS path cache and the realpath caches are cleared as a whole;
    - a `package.json` at or below a root, as spelled or at the real path of its directory, is read from disk from then on.
-3. **Matching.** The loaded modules of the ESM load cache and of the CJS module cache whose files are a root or lie below one are changed. A removed ESM resolution whose request now resolves to another module changes the module that it led to: its parent if the parent links it, so that the parent resolves its imports again, and otherwise the module itself, such as a plugin entry. If a root adds a package as `<dir>/node_modules/<name>`, a CJS module below `<dir>` with a child in a package `<name>` above `<dir>` is changed too. A changed host module, i.e. a module that the main entry point reaches statically, and a changed native addon are skipped.
+3. **Matching.** The loaded modules of the ESM load cache and of the CJS module cache whose files are a root or lie below one are changed. A removed ESM resolution whose request now resolves to another module changes the module that it led to: its parent if the parent links it, so that the parent resolves its imports again, and otherwise the module itself, such as a component entry. If a root adds a package as `<dir>/node_modules/<name>`, a CJS module below `<dir>` with a child in a package `<name>` above `<dir>` is changed too. A changed host module, i.e. a module that the main entry point reaches statically, and a changed native addon are skipped.
 4. **Module graph.** The edges of a module are the modules linked by its ESM jobs of every `type` attribute and the children of its CJS module. The changed modules and every module that imports one are evicted; the graph is traversed through `node_modules`.
-5. **Plugin discovery.** A module exports a plugin if its ESM namespace, or the exports of its CJS module that has finished loading, unwrap to a registered plugin. A plugin is stale if its module graph contains an evicted module. Stale plugins whose closures share an evicted module form a unit.
-6. **Import.** The new modules of every stale plugin are imported. A module of a plugin with a removed resolution is imported through the imports that resolved to it from modules that are not evicted, resolved again, so that an entry that has moved is followed, e.g. after a package exports another entry or a link is retargeted. The closure of a plugin in the new module graph starts from the modules imported for it. If an import fails, its unit is aborted. If the imports of a plugin module now resolve to different modules, or the modules that exported a plugin now export different values, its unit is skipped. The module caches of an aborted or skipped unit are restored together with the removed resolutions of its modules, and its old plugins keep running. A later transaction retries an aborted unit if its roots include those that changed the unit.
-7. **Replacement.** The plugins of the other units are replaced through `registry.replace()`, in one synchronous step, and their fibers are awaited together.
+5. **Component discovery.** A module exports a component if its ESM namespace, or the exports of its CJS module that has finished loading, unwrap to a registered component. A component is stale if its module graph contains an evicted module. Stale components whose closures share an evicted module form a unit.
+6. **Import.** The new modules of every stale component are imported. A module of a component with a removed resolution is imported through the imports that resolved to it from modules that are not evicted, resolved again, so that an entry that has moved is followed, e.g. after a package exports another entry or a link is retargeted. The closure of a component in the new module graph starts from the modules imported for it. If an import fails, its unit is aborted. If the imports of a component module now resolve to different modules, or the modules that exported a component now export different values, its unit is skipped. The module caches of an aborted or skipped unit are restored together with the removed resolutions of its modules, and its old components keep running. A later transaction retries an aborted unit if its roots include those that changed the unit.
+7. **Replacement.** The components of the other units are replaced through `registry.replace()`, in one synchronous step, and their fibers are awaited together.
 
 With `watch.enabled` and the `fs` service, changes below `base` that match `watch.files` are collected over `watch.debounce` milliseconds and reconciled. The files of a batch that concern an aborted unit are retained for the next batch: those at or above a module of the unit, a `package.json` whose directory contains one, and a `node_modules/<name>` whose package the modules of the unit may import.
 
@@ -54,18 +54,18 @@ Some changes cannot be applied in place. HMR detects them, restores the affected
 
 - `HostModule`: a module that the main entry point reaches statically, which runs once;
 - `NativeAddon`: a native addon, which a process cannot load again;
-- `AmbiguousImport`: the imports that resolved to a plugin module now resolve to different modules. For example, two importers resolve `foo` to `foo@1` through their own links, and an update retargets only one of them to `foo@2`;
-- `AmbiguousExport`: the modules that exported one plugin now export different values. For example, `a.mjs` and `b.mjs` re-exported one plugin, and `b.mjs` now exports another one.
+- `AmbiguousImport`: the imports that resolved to a component module now resolve to different modules. For example, two importers resolve `foo` to `foo@1` through their own links, and an update retargets only one of them to `foo@2`;
+- `AmbiguousExport`: the modules that exported one component now export different values. For example, `a.mjs` and `b.mjs` re-exported one component, and `b.mjs` now exports another one.
 
-In the last two cases, the fibers of the plugin do not record which import or module each of them comes from, so that no replacement is correct for all of them.
+In the last two cases, the fibers of the component do not record which import or module each of them comes from, so that no replacement is correct for all of them.
 
 The following case is detectable as well, but is currently applied without a report:
 
-- **An entry without a recorded import.** HMR follows a moved plugin entry through the imports that resolved to it. These imports are recorded in the ESM resolve cache. Two kinds of entries have no such record:
-  - a plugin loaded through `require()` in code that HMR does not reload, e.g. `ctx.plugin(require('foo'))`;
-  - a plugin whose import a synchronous resolve hook answered by itself.
+- **An entry without a recorded import.** HMR follows a moved component entry through the imports that resolved to it. These imports are recorded in the ESM resolve cache. Two kinds of entries have no such record:
+  - a component loaded through `require()` in code that HMR does not reload, e.g. `ctx.use(require('foo'))`;
+  - a component whose import a synchronous resolve hook answered by itself.
 
-  HMR imports such an entry again at its previous URL. If an update of its package moves the entry, e.g. to a new `exports` target or through a retargeted link, the plugin is replaced from the previous entry file, or fails to import if that file is removed.
+  HMR imports such an entry again at its previous URL. If an update of its package moves the entry, e.g. to a new `exports` target or through a retargeted link, the component is replaced from the previous entry file, or fails to import if that file is removed.
 
 ### Requirements
 
@@ -81,6 +81,6 @@ The following case is detectable as well, but is currently applied without a rep
 These cases are neither excluded by the requirements nor detected:
 
 - **Results outside a package.** An entry of the ESM resolve cache is kept if its result lies outside the package whose manifest decided it. For example, a package `foo` declares `"main": "../shared/index.js"`; after `foo` changes its `main`, an import of `foo` from a module that is not reloaded still resolves to `../shared/index.js`. The same applies to an entry file of a package that is a link to a file outside it.
-- **References to previous exports.** Code that is not reloaded keeps the values it obtained from a previous module. For example, a plugin that is not stale stores the namespace of `await import('./util.mjs')`; after `util.mjs` changes and is evicted, the stored namespace still holds the previous functions. Dynamic imports are not edges of the module graph, so the plugin is not replaced.
+- **References to previous exports.** Code that is not reloaded keeps the values it obtained from a previous module. For example, a component that is not stale stores the namespace of `await import('./util.mjs')`; after `util.mjs` changes and is evicted, the stored namespace still holds the previous functions. Dynamic imports are not edges of the module graph, so the component is not replaced.
 - **Caches of libraries and hooks.** HMR clears the caches of Node.js only. For example, a hook that caches `package.json` to decide the format of a file keeps the previous `type` after a package switches between CommonJS and ESM.
 - **`module.findPackageJSON()`.** On Node.js 24+, it may report the previous manifest of a file. For example, after a build adds `dist/esm/package.json` with `{ "type": "module" }`, a lookup for a file below `dist/esm` that was looked up before still reports the manifest of the package.

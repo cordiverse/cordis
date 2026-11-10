@@ -92,7 +92,7 @@ export class Loader extends EntryTree {
     // on the source config and validation sees the interpolated result.
     ctx.on('internal/config', (fiber, next) => {
       const config = next()
-      // nested plugins inherit `entry` through the context prototype chain;
+      // nested components inherit `entry` through the context prototype chain;
       // only the entry's own fiber carries the entry config
       if (!fiber.entry || fiber.parent.fiber?.entry === fiber.entry) return config
       sources.set(fiber, config)
@@ -141,7 +141,7 @@ export class Loader extends EntryTree {
       // case 2: fiber is not tracked by loader
       if (!fiber.entry) return
 
-      // case 3: fiber is a child plugin under the entry (not the entry's root fiber)
+      // case 3: fiber is a child component under the entry (not the entry's root fiber)
       if (fiber.parent.fiber?.entry === fiber.entry) return
 
       // case 4: the entry's tree is being disposed
@@ -169,7 +169,7 @@ export class Loader extends EntryTree {
       if (entry.outerFiber) entry.dispose()
     })
 
-    ctx.plugin(isolate)
+    ctx.use(isolate)
   }
 
   commit(_change: EntryChange) {
@@ -184,7 +184,7 @@ export class Loader extends EntryTree {
 
   showLog(entry: Entry, type: string) {
     if (entry.options.group || !entry.parent.tree.enableLogs) return
-    this.ctx[Context.root].logger?.('loader').info('%s plugin %C', type, entry.options.name)
+    this.ctx[Context.root].logger?.('loader').info('%s component %C', type, entry.options.name)
   }
 
   locate(fiber = this.ctx.fiber) {

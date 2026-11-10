@@ -13,14 +13,14 @@ describe('Reflect', () => {
   it('access check', async () => {
     const root = new Context()
 
-    await root.plugin((ctx) => {
+    await root.use((ctx) => {
       expect(() => ctx['prototype']).to.not.throw()
       expect(() => ctx.constructor).to.not.throw()
       expect(() => ctx.bar).to.throw('cannot get property "bar" without inject')
       expect(() => ctx.bar = 0).to.throw('cannot set property "bar" without provide')
     })
 
-    await root.plugin((ctx) => {
+    await root.use((ctx) => {
       expect(() => ctx.foo = 0).to.throw('cannot set property "foo" without provide')
       expect(() => ctx.provide('foo')).to.not.throw()
       expect(() => ctx.provide('foo')).to.throw('service "foo" has been registered at <root>')
@@ -47,7 +47,7 @@ describe('Reflect', () => {
       warn.mock.resetCalls()
       expect(warn.mock.calls).to.have.length(0)
 
-      ctx.extend({ baz: 2 }).plugin((ctx) => {
+      ctx.extend({ baz: 2 }).use((ctx) => {
         warn.mock.resetCalls()
         expect(ctx.baz).to.equal(2)
         expect(warn.mock.calls).to.have.length(0)
@@ -109,9 +109,9 @@ describe('Reflect', () => {
   it('does not load a fiber disposed during service notification', async () => {
     const root = new Context()
     const apply = mock.fn((ctx: Context, config: { id: number }) => {})
-    const plugin = { inject: ['foo'], apply }
-    const fiber1 = root.plugin(plugin, { id: 1 })
-    const fiber2 = root.plugin(plugin, { id: 2 })
+    const component = { inject: ['foo'], apply }
+    const fiber1 = root.use(component, { id: 1 })
+    const fiber2 = root.use(component, { id: 2 })
     root.on('internal/status', (fiber) => {
       if (fiber === Object.getPrototypeOf(fiber1) && fiber.state === FiberState.LOADING) {
         fiber2.dispose()

@@ -1,5 +1,5 @@
-import { Context, Fiber, Plugin, Service } from 'cordis'
-import type {} from '@cordisjs/plugin-fs-node'
+import { Component, Context, Fiber, Service } from 'cordis'
+import type {} from '@cordisjs/fs-node'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
@@ -55,17 +55,17 @@ async function closure(
   return result
 }
 
-/** A registered plugin whose module has changed. */
-interface StalePlugin {
+/** A registered component whose module has changed. */
+interface StaleComponent {
   /** the module to take the replacement from */
   url: string
-  /** every module that exports the plugin */
+  /** every module that exports the component */
   urls: string[]
   /** the modules of `urls` that no other module of `urls` imports, including `url` */
   entries: string[]
-  /** the plugin before the change */
-  plugin: Plugin
-  /** the closure of the plugin in the old module graph */
+  /** the component before the change */
+  component: Component
+  /** the closure of the component in the old module graph */
   modules: Set<string>
 }
 
@@ -102,29 +102,29 @@ function covers(root: string, path: string) {
   return !!location && contains(location.dir, path)
 }
 
-/** The import of a stale plugin in stage 1. */
+/** The import of a stale component in stage 1. */
 interface ImportAttempt {
-  stale: StalePlugin
-  /** the modules imported for the entries of the plugin, which may have moved */
+  stale: StaleComponent
+  /** the modules imported for the entries of the component, which may have moved */
   imported: string[]
-  /** the new plugin, if the import succeeded */
-  replacement?: Plugin
+  /** the new component, if the import succeeded */
+  replacement?: Component
   failed: boolean
   error?: unknown
-  /** why the plugin cannot be replaced in place, if it cannot */
+  /** why the component cannot be replaced in place, if it cannot */
   skip?: Hmr.SkipReason
   /** the modules that were not cached before this import, other than evicted modules */
   loaded: string[]
 }
 
-/** A set of stale plugins that commit, abort or are skipped together. */
+/** A set of stale components that commit, abort or are skipped together. */
 interface ReconcileUnit {
   attempts: ImportAttempt[]
-  /** the evicted modules in the closures of the plugins */
+  /** the evicted modules in the closures of the components */
   modules: Set<string>
 }
 
-/** Get the plugin exported by a module namespace. */
+/** Get the component exported by a module namespace. */
 function unwrapExports(exports: any) {
   if (exports === null || exports === undefined) return exports
   exports = exports.default ?? exports
@@ -258,7 +258,7 @@ class Hmr extends Service {
   }
 
   /**
-   * Run `callback` as the body of a transaction, and replace the plugins
+   * Run `callback` as the body of a transaction, and replace the components
    * affected by the roots that it resolves to. Transactions run one at a
    * time; one started from within the running transaction, including from
    * `callback`, is rejected. If `callback` throws, the transaction rejects
@@ -272,10 +272,10 @@ class Hmr extends Service {
    *   caller also passes its location, such as a link or a directory where a
    *   package is added, since Node resolves package names through it.
    *
-   * A plugin whose module is no longer where the import that loaded it now
+   * A component whose module is no longer where the import that loaded it now
    * resolves, e.g. after its package exports another entry or a link is
    * retargeted, is replaced from the module that the import resolves to. A
-   * changed module that no plugin depends on is evicted too: its next import
+   * changed module that no component depends on is evicted too: its next import
    * gets the new code, while existing references keep the old one.
    *
    * Every transaction first removes the module jobs that failed to load, link
@@ -309,7 +309,7 @@ class Hmr extends Service {
    * Classify the loaded modules into accepted (evicted from the module cache)
    * and declined (kept). The changed modules are accepted, and so is every
    * module that imports an accepted one. This does not depend on whether a
-   * registered plugin uses them, so that a later import, such as by a plugin
+   * registered component uses them, so that a later import, such as by a component
    * that is enabled again, gets the new code. Host modules are declined.
    *
    * The returned `edges` are the dependencies of each loaded module before
@@ -349,7 +349,7 @@ class Hmr extends Service {
 
   /**
    * Partition the attempts into units: the connected components of the
-   * relation in which two plugins are related if their closures, in the old
+   * relation in which two components are related if their closures, in the old
    * or the new module graph, share an evicted module.
    *
    * @param edges the dependencies of a module in the new module graph
@@ -396,24 +396,24 @@ class Hmr extends Service {
   }
 
   /**
-   * Find every loaded module that exports a registered plugin, through its
-   * ESM namespace or the exports of its CJS module, so that a plugin that
+   * Find every loaded module that exports a registered component, through its
+   * ESM namespace or the exports of its CJS module, so that a component that
    * only `require()` has loaded is found too.
    */
   private _discover(declined: Set<string>) {
-    const candidates = new Map<string, Plugin>()
+    const candidates = new Map<string, Component>()
     for (const url of this._modules.urls()) {
       if (declined.has(url) || isBuiltin(url)) continue
       for (const exports of [() => this._modules.namespace(url), () => this._modules.exports(url)]) {
-        let plugin: Plugin | undefined
+        let component: Component | undefined
         try {
           // reading a binding that has not been initialized throws
-          plugin = unwrapExports(exports())
+          component = unwrapExports(exports())
         } catch {
           continue
         }
-        if (!plugin || !this.ctx.registry.has(plugin)) continue
-        candidates.set(url, plugin)
+        if (!component || !this.ctx.registry.has(component)) continue
+        candidates.set(url, component)
         break
       }
     }
@@ -421,7 +421,7 @@ class Hmr extends Service {
   }
 
   /**
-   * Locate a module of a stale plugin again through the removed resolutions
+   * Locate a module of a stale component again through the removed resolutions
    * to it, so that a module that has moved, e.g. to a new `exports` target or
    * through a retargeted link, is imported at its new URL. A resolution
    * counts if it records a request and its parent is not evicted, since an
@@ -429,7 +429,7 @@ class Hmr extends Service {
    * - without one, the module is imported at its URL;
    * - if every request now resolves to one module, it is imported through a
    *   request;
-   * - otherwise, the plugin is skipped as `AmbiguousImport`.
+   * - otherwise, the component is skipped as `AmbiguousImport`.
    */
   private _locate(url: string, removed: Resolution[], evicted: Set<string>) {
     const sources = removed.filter((resolution) => {
@@ -450,7 +450,7 @@ class Hmr extends Service {
    * - if its parent links the previous result, the parent is changed, so that
    *   it resolves its imports again;
    * - otherwise the previous result was imported dynamically, such as a
-   *   plugin entry, and is changed itself, so that it is imported again where
+   *   component entry, and is changed itself, so that it is imported again where
    *   the request now leads.
    *
    * CJS records no request. A CJS module below `<dir>` is changed if a root is
@@ -555,20 +555,20 @@ class Hmr extends Service {
     const { accepted, declined, edges } = await this._analyze(changed)
     const oldEdges = (url: string) => edges.get(url) ?? []
 
-    // A plugin may be exported by several modules, e.g. an entry module that
+    // A component may be exported by several modules, e.g. an entry module that
     // re-exports its implementation. All of them are imported again together.
-    const exporters = new Map<Plugin.Runtime, Map<string, Plugin>>()
-    for (const [url, plugin] of this._discover(declined)) {
-      const runtime = this.ctx.registry.get(plugin)!
+    const exporters = new Map<Component.Runtime, Map<string, Component>>()
+    for (const [url, component] of this._discover(declined)) {
+      const runtime = this.ctx.registry.get(component)!
       let exported = exporters.get(runtime)
       if (!exported) exporters.set(runtime, exported = new Map())
-      exported.set(url, plugin)
+      exported.set(url, component)
     }
 
-    // The closure of a plugin consists of its modules and the accepted modules
+    // The closure of a component consists of its modules and the accepted modules
     // they reach through accepted modules. It includes the modules of another
-    // plugin, so that a plugin importing another one shares its unit.
-    const stalePlugins: StalePlugin[] = []
+    // component, so that a component importing another one shares its unit.
+    const staleComponents: StaleComponent[] = []
     const evicted = new Set(accepted)
     const owned = new Set<string>()
     for (const exported of exporters.values()) {
@@ -587,13 +587,13 @@ class Hmr extends Service {
       }
 
       // The replacement is taken from a module that no other module of the
-      // plugin imports. Stage 1 imports the other such modules too and checks
-      // that they export the same plugin.
+      // component imports. Stage 1 imports the other such modules too and checks
+      // that they export the same component.
       const outermost = urls.filter(url => !urls.some(other => other !== url && closures.get(other)!.has(url)))
       const url = outermost[0] ?? urls[0]
-      stalePlugins.push({
+      staleComponents.push({
         url,
-        plugin: exported.get(url)!,
+        component: exported.get(url)!,
         urls,
         entries: outermost.length ? outermost : [url],
         modules,
@@ -601,20 +601,20 @@ class Hmr extends Service {
     }
 
     for (const url of changed) {
-      if (!owned.has(url)) this.ctx.logger.debug('evict %C (no dependent plugin)', this._relative(url))
+      if (!owned.has(url)) this.ctx.logger.debug('evict %C (no dependent component)', this._relative(url))
     }
 
     const backup = caches.evict(evicted)
 
-    // Stage 1: import the new modules of every stale plugin. Only the caches
+    // Stage 1: import the new modules of every stale component. Only the caches
     // have changed so far, and restoring them undoes a failure:
-    // - the new plugins are validated here, so that stages 2 and 3 need no
+    // - the new components are validated here, so that stages 2 and 3 need no
     //   rollback;
-    // - no cache entry is restored before every plugin has been imported, so
+    // - no cache entry is restored before every component has been imported, so
     //   that no new module links against an evicted one.
     const retained = caches.urls()
     const attempts: ImportAttempt[] = []
-    for (const stale of stalePlugins) {
+    for (const stale of staleComponents) {
       const before = caches.urls()
       const attempt: ImportAttempt = { stale, imported: [], loaded: [], failed: false }
       // The new module is recorded before it is imported, so that the new
@@ -628,7 +628,7 @@ class Hmr extends Service {
           : this._loader.import(url, import.meta.url, {})))
       }
       try {
-        // Import the other entries of the plugin too, so that their failures
+        // Import the other entries of the component too, so that their failures
         // abort its unit as well. A module that another entry imports is
         // imported through it, also when it has moved.
         const others: unknown[] = []
@@ -637,7 +637,7 @@ class Hmr extends Service {
         }
         const exports = await load(stale.url)
         if (!this.ctx.registry.resolve(exports)) {
-          throw new Error(`invalid plugin at ${this._relative(stale.url)}, `
+          throw new Error(`invalid component at ${this._relative(stale.url)}, `
             + `expect function or object with an "apply" method, received ${typeof exports}`)
         }
         if (others.some(other => other !== exports)) {
@@ -703,7 +703,7 @@ class Hmr extends Service {
     backup.restore(restored)
     // The resolutions to and from the restored modules are restored too, so
     // that the resolve cache records the requests that loaded them, e.g. the
-    // import of a plugin entry. A replaced parent resolves its imports again
+    // import of a component entry. A replaced parent resolves its imports again
     // by itself.
     const replaced = new Set([...evicted].filter(url => !restored.has(url)))
     restoreResolutions(removed.filter(({ parentURL, url }) => {
@@ -719,29 +719,29 @@ class Hmr extends Service {
       result.skipped.push({ urls: [...unit.modules], reason: skip.skip! })
     }
 
-    // Stage 2: replace the plugins in place (synchronous).
-    // A plugin may have been disposed while stage 1 was importing, in which
+    // Stage 2: replace the components in place (synchronous).
+    // A component may have been disposed while stage 1 was importing, in which
     // case the replacement only forwards a later registration of it.
-    // Waiting is left to stage 3, so that no plugin is delayed behind another.
+    // Waiting is left to stage 3, so that no component is delayed behind another.
     const fibers: Fiber[] = []
     const applied = new Set(committed.flatMap(unit => unit.attempts))
     for (const attempt of attempts) {
       if (!applied.has(attempt)) continue
-      const { url, plugin } = attempt.stale
+      const { url, component } = attempt.stale
       const path = this._relative(url)
       try {
-        const replaced = this.ctx.registry.replace(plugin, attempt.replacement!)
+        const replaced = this.ctx.registry.replace(component, attempt.replacement!)
         if (!replaced.length) continue
-        this.ctx.logger.info('reload plugin at %C', path)
+        this.ctx.logger.info('reload component at %C', path)
         fibers.push(...replaced)
       } catch (error) {
-        this.ctx.logger.warn('failed to reload plugin at %C', path)
+        this.ctx.logger.warn('failed to reload component at %C', path)
         this.ctx.logger.warn(error)
       }
     }
 
     // Stage 3: wait for the fibers to settle (concurrent).
-    // No rollback: a plugin that fails to apply is left FAILED, exactly as it
+    // No rollback: a component that fails to apply is left FAILED, exactly as it
     // would be on a cold start, and has already been logged by its fiber. It
     // keeps its parent and config, so the next change to the file retries it.
     await Promise.all(fibers.map(fiber => fiber.await().catch(() => {})))
@@ -782,7 +782,7 @@ namespace Hmr {
    * be applied. Each change is applied, aborted or skipped.
    */
   export interface Result {
-    /** the replaced fibers; a fiber whose new plugin fails to apply is left `FAILED` */
+    /** the replaced fibers; a fiber whose new component fails to apply is left `FAILED` */
     settled: Fiber[]
     /** the units whose new modules fail to import; a later transaction retries them */
     aborted: Abort[]
@@ -791,7 +791,7 @@ namespace Hmr {
   }
 
   /**
-   * A new module of a unit failed to import, or does not export a plugin.
+   * A new module of a unit failed to import, or does not export a component.
    * Nothing in the unit is applied: its module cache is restored, and so are
    * the resolutions to its modules. A later transaction retries the unit if
    * its roots include those that changed the unit, e.g. a manifest that moved
@@ -822,13 +822,13 @@ namespace Hmr {
     /** The module is a native addon, which a process cannot load again. */
     NativeAddon = 'native-addon',
     /**
-     * The imports that resolved to a plugin module now resolve to different
+     * The imports that resolved to a component module now resolve to different
      * modules, e.g. after only one of two links to a package is retargeted.
      * A fiber does not record which import it comes from.
      */
     AmbiguousImport = 'ambiguous-import',
     /**
-     * The modules that exported one plugin now export different values. A
+     * The modules that exported one component now export different values. A
      * fiber does not record which module it comes from.
      */
     AmbiguousExport = 'ambiguous-export',

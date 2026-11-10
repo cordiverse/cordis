@@ -22,7 +22,7 @@ describe('Include source locations', () => {
   it('points a validation issue at the value in the file', async () => {
     const app = await start('tmp-location-value.yml', [
       '- id: a',
-      '  name: ./schema-plugin',
+      '  name: ./schema-component',
       '  config:',
       '    port: "80"',
       '',
@@ -39,11 +39,11 @@ describe('Include source locations', () => {
   it('points a missing value at the key that should hold it', async () => {
     const app = await start('tmp-location-missing.yml', [
       '- id: a',
-      '  name: ./schema-plugin',
+      '  name: ./schema-component',
       '  config:',
       '    hosts: [localhost, 1]',
       '- id: b',
-      '  name: ./schema-plugin',
+      '  name: ./schema-component',
       '',
     ].join('\n'))
 
@@ -58,11 +58,11 @@ describe('Include source locations', () => {
   it('locates entries nested in groups', async () => {
     const app = await start('tmp-location-group.yml', [
       '- id: g',
-      '  name: \'@cordisjs/plugin-group\'',
+      '  name: \'@cordisjs/group\'',
       '  group: true',
       '  config:',
       '    - id: a',
-      '      name: ./schema-plugin',
+      '      name: ./schema-component',
       '      config:',
       '        port: !!js "\'80\'"',
       '',
@@ -75,10 +75,10 @@ describe('Include source locations', () => {
 
   it('locates patched values in the file that declares the patch', async () => {
     const inner = fixture('tmp-location-inner.yml')
-    await writeFile(inner, '- id: a\n  name: ./schema-plugin\n  config:\n    port: 80\n')
+    await writeFile(inner, '- id: a\n  name: ./schema-component\n  config:\n    port: 80\n')
     const app = await start('tmp-location-outer.yml', [
       '- id: inc',
-      '  name: \'@cordisjs/plugin-include\'',
+      '  name: \'@cordisjs/include\'',
       '  config:',
       '    path: ./tmp-location-inner.yml',
       '    patches:',
@@ -86,7 +86,7 @@ describe('Include source locations', () => {
       '        config: { port: "80" }',
       '      - insert:',
       '          - id: b',
-      '            name: ./schema-plugin',
+      '            name: ./schema-component',
       '            config: { port: 80, hosts: [1] }',
       '',
     ].join('\n'))
@@ -102,13 +102,13 @@ describe('Include source locations', () => {
     await writeFile(inner, '[]\n')
     const app = await start('tmp-location-insert-outer.yml', [
       '- id: inc',
-      '  name: \'@cordisjs/plugin-include\'',
+      '  name: \'@cordisjs/include\'',
       '  config:',
       '    path: ./tmp-location-insert-inner.yml',
       '    patches:',
       '      - insert:',
       '          - id: a',
-      '            name: ./schema-plugin',
+      '            name: ./schema-component',
       '            config: { port: 80 }',
       '      - id: a',
       '        config: { port: "80" }',
@@ -123,14 +123,14 @@ describe('Include source locations', () => {
     it('locates a config value at its anchor', async () => {
       const app = await start('tmp-location-alias-config.yml', [
         '- id: a',
-        '  name: ./schema-plugin',
+        '  name: ./schema-component',
         '  config: &c',
         '    port: &p "80"',
         '- id: b',
-        '  name: ./schema-plugin',
+        '  name: ./schema-component',
         '  config: *c',
         '- id: c',
-        '  name: ./schema-plugin',
+        '  name: ./schema-component',
         '  config:',
         '    port: *p',
         '',
@@ -146,10 +146,10 @@ describe('Include source locations', () => {
     it('points a missing value under an alias at the key that holds it', async () => {
       const app = await start('tmp-location-alias-missing.yml', [
         '- id: a',
-        '  name: ./test-plugin',
+        '  name: ./test-component',
         '  intercept: &c {}',
         '- id: b',
-        '  name: ./schema-plugin',
+        '  name: ./schema-component',
         '  config: *c',
         '',
       ].join('\n'))
@@ -160,10 +160,10 @@ describe('Include source locations', () => {
     it('locates an entry option at its anchor', async () => {
       const app = await start('tmp-location-alias-fields.yml', [
         '- id: a',
-        '  name: ./test-plugin',
+        '  name: ./test-component',
         '  isolate: { x: &g 1 }',
         '- id: b',
-        '  name: ./test-plugin',
+        '  name: ./test-component',
         '  group: *g',
         '',
       ].join('\n'))
@@ -174,10 +174,10 @@ describe('Include source locations', () => {
     it('locates an expression at its anchor', async () => {
       const app = await start('tmp-location-alias-expr.yml', [
         '- id: a',
-        '  name: ./test-plugin',
+        '  name: ./test-component',
         '  intercept: { x: &x !!js "1 + foo" }',
         '- id: b',
-        '  name: ./test-plugin',
+        '  name: ./test-component',
         '  disabled: *x',
         '',
       ].join('\n'))
@@ -191,17 +191,17 @@ describe('Include source locations', () => {
   })
   it('locates entries of a group config replaced by a patch', async () => {
     const inner = fixture('tmp-location-group-inner.yml')
-    await writeFile(inner, '- id: g\n  name: \'@cordisjs/plugin-group\'\n  group: true\n  config: []\n')
+    await writeFile(inner, '- id: g\n  name: \'@cordisjs/group\'\n  group: true\n  config: []\n')
     const app = await start('tmp-location-group-outer.yml', [
       '- id: inc',
-      '  name: \'@cordisjs/plugin-include\'',
+      '  name: \'@cordisjs/include\'',
       '  config:',
       '    path: ./tmp-location-group-inner.yml',
       '    patches:',
       '      - id: g',
       '        config:',
       '          - id: a',
-      '            name: ./schema-plugin',
+      '            name: ./schema-component',
       '            config: { port: "80" }',
       '',
     ].join('\n'))
@@ -214,15 +214,15 @@ describe('Include source locations', () => {
 
   it('ignores patches that do not apply', async () => {
     const inner = fixture('tmp-location-skip-inner.yml')
-    await writeFile(inner, '- id: a\n  name: ./schema-plugin\n  config: { port: "80" }\n')
+    await writeFile(inner, '- id: a\n  name: ./schema-component\n  config: { port: "80" }\n')
     const app = await start('tmp-location-skip-outer.yml', [
       '- id: inc',
-      '  name: \'@cordisjs/plugin-include\'',
+      '  name: \'@cordisjs/include\'',
       '  config:',
       '    path: ./tmp-location-skip-inner.yml',
       '    patches:',
       '      - id: a',
-      '        name: ./other-plugin',
+      '        name: ./other-component',
       '        config: { port: 80 }',
       '',
     ].join('\n'))
@@ -234,10 +234,10 @@ describe('Include source locations', () => {
   it('follows patches across nested includes', async () => {
     const inner = fixture('tmp-location-nested-inner.yml')
     const middle = fixture('tmp-location-nested-middle.yml')
-    await writeFile(inner, '- id: a\n  name: ./schema-plugin\n  config: { port: 80 }\n')
+    await writeFile(inner, '- id: a\n  name: ./schema-component\n  config: { port: 80 }\n')
     await writeFile(middle, [
       '- id: inc',
-      '  name: \'@cordisjs/plugin-include\'',
+      '  name: \'@cordisjs/include\'',
       '  config:',
       '    path: ./tmp-location-nested-inner.yml',
       '    patches:',
@@ -248,7 +248,7 @@ describe('Include source locations', () => {
     // the outer patch replaces the whole config of `inc`, its patches included
     const app = await start('tmp-location-nested-outer.yml', [
       '- id: mid',
-      '  name: \'@cordisjs/plugin-include\'',
+      '  name: \'@cordisjs/include\'',
       '  config:',
       '    path: ./tmp-location-nested-middle.yml',
       '    patches:',
@@ -272,14 +272,14 @@ describe('Include source locations', () => {
   }, 10000)
 
   it('leaves a config passed at runtime unlocated', async () => {
-    const app = await start('tmp-location-runtime.yml', '- id: a\n  name: ./schema-plugin\n  config:\n    port: 80\n')
+    const app = await start('tmp-location-runtime.yml', '- id: a\n  name: ./schema-component\n  config:\n    port: 80\n')
     const fiber = app.include().store['a']!.innerFiber!
     expect(() => fiber.update({ port: 'runtime' })).toThrow(/^invalid config:\n {2}- port must be a number \(at port\)$/)
   }, 10000)
 
   it('leaves entries outside any file untraced', async () => {
     const app = await start('tmp-location-memory.yml', '[]\n')
-    await app.ctx.loader.create({ name: './fixtures/schema-plugin', config: { port: '80' } })
+    await app.ctx.loader.create({ name: './fixtures/schema-component', config: { port: '80' } })
     await app.ctx.loader.await()
     const [stack] = app.stacks()
     expect(stack).toMatch(/^ValidationError: invalid config:\n {2}- port must be a number \(at port\)\n {4}at /)
@@ -290,7 +290,7 @@ describe('Include source locations', () => {
     it('points invalid fields at their values', async () => {
       const app = await start('tmp-location-fields.yml', [
         '- id: a',
-        '  name: ./test-plugin',
+        '  name: ./test-component',
         '  disabled: "no"',
         '  inject: [loader, 1]',
         '- id: b',
@@ -317,10 +317,10 @@ describe('Include source locations', () => {
     it('accepts an expression for disabled only', async () => {
       const app = await start('tmp-location-expr.yml', [
         '- id: a',
-        '  name: ./test-plugin',
+        '  name: ./test-component',
         '  disabled: !!js "false"',
         '- id: b',
-        '  name: !!js "\'./test-plugin\'"',
+        '  name: !!js "\'./test-component\'"',
         '',
       ].join('\n'))
 
@@ -329,11 +329,11 @@ describe('Include source locations', () => {
     }, 10000)
 
     it('unloads an entry that turns invalid, without writing to the file', async () => {
-      const source = '- id: a\n  name: ./test-plugin\n'
+      const source = '- id: a\n  name: ./test-component\n'
       const app = await start('tmp-location-turn.yml', source)
       const fiber = app.include().store['a']!.innerFiber!
 
-      const invalid = '- id: a\n  name: ./test-plugin\n  group: 1\n'
+      const invalid = '- id: a\n  name: ./test-component\n  group: 1\n'
       await writeFile(app.filename, invalid)
       await app.settle()
       expect(app.stacks()).toEqual([expect.stringContaining(`(at group, ${at(app.filename, invalid, '1\n')})`)])
@@ -349,11 +349,11 @@ describe('Include source locations', () => {
     it('locates entries nested in groups', async () => {
       const app = await start('tmp-location-fields-group.yml', [
         '- id: g',
-        '  name: \'@cordisjs/plugin-group\'',
+        '  name: \'@cordisjs/group\'',
         '  group: true',
         '  config:',
         '    - id: a',
-        '      name: [./test-plugin]',
+        '      name: [./test-component]',
         '',
       ].join('\n'))
 
@@ -366,14 +366,14 @@ describe('Include source locations', () => {
     }, 10000)
 
     it('rejects a file with an entry that is not an object', async () => {
-      const source = '- id: a\n  name: ./test-plugin\n'
+      const source = '- id: a\n  name: ./test-component\n'
       const app = await start('tmp-location-entry.yml', source)
       const invalid = [
         '- id: a',
-        '  name: ./test-plugin',
-        '- ./test-plugin',
+        '  name: ./test-component',
+        '- ./test-component',
         '- id: g',
-        '  name: \'@cordisjs/plugin-group\'',
+        '  name: \'@cordisjs/group\'',
         '  group: true',
         '  config: [null]',
         '',
@@ -391,18 +391,18 @@ describe('Include source locations', () => {
     }, 10000)
 
     it('leaves invalid options passed at runtime unlocated', async () => {
-      const app = await start('tmp-location-fields-runtime.yml', '- id: a\n  name: ./test-plugin\n')
+      const app = await start('tmp-location-fields-runtime.yml', '- id: a\n  name: ./test-component\n')
       await expect(app.update('a', { disabled: 'yes' })).rejects.toThrow(
         /^invalid entry options:\n {2}- disabled must be a boolean \(at disabled\)$/,
       )
     }, 10000)
   })
 
-  describe('plugin import', () => {
-    it('points a plugin that cannot be found at its name', async () => {
+  describe('component import', () => {
+    it('points a component that cannot be found at its name', async () => {
       const app = await start('tmp-location-import.yml', [
         '- id: a',
-        '  name: ./missing-plugin',
+        '  name: ./missing-component',
         '- id: b',
         '  name: missing-package',
         '',
@@ -413,8 +413,8 @@ describe('Include source locations', () => {
       const a = stacks.find(stack => stack.includes('at a ('))!
       // the loader's own parent and Node's resolver frames are dropped
       // a Windows path holds backslashes, so the location is not part of the pattern
-      expect(a).toMatch(/^ModuleNotFoundError: Cannot find module '\S+missing-plugin' \(at name, /)
-      expect(a).toContain(`missing-plugin' (at name, ${app.at('./missing')})\n    at a (${app.filename}:1:3)`)
+      expect(a).toMatch(/^ModuleNotFoundError: Cannot find module '\S+missing-component' \(at name, /)
+      expect(a).toContain(`missing-component' (at name, ${app.at('./missing')})\n    at a (${app.filename}:1:3)`)
       expect(a).not.toContain('imported from')
       expect(a).not.toContain('node:internal')
       const b = stacks.find(stack => stack.includes('at b ('))!
@@ -424,17 +424,17 @@ describe('Include source locations', () => {
       ].join('\n'))
       const errors = app.messages.filter(message => message.type === 'error').map(message => message.args[0])
       expect(errors.map(error => [error.code, error.specifier])).toEqual(expect.arrayContaining([
-        ['ERR_MODULE_NOT_FOUND', './missing-plugin'],
+        ['ERR_MODULE_NOT_FOUND', './missing-component'],
         ['ERR_MODULE_NOT_FOUND', 'missing-package'],
       ]))
     }, 10000)
 
-    it('leaves a module the plugin imports to the plugin', async () => {
-      const app = await start('tmp-location-dep.yml', '- id: a\n  name: ./missing-dep-plugin\n')
+    it('leaves a module the component imports to the component', async () => {
+      const app = await start('tmp-location-dep.yml', '- id: a\n  name: ./missing-dep-component\n')
 
       const [stack] = app.stacks()
       // Node's own error rather than a `ModuleNotFoundError`; whether its header carries the code depends on the hooks in effect
-      expect(stack).toMatch(/^Error(?: \[ERR_MODULE_NOT_FOUND\])?: Cannot find package 'missing-dependency' imported from .+missing-dep-plugin\.ts\n/)
+      expect(stack).toMatch(/^Error(?: \[ERR_MODULE_NOT_FOUND\])?: Cannot find package 'missing-dependency' imported from .+missing-dep-component\.ts\n/)
       expect(stack).not.toContain('(at name')
     }, 10000)
 
@@ -446,11 +446,11 @@ describe('Include source locations', () => {
       try {
         const source = [
           '- id: a',
-          '  name: ./missing-plugin',
+          '  name: ./missing-component',
           '- id: b',
           '  name: missing-package',
           '- id: c',
-          '  name: ./missing-dep-plugin',
+          '  name: ./missing-dep-component',
           '',
         ].join('\n')
         await writeFile(app.filename, source)
@@ -458,7 +458,7 @@ describe('Include source locations', () => {
 
         const stacks = app.stacks()
         expect(stacks).toHaveLength(3)
-        expect(stacks.find(stack => stack.includes('at a ('))).toContain(`(at name, ${at(app.filename, source, './missing-plugin')})`)
+        expect(stacks.find(stack => stack.includes('at a ('))).toContain(`(at name, ${at(app.filename, source, './missing-component')})`)
         expect(stacks.find(stack => stack.includes('at b ('))).toContain(`(at name, ${at(app.filename, source, 'missing-package')})`)
         const dependency = stacks.find(stack => stack.includes('missing-dependency'))
         expect(dependency).toMatch(/^Error(?: \[ERR_MODULE_NOT_FOUND\])?: /)
@@ -468,21 +468,21 @@ describe('Include source locations', () => {
       }
     }, 10000)
 
-    it('leaves other import errors to point into the plugin', async () => {
-      const app = await start('tmp-location-throw.yml', '- id: a\n  name: ./throw-plugin\n')
+    it('leaves other import errors to point into the component', async () => {
+      const app = await start('tmp-location-throw.yml', '- id: a\n  name: ./throw-component\n')
 
       const [stack] = app.stacks()
       expect(stack).toMatch(/^Error: failed to evaluate\n/)
-      expect(stack).toContain('throw-plugin.ts')
+      expect(stack).toContain('throw-component.ts')
       expect(stack).not.toContain('(at name')
     }, 10000)
 
     it('leaves entries outside any file untraced', async () => {
       const app = await start('tmp-location-import-memory.yml', '[]\n')
-      await app.ctx.loader.create({ name: './fixtures/missing-plugin' })
+      await app.ctx.loader.create({ name: './fixtures/missing-component' })
       await app.ctx.loader.await()
       const [stack] = app.stacks()
-      expect(stack).toMatch(/^ModuleNotFoundError: Cannot find module '\S+missing-plugin'\n/)
+      expect(stack).toMatch(/^ModuleNotFoundError: Cannot find module '\S+missing-component'\n/)
       expect(stack).not.toContain('(at name')
     }, 10000)
   })
@@ -496,7 +496,7 @@ describe('Include source locations', () => {
     ])('points a failure in %s at the expression', async (field, lines, label) => {
       const app = await start(`tmp-location-expr-${field}.yml`, [
         '- id: a',
-        '  name: ./schema-plugin',
+        '  name: ./schema-component',
         lines,
         '',
       ].join('\n'))
@@ -511,16 +511,16 @@ describe('Include source locations', () => {
     it('maps positions across lines and escapes', async () => {
       const app = await start('tmp-location-expr-block.yml', [
         '- id: a',
-        '  name: ./test-plugin',
+        '  name: ./test-component',
         '  disabled: !!js |',
         '    [1].map(function check() {',
         '      throw new Error("boom")',
         '    })',
         '- id: b',
-        '  name: ./test-plugin',
+        '  name: ./test-component',
         '  disabled: !!js "\\"it\'s\\" + \\u0020 foo"',
         '- id: c',
-        '  name: ./test-plugin',
+        '  name: ./test-component',
         '  disabled: !!js \'"it\'\'s" + bar\'',
         '',
       ].join('\n'))
@@ -541,7 +541,7 @@ describe('Include source locations', () => {
     it('names the anonymous functions of an expression by their location', async () => {
       const app = await start('tmp-location-expr-arrow.yml', [
         '- id: a',
-        '  name: ./test-plugin',
+        '  name: ./test-component',
         '  disabled: !!js "(() => { throw new Error(\'boom\') })()"',
         '',
       ].join('\n'))
@@ -557,7 +557,7 @@ describe('Include source locations', () => {
     it('keeps the frames of what the expression calls', async () => {
       const app = await start('tmp-location-expr-call.yml', [
         '- id: a',
-        '  name: ./test-plugin',
+        '  name: ./test-component',
         '  disabled: !!js "loader.resolve(\'missing\')"',
         '',
       ].join('\n'))
@@ -572,7 +572,7 @@ describe('Include source locations', () => {
     it('points an expression that does not parse at its start', async () => {
       const app = await start('tmp-location-expr-syntax.yml', [
         '- id: a',
-        '  name: ./test-plugin',
+        '  name: ./test-component',
         '  disabled: !!js "foo bar"',
         '',
       ].join('\n'))
@@ -587,11 +587,11 @@ describe('Include source locations', () => {
     it('locates entries nested in groups', async () => {
       const app = await start('tmp-location-expr-group.yml', [
         '- id: g',
-        '  name: \'@cordisjs/plugin-group\'',
+        '  name: \'@cordisjs/group\'',
         '  group: true',
         '  config:',
         '    - id: a',
-        '      name: ./test-plugin',
+        '      name: ./test-component',
         '      disabled: !!js "foo"',
         '',
       ].join('\n'))
@@ -606,7 +606,7 @@ describe('Include source locations', () => {
 
     it('locates an expression written as an object in JSON', async () => {
       const app = await start('tmp-location-expr.json', JSON.stringify([
-        { id: 'a', name: './test-plugin', disabled: { __jsExpr: '1 + foo' } },
+        { id: 'a', name: './test-component', disabled: { __jsExpr: '1 + foo' } },
       ], null, 2))
 
       expect(app.stacks()).toEqual([[
@@ -617,9 +617,9 @@ describe('Include source locations', () => {
     }, 10000)
 
     it('points a failure on update at the new expression', async () => {
-      const app = await start('tmp-location-expr-update.yml', '- id: a\n  name: ./schema-plugin\n  config:\n    port: 80\n')
+      const app = await start('tmp-location-expr-update.yml', '- id: a\n  name: ./schema-component\n  config:\n    port: 80\n')
       const fiber = app.include().store['a']!.innerFiber!
-      const source = '- id: a\n  name: ./schema-plugin\n  config:\n    port: !!js "1 + foo"\n'
+      const source = '- id: a\n  name: ./schema-component\n  config:\n    port: !!js "1 + foo"\n'
       await writeFile(app.filename, source)
       await app.settle()
 
@@ -628,13 +628,13 @@ describe('Include source locations', () => {
         `    at config.port (${at(app.filename, source, 'foo')})`,
         `    at a (${app.filename}:1:3)`,
       ].join('\n')])
-      // the update is rejected, and the plugin keeps running
+      // the update is rejected, and the component keeps running
       expect(app.include().store['a']!.innerFiber).toBe(fiber)
       expect(fiber.uid).toBeTruthy()
     }, 10000)
 
     it('leaves an expression changed at runtime unlocated', async () => {
-      const app = await start('tmp-location-expr-runtime.yml', '- id: a\n  name: ./test-plugin\n')
+      const app = await start('tmp-location-expr-runtime.yml', '- id: a\n  name: ./test-component\n')
       await app.update('a', { disabled: { __jsExpr: 'foo' } })
 
       expect(app.stacks()).toEqual([expect.stringMatching(new RegExp([
@@ -646,7 +646,7 @@ describe('Include source locations', () => {
 
     it('leaves entries outside any file untraced', async () => {
       const app = await start('tmp-location-expr-memory.yml', '[]\n')
-      await app.ctx.loader.create({ name: './fixtures/test-plugin', disabled: { __jsExpr: 'foo' } as any })
+      await app.ctx.loader.create({ name: './fixtures/test-component', disabled: { __jsExpr: 'foo' } as any })
       await app.ctx.loader.await()
 
       const [stack] = app.stacks()
@@ -655,7 +655,7 @@ describe('Include source locations', () => {
   })
   it('points parse errors at the source', async () => {
     const app = await start('tmp-location-parse.yml', '[]\n')
-    const source = '- id: a\n  name: !foo ./schema-plugin\n'
+    const source = '- id: a\n  name: !foo ./schema-component\n'
     await writeFile(app.filename, source)
     await app.settle()
 
@@ -667,7 +667,7 @@ describe('Include source locations', () => {
   describe('JSON', () => {
     it('points a validation issue at the value in the file', async () => {
       const app = await start('tmp-location-value.json', JSON.stringify([
-        { id: 'a', name: './schema-plugin', config: { port: '80' } },
+        { id: 'a', name: './schema-component', config: { port: '80' } },
       ], null, 2))
 
       const [stack] = app.stacks()
