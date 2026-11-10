@@ -2,10 +2,10 @@ import { Context } from 'cordis'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, relative, sep } from 'node:path'
+import { basename, dirname, join, relative, sep } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import PackageManager from '../src/index.ts'
-import { adapters } from '../src/agent.ts'
+import { adapters, AgentKind, AgentLayout } from '../src/agent.ts'
 import { createEnv, run, which } from '../src/process.ts'
 import { Registry } from './registry.ts'
 
@@ -30,6 +30,8 @@ const temp = join(tmpdir(), `cordis-package-manager-${process.pid}`)
 
 interface Fixture {
   name: string
+  kind: AgentKind
+  layout: AgentLayout
   packageManager: () => Promise<string>
   files: (cache: string) => Record<string, string>
   lockfile: string
@@ -37,8 +39,42 @@ interface Fixture {
   localProtocols: string[]
 }
 
+function pnpmFiles(linker: string) {
+  return (cache: string) => ({
+    '.npmrc': `registry=${registry.url}\n`,
+    'pnpm-workspace.yaml': [
+      `nodeLinker: ${linker}`,
+      // remove the packages that are no longer linked from the virtual store,
+      // which the scans of the tests would find
+      'modulesCacheMaxAge: 0',
+      `storeDir: ${JSON.stringify(join(cache, 'store'))}`,
+      `cacheDir: ${JSON.stringify(join(cache, 'cache'))}`,
+      '',
+    ].join('\n'),
+  })
+}
+
+function yarnBerryFiles(linker: string) {
+  return (cache: string) => ({
+    '.yarnrc.yml': [
+      `nodeLinker: ${linker}`,
+      `npmRegistryServer: ${JSON.stringify(registry.url)}`,
+      'unsafeHttpWhitelist: ["127.0.0.1"]',
+      'enableGlobalCache: false',
+      'enableMirror: false',
+      `globalFolder: ${JSON.stringify(join(cache, 'global'))}`,
+      'enableTelemetry: false',
+      `cacheFolder: ${JSON.stringify(cache)}`,
+      '',
+    ].join('\n'),
+    'yarn.lock': '',
+  })
+}
+
 const fixtures: Fixture[] = [{
   name: 'npm',
+  kind: 'npm',
+  layout: 'hoisted',
   packageManager: async () => {
     const env = createEnv()
     const { stdout } = await run(which('npm', env)!, ['--version'], { cwd: temp, env })
@@ -51,20 +87,32 @@ const fixtures: Fixture[] = [{
   localProtocols: ['file'],
 }, {
   name: 'pnpm',
+  kind: 'pnpm',
+  layout: 'hoisted',
   packageManager: async () => 'pnpm@10.33.0',
-  files: cache => ({
-    '.npmrc': `registry=${registry.url}\n`,
-    'pnpm-workspace.yaml': [
-      'nodeLinker: hoisted',
-      `storeDir: ${JSON.stringify(join(cache, 'store'))}`,
-      `cacheDir: ${JSON.stringify(join(cache, 'cache'))}`,
-      '',
-    ].join('\n'),
-  }),
+  files: pnpmFiles('hoisted'),
+  lockfile: 'pnpm-lock.yaml',
+  localProtocols: ['file', 'link'],
+}, {
+  name: 'pnpm isolated',
+  kind: 'pnpm',
+  layout: 'isolated',
+  packageManager: async () => 'pnpm@10.33.0',
+  files: pnpmFiles('isolated'),
+  lockfile: 'pnpm-lock.yaml',
+  localProtocols: ['file', 'link'],
+}, {
+  name: 'pnpm 11 isolated',
+  kind: 'pnpm',
+  layout: 'isolated',
+  packageManager: async () => 'pnpm@11.28.5',
+  files: pnpmFiles('isolated'),
   lockfile: 'pnpm-lock.yaml',
   localProtocols: ['file', 'link'],
 }, {
   name: 'yarn classic',
+  kind: 'yarn-classic',
+  layout: 'hoisted',
   packageManager: async () => 'yarn@1.22.19',
   files: cache => ({
     '.yarnrc': `registry "${registry.url}"\ncache-folder ${JSON.stringify(cache)}\n`,
@@ -73,24 +121,35 @@ const fixtures: Fixture[] = [{
   localProtocols: ['file', 'link'],
 }, {
   name: 'yarn berry',
+  kind: 'yarn-berry',
+  layout: 'hoisted',
   packageManager: async () => 'yarn@4.14.1',
-  files: cache => ({
-    '.yarnrc.yml': [
-      'nodeLinker: node-modules',
-      `npmRegistryServer: ${JSON.stringify(registry.url)}`,
-      'unsafeHttpWhitelist: ["127.0.0.1"]',
-      'enableGlobalCache: false',
-      'enableMirror: false',
-      `globalFolder: ${JSON.stringify(join(cache, 'global'))}`,
-      'enableTelemetry: false',
-      `cacheFolder: ${JSON.stringify(cache)}`,
-      '',
-    ].join('\n'),
-    'yarn.lock': '',
-  }),
+  files: yarnBerryFiles('node-modules'),
   lockfile: 'yarn.lock',
   localProtocols: ['file', 'portal', 'link'],
+}, {
+  name: 'yarn 3 pnpm',
+  kind: 'yarn-berry',
+  layout: 'isolated',
+  packageManager: async () => 'yarn@3.8.7',
+  files: yarnBerryFiles('pnpm'),
+  lockfile: 'yarn.lock',
+  // the store entry of a `file:` dependency is named after the hash of its content
+  localProtocols: ['portal', 'link'],
+}, {
+  name: 'yarn berry pnpm',
+  kind: 'yarn-berry',
+  layout: 'isolated',
+  packageManager: async () => 'yarn@4.14.1',
+  files: yarnBerryFiles('pnpm'),
+  lockfile: 'yarn.lock',
+  // the store entry of a `file:` dependency is named after the hash of its content
+  localProtocols: ['portal', 'link'],
 }]
+
+function fixture(name: string) {
+  return fixtures.find(fixture => fixture.name === name)!
+}
 
 let counter = 0
 
@@ -116,29 +175,36 @@ function toPosix(path: string) {
   return path.split(sep).join('/')
 }
 
-/** The version of every package directory under the `node_modules` of `dir`, by location. */
-function scanVersions(dir: string) {
-  const result: Record<string, string> = {}
-  const walk = (folder: string) => {
-    const path = join(dir, folder)
-    if (!existsSync(path)) return
-    for (const dirent of readdirSync(path, { withFileTypes: true })) {
-      if (dirent.name.startsWith('.')) continue
-      const location = `${folder}/${dirent.name}`
-      if (dirent.name.startsWith('@')) {
-        for (const scoped of readdirSync(join(dir, location))) visit(`${location}/${scoped}`)
-      } else {
-        visit(location)
-      }
-    }
-  }
+interface ScannedPackage {
+  version: string
+  realpath: string
+}
+
+/**
+ * Every package in a `node_modules` folder below `dir`, by location, including
+ * the folders in the store of an isolated layout.
+ */
+function scanPackages(dir: string) {
+  const result: Record<string, ScannedPackage> = {}
   const visit = (location: string) => {
     const manifest = join(dir, location, 'package.json')
     if (!existsSync(manifest)) return
-    result[location] = JSON.parse(readFileSync(manifest, 'utf8')).version
-    walk(`${location}/node_modules`)
+    result[location] = { version: JSON.parse(readFileSync(manifest, 'utf8')).version, realpath: realpathSync(join(dir, location)) }
   }
-  walk('node_modules')
+  const walk = (folder: string) => {
+    for (const dirent of readdirSync(join(dir, folder), { withFileTypes: true })) {
+      const location = folder ? `${folder}/${dirent.name}` : dirent.name
+      if (basename(folder) === 'node_modules' && !dirent.name.startsWith('.')) {
+        if (dirent.name.startsWith('@')) {
+          for (const scoped of readdirSync(join(dir, location))) visit(`${location}/${scoped}`)
+        } else {
+          visit(location)
+        }
+      }
+      if (dirent.isDirectory()) walk(location)
+    }
+  }
+  walk('')
   return result
 }
 
@@ -168,18 +234,24 @@ function locations(dir: string, changes: PackageManager.InstallResult['added']) 
   return changes.map(change => toPosix(relative(realpathSync(dir), change.path))).sort()
 }
 
-/** The changes implied by two scans. A content change without a version change does not occur here. */
-function expectDiff(dir: string, result: PackageManager.InstallResult, before: Record<string, string>, after: Record<string, string>) {
+/**
+ * The changes implied by two scans: a package is updated if its version or
+ * its real directory changed. A content change without a version change does
+ * not occur here.
+ */
+function expectDiff(dir: string, result: PackageManager.InstallResult, before: Record<string, ScannedPackage>, after: Record<string, ScannedPackage>) {
   const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])].sort()
   expect(locations(dir, result.added)).to.deep.equal(keys.filter(key => !(key in before)))
   expect(locations(dir, result.removed)).to.deep.equal(keys.filter(key => !(key in after)))
-  expect(locations(dir, result.updated)).to.deep.equal(keys.filter(key => key in before && key in after && before[key] !== after[key]))
+  expect(locations(dir, result.updated)).to.deep.equal(keys.filter((key) => {
+    if (!(key in before) || !(key in after)) return false
+    return before[key].version !== after[key].version || before[key].realpath !== after[key].realpath
+  }))
   for (const change of [...result.added, ...result.updated]) {
-    expect(change.after?.version).to.equal(after[toPosix(relative(realpathSync(dir), change.path))])
-    expect(change.after?.realPath).to.equal(realpathSync(change.path))
+    expect(change.after).to.include(after[toPosix(relative(realpathSync(dir), change.path))])
   }
   for (const change of [...result.removed, ...result.updated]) {
-    expect(change.before?.version).to.equal(before[toPosix(relative(realpathSync(dir), change.path))])
+    expect(change.before).to.include(before[toPosix(relative(realpathSync(dir), change.path))])
   }
 }
 
@@ -232,7 +304,7 @@ describe.each(fixtures)('$name', (fixture) => {
       'package.json': JSON.stringify(manifest, null, 2) + '\n',
       'postinstall.cjs': `process.exit(require('./package.json').dependencies?.delta ? 1 : 0)\n`,
       'local/package.json': JSON.stringify({ name: 'local-real-name', version: '1.0.0' }),
-      ...fixture.files(join(temp, `cache-${fixture.name.replace(' ', '-')}`)),
+      ...fixture.files(join(temp, `cache-${fixture.name.replaceAll(' ', '-')}`)),
     })
     pm = await setup(dir)
     // a project has a lockfile before the service changes it
@@ -242,25 +314,25 @@ describe.each(fixtures)('$name', (fixture) => {
 
   it('detects the agent', async () => {
     const agent = await pm.agent()
-    expect(agent.kind).to.equal(fixture.name.replace(' ', '-'))
+    expect(agent).to.include({ kind: fixture.kind, layout: fixture.layout })
   })
 
   it('adds packages', async () => {
-    const before = scanVersions(dir)
+    const before = scanPackages(dir)
     const result = await pm.install({ alpha: '2.0.0', beta: '1.0.0' })
     expect(JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).dependencies).to.deep.equal({ alpha: '2.0.0', beta: '1.0.0' })
-    const after = scanVersions(dir)
-    expect(after['node_modules/alpha']).to.equal('2.0.0')
-    expect(after['node_modules/beta']).to.equal('1.0.0')
+    const after = scanPackages(dir)
+    expect(after['node_modules/alpha'].version).to.equal('2.0.0')
+    expect(after['node_modules/beta'].version).to.equal('1.0.0')
     expectDiff(dir, result, before, after)
   })
 
   it('updates and removes packages in one run', async () => {
-    const before = scanVersions(dir)
+    const before = scanPackages(dir)
     const result = await pm.install([['alpha', null], ['gamma', '1.0.0'], ['beta', '^1.0.0']])
     expect(JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).dependencies).to.deep.equal({ beta: '^1.0.0', gamma: '1.0.0' })
-    const after = scanVersions(dir)
-    expect(Object.entries(after).filter(([key]) => key.endsWith('/alpha')).map(([, version]) => version)).to.deep.equal(['1.0.0'])
+    const after = scanPackages(dir)
+    expect([...new Set(Object.entries(after).filter(([key]) => key.endsWith('/alpha')).map(([, { version }]) => version))]).to.deep.equal(['1.0.0'])
     expectDiff(dir, result, before, after)
   })
 
@@ -301,9 +373,9 @@ describe.each(fixtures)('$name', (fixture) => {
   })
 
   it('reports changes against the restored state', async () => {
-    const before = scanVersions(dir)
+    const before = scanPackages(dir)
     const result = await pm.install({ alpha: '2.0.0' })
-    expectDiff(dir, result, before, scanVersions(dir))
+    expectDiff(dir, result, before, scanPackages(dir))
   })
 
   it.each(fixture.localProtocols)('reports a local package of the %s protocol by its manifest name', async (protocol) => {
@@ -311,7 +383,7 @@ describe.each(fixtures)('$name', (fixture) => {
     try {
       const added = await pm.install({ 'local-alias': `${protocol}:./local` })
       const change = added.added.find(change => toPosix(relative(realpathSync(dir), change.path)) === location)
-      expect(change?.after).to.include({ name: 'local-real-name', local: true, realPath: realpathSync(change!.path) })
+      expect(change?.after).to.include({ name: 'local-real-name', local: true, realpath: realpathSync(change!.path) })
       // the content of a local package is not recorded, so that every installation updates it
       const updated = await pm.install([])
       expect(locations(dir, updated.updated)).to.include(location)
@@ -323,7 +395,7 @@ describe.each(fixtures)('$name', (fixture) => {
 
 describe('preconditions', () => {
   it('rejects a project without a lockfile', async () => {
-    const manifest = JSON.stringify({ name: 'project', packageManager: await fixtures[0].packageManager() })
+    const manifest = JSON.stringify({ name: 'project', packageManager: await fixture('npm').packageManager() })
     const dir = createProject({ 'package.json': manifest })
     const pm = await setup(dir)
     await expect(pm.install({ alpha: '1.0.0' })).rejects.toThrow('lockfile')
@@ -338,13 +410,16 @@ describe('preconditions', () => {
   })
 
   it.each([
-    ['npm with a linked strategy', fixtures[0], { '.npmrc': 'install-strategy=linked\n' }],
-    ['pnpm with an isolated linker', fixtures[1], { 'pnpm-workspace.yaml': 'nodeLinker: isolated\n' }],
-    ['yarn classic with pnp in the manifest', fixtures[2], { 'yarn.lock': '' }, { installConfig: { pnp: true } }],
-    ['yarn classic with pnp in .yarnrc', fixtures[2], { '.yarnrc': '--install.pnp true\n', 'yarn.lock': '' }],
-    ['yarn classic with a modules folder', fixtures[2], { '.yarnrc': '--modules-folder lib\n', 'yarn.lock': '' }],
-    ['yarn classic with a meta folder', fixtures[2], { '.yarnrc': 'enable-meta-folder true\n', 'yarn.lock': '' }],
-    ['yarn berry with pnp', fixtures[3], { '.yarnrc.yml': 'nodeLinker: pnp\n', 'yarn.lock': '' }],
+    ['npm with a nested strategy', fixture('npm'), { '.npmrc': 'install-strategy=nested\n' }],
+    ['npm with a linked strategy', fixture('npm'), { '.npmrc': 'install-strategy=linked\n' }],
+    ['pnpm with pnp', fixture('pnpm'), { 'pnpm-workspace.yaml': 'nodeLinker: pnp\n' }],
+    ['pnpm 9 with an isolated layout', { ...fixture('pnpm isolated'), packageManager: async () => 'pnpm@9.15.4' }, {}],
+    ['pnpm with a global virtual store', fixture('pnpm isolated'), { 'pnpm-workspace.yaml': 'enableGlobalVirtualStore: true\n' }],
+    ['yarn classic with pnp in the manifest', fixture('yarn classic'), { 'yarn.lock': '' }, { installConfig: { pnp: true } }],
+    ['yarn classic with pnp in .yarnrc', fixture('yarn classic'), { '.yarnrc': '--install.pnp true\n', 'yarn.lock': '' }],
+    ['yarn classic with a modules folder', fixture('yarn classic'), { '.yarnrc': '--modules-folder lib\n', 'yarn.lock': '' }],
+    ['yarn classic with a meta folder', fixture('yarn classic'), { '.yarnrc': 'enable-meta-folder true\n', 'yarn.lock': '' }],
+    ['yarn berry with pnp', fixture('yarn berry'), { '.yarnrc.yml': 'nodeLinker: pnp\n', 'yarn.lock': '' }],
   ] as [string, Fixture, Record<string, string>, object?][])('rejects %s', async (_, fixture, files, extra = {}) => {
     const manifest = JSON.stringify({ name: 'project', packageManager: await fixture.packageManager(), ...extra })
     const dir = createProject({ 'package.json': manifest, ...files })

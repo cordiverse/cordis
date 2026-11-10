@@ -4,15 +4,16 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import z from 'schemastery'
-import { adapters, AgentInfo, detectAgent } from './agent.ts'
+import { AgentInfo, detectAgent } from './agent.ts'
 import { applyChanges, DependencyChanges, normalizeChanges, stringifyManifest } from './manifest.ts'
 import { createEnv, run } from './process.ts'
 import { FileBackup } from './backup.ts'
-import { diffState, realpath, StateDiff } from './state.ts'
+import { realpath } from './files.ts'
+import { diffState, StateDiff } from './state.ts'
 
-export type * from './agent.ts'
-export type * from './manifest.ts'
-export type * from './state.ts'
+export type { Adapter, AgentInfo, AgentKind, AgentLayout, AgentName } from './agent.ts'
+export type { DependencyChanges } from './manifest.ts'
+export type { InstallState, PackageChange, PackageState, StateDiff } from './state.ts'
 
 declare module 'cordis' {
   interface Context {
@@ -43,8 +44,8 @@ class PackageManager extends Service {
     this.root = root
   }
 
-  agent(): Promise<AgentInfo> {
-    return detectAgent(this.root, createEnv())
+  async agent(): Promise<AgentInfo> {
+    return (await detectAgent(this.root, createEnv())).info
   }
 
   install(changes: DependencyChanges | [string, string | null][], options: PackageManager.InstallOptions = {}) {
@@ -58,8 +59,7 @@ class PackageManager extends Service {
     options.signal?.throwIfAborted()
     const root = this.root
     const env = createEnv()
-    const agent = await detectAgent(root, env)
-    const adapter = adapters[agent.kind]
+    const { info: agent, adapter, readState } = await detectAgent(root, env)
     if (!adapter.lockfiles.some(file => existsSync(resolve(root, file)))) {
       throw new Error(`${root} has no lockfile, expected ${adapter.lockfiles.join(' or ')}`)
     }
@@ -67,7 +67,7 @@ class PackageManager extends Service {
     const manifestPath = resolve(root, 'package.json')
     const original = await readFile(manifestPath, 'utf8')
     const manifest = JSON.parse(original)
-    const before = await adapter.readState(root)
+    const before = await readState()
     const backup = await FileBackup.create(['package.json', ...adapter.lockfiles, ...adapter.restoredFiles].map(file => resolve(root, file)))
     options.signal?.throwIfAborted()
 
@@ -80,7 +80,7 @@ class PackageManager extends Service {
     try {
       await writeFile(manifestPath, stringifyManifest(applyChanges(manifest, changes), original))
       await run(agent.executable, adapter.installArgs, { ...runOptions, signal: options.signal })
-      return { agent, ...diffState(root, before, await adapter.readState(root)) }
+      return { agent, ...diffState(root, before, await readState()) }
     } catch (error) {
       try {
         await backup.restore()
