@@ -5,7 +5,6 @@ on:
   pull_request:
 
 concurrency:
-  # Each push to `main` gets its own group, so every commit there is built and published.
   group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.run_id || github.ref }}
   cancel-in-progress: true
 
@@ -32,10 +31,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    permissions:
-      id-token: write
-      contents: read
-
     steps:
       - name: Check out
         uses: actions/checkout@v6
@@ -53,14 +48,6 @@ jobs:
         run: yarn build core
       - name: Build (2)
         run: yarn build
-      - name: Publish
-        if: >-
-          github.event_name == 'push' &&
-          contains(fromJson('["refs/heads/main"]'), github.ref)
-        run: |-
-          yarn config set npmPublishProvenance true
-          yarn config set npmRegistryServer https://registry.npmjs.org/
-          yarn yakumo publish
 
   test:
     runs-on: ${{ matrix.os }}

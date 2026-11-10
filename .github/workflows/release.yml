@@ -1,0 +1,111 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, edited, synchronize, reopened, labeled, unlabeled]
+
+jobs:
+  check:
+    if: >-
+      github.event_name == 'pull_request' &&
+      contains(github.event.pull_request.labels.*.name, 'release')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v6
+        with:
+          # the merge commit and its first parent, the base branch
+          fetch-depth: 2
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 26
+      - name: Install Corepack
+        run: npm install -g --force corepack@latest
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Install
+        run: yarn --no-immutable
+      - name: Check
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: node .github/scripts/check-release.mjs
+
+  detect:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      pull-requests: read
+
+    outputs:
+      number: ${{ steps.detect.outputs.number }}
+
+    steps:
+      - name: Find the release pull request
+        id: detect
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |-
+          number=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" \
+            --jq 'map(select(.merged_at and any(.labels[]; .name == "release"))) | .[0].number // empty')
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: detect
+    if: needs.detect.outputs.number
+    runs-on: ubuntu-latest
+    environment: release
+
+    concurrency:
+      group: release
+      cancel-in-progress: false
+
+    permissions:
+      contents: write
+      id-token: write
+      pull-requests: read
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v6
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 26
+      - name: Install Corepack
+        run: npm install -g --force corepack@latest
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Install
+        run: yarn --no-immutable
+      - name: Build (1)
+        run: yarn build core
+      - name: Build (2)
+        run: yarn build
+      # skips the versions that are already published, so a failed run can be retried
+      - name: Publish
+        run: |-
+          yarn config set npmPublishProvenance true
+          yarn config set npmRegistryServer https://registry.npmjs.org/
+          yarn yakumo publish
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.detect.outputs.number }}
+        run: |-
+          version=$(node -p "require('./packages/core/package.json').version")
+          if gh release view "v$version" > /dev/null 2>&1; then
+            echo "release v$version already exists"
+            exit 0
+          fi
+          gh pr view "$PR_NUMBER" --json body --jq .body > "$RUNNER_TEMP/notes.md"
+          gh release create "v$version" --target "$GITHUB_SHA" \
+            --title "Cordis $version" --notes-file "$RUNNER_TEMP/notes.md"
