@@ -230,6 +230,22 @@ describe('pnpm isolated', () => {
     expect(state.get('node_modules/linked')).to.include({ name: 'local', realpath: realpathSync(join(dir, 'real')) })
   })
 
+  it('resolves each link to the store as Node does, whether absolute or relative', async () => {
+    const dir = pnpmProject({ '.': { alpha: '1.0.0', beta: '1.0.0' } }, { 'alpha@1.0.0': {}, 'beta@1.0.0': { alpha: '1.0.0' } })
+    for (const depPath of ['alpha@1.0.0', 'beta@1.0.0']) {
+      createProject({ [`${depPathDir(depPath)}/package.json`]: { name: depPath.split('@')[0], version: '1.0.0' } }, dir)
+    }
+    // an absolute link in the native spelling, which may differ from the
+    // project root on Windows, and relative links, which pnpm may mix
+    symlinkSync(join(realpathSync.native(dir), depPathDir('alpha@1.0.0')), join(dir, 'node_modules/alpha'), 'junction')
+    symlinkSync(join('.pnpm/beta@1.0.0/node_modules/beta'), join(dir, 'node_modules/beta'), 'dir')
+    symlinkSync(join('../../alpha@1.0.0/node_modules/alpha'), join(dir, 'node_modules/.pnpm/beta@1.0.0/node_modules/alpha'), 'dir')
+    const state = await readPnpmIsolatedState(dir)
+    for (const location of ['node_modules/alpha', 'node_modules/beta', 'node_modules/.pnpm/beta@1.0.0/node_modules/alpha']) {
+      expect(state.get(location)?.realpath).to.equal(realpathSync(join(dir, location)))
+    }
+  })
+
   it('rejects the state of an unsupported version of pnpm', async () => {
     const dir = pnpmProject({ '.': {} }, {}, { modules: { packageManager: 'pnpm@12.0.0' } })
     await expect(readPnpmIsolatedState(dir)).rejects.toThrow('pnpm@12.0.0')

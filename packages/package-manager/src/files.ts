@@ -1,6 +1,6 @@
 import { realpath as realpathCallback } from 'node:fs'
-import { readFile } from 'node:fs/promises'
-import { basename, dirname, join, resolve } from 'node:path'
+import { readFile, realpath as realpathNative } from 'node:fs/promises'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
 
 /**
@@ -11,6 +11,30 @@ import { promisify } from 'node:util'
  * normalizes the case, so that its result can differ from module URLs.
  */
 export const realpath: (path: string) => Promise<string> = promisify(realpathCallback)
+
+/** Whether a path is a directory or below it, without resolving links. */
+export function isWithin(path: string, dir: string) {
+  const rel = relative(dir, path)
+  return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel)
+}
+
+/**
+ * Create a function that converts a path below the project root to the
+ * spelling of `realRoot`, which `realpath` resolves. On Windows, `realpath`
+ * keeps the 8.3 short names and the letter case of the given path, while an
+ * agent may record absolute paths in the spelling of the libuv implementation
+ * of `realpath`, which expands the short names and normalizes the letter case.
+ * A path below neither spelling of the root is kept.
+ */
+export async function createRootSpelling(realRoot: string) {
+  const nativeRoot = await realpathNative(realRoot).catch(() => realRoot)
+  return (path: string) => {
+    for (const from of [realRoot, nativeRoot]) {
+      if (isWithin(path, from)) return join(realRoot, relative(from, path))
+    }
+    return path
+  }
+}
 
 /** Read a text file, or `undefined` if it does not exist. */
 export async function readText(path: string) {

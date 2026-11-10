@@ -1,6 +1,7 @@
+import { readlink } from 'node:fs/promises'
 import { isAbsolute, join, posix, relative, resolve, sep } from 'node:path'
 import { parse } from 'yaml'
-import { createLocator, createManifestReader, readText, realpath } from '../files.ts'
+import { createLocator, createManifestReader, createRootSpelling, isWithin, readText, realpath } from '../files.ts'
 import { createIsolatedState, InstallState, splitName, Target } from '../state.ts'
 import { compareVersions, isInRange } from '../version.ts'
 import { createDepPathToFilename, mayBeFileDirectory, parseDepPath, refToRelative } from './pnpm-path.ts'
@@ -152,7 +153,7 @@ interface StoreEntry {
 /**
  * Create the store entries of the dependency paths, each parsed and named
  * once. Without the version of pnpm, whose rules name the entries, no
- * dependency path has an entry.
+ * dependency path has an entry. The paths are in the spelling of the store.
  */
 function createVirtualStore(store: string, version: string | undefined, modules: PnpmModules, lock: PnpmLockfile) {
   const toFilename = version ? createDepPathToFilename(version) : undefined
@@ -196,10 +197,12 @@ function createVirtualStore(store: string, version: string | undefined, modules:
      * - a store entry of a `file:` dependency, judged by the dependency path
      *   of the lockfile that names the entry, and otherwise by its name, so
      *   that an entry of unknown source is local.
+     *
+     * The real directory is given in the spelling of the project root.
      */
     isLocal(realDir: string) {
       const rel = relative(store, realDir)
-      if (!rel || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return true
+      if (!rel || !isWithin(realDir, store)) return true
       const directory = rel.split(sep)[0]
       return getLocalByDirectory().get(directory) ?? mayBeFileDirectory(directory, maxLength)
     },
@@ -242,8 +245,13 @@ export async function readPnpmIsolatedState(root: string): Promise<InstallState>
   const settings = modules ?? {} as PnpmModules
   const workspaceState: PnpmWorkspaceState = workspaceStateText ? JSON.parse(workspaceStateText) : {}
   const importers = lock.importers ?? {}
+  // pnpm records the absolute paths of the virtual store on Windows and of the
+  // workspace packages in the native spelling of the project root.
+  const toRoot = await createRootSpelling(realRoot)
   const virtualStoreDir = resolve(modulesDir, settings.virtualStoreDir ?? '.pnpm')
-  const storeDir = await realpath(virtualStoreDir).catch(() => virtualStoreDir)
+  /** the store in the spelling of the project root, in which the locations are */
+  const storeDir = toRoot(await realpath(virtualStoreDir).catch(() => virtualStoreDir))
+
   const store = createVirtualStore(storeDir, version, settings, lock)
   const manifests = createManifestReader()
   // pnpm keeps the optional dependencies in the records even when the
@@ -252,22 +260,61 @@ export async function readPnpmIsolatedState(root: string): Promise<InstallState>
   const importerFields = DEPENDENCY_FIELDS.filter(field => includesOptional || field !== 'optionalDependencies')
   const snapshotFields = (['dependencies', 'optionalDependencies'] as const).filter(field => includesOptional || field !== 'optionalDependencies')
 
-  const projectNames = new Map<string, string>()
+  /** the workspace packages, by directory in the spelling of the project root */
+  const projects = new Map<string, string>()
   for (const [dir, { name }] of Object.entries(workspaceState.projects ?? {})) {
-    if (typeof name === 'string') projectNames.set(resolve(dir), name)
+    if (typeof name === 'string') projects.set(toRoot(resolve(dir)), name)
   }
 
-  /** the target of a `link:` dependency, whose real directory Node resolves through every link */
-  const getLinked = async (path: string, alias: string): Promise<Target> => {
-    const realDir = await realpath(path).catch(() => path)
-    return { name: projectNames.get(path) ?? await manifests.readName(realDir) ?? alias, realpath: realDir, local: true }
+  // pnpm links a store entry with a relative symbolic link, except on
+  // Windows, where it creates a junction with an absolute target, always
+  // before pnpm 11 and since then without the permission for symbolic links.
+  // It keeps an existing link to the right entry, so that one installation
+  // may contain both kinds. Node resolves a relative link in the spelling of
+  // the link, i.e. of `storeDir`, and an absolute link in the spelling of its
+  // target, which may differ from the recorded store. Each link that may be
+  // absolute is therefore read.
+  const mayLinkAbsolute = process.platform === 'win32'
+
+  /** the real directories of the spellings of the store in absolute targets */
+  const resolvedStores = new Map<string, Promise<string>>()
+
+  /** the target of a link at a location to the store entry of a dependency path */
+  const getEntryTarget = async (location: string, depPath: string): Promise<Target | undefined> => {
+    const target = store.getEntry(depPath)?.target
+    if (!target || !mayLinkAbsolute) return target
+    const linkTarget = await readlink(location).catch(() => undefined)
+    if (linkTarget === undefined || !isAbsolute(linkTarget)) return target
+    const path = resolve(linkTarget)
+    // a link to a directory other than the recorded entry is resolved as is
+    if (relative(target.realpath, toRoot(path))) {
+      return { ...target, realpath: await realpath(location).catch(() => path) }
+    }
+    // Node also resolves the links along the target, which are those of the
+    // store, since a store entry contains no link to its own package.
+    const prefix = resolve(path, relative(target.realpath, storeDir))
+    let realStore = resolvedStores.get(prefix)
+    if (!realStore) resolvedStores.set(prefix, realStore = realpath(prefix).catch(() => prefix))
+    return { ...target, realpath: join(await realStore, relative(prefix, path)) }
   }
 
-  /** the target that the records give to a reference of a dependent in a directory */
-  const fromRecords = (dir: string, alias: string, reference: string | undefined) => {
+  /**
+   * The target of a link to a directory outside the store, as a `link:`
+   * dependency or a hoisted workspace package. Node resolves the real
+   * directory through the link, and through the declared path if the link is
+   * absent.
+   */
+  const getLinked = async (location: string, path: string, alias: string): Promise<Target> => {
+    const realDir = await realpath(location).catch(() => realpath(path)).catch(() => path)
+    const name = projects.get(toRoot(realDir)) ?? await manifests.readName(realDir) ?? alias
+    return { name, realpath: realDir, local: true }
+  }
+
+  /** the target that the records give to the link of a dependent in a directory */
+  const fromRecords = (location: string, dir: string, alias: string, reference: string | undefined) => {
     if (typeof reference !== 'string') return
-    if (reference.startsWith('link:')) return getLinked(resolve(dir, reference.slice(5)), alias)
-    return store.getEntry(refToRelative(reference, alias))?.target
+    if (reference.startsWith('link:')) return getLinked(location, resolve(dir, reference.slice(5)), alias)
+    return getEntryTarget(location, refToRelative(reference, alias))
   }
 
   /**
@@ -283,7 +330,7 @@ export async function readPnpmIsolatedState(root: string): Promise<InstallState>
       name: manifest?.name ?? alias,
       version: manifest?.version,
       realpath: realDir,
-      local: store.isLocal(realDir),
+      local: store.isLocal(toRoot(realDir)),
     }
   }
 
@@ -311,7 +358,7 @@ export async function readPnpmIsolatedState(root: string): Promise<InstallState>
     for (const field of importerFields) {
       for (const [alias, dependency] of Object.entries(importer?.[field] ?? {})) {
         const location = join(dir, 'node_modules', alias)
-        addLink(location, filtered ? fromLink(location, alias) : fromRecords(dir, alias, referenceOf(dependency)))
+        addLink(location, filtered ? fromLink(location, alias) : fromRecords(location, dir, alias, referenceOf(dependency)))
       }
     }
   }
@@ -324,7 +371,8 @@ export async function readPnpmIsolatedState(root: string): Promise<InstallState>
       for (const [alias, reference] of Object.entries(snapshot?.[field] ?? {})) {
         // the location of the package itself
         if (alias === entry.target.name) continue
-        addLink(join(entry.dependenciesLocation, alias), fromRecords(realRoot, alias, reference))
+        const location = join(entry.dependenciesLocation, alias)
+        addLink(location, fromRecords(location, realRoot, alias, reference))
       }
     }
   }
@@ -342,13 +390,13 @@ export async function readPnpmIsolatedState(root: string): Promise<InstallState>
         .map(([alias]) => alias)),
       ...Object.values(settings.hoistedDependencies ?? {}).flatMap(aliases => Object.keys(aliases ?? {})),
     ].map(alias => alias.toLowerCase()))
-    for (const [dir, { name }] of Object.entries(workspaceState.projects ?? {})) {
-      if (typeof name !== 'string' || resolve(dir) === realRoot || taken.has(name.toLowerCase())) continue
+    for (const [dir, name] of projects) {
+      if (dir === realRoot || taken.has(name.toLowerCase())) continue
       const type = getHoistType(name)
       if (!type) continue
       const location = join(hoistFolder(type), name)
       // a filtered installation does not hoist a workspace that it did not install
-      addLink(location, filtered ? fromLink(location, name) : { name, realpath: resolve(dir), local: true })
+      addLink(location, filtered ? fromLink(location, name) : getLinked(location, dir, name))
     }
   }
 
@@ -356,8 +404,8 @@ export async function readPnpmIsolatedState(root: string): Promise<InstallState>
   // the workspace packages, which pnpm 11 records.
   for (const [key, aliases] of Object.entries(settings.hoistedDependencies ?? {})) {
     for (const [alias, type] of Object.entries(aliases ?? {})) {
-      const target = Object.hasOwn(importers, key) ? getLinked(resolve(realRoot, key), alias) : store.getEntry(key)?.target
-      addLink(join(hoistFolder(type), alias), target)
+      const location = join(hoistFolder(type), alias)
+      addLink(location, Object.hasOwn(importers, key) ? getLinked(location, resolve(realRoot, key), alias) : getEntryTarget(location, key))
     }
   }
 
