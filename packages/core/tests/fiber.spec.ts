@@ -1,4 +1,4 @@
-import { Context, FiberState, Service, ValidationError } from '../src/index.ts'
+import { Context, FiberState, resolveConfig, Service, ValidationError } from '../src/index.ts'
 import { expect, describe, it, vi } from 'vitest'
 import { mock } from 'node:test'
 import { event, sleep, withTimers } from './utils.ts'
@@ -470,5 +470,12 @@ describe('Fiber: config validation', () => {
       { ok: true, resolved: true },
       { ok: true, extra: 1, resolved: true },
     ])
+  })
+})
+
+describe('resolveConfig', () => {
+  it('names the Standard Schema contract when a component Config violates it', () => {
+    expect(() => resolveConfig({ Config: {} } as any, {})).to.throw(TypeError, 'component Config must implement Standard Schema V1')
+    expect(() => resolveConfig({ Config: { '~standard': {} } } as any, {})).to.throw(TypeError, 'component Config must implement Standard Schema V1')
   })
 })
