@@ -81,7 +81,7 @@ describe('Logger', () => {
       }
     }
 
-    await ctx.plugin(FooService)
+    await ctx.use(FooService)
     ctx.foo.action()
     await sleep()
     expect(captured.map(m => m.name)).toContain('foo:driver')
@@ -99,7 +99,7 @@ describe('Logger', () => {
       }
     }
 
-    await ctx.plugin(FooService)
+    await ctx.use(FooService)
     ctx.intercept('logger', { name: 'caller-override' }).foo.action()
     await sleep()
     expect(captured.map(m => m.name)).toContain('caller-override')
@@ -127,8 +127,8 @@ describe('Logger', () => {
       }
     }
 
-    await ctx.plugin(BarService)
-    await ctx.plugin(FooService)
+    await ctx.use(BarService)
+    await ctx.use(FooService)
     await ctx.inject(['foo'], ctx => ctx.foo.action())
 
     expect(captured.map(m => [m.name, m.args[0]])).toEqual([
@@ -148,7 +148,7 @@ describe('Logger', () => {
       }
     }
 
-    await ctx.plugin(FooService)
+    await ctx.use(FooService)
     await sleep()
     expect(captured.map(m => m.name)).toContain('foo:driver')
   })

@@ -1,6 +1,6 @@
 import { Context } from 'cordis'
 
-export const name = 'test-plugin'
+export const name = 'test-component'
 
 export let value = 'default'
 

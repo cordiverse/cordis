@@ -6,15 +6,15 @@ import { event, sleep } from './utils.ts'
 describe('Isolation', () => {
   it('does not expose own provisions across isolation boundaries', async () => {
     const root = new Context()
-    await root.plugin(async (ctx) => {
+    await root.use(async (ctx) => {
       const isolated = ctx.isolate('foo')
       isolated.provide('foo', {})
       expect(isolated.foo).to.be.ok
       expect(() => ctx.foo).to.throw('cannot get property "foo" without inject')
-      await isolated.plugin((ctx) => {
+      await isolated.use((ctx) => {
         expect(ctx.foo).to.be.ok
       })
-      await ctx.plugin((ctx) => {
+      await ctx.use((ctx) => {
         expect(() => ctx.foo).to.throw('cannot get property "foo" without inject')
       })
     })
@@ -33,14 +33,14 @@ describe('Isolation', () => {
     }
     const results: string[] = []
     await root.inject(['foo'], async (ctx) => {
-      await ctx.plugin((ctx) => {
+      await ctx.use((ctx) => {
         results.push(access(ctx))
       })
-      await ctx.isolate('foo').plugin((ctx) => {
+      await ctx.isolate('foo').use((ctx) => {
         results.push(access(ctx))
       })
       // pinning the same realm still derives an isolation of its own
-      await ctx.isolate('foo', ctx[Context.isolate].foo).plugin((ctx) => {
+      await ctx.isolate('foo', ctx[Context.isolate].foo).use((ctx) => {
         results.push(access(ctx))
       })
     })
@@ -56,7 +56,7 @@ describe('Isolation', () => {
     const root = new Context()
     const callback = mock.fn(() => {})
     const dispose = mock.fn(() => {})
-    const plugin = {
+    const component = {
       inject: ['foo'],
       apply: (ctx: Context) => {
         callback()
@@ -64,11 +64,11 @@ describe('Isolation', () => {
       },
     }
 
-    await root.plugin(plugin)
+    await root.use(component)
     const ctx1 = root.isolate('foo')
-    await ctx1.plugin(plugin)
+    await ctx1.use(component)
     const ctx2 = root.isolate('foo')
-    await ctx2.plugin(plugin)
+    await ctx2.use(component)
 
     const dispose0 = root.provide('foo', { bar: 100 })
     expect(root.foo).to.have.property('bar', 100)
@@ -107,7 +107,7 @@ describe('Isolation', () => {
     const root = new Context()
     const callback = mock.fn(() => {})
     const dispose = mock.fn(() => {})
-    const plugin = {
+    const component = {
       inject: ['foo'],
       apply: (ctx: Context) => {
         callback()
@@ -116,11 +116,11 @@ describe('Isolation', () => {
     }
 
     const label = Symbol('test')
-    await root.plugin(plugin)
+    await root.use(component)
     const ctx1 = root.isolate('foo', label)
-    await ctx1.plugin(plugin)
+    await ctx1.use(component)
     const ctx2 = root.isolate('foo', label)
-    await ctx2.plugin(plugin)
+    await ctx2.use(component)
     await sleep()
     expect(callback.mock.calls).to.have.length(0)
 
@@ -163,7 +163,7 @@ describe('Isolation', () => {
     const inner = mock.fn()
     root.on(event, outer)
     ctx.on(event, inner)
-    await ctx.plugin(Foo)
+    await ctx.use(Foo)
 
     expect(outer.mock.calls).to.have.length(0)
     expect(inner.mock.calls).to.have.length(1)
@@ -181,10 +181,10 @@ describe('Isolation', () => {
       expect(ctx.foo.value).to.equal('outer')
       expect(first.foo.value).to.equal('first')
       expect(second.foo.value).to.equal('second')
-      await first.plugin((ctx) => {
+      await first.use((ctx) => {
         expect(ctx.foo.value).to.equal('first')
       })
-      await second.plugin((ctx) => {
+      await second.use((ctx) => {
         expect(ctx.foo.value).to.equal('second')
       })
 

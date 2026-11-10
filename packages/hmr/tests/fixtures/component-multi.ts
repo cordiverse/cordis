@@ -2,7 +2,7 @@ import { Context } from 'cordis'
 
 const stats: any = ((globalThis as any).__hmrTest ??= {})
 
-export const name = 'plugin-multi'
+export const name = 'component-multi'
 
 export let version = 'multi-v1'
 

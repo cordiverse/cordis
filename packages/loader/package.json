@@ -1,5 +1,5 @@
 {
-  "name": "@cordisjs/plugin-loader",
+  "name": "@cordisjs/loader",
   "description": "Loader for cordis",
   "version": "1.0.0-rc.9",
   "sideEffects": false,
@@ -36,7 +36,7 @@
     "service"
   ],
   "devDependencies": {
-    "@cordisjs/plugin-logger-console": "^1.0.0",
+    "@cordisjs/logger-console": "^1.0.0",
     "cordis": "^4.0.0-rc.12"
   },
   "peerDependencies": {

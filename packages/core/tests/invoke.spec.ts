@@ -38,7 +38,7 @@ describe('Functional Service', () => {
     }
 
     const root = new Context()
-    await root.plugin(Foo, { a: 1 })
+    await root.use(Foo, { a: 1 })
 
     // access from context
     expect(root.foo()).to.deep.equal({ a: 1 })
@@ -101,9 +101,9 @@ describe('Functional Service', () => {
     }
 
     const root = new Context()
-    await root.plugin(Dependency)
-    await root.plugin(Callable)
-    await root.plugin(Outer)
+    await root.use(Dependency)
+    await root.use(Callable)
+    await root.use(Outer)
 
     let result!: ReturnType<Outer['call']>
     await root.inject(['outer'], (ctx) => {

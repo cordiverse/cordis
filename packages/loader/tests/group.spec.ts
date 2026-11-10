@@ -11,7 +11,7 @@ describe('Group: basic support', () => {
   let foo!: Mock<Function>
 
   beforeAll(async () => {
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     loader = root.loader as any
     foo = loader.mock('foo', () => dispose)
   })
@@ -26,7 +26,7 @@ describe('Group: basic support', () => {
 
   it('initialize', async () => {
     outer = await loader.create({
-      name: '@cordisjs/plugin-group',
+      name: '@cordisjs/group',
       group: true,
       config: [{
         name: 'foo',
@@ -34,7 +34,7 @@ describe('Group: basic support', () => {
     })
 
     inner = await loader.create({
-      name: '@cordisjs/plugin-group',
+      name: '@cordisjs/group',
       group: true,
       config: [{
         name: 'foo',
@@ -91,7 +91,7 @@ describe('Group: transfer', () => {
   let foo!: Mock<Function>
 
   beforeAll(async () => {
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     loader = root.loader as any
     foo = loader.mock('foo', () => dispose)
   })
@@ -112,20 +112,20 @@ describe('Group: transfer', () => {
     })
 
     alpha = await loader.create({
-      name: '@cordisjs/plugin-group',
+      name: '@cordisjs/group',
       group: true,
       config: [],
     })
 
     beta = await loader.create({
-      name: '@cordisjs/plugin-group',
+      name: '@cordisjs/group',
       group: true,
       disabled: true,
       config: [],
     }, alpha)
 
     gamma = await loader.create({
-      name: '@cordisjs/plugin-group',
+      name: '@cordisjs/group',
       group: true,
       config: [],
     }, beta)
@@ -176,7 +176,7 @@ describe('Group: awaited reconciliation', () => {
   let bar!: Mock<Function>
 
   beforeAll(async () => {
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     loader = root.loader as any
     foo = loader.mock('foo', () => {})
     bar = loader.mock('bar', () => {})
@@ -186,7 +186,7 @@ describe('Group: awaited reconciliation', () => {
 
   it('initialize', async () => {
     group = await loader.create({
-      name: '@cordisjs/plugin-group',
+      name: '@cordisjs/group',
       group: true,
       config: [{
         id: '1',
@@ -235,7 +235,7 @@ describe('Group: intercept', () => {
   let loader!: MockLoader
 
   beforeAll(async () => {
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     loader = root.loader as any
     loader.mock('foo', (ctx: Context) => {
       callback(ctx[Context.intercept])
@@ -252,7 +252,7 @@ describe('Group: intercept', () => {
 
   it('initialize', async () => {
     outer = await loader.create({
-      name: '@cordisjs/plugin-group',
+      name: '@cordisjs/group',
       group: true,
       intercept: {
         foo: {
@@ -263,7 +263,7 @@ describe('Group: intercept', () => {
     })
 
     inner = await loader.create({
-      name: '@cordisjs/plugin-group',
+      name: '@cordisjs/group',
       group: true,
       intercept: {
         foo: {

@@ -18,7 +18,7 @@ describe('Loader: entry rebuild', () => {
   let disposeA: () => any = () => {}
 
   beforeAll(async () => {
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     loader = root.loader as any
     loader.mock('settings', (ctx: Context) => {
       ctx.provide('settings', {})
@@ -136,7 +136,7 @@ describe('Loader: entry rebuild', () => {
     expect(entry.innerFiber?.uid ?? null).to.equal(null)
   })
 
-  it('rebuilds when the plugin renames its own entry', async () => {
+  it('rebuilds when the component renames its own entry', async () => {
     const held = Promise.withResolvers<void>()
     const renaming = loader.mock('renaming', () => {
       void loader.update('x', { name: 'b' } as any)
@@ -158,7 +158,7 @@ describe('Loader: entry rebuild', () => {
 describe('Loader: active entry rebuild (#218)', () => {
   it('starts a pending entry when inject is cleared', async () => {
     const root = new Context()
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     const loader = root.loader as MockLoader
     const plug = loader.mock('plug', () => {})
 
@@ -185,7 +185,7 @@ describe('Loader: active entry rebuild (#218)', () => {
 
   it('reapplies when inject gains a service that is already provided', async () => {
     const root = new Context()
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     const loader = root.loader as MockLoader
     root.provide('foo', { n: 1 })
     const reads: Context['foo'][] = []
@@ -212,7 +212,7 @@ describe('Loader: active entry rebuild (#218)', () => {
 
   it('keeps the new outer fiber pending and drops the old listener when inject is missing', async () => {
     const root = new Context()
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     const loader = root.loader as MockLoader
     const ping = Symbol('rebuild')
     let hits = 0
@@ -244,7 +244,7 @@ describe('Loader: active entry rebuild (#218)', () => {
     const root = new Context()
     root.provide('foo', { n: 1 })
     root.provide('bar', { n: 2 })
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     const loader = root.loader as MockLoader
     let release!: () => void
     const gate = new Promise<void>(resolve => { release = resolve })
@@ -279,7 +279,7 @@ describe('Loader: active entry rebuild (#218)', () => {
 
   it.each(['import', 'failed import', 'context patch'])('uses the latest name during a pending %s', async (stage) => {
     const root = new Context()
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     const loader = root.loader as MockLoader
     loader.mock('a', () => {})
     const b = loader.mock('b', () => {})
@@ -322,7 +322,7 @@ describe('Loader: active entry rebuild (#218)', () => {
   it('does not apply a fiber removed while rebuild is disposing', async () => {
     const root = new Context()
     root.provide('foo', { n: 1 })
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     const loader = root.loader as MockLoader
     let release!: () => void
     const gate = new Promise<void>(resolve => { release = resolve })
@@ -351,7 +351,7 @@ describe('Loader: active entry rebuild (#218)', () => {
     root.provide('foo', { n: 1 })
     root.provide('bar', { n: 2 })
     root.provide('qux', { n: 3 })
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     const loader = root.loader as MockLoader
     let release!: () => void
     const gate = new Promise<void>(resolve => { release = resolve })

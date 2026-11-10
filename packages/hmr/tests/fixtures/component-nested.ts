@@ -4,7 +4,7 @@ import { version } from './tree-dep.ts'
 // Counters must survive module reloads, so they live on `globalThis`.
 const stats: any = ((globalThis as any).__hmrTest ??= {})
 
-export const name = 'plugin-nested'
+export const name = 'component-nested'
 
 export function apply(ctx: Context) {
   stats.nestedApplied = (stats.nestedApplied ?? 0) + 1

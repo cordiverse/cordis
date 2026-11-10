@@ -14,7 +14,7 @@ describe('Fiber: concurrent updates', () => {
     const applied: number[] = []
     const disposed: number[] = []
     const settled = mock.fn()
-    const fiber = await root.plugin({
+    const fiber = await root.use({
       inject: inject ? ['foo'] : [],
       async apply(ctx: Context, config: { value: number }) {
         applied.push(config.value)
@@ -51,10 +51,10 @@ describe('Fiber: concurrent updates', () => {
     expect(disposed).to.deep.equal([0, 1, 3])
   })
 
-  it('skips superseded loads before executing the plugin', async () => {
+  it('skips superseded loads before executing the component', async () => {
     const root = new Context()
     const applied: number[] = []
-    const fiber = root.plugin((_ctx, config: { value: number }) => {
+    const fiber = root.use((_ctx, config: { value: number }) => {
       applied.push(config.value)
     }, { value: 1 })
     const first = fiber.update({ value: 2 })
@@ -71,7 +71,7 @@ describe('Fiber: concurrent updates', () => {
     const unloading = Promise.withResolvers<void>()
     const release = Promise.withResolvers<void>()
     const applied: number[] = []
-    const fiber = await root.plugin((_ctx, config: { value: number }) => {
+    const fiber = await root.use((_ctx, config: { value: number }) => {
       applied.push(config.value)
       return async () => {
         if (config.value !== 0) return
@@ -99,7 +99,7 @@ describe('Fiber: concurrent updates', () => {
     const release = Promise.withResolvers<void>()
     const original = { value: 1 }
     const applied: number[] = []
-    const fiber = root.plugin(async (_ctx, config: { value: number }) => {
+    const fiber = root.use(async (_ctx, config: { value: number }) => {
       applied.push(config.value)
       started.resolve()
       await release.promise
@@ -127,7 +127,7 @@ describe('Fiber: concurrent updates', () => {
     const failure = new Error('superseded load')
     const applied: number[] = []
     const disposed: number[] = []
-    const fiber = root.plugin(async (ctx, config: { value: number }) => {
+    const fiber = root.use(async (ctx, config: { value: number }) => {
       applied.push(config.value)
       ctx.effect(() => () => { disposed.push(config.value) })
       if (config.value !== 1) return
@@ -156,7 +156,7 @@ describe('Fiber: concurrent updates', () => {
     const release = Promise.withResolvers<void>()
     const applied: number[] = []
     const disposed: number[] = []
-    const fiber = await root.plugin(async (ctx, config: { value: number }) => {
+    const fiber = await root.use(async (ctx, config: { value: number }) => {
       applied.push(config.value)
       ctx.effect(() => () => { disposed.push(config.value) })
       if (config.value === 1) {
@@ -190,7 +190,7 @@ describe('Fiber: concurrent updates', () => {
     const started = Promise.withResolvers<void>()
     const release = Promise.withResolvers<void>()
     const events: string[] = []
-    const fiber = root.plugin(async function* (_ctx, config: { value: number }) {
+    const fiber = root.use(async function* (_ctx, config: { value: number }) {
       events.push(`load ${config.value}`)
       if (config.value !== 1) return
       started.resolve()
@@ -212,7 +212,7 @@ describe('Fiber: concurrent updates', () => {
   it('waits for dependencies and loads only the latest config', async () => {
     const root = new Context()
     const applied: number[] = []
-    const fiber = root.plugin({
+    const fiber = root.use({
       inject: ['foo'],
       apply(ctx: Context, config: { value: number }) {
         expect(ctx.foo).to.equal('available')
@@ -237,7 +237,7 @@ describe('Fiber: concurrent updates', () => {
     const release = Promise.withResolvers<void>()
     const applied: number[] = []
     const received: number[] = []
-    const fiber = root.plugin(async (ctx, config: { value: number }) => {
+    const fiber = root.use(async (ctx, config: { value: number }) => {
       applied.push(config.value)
       ctx.on('internal/update', (config) => { received.push(config.value) })
       started.resolve()
@@ -262,7 +262,7 @@ describe('Fiber: concurrent updates', () => {
     const release = Promise.withResolvers<void>()
     const applied: number[] = []
     const disposed = mock.fn()
-    const fiber = root.plugin(async (_ctx, config: { value: number }) => {
+    const fiber = root.use(async (_ctx, config: { value: number }) => {
       applied.push(config.value)
       started.resolve()
       await release.promise

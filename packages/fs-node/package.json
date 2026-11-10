@@ -1,5 +1,5 @@
 {
-  "name": "@cordisjs/plugin-fs-node",
+  "name": "@cordisjs/fs-node",
   "description": "Node.js File System Service for Cordis",
   "version": "0.1.0",
   "sideEffects": false,
@@ -22,7 +22,7 @@
   "homepage": "https://cordis.io/",
   "keywords": [
     "cordis",
-    "plugin",
+    "component",
     "fs",
     "node",
     "file",

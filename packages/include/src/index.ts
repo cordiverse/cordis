@@ -1,4 +1,4 @@
-import { Entry, EntryChange, EntryOptions, EntryTree, isJsExpr, SourceLocation } from '@cordisjs/plugin-loader'
+import { Entry, EntryChange, EntryOptions, EntryTree, isJsExpr, SourceLocation } from '@cordisjs/loader'
 import { Context, Service } from 'cordis'
 import { deepEqual } from 'cosmokit'
 import { basename, dirname, extname, join } from 'node:path'
@@ -12,7 +12,7 @@ import {
 import { stringifyString } from 'yaml/util'
 import { applyJournal, flatten, Journal, merge, reconcile, record } from './journal.ts'
 import { applyPatches, ensureIds, ensureInsertIds, PatchIndex, PatchOptions, routeJournal } from './patch.ts'
-import type {} from '@cordisjs/plugin-fs-node'
+import type {} from '@cordisjs/fs-node'
 
 // A Windows drive-letter path, e.g. `C:\app\cordis.yml` or `C:/app/cordis.yml`.
 const driveLetter = /^[A-Za-z]:[\\/]/

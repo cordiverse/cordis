@@ -1,5 +1,5 @@
 import { Context, Fiber, Message } from 'cordis'
-import Loader from '@cordisjs/plugin-loader'
+import Loader from '@cordisjs/loader'
 import { afterEach } from 'vitest'
 import { chmod, readFile, rm, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -8,16 +8,16 @@ import Include from '../src/index.ts'
 
 export const fixture = (name: string) => fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url))
 
-export const plugin = (id: string, value: number, extra: any = {}) => ({
+export const component = (id: string, value: number, extra: any = {}) => ({
   id,
-  name: './config-plugin',
+  name: './config-component',
   config: { tag: id, value },
   ...extra,
 })
 
 export const group = (id: string, config: any[]) => ({
   id,
-  name: '@cordisjs/plugin-group',
+  name: '@cordisjs/group',
   group: true,
   config,
 })
@@ -47,9 +47,9 @@ export function harness() {
     const ctx = new Context()
     const messages: Message[] = []
     ctx.logger.exporter({ export: message => messages.push(message) })
-    fiber = await ctx.plugin(Loader, { baseUrl: import.meta.url })
+    fiber = await ctx.use(Loader, { baseUrl: import.meta.url })
     const id = await ctx.loader.create({
-      name: '@cordisjs/plugin-include',
+      name: '@cordisjs/include',
       config: { path: `./fixtures/${name}`, ...config },
     })
     await ctx.loader.store[id]!.innerFiber!.await()

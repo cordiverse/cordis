@@ -1,1 +1,1 @@
-# @cordisjs/plugin-fs-node
+# @cordisjs/fs-node

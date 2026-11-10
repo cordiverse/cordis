@@ -1,4 +1,4 @@
 - id: hmr
-  name: '@cordisjs/plugin-hmr'
+  name: '@cordisjs/hmr'
 - id: tree
-  name: ./plugin-tree
+  name: ./component-tree

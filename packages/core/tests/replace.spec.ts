@@ -1,4 +1,4 @@
-import { Context, FiberState, Plugin } from '../src/index.ts'
+import { Context, FiberState, Component } from '../src/index.ts'
 import { expect, describe, it } from 'vitest'
 import { mock } from 'node:test'
 import { sleep } from './utils.ts'
@@ -9,7 +9,7 @@ describe('registry.replace()', () => {
     const disposeOld = mock.fn()
     const old = mock.fn((ctx: Context, config: any) => () => disposeOld())
     const next = mock.fn()
-    const fiber = await root.plugin(old, { foo: 1 })
+    const fiber = await root.use(old, { foo: 1 })
     const { uid } = fiber
 
     const replaced = root.registry.replace(old, next)
@@ -19,7 +19,7 @@ describe('registry.replace()', () => {
     expect(disposeOld.mock.calls).to.have.length(1)
     expect(next.mock.calls).to.have.length(1)
     expect(next.mock.calls[0].arguments[1]).to.deep.equal({ foo: 1 })
-    // the reference returned by `ctx.plugin()` stays valid
+    // the reference returned by `ctx.use()` stays valid
     expect(fiber.uid).to.equal(uid)
     expect(fiber.state).to.equal(FiberState.ACTIVE)
     expect(fiber.runtime).to.equal(root.registry.get(next))
@@ -34,8 +34,8 @@ describe('registry.replace()', () => {
     root.on('internal/replace', (fiber) => {
       runtimes.push(fiber.runtime)
     })
-    const a = await root.plugin(old)
-    const b = await root.plugin(old)
+    const a = await root.use(old)
+    const b = await root.use(old)
 
     const replaced = root.registry.replace(old, next)
     expect(replaced).to.have.members([a, b])
@@ -51,18 +51,18 @@ describe('registry.replace()', () => {
     const apply = mock.fn()
     const old = { Config: schema(value => ({ ...value, version: 1 })), apply() {} }
     const next = { Config: schema(value => ({ ...value, version: 2 })), apply }
-    await root.plugin(old, { foo: 1 })
+    await root.use(old, { foo: 1 })
 
     await Promise.all(root.registry.replace(old, next).map(fiber => fiber.await()))
     expect(apply.mock.calls[0].arguments[1]).to.deep.equal({ foo: 1, version: 2 })
   })
 
-  it('takes the dependencies of the new plugin', async () => {
+  it('takes the dependencies of the new component', async () => {
     const root = new Context()
     const old = { apply() {} }
     const apply = mock.fn()
     const next = { inject: ['dep'], apply }
-    const fiber = await root.plugin(old)
+    const fiber = await root.use(old)
 
     root.registry.replace(old, next)
     await fiber.await()
@@ -76,11 +76,11 @@ describe('registry.replace()', () => {
     expect(apply.mock.calls).to.have.length(1)
   })
 
-  it('starts a pending fiber when the new plugin drops the missing dependency', async () => {
+  it('starts a pending fiber when the new component drops the missing dependency', async () => {
     const root = new Context()
     const old = { inject: ['missing'], apply() {} }
     const next = mock.fn()
-    const fiber = await root.plugin(old)
+    const fiber = await root.use(old)
     expect(fiber.state).to.equal(FiberState.PENDING)
 
     root.registry.replace(old, next)
@@ -89,12 +89,12 @@ describe('registry.replace()', () => {
     expect(next.mock.calls).to.have.length(1)
   })
 
-  it('starts a pending fiber when the new plugin injects an available service', async () => {
+  it('starts a pending fiber when the new component injects an available service', async () => {
     const root = new Context()
     root.provide('available', {})
     const old = { inject: ['missing'], apply() {} }
     const apply = mock.fn()
-    const fiber = await root.plugin(old)
+    const fiber = await root.use(old)
     expect(fiber.state).to.equal(FiberState.PENDING)
 
     root.registry.replace(old, { inject: ['available'], apply })
@@ -103,12 +103,12 @@ describe('registry.replace()', () => {
     expect(apply.mock.calls).to.have.length(1)
   })
 
-  it('stops depending on a dependency that the new plugin drops', async () => {
+  it('stops depending on a dependency that the new component drops', async () => {
     const root = new Context()
-    const provider = await root.plugin(ctx => ctx.provide('dep', {}))
+    const provider = await root.use(ctx => ctx.provide('dep', {}))
     const old = { inject: ['dep'], apply() {} }
     const next = mock.fn()
-    const fiber = await root.plugin(old)
+    const fiber = await root.use(old)
 
     root.registry.replace(old, next)
     await fiber.await()
@@ -127,8 +127,8 @@ describe('registry.replace()', () => {
       ctx.provide('replaced', { value: 'next' })
     }
     const values: string[] = []
-    await root.plugin(old)
-    const consumer = await root.plugin({
+    await root.use(old)
+    const consumer = await root.use({
       inject: ['replaced'],
       apply: (ctx: Context) => {
         values.push(ctx.get('replaced' as any).value)
@@ -142,12 +142,12 @@ describe('registry.replace()', () => {
     expect(consumer.state).to.equal(FiberState.ACTIVE)
   })
 
-  it('merges the fibers into a registered plugin', async () => {
+  it('merges the fibers into a registered component', async () => {
     const root = new Context()
     const old = mock.fn()
     const next = mock.fn()
-    const a = await root.plugin(old, 'a')
-    const b = await root.plugin(next, 'b')
+    const a = await root.use(old, 'a')
+    const b = await root.use(next, 'b')
 
     root.registry.replace(old, next)
     await a.await()
@@ -163,7 +163,7 @@ describe('registry.replace()', () => {
     const root = new Context()
     const old = () => { throw new Error('failed') }
     const next = mock.fn()
-    const fiber = root.plugin(old)
+    const fiber = root.use(old)
     await fiber.await().catch(() => {})
     expect(fiber.state).to.equal(FiberState.FAILED)
 
@@ -173,29 +173,29 @@ describe('registry.replace()', () => {
     expect(next.mock.calls).to.have.length(1)
   })
 
-  it('leaves a fiber failed when the new plugin fails to apply', async () => {
+  it('leaves a fiber failed when the new component fails to apply', async () => {
     const root = new Context()
     const old = () => {}
-    const fiber = await root.plugin(old)
+    const fiber = await root.use(old)
 
     root.registry.replace(old, () => { throw new Error('failed') })
     await expect(fiber.await()).rejects.toThrow('failed')
     expect(fiber.state).to.equal(FiberState.FAILED)
   })
 
-  it('forwards the old plugin to the new one', async () => {
+  it('forwards the old component to the new one', async () => {
     const root = new Context()
     const old = mock.fn()
     const apply = mock.fn()
     const next = { inject: ['dep'], apply }
-    await root.plugin(old)
+    await root.use(old)
     root.registry.replace(old, next)
 
-    const fiber = root.plugin(old)
+    const fiber = root.use(old)
     expect(Object.keys(fiber.inject)).to.deep.equal(['dep'])
     expect(fiber.runtime).to.equal(root.registry.get(next))
     expect(root.registry.get(old)).to.equal(root.registry.get(next))
-    // the alias is not a registered plugin
+    // the alias is not a registered component
     expect(root.registry.size).to.equal(1)
     expect([...root.registry.keys()]).to.deep.equal([apply])
 
@@ -205,14 +205,14 @@ describe('registry.replace()', () => {
     expect(apply.mock.calls).to.have.length(2)
   })
 
-  it('forwards a plugin that is not registered', async () => {
+  it('forwards a component that is not registered', async () => {
     const root = new Context()
     const old = mock.fn()
     const next = mock.fn()
     expect(root.registry.replace(old, next)).to.deep.equal([])
     expect(root.registry.size).to.equal(0)
 
-    await root.plugin(old)
+    await root.use(old)
     expect(old.mock.calls).to.have.length(0)
     expect(next.mock.calls).to.have.length(1)
   })
@@ -222,7 +222,7 @@ describe('registry.replace()', () => {
     const a = mock.fn()
     const b = mock.fn()
     const c = mock.fn()
-    const fiber = await root.plugin(a)
+    const fiber = await root.use(a)
     root.registry.replace(a, b)
     root.registry.replace(a, c)
     await fiber.await()
@@ -231,11 +231,11 @@ describe('registry.replace()', () => {
     expect([...root.registry.keys()]).to.deep.equal([c])
   })
 
-  it('switches back to a replaced plugin', async () => {
+  it('switches back to a replaced component', async () => {
     const root = new Context()
     const a = mock.fn()
     const b = mock.fn()
-    const fiber = await root.plugin(a)
+    const fiber = await root.use(a)
     root.registry.replace(a, b)
     root.registry.replace(b, a)
     await fiber.await()
@@ -245,11 +245,11 @@ describe('registry.replace()', () => {
     expect(a.mock.calls).to.have.length(2)
   })
 
-  it('unregisters the new plugin when its last fiber is disposed', async () => {
+  it('unregisters the new component when its last fiber is disposed', async () => {
     const root = new Context()
     const old = () => {}
     const next = () => {}
-    const fiber = await root.plugin(old)
+    const fiber = await root.use(old)
     root.registry.replace(old, next)
     await fiber.await()
 

@@ -1,6 +1,6 @@
 - id: hmr
-  name: '@cordisjs/plugin-hmr'
+  name: '@cordisjs/hmr'
 - id: test-slow
-  name: ./plugin-slow
+  name: ./component-slow
 - id: test-fast
-  name: ./plugin-fast
+  name: ./component-fast

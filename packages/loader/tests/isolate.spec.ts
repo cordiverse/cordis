@@ -12,7 +12,7 @@ describe('Service Isolation: basic', () => {
   let bar!: Mock<Function>
 
   beforeAll(async () => {
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     loader = root.loader as any
 
     foo = Object.assign(loader.mock('foo', () => dispose), {
@@ -148,7 +148,7 @@ describe('Service Isolation: realm', () => {
   let bar!: Mock<Function>
 
   beforeAll(async () => {
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     loader = root.loader as any
 
     foo = Object.assign(loader.mock('foo', () => dispose), {
@@ -171,7 +171,7 @@ describe('Service Isolation: realm', () => {
 
   it('add isolate group', async () => {
     alpha = await loader.create({
-      name: '@cordisjs/plugin-group',
+      name: '@cordisjs/group',
       isolate: {
         bar: true,
       },
@@ -182,7 +182,7 @@ describe('Service Isolation: realm', () => {
     })
 
     beta = await loader.create({
-      name: '@cordisjs/plugin-group',
+      name: '@cordisjs/group',
       isolate: {
         bar: 'beta',
       },
@@ -250,7 +250,7 @@ describe('Service Isolation: realm', () => {
 
   it('special case: nested realms', async () => {
     const root = new Context()
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     const loader = root.loader as MockLoader
   
     const dispose = mock.fn()
@@ -264,12 +264,12 @@ describe('Service Isolation: realm', () => {
     }))
 
     const outer = await loader.create({
-      name: '@cordisjs/plugin-group',
+      name: '@cordisjs/group',
       config: [],
     })
 
     const inner = await loader.create({
-      name: '@cordisjs/plugin-group',
+      name: '@cordisjs/group',
       isolate: {
         bar: 'custom',
       },
@@ -325,7 +325,7 @@ describe('Service Isolation: realm', () => {
 
   it('special case: change provider', async () => {
     const root = new Context()
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     const loader = root.loader as MockLoader
   
     const dispose = mock.fn()
@@ -355,7 +355,7 @@ describe('Service Isolation: realm', () => {
     })
 
     const group = await loader.create({
-      name: '@cordisjs/plugin-group',
+      name: '@cordisjs/group',
       isolate: {
         bar: 'alpha',
       },
@@ -389,7 +389,7 @@ describe('Service Isolation: realm', () => {
 
   it('special case: change injector', async () => {
     const root = new Context()
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     const loader = root.loader as MockLoader
   
     const dispose = mock.fn()
@@ -417,7 +417,7 @@ describe('Service Isolation: realm', () => {
     })
 
     const group = await loader.create({
-      name: '@cordisjs/plugin-group',
+      name: '@cordisjs/group',
       isolate: {
         bar: 'alpha',
       },
@@ -463,7 +463,7 @@ describe('Service Isolation: transfer', () => {
   let bar!: Mock<Function>
 
   beforeAll(async () => {
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     loader = root.loader as any
 
     foo = Object.assign(loader.mock('foo', () => dispose), {
@@ -489,7 +489,7 @@ describe('Service Isolation: transfer', () => {
 
   it('initiate', async () => {
     group = await loader.create({
-      name: '@cordisjs/plugin-group',
+      name: '@cordisjs/group',
       isolate: {
         bar: true,
       },
@@ -540,7 +540,7 @@ describe('Service Isolation: transfer', () => {
 describe('Service Isolation: migration', () => {
   it('keeps the committed views of a parent and a pinned child across a realm move', async () => {
     const root = new Context()
-    await root.plugin(MockLoader)
+    await root.use(MockLoader)
     const loader = root.loader as MockLoader
     const loads: string[] = []
     const unloads: string[] = []

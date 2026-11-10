@@ -1,6 +1,6 @@
 import { Context } from 'cordis'
 
-export const name = 'plugin-disabled-hmr'
+export const name = 'component-disabled-hmr'
 
 export let value = 'initial'
 

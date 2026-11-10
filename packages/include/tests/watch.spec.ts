@@ -1,11 +1,11 @@
 import { Context, Fiber, Service } from 'cordis'
-import Loader from '@cordisjs/plugin-loader'
-import Fs from '@cordisjs/plugin-fs-node'
+import Loader from '@cordisjs/loader'
+import Fs from '@cordisjs/fs-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readFile, rm, writeFile } from 'node:fs/promises'
 import * as yaml from 'yaml'
 import Include from '../src/index.ts'
-import { fixture, plugin } from './utils.ts'
+import { fixture, component } from './utils.ts'
 
 class FakeFs extends Service {
   static paths: string[] = []
@@ -34,10 +34,10 @@ describe('Include watch', () => {
   async function setup(config: any = {}) {
     await writeFile(filename, '[]\n')
     const ctx = new Context()
-    await ctx.plugin(FakeFs)
-    fiber = await ctx.plugin(Loader, { baseUrl: import.meta.url })
+    await ctx.use(FakeFs)
+    fiber = await ctx.use(Loader, { baseUrl: import.meta.url })
     const id = await ctx.loader.create({
-      name: '@cordisjs/plugin-include',
+      name: '@cordisjs/include',
       config: { path: './fixtures/watch.yml', ...config },
     })
     await ctx.loader.store[id]!.innerFiber!.await()
@@ -73,12 +73,12 @@ describe('Include watch with fs', () => {
   })
 
   it('keeps watching the file across its own rename-based writes', async () => {
-    await writeFile(filename, yaml.stringify([plugin('a', 0)]))
+    await writeFile(filename, yaml.stringify([component('a', 0)]))
     const ctx = new Context()
-    await ctx.plugin(Fs)
-    fiber = await ctx.plugin(Loader, { baseUrl: import.meta.url })
+    await ctx.use(Fs)
+    fiber = await ctx.use(Loader, { baseUrl: import.meta.url })
     const id = await ctx.loader.create({
-      name: '@cordisjs/plugin-include',
+      name: '@cordisjs/include',
       config: { path: './fixtures/watch-fs.yml', watch: true },
     })
     await ctx.loader.store[id]!.innerFiber!.await()
@@ -96,7 +96,7 @@ describe('Include watch with fs', () => {
 
     // an external edit still reaches the tree through the watch; some
     // platforms drop single events, so the file is rewritten until one is seen
-    const external = yaml.stringify([plugin('a', 3)])
+    const external = yaml.stringify([component('a', 3)])
     await vi.waitFor(async () => {
       await writeFile(filename, external)
       expect(ctx.bail('test/config', 'a')?.value).toBe(3)

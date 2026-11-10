@@ -185,12 +185,12 @@ describe('Events', () => {
     expect(added.mock.calls).to.have.length(1)
   })
 
-  it('skips a listener disposed by an earlier plugin during dispatch', async () => {
+  it('skips a listener disposed by an earlier component during dispatch', async () => {
     const { root } = setup()
-    let child!: ReturnType<Context['plugin']>
+    let child!: ReturnType<Context['use']>
     root.on(event, async () => { await child.dispose() })
     const removed = mock.fn()
-    child = root.plugin((ctx: Context) => { ctx.on(event, removed) })
+    child = root.use((ctx: Context) => { ctx.on(event, removed) })
     await child
 
     await root.serial(event)
@@ -253,7 +253,7 @@ describe('Events', () => {
     const removed = mock.fn()
     const remaining = mock.fn()
     const loaded: number[] = []
-    const child = root.plugin((ctx: Context, config: { n: number }) => {
+    const child = root.use((ctx: Context, config: { n: number }) => {
       loaded.push(config.n)
       let dispose!: () => void
       ctx.on('internal/update', (config, next) => {
@@ -473,7 +473,7 @@ describe('Events', () => {
     it('does not accumulate across reloads', async () => {
       const { root } = setup()
       const calls: number[] = []
-      const fiber = root.plugin((ctx: Context, _: { n: number }) => {
+      const fiber = root.use((ctx: Context, _: { n: number }) => {
         ctx.on('internal/update', (config, next) => {
           calls.push(config.n)
           return next()
@@ -491,7 +491,7 @@ describe('Events', () => {
       const { root } = setup()
       const calls: number[] = []
       let dispose!: () => void
-      const fiber = root.plugin((ctx: Context, _: { n: number }) => {
+      const fiber = root.use((ctx: Context, _: { n: number }) => {
         dispose = ctx.on('internal/update', (config, next) => {
           calls.push(config.n)
           return next()
@@ -508,7 +508,7 @@ describe('Events', () => {
       const { root } = setup()
       const order: string[] = []
       let dispose!: () => void
-      const fiber = root.plugin((ctx: Context, _: { n: number }) => {
+      const fiber = root.use((ctx: Context, _: { n: number }) => {
         const listen = (name: string, prepend?: boolean) => {
           return ctx.on('internal/update', (config, next) => {
             order.push(name)
@@ -540,7 +540,7 @@ describe('Events', () => {
         return next()
       }, { global: true })
 
-      const fiber = root.plugin((ctx: Context, _: { n: number }) => {
+      const fiber = root.use((ctx: Context, _: { n: number }) => {
         ctx.on('internal/update', (config, next) => {
           localCalls.push(config.n)
           return next()

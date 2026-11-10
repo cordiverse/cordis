@@ -11,7 +11,7 @@ describe('Include parse', () => {
       '%YAML 1.1',
       '---',
       '- id: a',
-      '  name: ./config-plugin',
+      '  name: ./config-component',
       '  config:',
       '    tag: a',
       '    value: [yes, 0777, 0b101]',
@@ -25,7 +25,7 @@ describe('Include parse', () => {
   }, 10000)
 
   it('writes expressions back with their tag', async () => {
-    const app = await setup('tmp-parse-expr.yml', '- id: a\n  name: ./config-plugin\n  config:\n    tag: a\n    value: !!js "\'#\' + 1"\n')
+    const app = await setup('tmp-parse-expr.yml', '- id: a\n  name: ./config-component\n  config:\n    tag: a\n    value: !!js "\'#\' + 1"\n')
     expect(app.config('a').value).toBe('#1')
 
     await app.update('a', { config: { tag: 'a', value: { __jsExpr: "'#' + 2" } } })

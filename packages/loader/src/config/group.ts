@@ -84,7 +84,7 @@ export class EntryGroup {
     // non-objects are rejected by `create`
     const newMap = Object.fromEntries(config.map(options => [options?.id ?? Symbol('anonymous'), options]))
 
-    // update inner plugins
+    // update inner components
     const ids = Reflect.ownKeys({ ...oldMap, ...newMap }) as string[]
     await Promise.all(ids.map(async (id) => {
       if (newMap[id]) {

@@ -1,4 +1,4 @@
 - id: hmr
-  name: '@cordisjs/plugin-hmr'
+  name: '@cordisjs/hmr'
 - id: live
-  name: ./plugin-disabled-hmr
+  name: ./component-disabled-hmr

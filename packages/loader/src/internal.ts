@@ -28,7 +28,7 @@ export function getInternalLoader(): InternalLoader | undefined {
   if (typeof loader?.import === 'function') return loader
 }
 
-/** Get the plugin exported by a module namespace. */
+/** Get the component exported by a module namespace. */
 export function unwrapExports(exports: any) {
   if (exports === null || exports === undefined) return exports
   exports = exports.default ?? exports

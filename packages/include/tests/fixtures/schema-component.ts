@@ -1,6 +1,6 @@
 import { Context } from 'cordis'
 
-export const name = 'schema-plugin'
+export const name = 'schema-component'
 
 /** Requires a numeric `port` and reports every issue it finds. */
 export const Config = {

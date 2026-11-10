@@ -18,8 +18,8 @@ describe('Association', () => {
       }
     }
 
-    await root.plugin(Foo)
-    const fiber = await root.plugin(FooBar)
+    await root.use(Foo)
+    const fiber = await root.use(FooBar)
     expect(root.foo).to.be.instanceof(Foo)
     expect(root.foo.bar).to.be.instanceof(FooBar)
     expect(root.foo.qux).to.equal(1)
@@ -38,7 +38,7 @@ describe('Association', () => {
 
     root.provide('foo.bar')
     root.provide('foo.baz')
-    await root.plugin(Foo)
+    await root.use(Foo)
     expect(root.foo).to.be.instanceof(Foo)
     root.foo.qux = 2
     root.foo.bar = 3
@@ -95,14 +95,14 @@ describe('Association', () => {
     }
 
     const root = new Context()
-    await root.plugin(Foo)
+    await root.use(Foo)
 
     await root.inject(['foo'], async (ctx) => {
       const session = ctx.foo.createSession()
       expect(session).to.be.instanceof(Session)
       expect(session.bar).to.be.undefined
 
-      await ctx.plugin(Bar)
+      await ctx.use(Bar)
       await ctx.inject(['bar'], (ctx) => {
         const session = ctx.foo.createSession()
         expect(session).to.be.instanceof(Session)
@@ -156,8 +156,8 @@ describe('Association', () => {
     }
 
     const root = new Context()
-    await root.plugin(Foo)
-    await root.plugin(Bar)
+    await root.use(Foo)
+    await root.use(Bar)
 
     await root.inject(['foo'], async (ctx) => {
       const session = ctx.foo.session()
@@ -216,10 +216,10 @@ describe('Association', () => {
     }
 
     const root = new Context()
-    await root.plugin(Foo)
-    await root.plugin(FooBar)
-    await root.plugin(Baz)
-    await root.plugin(Qux)
+    await root.use(Foo)
+    await root.use(FooBar)
+    await root.use(Baz)
+    await root.use(Qux)
 
     // `ctx.foo.bar` must be governed by the same fiber as `ctx['foo.bar']`,
     // i.e. the service that runs the access, not whoever called it
@@ -249,7 +249,7 @@ describe('Association', () => {
     }
 
     const root = new Context()
-    await root.plugin(Foo)
+    await root.use(Foo)
     class X {}
     root.foo.bar(X)
   })

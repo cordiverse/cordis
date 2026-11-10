@@ -1,4 +1,4 @@
-import { Context, Fiber, FiberState, Inject, Plugin, ValidationError } from 'cordis'
+import { Component, Context, Fiber, FiberState, Inject, ValidationError } from 'cordis'
 import { deepEqual, Dict, isNullable } from 'cosmokit'
 import { Loader } from '../index.ts'
 import { EntryGroup } from './group.ts'
@@ -41,7 +41,7 @@ const outer = {
     const exports = await entry._import()
     // stops here if a dependency was lost during the import
     yield () => {}
-    if (exports) entry._start(ctx, exports.plugin)
+    if (exports) entry._start(ctx, exports.component)
   },
 }
 
@@ -172,7 +172,7 @@ export class Entry {
       return true
     } catch (error) {
       this.ctx.logger.error(error)
-      // the plugin does not run with an intercept that cannot be evaluated
+      // the component does not run with an intercept that cannot be evaluated
       this._verdict = true
       return false
     }
@@ -239,7 +239,7 @@ export class Entry {
       return
     }
 
-    // the plugin and the outer fiber are bound when they are created
+    // the component and the outer fiber are bound when they are created
     const rebuild = changed || this.options.name !== legacy.name
     if (rebuild || (!this.outerFiber && !this.innerFiber?.uid)) {
       // the disposal is part of the init task, so a concurrent update joins it
@@ -330,7 +330,7 @@ export class Entry {
   async _import() {
     try {
       const exports = await this.parent.tree.import(this.options.name, this.getOuterStack)
-      return { plugin: this.loader.unwrapExports(exports) }
+      return { component: this.loader.unwrapExports(exports) }
     } catch (error) {
       this._reportImport(error)
     }
@@ -351,9 +351,9 @@ export class Entry {
     if (!this._registered() || this._blocked()) return
     this._initTask = undefined
     if (this._hasOuter()) {
-      this.outerFiber = this.ctx.registry.plugin({ ...outer, inject: this.inject }, undefined, this.getOuterStack)
+      this.outerFiber = this.ctx.registry.use({ ...outer, inject: this.inject }, undefined, this.getOuterStack)
     } else {
-      this._start(this.ctx, exports.plugin)
+      this._start(this.ctx, exports.component)
     }
   }
 
@@ -361,13 +361,13 @@ export class Entry {
     return this.parent.tree.store[this.options.id] === this
   }
 
-  _start(ctx: Context, plugin: Plugin) {
+  _start(ctx: Context, component: Component) {
     if (!this._registered()) return
     // a group still starts; its verdict only reaches its children
     this._resolveDisabled(ctx)
     if (this.disabled || !this._applyIntercept(ctx)) return
     this.loader.showLog(this, 'apply')
     const innerContext = ctx.extend({ [Context.intercept]: this._intercept })
-    this.innerFiber = innerContext.registry.plugin(plugin, this.options.config, this.getOuterStack)
+    this.innerFiber = innerContext.registry.use(component, this.options.config, this.getOuterStack)
   }
 }

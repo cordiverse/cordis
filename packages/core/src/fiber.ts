@@ -1,6 +1,6 @@
 import { Awaitable, defineProperty, Dict, isNullable } from 'cosmokit'
 import { Context } from './context.ts'
-import { Plugin } from './registry.ts'
+import { Component } from './registry.ts'
 import { buildOuterStack, composeError, DisposableList, getTraceable, isConstructor, isObject, symbols } from './utils.ts'
 import { Impl } from './reflect.ts'
 import { StandardSchemaV1 } from '@standard-schema/spec'
@@ -43,7 +43,7 @@ Object.defineProperty(ValidationError.prototype, kValidationError, {
   value: true,
 })
 
-export function resolveConfig(runtime: Plugin.Runtime, config: any) {
+export function resolveConfig(runtime: Component.Runtime, config: any) {
   if (!runtime.Config) return config
   // TODO: async validation
   const result = runtime.Config['~standard'].validate(config)
@@ -138,7 +138,7 @@ export class Fiber {
     public parent: Context,
     public config: any,
     public inject: Dict<any>,
-    public runtime: Plugin.Runtime | null,
+    public runtime: Component.Runtime | null,
     getOuterStack: () => string[],
   ) {
     const collect = (dispose: Disposable) => {
@@ -203,7 +203,7 @@ export class Fiber {
           // `uid` is null; the empty callback falls through to `_getState()`.
           this._updateState(() => {})
         }
-      }, 'ctx.plugin()')
+      }, 'ctx.use()')
     } else {
       this.uid = 0
       this.ctx = this.context = parent
@@ -398,7 +398,7 @@ export class Fiber {
     this._store[name] = impl
   }
 
-  _replace(runtime: Plugin.Runtime, inject: Dict<any>) {
+  _replace(runtime: Component.Runtime, inject: Dict<any>) {
     if (runtime !== this.runtime) {
       this._remove!()
       this._remove = runtime.fibers.push(this)

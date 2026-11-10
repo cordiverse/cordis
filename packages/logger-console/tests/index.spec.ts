@@ -1,5 +1,5 @@
 import { Context, Message } from 'cordis'
-import { ConsoleExporter } from '@cordisjs/plugin-logger-console'
+import { ConsoleExporter } from '@cordisjs/logger-console'
 import { expect, describe, it, beforeAll, afterAll, beforeEach, vi } from 'vitest'
 
 describe('logger-console', () => {

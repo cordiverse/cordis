@@ -1,4 +1,4 @@
-import { EntryOptions } from '@cordisjs/plugin-loader'
+import { EntryOptions } from '@cordisjs/loader'
 import { Dict } from 'cosmokit'
 import { applyChanges, detach, flatten, Journal, place } from './journal.ts'
 

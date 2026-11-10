@@ -1,5 +1,5 @@
 {
-  "name": "@cordisjs/plugin-group",
+  "name": "@cordisjs/group",
   "version": "1.0.0",
   "sideEffects": false,
   "type": "module",
@@ -20,11 +20,11 @@
   },
   "homepage": "https://cordis.io/",
   "peerDependencies": {
-    "@cordisjs/plugin-loader": "^1.0.0-rc.9",
+    "@cordisjs/loader": "^1.0.0-rc.9",
     "cordis": "^4.0.0-rc.12"
   },
   "devDependencies": {
-    "@cordisjs/plugin-loader": "^1.0.0-rc.9",
+    "@cordisjs/loader": "^1.0.0-rc.9",
     "cordis": "^4.0.0-rc.12"
   }
 }
