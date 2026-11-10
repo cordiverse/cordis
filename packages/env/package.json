@@ -1,0 +1,39 @@
+{
+  "name": "@cordisjs/env",
+  "description": "Environment variables service for cordis",
+  "version": "1.0.1",
+  "sideEffects": false,
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "files": [
+    "lib"
+  ],
+  "author": "Shigma <shigma10826@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cordiverse/cordis.git",
+    "directory": "packages/env"
+  },
+  "bugs": {
+    "url": "https://github.com/cordiverse/cordis/issues"
+  },
+  "homepage": "https://github.com/cordiverse/cordis",
+  "keywords": [
+    "cordis",
+    "env",
+    "service",
+    "component"
+  ],
+  "devDependencies": {
+    "cordis": "^4.0.0-rc.12"
+  },
+  "peerDependencies": {
+    "cordis": "^4.0.0-rc.12"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "dotenv-expand": "^12.0.3"
+  }
+}

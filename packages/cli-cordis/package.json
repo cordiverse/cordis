@@ -1,0 +1,55 @@
+{
+  "name": "@cordisjs/cli-cordis",
+  "version": "1.0.6",
+  "description": "CLI for Cordis Framework",
+  "main": "lib/index.js",
+  "typings": "lib/index.d.ts",
+  "sideEffects": [
+    "./lib/worker/main.js",
+    "./src/worker/main.ts"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./worker": {
+      "types": "./lib/worker/index.d.ts",
+      "default": "./lib/worker/index.js"
+    },
+    "./main": "./lib/worker/main.js",
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "src"
+  ],
+  "author": "Shigma <shigma10826@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cordiverse/cordis.git",
+    "directory": "packages/cli-cordis"
+  },
+  "bugs": {
+    "url": "https://github.com/cordiverse/cordis/issues"
+  },
+  "homepage": "https://github.com/cordiverse/cordis",
+  "peerDependencies": {
+    "@cordisjs/cli": "^4.0.0-rc.0",
+    "@cordisjs/loader": "^1.0.0-rc.9",
+    "cordis": "^4.0.0-rc.12"
+  },
+  "devDependencies": {
+    "@cordisjs/cli": "^4.0.0-rc.0",
+    "@cordisjs/loader": "^1.0.0-rc.9",
+    "@cordisjs/logger-console": "^1.0.0",
+    "cordis": "^4.0.0-rc.12"
+  },
+  "dependencies": {
+    "cosmokit": "^1.8.1",
+    "kleur": "^4.1.5"
+  }
+}

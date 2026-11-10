@@ -1,0 +1,59 @@
+{
+  "name": "@cordisjs/http",
+  "description": "Fetch-based axios-style HTTP client",
+  "version": "1.5.2",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "files": [
+    "lib"
+  ],
+  "author": "Shigma <shigma10826@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cordiverse/cordis.git",
+    "directory": "packages/http"
+  },
+  "bugs": {
+    "url": "https://github.com/cordiverse/cordis/issues"
+  },
+  "homepage": "https://github.com/cordiverse/cordis",
+  "keywords": [
+    "http",
+    "fetch",
+    "axios",
+    "https",
+    "undici",
+    "client",
+    "request",
+    "cordis",
+    "component"
+  ],
+  "cordis": {
+    "service": {
+      "implements": [
+        "http"
+      ]
+    }
+  },
+  "peerDependencies": {
+    "cordis": "^4.0.0-rc.12",
+    "undici": "*"
+  },
+  "peerDependenciesMeta": {
+    "undici": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@cordisjs/logger-console": "^1.0.0",
+    "cordis": "^4.0.0-rc.12",
+    "undici": "^8.1.0"
+  },
+  "dependencies": {
+    "@cordisjs/fetch-file": "^1.0.3",
+    "cosmokit": "^1.8.1",
+    "schemastery": "^3.18.0"
+  }
+}
