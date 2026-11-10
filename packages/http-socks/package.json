@@ -1,0 +1,55 @@
+{
+  "name": "@cordisjs/http-socks",
+  "description": "Socks proxy agent support for @cordisjs/http",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "files": [
+    "lib"
+  ],
+  "author": "Shigma <shigma10826@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cordiverse/cordis.git",
+    "directory": "packages/http-socks"
+  },
+  "bugs": {
+    "url": "https://github.com/cordiverse/cordis/issues"
+  },
+  "homepage": "https://github.com/cordiverse/cordis",
+  "keywords": [
+    "client",
+    "undici",
+    "fetch",
+    "axios",
+    "socks",
+    "http",
+    "https",
+    "proxy",
+    "agent",
+    "request",
+    "cordis",
+    "component"
+  ],
+  "cordis": {
+    "service": {
+      "required": [
+        "http"
+      ]
+    }
+  },
+  "devDependencies": {
+    "@cordisjs/http": "^1.5.2",
+    "cordis": "^4.0.0-rc.12",
+    "undici": "^8.1.0"
+  },
+  "peerDependencies": {
+    "@cordisjs/http": "^1.5.2",
+    "cordis": "^4.0.0-rc.12"
+  },
+  "dependencies": {
+    "socks": "^2.8.7"
+  }
+}

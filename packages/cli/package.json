@@ -1,0 +1,43 @@
+{
+  "name": "@cordisjs/cli",
+  "description": "CLI service for Cordis",
+  "version": "4.0.0-rc.0",
+  "sideEffects": false,
+  "type": "module",
+  "main": "lib/index.js",
+  "typings": "lib/index.d.ts",
+  "files": [
+    "lib"
+  ],
+  "engines": {
+    "node": "^20.0.0 || >=22.0.0"
+  },
+  "author": "Shigma <shigma10826@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cordiverse/cordis.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/cordiverse/cordis/issues"
+  },
+  "homepage": "https://github.com/cordiverse/cordis",
+  "keywords": [
+    "cordis",
+    "effect",
+    "framework"
+  ],
+  "peerDependencies": {
+    "@cordisjs/loader": "^1.0.0-rc.9",
+    "cordis": "^4.0.0-rc.12"
+  },
+  "devDependencies": {
+    "@cordisjs/loader": "^1.0.0-rc.9",
+    "cordis": "^4.0.0-rc.12"
+  },
+  "dependencies": {
+    "cosmokit": "^1.8.1",
+    "kleur": "^4.1.5"
+  }
+}
