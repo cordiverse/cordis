@@ -4,7 +4,8 @@ import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { FSWatcher } from 'chokidar'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import Fs, { WatchOptions } from '../src/index.ts'
+import Fs, { WatchOptions } from '@cordisjs/fs'
+import NodeFs from '../src/index.ts'
 
 const testDir = dirname(fileURLToPath(import.meta.url))
 const fixture = resolve(testDir, '__fixtures__')
@@ -72,6 +73,7 @@ describe('Fs', () => {
     const root = new Context()
     root.baseUrl = baseUrl ?? undefined
     fiber = await root.use(Fs)
+    await root.use(NodeFs)
     let ctx!: Context
     await root.inject(['fs'], (inner) => { ctx = inner })
     return ctx
@@ -135,13 +137,12 @@ describe('Fs', () => {
       await touch(path, () => calls > 0)
     }, 15000)
 
-    // `_resolve` rather than `watch()`: without the guard these start a recursive
-    // watch on a real volume and hang, which hides the result instead of failing it.
+    // The provider checks the path synchronously, before it starts a watch:
+    // without the guard these start a recursive watch on a real volume.
     it.runIf(process.platform === 'win32')('rejects a file URL that resolves to a drive-relative path', async () => {
       const ctx = await setup()
-      const resolved = (input: string | URL) => (ctx.fs as any)._resolve(input)
       for (const input of ['file:C:', 'file:/C:', 'file:/../C:', 'file:.\\C:']) {
-        expect(() => resolved(input), `${input} resolved to a drive-relative path`)
+        expect(() => ctx.fs.watch(input), `${input} resolved to a drive-relative path`)
           .to.throw(/drive-relative form/)
       }
     }, 15000)
@@ -161,7 +162,7 @@ describe('Fs', () => {
       const ctx = await setup()
       const resolved = (input: string | URL) => (ctx.fs as any)._resolve(input)
       for (const input of ['C:\\', 'C:\\x', 'C:\\x\\y.yml', 'C:/x', 'C://x', 'C://x//y.yml', 'C://', '\\\\server\\share\\x']) {
-        expect(isAbsolute(resolved(input)), `${input} names a location on a drive`).to.be.true
+        expect(isAbsolute(fileURLToPath(resolved(input))), `${input} names a location on a drive`).to.be.true
       }
     }, 15000)
   })

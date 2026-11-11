@@ -1,27 +1,9 @@
+import { Watcher, WatchFilter, WatchOptions } from '@cordisjs/fs'
 import { Context } from 'cordis'
-import { Awaitable } from 'cosmokit'
-import { watch } from 'chokidar'
+import { FSWatcher, watch } from 'chokidar'
 import { statSync } from 'node:fs'
 import { dirname, posix, relative, resolve, sep } from 'node:path'
 import picomatch from 'picomatch'
-
-export type WatchFilter = string[] | ((path: string, isDirectory: boolean) => boolean)
-
-export interface WatchOptions {
-  /**
-   * Decides which entries below a watched directory are kept.
-   */
-  filter?: WatchFilter
-}
-
-export interface WatchEvents {
-  /** A file below the watched path is modified. */
-  change(filename: string): Awaitable<void>
-  /** The initial scan is done. A listener added afterwards is called at once. */
-  ready(): Awaitable<void>
-  /** An error is logged as a warning without a listener. */
-  error(error: unknown): Awaitable<void>
-}
 
 // whether `path` is `base` or lies below it
 function contains(base: string, path: string) {
@@ -84,90 +66,45 @@ function toPredicate(filter: WatchFilter): (path: string, isDirectory: boolean) 
   }
 }
 
-/** A subscription made by `on()`, apart from any other with the same listener */
-interface Hook<F> {
-  listener: F
-  removed?: boolean
-}
+/** Watches a file or a directory through chokidar. */
+export class NodeWatcher extends Watcher {
+  private _watcher?: FSWatcher
+  private _keep?: (path: string, isDirectory: boolean) => boolean
 
-type Hooks = { [K in keyof WatchEvents]: Set<Hook<WatchEvents[K]>> }
+  constructor(ctx: Context, url: URL, options: WatchOptions, private filename: string) {
+    super(ctx, url, options)
+    this._keep = options.filter && toPredicate(options.filter)
+  }
 
-export class Watcher {
-  /** Ends the watch. The watch also ends with the calling fiber. */
-  public dispose: () => Promise<void>
-
-  private _hooks: Hooks = { change: new Set(), ready: new Set(), error: new Set() }
-  private _ready = false
-
-  constructor(private ctx: Context, filename: string, options: WatchOptions) {
+  protected _start() {
+    const { filename } = this
     // A file replaced through a rename, as by an atomic write, is lost by a
     // watch on the file itself, so its directory is watched instead.
     const isFile = !statSync(filename, { throwIfNoEntry: false })?.isDirectory()
     const root = isFile ? dirname(filename) : filename
-    const keep = options.filter && toPredicate(options.filter)
-    this.dispose = ctx.effect(async () => {
-      const watcher = watch(root, {
-        ignoreInitial: true,
-        depth: isFile ? 0 : undefined,
-        // chokidar also tests the root itself
-        ignored: (path, stats) => {
-          path = resolve(path)
-          if (path === root) return false
-          if (isFile) return path !== filename
-          if (!keep) return false
-          // Without the stats, or with the `lstat()` of a symbolic link, the type
-          // is unknown, so the entry is kept; chokidar tests it again with the
-          // stats of `stat()` before it is watched.
-          if (!stats || stats.isSymbolicLink()) return false
-          return !keep(relative(root, path).split(sep).join('/'), stats.isDirectory())
-        },
-      })
-      watcher.on('error', error => this._error(error))
-      watcher.on('change', path => this._emit('change', resolve(path)))
-      await new Promise<void>(resolve => watcher.once('ready', () => resolve()))
-      this._ready = true
-      this._emit('ready')
-      return () => watcher.close()
-    }, 'ctx.fs.watch()')
+    const keep = this._keep
+    const watcher = this._watcher = watch(root, {
+      ignoreInitial: true,
+      depth: isFile ? 0 : undefined,
+      // chokidar also tests the root itself
+      ignored: (path, stats) => {
+        path = resolve(path)
+        if (path === root) return false
+        if (isFile) return path !== filename
+        if (!keep) return false
+        // Without the stats, or with the `lstat()` of a symbolic link, the type
+        // is unknown, so the entry is kept; chokidar tests it again with the
+        // stats of `stat()` before it is watched.
+        if (!stats || stats.isSymbolicLink()) return false
+        return !keep(relative(root, path).split(sep).join('/'), stats.isDirectory())
+      },
+    })
+    watcher.on('error', error => this._error(error))
+    watcher.on('change', path => this._emit('change', resolve(path)))
+    return new Promise<void>(resolve => watcher.once('ready', () => resolve()))
   }
 
-  /** Adds a listener, and returns a function that removes it. */
-  on<K extends keyof WatchEvents>(name: K, listener: WatchEvents[K]): () => void {
-    const hooks = this._hooks[name] as Set<Hook<WatchEvents[K]>>
-    const hook: Hook<WatchEvents[K]> = { listener }
-    hooks.add(hook)
-    if (name === 'ready' && this._ready) {
-      // asynchronously, as a listener added before the scan is done
-      queueMicrotask(() => {
-        if (!hook.removed) this._call(listener, [])
-      })
-    }
-    return () => {
-      hook.removed = true
-      hooks.delete(hook)
-    }
-  }
-
-  // The hooks are taken when an event is dispatched, so that one added
-  // meanwhile is not called for it, and a `ready` listener only once. One
-  // removed meanwhile is not called either.
-  private _emit<K extends keyof WatchEvents>(name: K, ...args: Parameters<WatchEvents[K]>) {
-    for (const hook of [...this._hooks[name]]) {
-      if (!hook.removed) this._call(hook.listener, args)
-    }
-  }
-
-  private _call(listener: (...args: any[]) => Awaitable<void>, args: any[]) {
-    (async () => listener(...args))().catch(error => this._error(error))
-  }
-
-  private _error(error: unknown) {
-    const hooks = this._hooks.error
-    if (!hooks.size) return this.ctx.logger.warn(error)
-    for (const hook of [...hooks]) {
-      if (hook.removed) continue
-      // An error of an error listener is not reported to the error listeners again.
-      (async () => hook.listener(error))().catch(error => this.ctx.logger.warn(error))
-    }
+  protected _stop() {
+    return this._watcher?.close()
   }
 }

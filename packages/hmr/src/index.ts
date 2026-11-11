@@ -1,5 +1,5 @@
 import { Component, Context, Fiber, Service } from 'cordis'
-import type {} from '@cordisjs/fs-node'
+import type {} from '@cordisjs/fs'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'

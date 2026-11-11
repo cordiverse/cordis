@@ -1,0 +1,46 @@
+{
+  "name": "@cordisjs/fs",
+  "description": "File System Service for Cordis",
+  "version": "2.0.0",
+  "sideEffects": false,
+  "type": "module",
+  "main": "lib/index.js",
+  "typings": "lib/index.d.ts",
+  "files": [
+    "lib"
+  ],
+  "author": "Shigma <shigma10826@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cordiverse/cordis.git",
+    "directory": "packages/fs"
+  },
+  "bugs": {
+    "url": "https://github.com/cordiverse/cordis/issues"
+  },
+  "homepage": "https://github.com/cordiverse/cordis",
+  "keywords": [
+    "cordis",
+    "component",
+    "fs",
+    "file",
+    "service"
+  ],
+  "cordis": {
+    "service": {
+      "implements": [
+        "fs"
+      ]
+    }
+  },
+  "peerDependencies": {
+    "cordis": "^4.0.0-rc.12"
+  },
+  "devDependencies": {
+    "cordis": "^4.0.0-rc.12"
+  },
+  "dependencies": {
+    "cosmokit": "^1.8.1"
+  }
+}

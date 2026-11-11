@@ -1,6 +1,7 @@
 import { Context, Fiber, Service } from 'cordis'
 import Loader from '@cordisjs/loader'
-import Fs, { WatchOptions } from '@cordisjs/fs-node'
+import Fs, { WatchOptions } from '@cordisjs/fs'
+import NodeFs from '@cordisjs/fs-node'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, resolve, sep } from 'node:path'
 import { format } from 'node:util'
@@ -336,6 +337,7 @@ export const apply = ctx => ctx.on('hmr-watch/shadow', () => value)
     ctx.baseUrl = import.meta.url
     fiber = await ctx.use(Loader)
     await ctx.use(Fs)
+    await ctx.use(NodeFs)
     hmr = await ctx.use(Hmr, { watch: { enabled: true, files: ['__watch__'], debounce: 50 } })
     const path = await load('disk.ts', component('disk', 'v1'))
 
