@@ -43,10 +43,14 @@
     }
   },
   "peerDependencies": {
+    "@cordisjs/fs": "^2.0.0",
     "cordis": "^4.0.0-rc.12",
     "node-addon-require-builtin": "^0.1.0"
   },
   "peerDependenciesMeta": {
+    "@cordisjs/fs": {
+      "optional": true
+    },
     "node-addon-require-builtin": {
       "optional": true
     }

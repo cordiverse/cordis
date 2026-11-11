@@ -242,7 +242,7 @@ function seekExpr(content: string, document: Document, path: PropertyKey[], expr
 }
 
 export class Include extends EntryTree {
-  static inject = ['loader']
+  static inject = ['loader', 'fs']
 
   public filename: string
   private type: string
@@ -292,9 +292,7 @@ export class Include extends EntryTree {
     })
 
     if (config.watch) {
-      ctx.inject(['fs'], (ctx) => {
-        ctx.fs.watch(this.filename).on('change', () => this.refresh())
-      })
+      ctx.fs.watch(this.filename).on('change', () => this.refresh())
     }
   }
 
