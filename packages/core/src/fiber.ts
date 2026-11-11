@@ -336,10 +336,27 @@ export class Fiber {
     // disposer chain if it fails to settle cleanly.
     task?.catch(dispose).catch((error) => this.ctx.logger.error(error))
 
+    let remove = () => {}
+    let pending: void | Promise<void>
     const wrapper = defineProperty(() => {
+      // A second caller must be able to await a cleanup that is already running:
+      // a manual dispose followed by the fiber's own unload would otherwise let
+      // the fiber finish before the cleanup settles.
+      if (pending) return pending
       if (!runner.epoch) return
       runner.epoch = false
-      return task ? task.then(dispose) : dispose()
+      const result = task ? task.then(dispose) : dispose()
+      if (!isObject(result)) {
+        remove()
+        return result
+      }
+      // Keep the wrapper visible to `_unload()` until its cleanup settles,
+      // including when it fails, and keep the rejection observable.
+      pending = result.then(() => { remove() }, (reason) => {
+        remove()
+        throw reason
+      })
+      return pending
     }, symbols.effect, meta) as AsyncDisposable
 
     const disposeAsync = () => {
@@ -352,7 +369,7 @@ export class Fiber {
         .then(() => disposeAsync)
         .then(onFulfilled, onRejected)
     }
-    disposables.push(this._disposables.push(wrapper))
+    remove = this._disposables.push(wrapper)
     return wrapper
   }
 

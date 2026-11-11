@@ -70,6 +70,33 @@ describe('Service disposal', () => {
     await root.fiber.dispose()
   })
 
+  it('waits for a cleanup started before the provider unloads', async () => {
+    const root = new Context()
+    const gate = Promise.withResolvers<void>()
+    const timeline: string[] = []
+    const provider = await root.use((ctx) => {
+      ctx.provide('foo', {})
+      ctx.effect(() => () => { timeline.push('provider closed') })
+    })
+    let stop!: () => Promise<void>
+    await root.inject(['foo'], (ctx) => {
+      stop = ctx.effect(() => async () => {
+        timeline.push('cleanup started')
+        await gate.promise
+        timeline.push('cleanup finished')
+      })
+    })
+    const cleanup = stop()
+    const unloading = provider.dispose()
+    await setImmediate()
+    const duringCleanup = [...timeline]
+    gate.resolve()
+    await Promise.all([cleanup, unloading])
+    expect(duringCleanup).toEqual(['cleanup started'])
+    expect(timeline).toEqual(['cleanup started', 'cleanup finished', 'provider closed'])
+    await root.fiber.dispose()
+  })
+
   it('withdraws one binding without waiting for another binding from the same provider', async () => {
     const root = new Context()
     const gate = Promise.withResolvers<void>()
