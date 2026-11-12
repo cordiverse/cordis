@@ -37,9 +37,11 @@ if (!process.env.PR_BODY?.trim()) {
   errors.push('the body must contain the release notes')
 }
 
-// a release pull request only bumps versions
+const lockfiles = ['yarn.lock', 'package-lock.json', 'pnpm-lock.yaml']
+
+// a release pull request only bumps versions and updates the lockfile accordingly
 for (const path of git('diff', '--name-only', 'HEAD^1', 'HEAD').split('\n')) {
-  if (!/^packages\/[^/]+\/package\.json$/.test(path)) {
+  if (!lockfiles.includes(path) && !/^packages\/[^/]+\/package\.json$/.test(path)) {
     errors.push(`${path} is changed`)
   }
 }

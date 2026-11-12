@@ -11,7 +11,6 @@ dist
 !.yarn/sdks
 !.yarn/versions
 
-yarn.lock
 package-lock.json
 pnpm-lock.yaml
 
