@@ -24,7 +24,7 @@ jobs:
       - name: Enable Corepack
         run: corepack enable
       - name: Install
-        run: yarn --no-immutable
+        run: yarn
       - name: Lint
         run: yarn lint
 
@@ -43,7 +43,7 @@ jobs:
       - name: Enable Corepack
         run: corepack enable
       - name: Install
-        run: yarn --no-immutable
+        run: yarn
       - name: Build (1)
         run: yarn build core
       - name: Build (2)
@@ -70,6 +70,6 @@ jobs:
       - name: Enable Corepack
         run: corepack enable
       - name: Install
-        run: yarn --no-immutable
+        run: yarn
       - name: Unit Test
         run: yarn test:json
