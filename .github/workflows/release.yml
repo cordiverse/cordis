@@ -29,7 +29,7 @@ jobs:
       - name: Enable Corepack
         run: corepack enable
       - name: Install
-        run: yarn --no-immutable
+        run: yarn
       - name: Check
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
@@ -85,7 +85,7 @@ jobs:
       - name: Enable Corepack
         run: corepack enable
       - name: Install
-        run: yarn --no-immutable
+        run: yarn
       - name: Build (1)
         run: yarn build core
       - name: Build (2)
