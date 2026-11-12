@@ -1,7 +1,7 @@
 {
   "name": "cordis",
   "description": "Meta-framework of spatiotemporal composability",
-  "version": "4.0.0-rc.12",
+  "version": "4.0.0-rc.13",
   "sideEffects": false,
   "type": "module",
   "main": "lib/index.js",
@@ -33,8 +33,8 @@
   "peerDependencies": {
     "@cordisjs/fs": "^2.0.0-rc.0",
     "@cordisjs/fs-node": "^0.1.0",
-    "@cordisjs/include": "^1.2.0",
-    "@cordisjs/loader": "^1.0.0-rc.9"
+    "@cordisjs/include": "^2.0.0-rc.0",
+    "@cordisjs/loader": "^1.0.0-rc.10"
   },
   "peerDependenciesMeta": {
     "@cordisjs/fs": {

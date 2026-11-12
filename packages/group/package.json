@@ -1,6 +1,6 @@
 {
   "name": "@cordisjs/group",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Entry group plugin for Cordis",
   "sideEffects": false,
   "type": "module",
@@ -21,11 +21,11 @@
   },
   "homepage": "https://cordis.io/",
   "peerDependencies": {
-    "@cordisjs/loader": "^1.0.0-rc.9",
-    "cordis": "^4.0.0-rc.12"
+    "@cordisjs/loader": "^1.0.0-rc.10",
+    "cordis": "^4.0.0-rc.13"
   },
   "devDependencies": {
-    "@cordisjs/loader": "^1.0.0-rc.9",
-    "cordis": "^4.0.0-rc.12"
+    "@cordisjs/loader": "^1.0.0-rc.10",
+    "cordis": "^4.0.0-rc.13"
   }
 }

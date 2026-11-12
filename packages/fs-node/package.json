@@ -41,12 +41,12 @@
   },
   "peerDependencies": {
     "@cordisjs/fs": "^2.0.0-rc.0",
-    "cordis": "^4.0.0-rc.12"
+    "cordis": "^4.0.0-rc.13"
   },
   "devDependencies": {
     "@cordisjs/fs": "^2.0.0-rc.0",
     "@types/picomatch": "^3.0.2",
-    "cordis": "^4.0.0-rc.12"
+    "cordis": "^4.0.0-rc.13"
   },
   "dependencies": {
     "chokidar": "^4.0.3",
