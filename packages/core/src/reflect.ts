@@ -142,7 +142,10 @@ export class ReflectService {
       const error = createAccessError(`cannot set property "${prop}" without provide`)
       const def = target.reflect.props[prop]
       if (!def) {
-        if (!ctx.fiber.runtime) return Reflect.set(target, prop, value, ctx)
+        // the same def site the `get` branch uses: a fiber-less one cannot declare
+        // `inject` at all, so it keeps the unchecked root access
+        const defSite = (ctx[symbols.shadow] as Context | undefined) ?? ctx
+        if (!defSite.fiber.runtime) return Reflect.set(target, prop, value, ctx)
         throw enhanceAccessError(error)
       }
 
