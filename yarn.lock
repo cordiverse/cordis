@@ -296,47 +296,6 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@cordisjs/plugin-cli@npm:^1.1.1":
-  version: 1.1.2
-  resolution: "@cordisjs/plugin-cli@npm:1.1.2"
-  dependencies:
-    cosmokit: "npm:^1.8.1"
-    kleur: "npm:^4.1.5"
-  peerDependencies:
-    "@cordisjs/plugin-loader": ^1.0.0-rc.4
-    cordis: ^4.0.0-rc.5
-  checksum: 10c0/d774521fdd5f1e79b71543ad709fc391dfa29af9233970790464f2342cf1874a2cf749011d0617fc02668f7d80243007576d143b90676c9f58e8add82955c88d
-  languageName: node
-  linkType: hard
-
-"@cordisjs/plugin-include@npm:^1.0.3":
-  version: 1.2.0
-  resolution: "@cordisjs/plugin-include@npm:1.2.0"
-  dependencies:
-    cosmokit: "npm:^1.8.1"
-    yaml: "npm:^2.9.1"
-  peerDependencies:
-    "@cordisjs/plugin-loader": ^1.0.0-rc.9
-    cordis: ^4.0.0-rc.12
-  checksum: 10c0/aa0e44ef0011fe8ee575e7f4109cd3202687fc11a8700d83c0ba5cb8ef11788ab2f4d23b1355e17befecabda5fd3dc9495fd362bc21f5318b8f8bf1ac801b5dc
-  languageName: node
-  linkType: hard
-
-"@cordisjs/plugin-loader@npm:^1.0.0-rc.3":
-  version: 1.0.0-rc.9
-  resolution: "@cordisjs/plugin-loader@npm:1.0.0-rc.9"
-  dependencies:
-    cosmokit: "npm:^1.8.1"
-  peerDependencies:
-    cordis: ^4.0.0-rc.12
-    node-addon-require-builtin: ^0.1.0
-  peerDependenciesMeta:
-    node-addon-require-builtin:
-      optional: true
-  checksum: 10c0/d683c254c7d8cac928273e8166bde6fc655a7ba186d1df4207c1e516d7081e7537f61fb6fb5998220e3e4973d67d414eea3cc88b7c183292fe24a40d6f72ffd6
-  languageName: node
-  linkType: hard
-
 "@cordisjs/timer@workspace:packages/timer":
   version: 0.0.0-use.local
   resolution: "@cordisjs/timer@workspace:packages/timer"
@@ -1173,10 +1132,10 @@ __metadata:
     typescript: "npm:^5.9.3"
     vite: "npm:^7.3.2"
     vitest: "npm:^4.1.5"
-    yakumo: "npm:^3.2.1"
-    yakumo-esbuild: "npm:^3.0.2"
-    yakumo-tsc: "npm:^3.0.1"
-    yakumo-vitest: "npm:^1.3.3"
+    yakumo: "npm:^3.4.1"
+    yakumo-esbuild: "npm:^3.1.1"
+    yakumo-tsc: "npm:^3.1.1"
+    yakumo-vitest: "npm:^1.4.1"
   languageName: unknown
   linkType: soft
 
@@ -1580,6 +1539,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@yarnpkg/parsers@npm:^3.1.0":
+  version: 3.1.0
+  resolution: "@yarnpkg/parsers@npm:3.1.0"
+  dependencies:
+    js-yaml: "npm:^4.3.0"
+    tslib: "npm:^2.4.0"
+  checksum: 10c0/0cabf96c138f2211c14c8cf1cacbb3b2430947fa71bfcc9a3fcdf60543d3178b98bb5d14b676e39e45fad6ec453404c0f16908535d53100a53be08d8d1f4b5b5
+  languageName: node
+  linkType: hard
+
 "abbrev@npm:^5.0.0":
   version: 5.0.0
   resolution: "abbrev@npm:5.0.0"
@@ -1966,7 +1935,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"cordis@npm:^4.0.0-rc.13, cordis@npm:^4.0.0-rc.4, cordis@workspace:packages/core":
+"cordis@npm:^4.0.0-rc.13, cordis@workspace:packages/core":
   version: 0.0.0-use.local
   resolution: "cordis@workspace:packages/core"
   dependencies:
@@ -3780,7 +3749,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"js-yaml@npm:^4.1.0, js-yaml@npm:^4.1.1":
+"js-yaml@npm:^4.1.0, js-yaml@npm:^4.1.1, js-yaml@npm:^4.3.0":
   version: 4.3.2
   resolution: "js-yaml@npm:4.3.2"
   dependencies:
@@ -4395,10 +4364,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"p-map@npm:^7.0.4":
-  version: 7.0.7
-  resolution: "p-map@npm:7.0.7"
-  checksum: 10c0/41a94dca7f3e79b9b78ee343c22bfa2922357b2131eed93d12f0347c631450306463118d11ba4accac504463911dee7bddb97d14cbf7055f9d29d2ea99b28209
+"p-map@npm:^7.1.1":
+  version: 7.1.1
+  resolution: "p-map@npm:7.1.1"
+  checksum: 10c0/e3f0fa6990f506a89593f55f2eb532b1eaae968ffc8d871bdce4ad3fdeabe1c2b4255c61dac3b8e668f197cc3a69fbe2f1942192d18ebb621831b8dc38599f5a
   languageName: node
   linkType: hard
 
@@ -4495,7 +4464,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"picomatch@npm:^4.0.3, picomatch@npm:^4.0.4, picomatch@npm:^4.0.5":
+"picomatch@npm:^4.0.3, picomatch@npm:^4.0.4, picomatch@npm:^4.0.5, picomatch@npm:^4.0.7":
   version: 4.0.7
   resolution: "picomatch@npm:4.0.7"
   checksum: 10c0/beb6ae02c43ae44e84883b90830196d9046b1726ead292adcf7f57945e0bb0d992d68563d87e03b484b6f3c9a5c6defda7523477f047d7f0e663f126cc01787f
@@ -4947,7 +4916,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"semver@npm:^7.0.0, semver@npm:^7.3.5, semver@npm:^7.3.8, semver@npm:^7.5.3, semver@npm:^7.5.4, semver@npm:^7.7.4":
+"semver@npm:^7.0.0, semver@npm:^7.3.5, semver@npm:^7.3.8, semver@npm:^7.5.3, semver@npm:^7.5.4":
   version: 7.8.5
   resolution: "semver@npm:7.8.5"
   bin:
@@ -5446,7 +5415,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"tsconfig-utils@npm:^4.0.5, tsconfig-utils@npm:^4.1.1":
+"tsconfig-utils@npm:^4.0.5, tsconfig-utils@npm:^4.1.1, tsconfig-utils@npm:^4.2.0":
   version: 4.2.0
   resolution: "tsconfig-utils@npm:4.2.0"
   dependencies:
@@ -5454,6 +5423,13 @@ __metadata:
   peerDependencies:
     typescript: "*"
   checksum: 10c0/b5c490ad0e047d05fab062321052a4f74da4f16653ed700a4a7e17e3e1ad571b44343edd2bab6aacb33b4bdc494b94c756883d9ddd1a0299745bd3d3681316c5
+  languageName: node
+  linkType: hard
+
+"tslib@npm:^2.4.0":
+  version: 2.9.1
+  resolution: "tslib@npm:2.9.1"
+  checksum: 10c0/8ff46e7a4d19fa62c23483c89cf5ccc3906e742ef6e6d60bd3826b686143b300b4f6f04161cc1cf31a6b11fe70e1058ae4d4e4a108b5c68326d469684736a83c
   languageName: node
   linkType: hard
 
@@ -5944,73 +5920,75 @@ __metadata:
   languageName: node
   linkType: hard
 
-"yakumo-esbuild@npm:^3.0.2":
-  version: 3.0.2
-  resolution: "yakumo-esbuild@npm:3.0.2"
+"yakumo-esbuild@npm:^3.1.1":
+  version: 3.1.1
+  resolution: "yakumo-esbuild@npm:3.1.1"
   dependencies:
     dumble: "npm:^0.2.3"
     schemastery: "npm:^3.18.0"
-    tsconfig-utils: "npm:^4.1.1"
+    tsconfig-utils: "npm:^4.2.0"
   peerDependencies:
     esbuild: "*"
     typescript: "*"
-    yakumo: ^3.1.1
-  checksum: 10c0/ac3574addf349b8d959ac416f8996831d04aff5aa78e990e30ff76dac20b913bacd9a298d3561e02a6566a94bfc31af9a167de7415eb6471accccfc461880850
+    yakumo: ^3.4.1
+  checksum: 10c0/3a17d12d7844cf1e3f1647c37cb5e260888ce27f939e3a6b46289ce21928c80ff7a50d5892c88081ad2d5f308dd2fcb755fc9ec676d51e43658807493ab37ebc
   languageName: node
   linkType: hard
 
-"yakumo-tsc@npm:^3.0.1":
-  version: 3.0.1
-  resolution: "yakumo-tsc@npm:3.0.1"
+"yakumo-tsc@npm:^3.1.1":
+  version: 3.1.1
+  resolution: "yakumo-tsc@npm:3.1.1"
   dependencies:
     atsc: "npm:^2.1.0"
     dtsc: "npm:^3.1.0"
-    tsconfig-utils: "npm:^4.1.1"
+    tsconfig-utils: "npm:^4.2.0"
   peerDependencies:
     typescript: "*"
-    yakumo: ^3.0.2
-  checksum: 10c0/ebe6f714d7a61d1ff545e77b03ead05497ecd14902c211873602912470998af23ac9b2510a25999b63df3ae34484df58b67dfad472ce343404e3b71476c6ab8f
+    yakumo: ^3.4.1
+  checksum: 10c0/909a81510922bbc17df7046ec3dbe2c68b44624d3766977592dfd12e93e5299875cbc5a5febaaaf0dd1263d1383d386c0fb13c37ffd16a621a3ca665a7889c47
   languageName: node
   linkType: hard
 
-"yakumo-vitest@npm:^1.3.3":
-  version: 1.3.3
-  resolution: "yakumo-vitest@npm:1.3.3"
+"yakumo-vitest@npm:^1.4.1":
+  version: 1.4.1
+  resolution: "yakumo-vitest@npm:1.4.1"
   dependencies:
     globby: "npm:^14.1.0"
     vite-tsconfig-paths: "npm:^6.1.1"
   peerDependencies:
     vite: ^6 || ^7
     vitest: ^4
-    yakumo: ^3.2.1
-  checksum: 10c0/37ed0aaf01360713cd005aa807559e689b11a68459e7e9295858abcb58fffb18da59af71950d51d2f0a2676e5dd1bcc3774696c2e08cc8264b359eb1ae314012
+    yakumo: ^3.4.1
+  checksum: 10c0/38dd3c4b29147e68b3339e84b4160842cc621b4966ca99304011d4299bc8061b98d49e35cf9f89bec35829eb2c55d894982f58611f850f977617dda8e03d0dbf
   languageName: node
   linkType: hard
 
-"yakumo@npm:^3.2.1":
-  version: 3.2.1
-  resolution: "yakumo@npm:3.2.1"
+"yakumo@npm:^3.4.1":
+  version: 3.4.1
+  resolution: "yakumo@npm:3.4.1"
   dependencies:
-    "@cordisjs/plugin-cli": "npm:^1.1.1"
-    "@cordisjs/plugin-include": "npm:^1.0.3"
-    "@cordisjs/plugin-loader": "npm:^1.0.0-rc.3"
+    "@cordisjs/cli": "npm:^4.0.0"
+    "@cordisjs/fs": "npm:^2.0.0-rc.0"
+    "@cordisjs/fs-node": "npm:^0.1.0"
+    "@cordisjs/include": "npm:^2.0.0-rc.0"
+    "@cordisjs/loader": "npm:^1.0.0-rc.10"
     "@npm/types": "npm:^2.1.0"
-    cordis: "npm:^4.0.0-rc.4"
+    "@yarnpkg/parsers": "npm:^3.1.0"
+    cordis: "npm:^4.0.0-rc.13"
     cosmokit: "npm:^1.8.1"
     detect-indent: "npm:^7.0.2"
     execa: "npm:^9.6.1"
-    get-registry: "npm:^1.2.0"
     globby: "npm:^14.1.0"
     kleur: "npm:^4.1.5"
     ora: "npm:^8.2.0"
-    p-map: "npm:^7.0.4"
-    picomatch: "npm:^4.0.3"
+    p-map: "npm:^7.1.1"
+    picomatch: "npm:^4.0.7"
     prompts: "npm:^2.4.2"
-    semver: "npm:^7.7.4"
-    which-pm-runs: "npm:^1.1.0"
+    semver: "npm:^7.8.6"
+    yaml: "npm:^2.9.1"
   bin:
     yakumo: lib/cli.js
-  checksum: 10c0/dc03879fa9dcdada70d8412f09d165d8e434f41ebe77b2b2eeabd7dba9f2b2e6f3e3485c010f177669e69cc8eb117ac43fb5e1962f34052c67c28b2c8f0f66fd
+  checksum: 10c0/f39a293892d1daec6b1fa9bf0550cf877819a3dfea3b5e2a41c0ea5336f1540b0959cf271c9c6486f9e2976e1d69dd137180ac33b277ceb2103a64c84ae3e37a
   languageName: node
   linkType: hard
 
