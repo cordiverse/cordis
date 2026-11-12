@@ -133,7 +133,7 @@ describe('Fs', () => {
     it.runIf(process.platform === 'win32')('rejects a file URL that resolves to a drive-relative path', async () => {
       const ctx = await setup()
       for (const input of ['file:C:', 'file:/C:', 'file:/../C:', 'file:.\\C:']) {
-        expect(() => ctx.fs.watch(input), `${input} resolved to a drive-relative path`)
+        expect(() => ctx.fs.watch(new URL(input)), `${input} resolved to a drive-relative path`)
           .to.throw(/drive-relative form/)
       }
     }, 15000)
@@ -306,7 +306,7 @@ describe('Fs', () => {
     it('rejects a `filter` entry leading outside the watched directory', async () => {
       const ctx = await setup()
       for (const entry of ['../outside', '!../outside', 'a/../../outside', '/absolute']) {
-        expect(() => ctx.fs.watch(fixture, { filter: [entry] })).to.throw(TypeError)
+        expect(() => ctx.fs.watch(pathToFileURL(fixture), { filter: [entry] })).to.throw(TypeError)
       }
     })
 
@@ -367,7 +367,7 @@ describe('Fs', () => {
       const inner = await ctx.use({
         inject: ['fs'],
         apply: (ctx: Context) => {
-          ctx.fs.watch(path).on('change', () => { calls++ })
+          ctx.fs.watch(pathToFileURL(path)).on('change', () => { calls++ })
         },
       })
       await watch(ctx, path, () => { others++ })
@@ -392,7 +392,7 @@ describe('Fs', () => {
     it('calls a `ready` listener added by another one once', async () => {
       const path = write('ready-nested.txt')
       const ctx = await setup()
-      const watcher = ctx.fs.watch(path)
+      const watcher = ctx.fs.watch(pathToFileURL(path))
       let calls = 0
       watcher.on('ready', () => {
         watcher.on('ready', () => { calls++ })
@@ -406,7 +406,7 @@ describe('Fs', () => {
     it('does not call a listener removed by another one in the same dispatch', async () => {
       const path = write('removed.txt')
       const ctx = await setup()
-      const watcher = ctx.fs.watch(path)
+      const watcher = ctx.fs.watch(pathToFileURL(path))
       let calls = 0
       watcher.on('ready', () => { remove() })
       const remove = watcher.on('ready', () => { calls++ })
@@ -434,7 +434,7 @@ describe('Fs', () => {
     it('calls a function added again in the same dispatch once for `ready`', async () => {
       const path = write('readded-dispatch.txt')
       const ctx = await setup()
-      const watcher = ctx.fs.watch(path)
+      const watcher = ctx.fs.watch(pathToFileURL(path))
       let calls = 0
       const listener = () => { calls++ }
       watcher.on('ready', () => {
