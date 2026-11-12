@@ -2,6 +2,9 @@
   "name": "@cordisjs/timer",
   "description": "Timer service for cordis",
   "version": "1.1.4",
+  "engines": {
+    "node": ">=22"
+  },
   "sideEffects": false,
   "type": "module",
   "main": "lib/index.js",
@@ -11,7 +14,6 @@
       "types": "./lib/index.d.ts",
       "default": "./lib/index.js"
     },
-    "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [

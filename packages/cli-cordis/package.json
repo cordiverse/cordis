@@ -3,7 +3,7 @@
   "version": "1.0.6",
   "description": "CLI for Cordis Framework",
   "main": "lib/index.js",
-  "typings": "lib/index.d.ts",
+  "types": "lib/index.d.ts",
   "sideEffects": [
     "./lib/worker/main.js",
     "./src/worker/main.ts"

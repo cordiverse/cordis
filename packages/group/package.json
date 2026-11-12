@@ -1,10 +1,11 @@
 {
   "name": "@cordisjs/group",
   "version": "1.0.0",
+  "description": "Entry group service for Cordis",
   "sideEffects": false,
   "type": "module",
   "main": "lib/index.js",
-  "typings": "lib/index.d.ts",
+  "types": "lib/index.d.ts",
   "files": [
     "lib"
   ],
