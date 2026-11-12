@@ -233,7 +233,8 @@ class Hmr extends Service {
       }
     }
 
-    ctx.fs.watch(this.baseDir, { filter: files }).on('change', (filename) => {
+    ctx.fs.watch(pathToFileURL(this.baseDir), { filter: files }).on('change', (url) => {
+      const filename = fileURLToPath(url)
       this.ctx.logger.debug('change detected at %C', relative(this.baseDir, filename))
       stashed.add(filename)
       clearTimeout(timer)

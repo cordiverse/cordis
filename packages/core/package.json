@@ -31,7 +31,7 @@
   "author": "Shigma <shigma10826@gmail.com>",
   "license": "MIT",
   "peerDependencies": {
-    "@cordisjs/fs": "^2.0.0",
+    "@cordisjs/fs": "^2.0.0-rc.0",
     "@cordisjs/fs-node": "^0.1.0",
     "@cordisjs/include": "^1.2.0",
     "@cordisjs/loader": "^1.0.0-rc.9"

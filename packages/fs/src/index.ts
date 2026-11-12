@@ -1,7 +1,6 @@
 import { Context, Service } from 'cordis'
+import { Awaitable } from 'cosmokit'
 import { FsError } from './error.ts'
-import { resolvePath } from './path.ts'
-import { kAbort, kStart } from './symbols.ts'
 import { Watcher, WatchOptions } from './watcher.ts'
 
 export * from './error.ts'
@@ -13,14 +12,16 @@ declare module 'cordis' {
   }
 }
 
-// at least two characters, so that a drive letter is not a scheme
-const scheme = /^[a-zA-Z][a-zA-Z\d+.-]+:/
-
 interface Mount {
   /** a scheme such as `s3:`, or a URL ending with `/` */
   prefix: string
   provider: FsProvider
-  watches: Set<Watcher>
+}
+
+// a watch served by the provider of a mount
+interface Connection {
+  mount: Mount
+  dispose: () => Awaitable<void>
 }
 
 function normalizePrefix(prefix: string | URL) {
@@ -37,6 +38,8 @@ function normalizePrefix(prefix: string | URL) {
  */
 export class Fs extends Service {
   private _mounts = new Map<string, Mount>()
+  /** the connection that serves each watch, if any */
+  private _watchers = new Map<Watcher, Connection | undefined>()
 
   constructor(ctx: Context) {
     super(ctx, 'fs')
@@ -45,8 +48,11 @@ export class Fs extends Service {
   /**
    * Mount a provider at a scheme, such as `s3:`, or at a URL, such as
    * `file:///`. A location goes to the provider of the longest prefix that
-   * contains it. The mount and the watches of its provider end with the calling
-   * fiber.
+   * contains it. The mount ends with the calling fiber.
+   *
+   * Every watch follows the routing: a change of the mounts moves it to the
+   * provider its location goes to, and a watch without a provider is resumed
+   * once one is mounted. Changes while a watch has no provider are not reported.
    */
   mount(prefix: string | URL, provider: FsProvider) {
     const key = normalizePrefix(prefix)
@@ -54,27 +60,26 @@ export class Fs extends Service {
       if (this._mounts.has(key)) {
         throw new Error(`a provider is already mounted at ${key}`)
       }
-      const mount: Mount = { prefix: key, provider, watches: new Set() }
-      this._mounts.set(key, mount)
-      return async () => {
+      this._mounts.set(key, { prefix: key, provider })
+      this._reroute()
+      return () => {
         this._mounts.delete(key)
-        const watches = [...mount.watches]
-        mount.watches.clear()
-        await Promise.all(watches.map((watcher) => {
-          return watcher[kAbort](new FsError('NoProvider', watcher.url, `the provider mounted at ${key} is disposed`))
-        }))
+        return this._reroute()
       }
     }, 'ctx.fs.mount()')
   }
 
-  /** A string with a scheme is taken as a URL, and any other string as a path. */
-  private _resolve(path: string | URL): URL {
+  /** Resolve a URL reference against `ctx.baseUrl`. */
+  resolve(path: string | URL): URL {
     if (path instanceof URL) return path
-    if (scheme.test(path)) return new URL(path)
-    return resolvePath(path, this.ctx.baseUrl)
+    const base = this.ctx.baseUrl
+    if (!base && !URL.canParse(path)) {
+      throw new TypeError(`cannot resolve the relative reference ${JSON.stringify(path)} without ctx.baseUrl`)
+    }
+    return new URL(path, base)
   }
 
-  private _route(url: URL): Mount {
+  private _match(url: URL): Mount | undefined {
     let result: Mount | undefined
     for (const mount of this._mounts.values()) {
       const matches = mount.prefix.endsWith(':')
@@ -82,28 +87,73 @@ export class Fs extends Service {
         : url.href.startsWith(mount.prefix) || url.href + '/' === mount.prefix
       if (matches && (!result || mount.prefix.length > result.prefix.length)) result = mount
     }
-    if (!result) throw new FsError('NoProvider', url, `no provider is mounted for ${url.href}`)
     return result
+  }
+
+  private _route(url: URL): Mount {
+    const mount = this._match(url)
+    if (!mount) throw new FsError('NoProvider', url, `no provider is mounted for ${url.href}`)
+    return mount
+  }
+
+  private _connect(watcher: Watcher, mount: Mount) {
+    const { provider, prefix } = mount
+    if (!provider.watch) {
+      throw new FsError('NotSupported', watcher.url, `the provider mounted at ${prefix} does not support watch()`)
+    }
+    const dispose = provider.watch(watcher)
+    this._watchers.set(watcher, { mount, dispose })
+  }
+
+  // The provider watch is disposed at once, and reports no more events.
+  private async _disconnect(watcher: Watcher) {
+    const connection = this._watchers.get(watcher)
+    if (!connection) return
+    this._watchers.set(watcher, undefined)
+    await connection.dispose()
+  }
+
+  private _reroute() {
+    const stops: Promise<void>[] = []
+    for (const [watcher, connection] of this._watchers) {
+      const mount = this._match(watcher.url)
+      if (mount === connection?.mount) continue
+      stops.push(this._disconnect(watcher).catch(error => watcher.emit('error', error)))
+      if (!mount) {
+        this.ctx.logger.debug('watch of %s is suspended without a provider', watcher.url.href)
+        continue
+      }
+      try {
+        this._connect(watcher, mount)
+      } catch (error) {
+        watcher.emit('error', error)
+      }
+    }
+    return Promise.all(stops).then(() => {})
   }
 
   /** Watch a file or a directory. The watch ends with the calling fiber. */
   watch(path: string | URL, options: WatchOptions = {}): Watcher {
-    const url = this._resolve(path)
+    const url = this.resolve(path)
     const mount = this._route(url)
-    const { provider } = mount
-    if (!provider.watch) {
-      throw new FsError('NotSupported', url, `the provider mounted at ${mount.prefix} does not support watch()`)
-    }
-    const watcher = provider.watch(this.ctx, url, options)
-    watcher[kStart](() => mount.watches.delete(watcher))
-    mount.watches.add(watcher)
-    return watcher
+    return new Watcher(this.ctx, url, options, (watcher) => {
+      this._connect(watcher, mount)
+      return async () => {
+        const connection = this._watchers.get(watcher)
+        this._watchers.delete(watcher)
+        await connection?.dispose()
+      }
+    })
   }
 }
 
 export interface FsProvider {
-  /** Create a watch, which the service starts on the calling fiber. */
-  watch?(ctx: Context, url: URL, options: WatchOptions): Watcher
+  /**
+   * Start serving `watcher`, and return a function that disposes it. The
+   * provider reports through `watcher.emit()`, with a `ready` once the initial
+   * scan is done, and reports nothing once the returned function is called.
+   */
+  watch?(watcher: Watcher): () => Awaitable<void>
 }
 
 export interface BaseFs extends FsProvider {}

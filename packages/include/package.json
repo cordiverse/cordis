@@ -20,12 +20,11 @@
   },
   "homepage": "https://cordis.io/",
   "peerDependencies": {
-    "@cordisjs/fs": "^2.0.0",
     "@cordisjs/loader": "^1.0.0-rc.9",
     "cordis": "^4.0.0-rc.12"
   },
   "devDependencies": {
-    "@cordisjs/fs": "^2.0.0",
+    "@cordisjs/fs": "^2.0.0-rc.0",
     "@cordisjs/fs-node": "^0.1.0",
     "@cordisjs/loader": "^1.0.0-rc.9",
     "@cordisjs/logger-console": "^1.0.0",

@@ -1,8 +1,7 @@
-import { BaseFs, WatchOptions } from '@cordisjs/fs'
-import { Context } from 'cordis'
+import { BaseFs, Watcher } from '@cordisjs/fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { NodeWatcher } from './watcher.ts'
+import { watchPath } from './watcher.ts'
 
 // `C:` is relative to the current directory of drive C, which depends on the
 // process. A separator after the colon names a location.
@@ -24,8 +23,8 @@ function toPath(url: URL) {
 class NodeFs extends BaseFs {
   static mount = 'file:'
 
-  watch(ctx: Context, url: URL, options: WatchOptions) {
-    return new NodeWatcher(ctx, url, options, toPath(url))
+  watch(watcher: Watcher) {
+    return watchPath(watcher, toPath(watcher.url))
   }
 }
 

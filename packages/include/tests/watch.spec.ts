@@ -4,6 +4,7 @@ import Fs from '@cordisjs/fs'
 import NodeFs from '@cordisjs/fs-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readFile, rm, writeFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 import * as yaml from 'yaml'
 import Include from '../src/index.ts'
 import { fixture, component } from './utils.ts'
@@ -15,8 +16,8 @@ class FakeFs extends Service {
     super(ctx, 'fs')
   }
 
-  watch(path: string) {
-    FakeFs.paths.push(path)
+  watch(url: URL) {
+    FakeFs.paths.push(fileURLToPath(url))
     return { on: () => () => {} }
   }
 }

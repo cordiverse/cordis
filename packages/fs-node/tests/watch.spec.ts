@@ -1,6 +1,6 @@
 import { Context, Fiber } from 'cordis'
 import { mkdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, resolve } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { FSWatcher } from 'chokidar'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -43,10 +43,11 @@ function write(name: string, content = '') {
   return path
 }
 
-// resolves once the initial scan is done
+// An absolute local path is watched as its file URL, and a change is reported
+// as a local path. Resolves once the initial scan is done.
 async function watch(ctx: Context, path: string | URL, listener: (filename: string) => void, options?: WatchOptions) {
-  const watcher = ctx.fs.watch(path, options)
-  watcher.on('change', listener)
+  const watcher = ctx.fs.watch(typeof path === 'string' && isAbsolute(path) ? pathToFileURL(path) : path, options)
+  watcher.on('change', url => listener(fileURLToPath(url)))
   await new Promise<void>(resolve => watcher.on('ready', resolve))
   return watcher
 }
@@ -69,9 +70,9 @@ describe('Fs', () => {
     rmSync(fixture, { recursive: true, force: true })
   })
 
-  async function setup(baseUrl: string | null = import.meta.url) {
+  async function setup() {
     const root = new Context()
-    root.baseUrl = baseUrl ?? undefined
+    root.baseUrl = import.meta.url
     fiber = await root.use(Fs)
     await root.use(NodeFs)
     let ctx!: Context
@@ -80,21 +81,11 @@ describe('Fs', () => {
   }
 
   describe('path', () => {
-    it('resolves a relative path against the calling context', async () => {
+    it('watches the local path of a relative reference against the calling context', async () => {
       const path = write('base with spaces # %/relative.txt')
       const ctx = await setup()
       const seen: string[] = []
-      await watch(ctx, '__fixtures__/base with spaces # %/relative.txt', (filename) => { seen.push(filename) })
-
-      await touch(path, () => seen.length)
-      expect([...new Set(seen)]).to.deep.equal([path])
-    }, 15000)
-
-    it('resolves a relative path against the working directory without a context directory', async () => {
-      const path = write('cwd.txt')
-      const ctx = await setup(null)
-      const seen: string[] = []
-      await watch(ctx, relative(process.cwd(), path), (filename) => { seen.push(filename) })
+      await watch(ctx, '__fixtures__/base%20with%20spaces%20%23%20%25/relative.txt', (filename) => { seen.push(filename) })
 
       await touch(path, () => seen.length)
       expect([...new Set(seen)]).to.deep.equal([path])
@@ -144,25 +135,6 @@ describe('Fs', () => {
       for (const input of ['file:C:', 'file:/C:', 'file:/../C:', 'file:.\\C:']) {
         expect(() => ctx.fs.watch(input), `${input} resolved to a drive-relative path`)
           .to.throw(/drive-relative form/)
-      }
-    }, 15000)
-
-    // the string branch reaches the same state through `resolve('C:')`
-    it.runIf(process.platform === 'win32')('rejects a drive-relative path passed as a plain string', async () => {
-      const ctx = await setup()
-      const resolved = (input: string | URL) => (ctx.fs as any)._resolve(input)
-      // `C:Windows` is the shape that matters: it resolves to a real directory
-      for (const input of ['C:', 'c:', 'X:', 'Z:', 'C:.', 'C:..', 'C:./', 'C:x\\..', 'c:foo', 'C:Windows']) {
-        expect(() => resolved(input), `${input} is drive-relative, not a path`)
-          .to.throw(/drive-relative form/)
-      }
-    }, 15000)
-
-    it.runIf(process.platform === 'win32')('does not reject a path that names a location on a drive', async () => {
-      const ctx = await setup()
-      const resolved = (input: string | URL) => (ctx.fs as any)._resolve(input)
-      for (const input of ['C:\\', 'C:\\x', 'C:\\x\\y.yml', 'C:/x', 'C://x', 'C://x//y.yml', 'C://', '\\\\server\\share\\x']) {
-        expect(isAbsolute(fileURLToPath(resolved(input))), `${input} names a location on a drive`).to.be.true
       }
     }, 15000)
   })

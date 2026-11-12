@@ -1,6 +1,5 @@
 import { Context } from 'cordis'
 import { Awaitable } from 'cosmokit'
-import { kAbort, kStart } from './symbols.ts'
 
 export type WatchFilter = string[] | ((path: string, isDirectory: boolean) => boolean)
 
@@ -12,8 +11,8 @@ export interface WatchOptions {
 }
 
 export interface WatchEvents {
-  /** A file below the watched path is modified. */
-  change(filename: string): Awaitable<void>
+  /** A file at or below the watched location is modified. */
+  change(url: URL): Awaitable<void>
   /** The initial scan is done. A listener added afterwards is called at once. */
   ready(): Awaitable<void>
   /** An error is logged as a warning without a listener. */
@@ -29,47 +28,32 @@ interface Hook<F> {
 type Hooks = { [K in keyof WatchEvents]: Set<Hook<WatchEvents[K]>> }
 
 /**
- * A watch on a location. A provider implements `_start()` and `_stop()`, and
- * reports through `_emit()` and `_error()`. The constructor runs before the
- * watch starts, so a provider may throw from it.
+ * A watch on a location, which ends with the calling fiber. The provider that
+ * the location is routed to reports its events, and another provider takes
+ * over when the routing changes.
  */
-export abstract class Watcher {
+export class Watcher {
   private _hooks: Hooks = { change: new Set(), ready: new Set(), error: new Set() }
   private _ready = false
   private _closed = false
-  private _dispose?: () => Promise<void>
 
-  constructor(protected ctx: Context, public url: URL, protected options: WatchOptions) {}
+  /** Ends the watch. */
+  dispose: () => Promise<void>
 
-  /** Resolves once the initial scan is done. */
-  protected abstract _start(): Promise<void>
-  /** Stops watching. */
-  protected abstract _stop(): Awaitable<void>
-
-  /** Ends the watch. The watch also ends with the calling fiber. */
-  dispose(): Promise<void> {
-    return this._dispose?.() ?? Promise.resolve()
-  }
-
-  [kStart](onStop: () => void) {
-    this._dispose = this.ctx.effect(() => {
-      this._start().then(() => {
-        if (this._closed) return
-        this._ready = true
-        this._emit('ready')
-      }, error => this._error(error))
-      return async () => {
+  /** `connect` starts serving the watch, and returns a function that disposes it. */
+  constructor(
+    private ctx: Context,
+    public url: URL,
+    public options: WatchOptions,
+    connect: (watcher: Watcher) => () => Promise<void>,
+  ) {
+    this.dispose = ctx.effect(() => {
+      const disconnect = connect(this)
+      return () => {
         this._closed = true
-        onStop()
-        await this._stop()
+        return disconnect()
       }
     }, 'ctx.fs.watch()')
-  }
-
-  /** Ends the watch with an error, e.g. when its provider is unmounted. */
-  [kAbort](error: unknown) {
-    this._error(error)
-    return this.dispose()
   }
 
   /** Adds a listener, and returns a function that removes it. */
@@ -89,9 +73,23 @@ export abstract class Watcher {
     }
   }
 
-  // An event reaches the hooks taken when it is dispatched.
-  protected _emit<K extends keyof WatchEvents>(name: K, ...args: Parameters<WatchEvents[K]>) {
+  /**
+   * Reports an event, as the provider that serves the watch does. Only the
+   * first `ready` is dispatched, so a provider that takes over the watch does
+   * not report it again.
+   */
+  emit<K extends keyof WatchEvents>(name: K, ...args: Parameters<WatchEvents[K]>) {
     if (this._closed) return
+    if (name === 'error') return this._error(args[0])
+    if (name === 'ready') {
+      if (this._ready) return
+      this._ready = true
+    }
+    this._dispatch(name, args)
+  }
+
+  // An event reaches the hooks taken when it is dispatched.
+  private _dispatch(name: keyof WatchEvents, args: any[]) {
     for (const hook of [...this._hooks[name]]) {
       if (!hook.removed) this._call(hook.listener, args)
     }
@@ -101,7 +99,7 @@ export abstract class Watcher {
     (async () => listener(...args))().catch(error => this._error(error))
   }
 
-  protected _error(error: unknown) {
+  private _error(error: unknown) {
     if (this._closed) return
     const hooks = this._hooks.error
     if (!hooks.size) return this.ctx.logger.warn(error)

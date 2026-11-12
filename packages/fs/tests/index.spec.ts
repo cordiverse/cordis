@@ -1,27 +1,23 @@
 import { Context, Fiber } from 'cordis'
-import { resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import Fs, { BaseFs, FsError, Watcher, WatchOptions } from '../src/index.ts'
+import Fs, { BaseFs, FsError, Watcher } from '../src/index.ts'
 
-class FakeWatcher extends Watcher {
-  closed = false
-
-  protected async _start() {}
-
-  protected _stop() {
-    this.closed = true
-  }
+interface FakeWatch {
+  watcher: Watcher
+  url: URL
+  stopped: boolean
 }
 
 function fakeProvider() {
-  const calls: FakeWatcher[] = []
+  const calls: FakeWatch[] = []
   return {
     calls,
-    watch(ctx: Context, url: URL, options: WatchOptions) {
-      const watcher = new FakeWatcher(ctx, url, options)
-      calls.push(watcher)
-      return watcher
+    watch(watcher: Watcher) {
+      const call: FakeWatch = { watcher, url: watcher.url, stopped: false }
+      calls.push(call)
+      return () => {
+        call.stopped = true
+      }
     },
   }
 }
@@ -90,7 +86,7 @@ describe('Fs', () => {
       expect(() => ctx.fs.watch('file:///a.txt')).to.throw(FsError).with.property('code', 'NotSupported')
     })
 
-    it('ends a mount with the calling fiber, together with the watches of its provider', async () => {
+    it('stops the watches of a mount with the calling fiber, and keeps them', async () => {
       const ctx = await setup()
       const provider = fakeProvider()
       const errors: unknown[] = []
@@ -101,10 +97,79 @@ describe('Fs', () => {
       watcher.on('error', (error) => { errors.push(error) })
 
       await mount.dispose()
-      expect(provider.calls.map(call => call.closed)).to.deep.equal([true])
-      await vi.waitFor(() => expect(errors).to.have.length(1))
-      expect(errors[0]).to.include({ code: 'NoProvider' })
-      expect(() => ctx.fs.watch('file:///a.txt')).to.throw(FsError)
+      expect(provider.calls.map(call => call.stopped)).to.deep.equal([true])
+      expect(errors).to.deep.equal([])
+      expect(() => ctx.fs.watch('file:///b.txt')).to.throw(FsError)
+    })
+
+    it('resumes a watch on a provider mounted again, without another `ready`', async () => {
+      const ctx = await setup()
+      const first = fakeProvider()
+      const second = fakeProvider()
+      const mount = await ctx.inject(['fs'], (ctx) => {
+        ctx.fs.mount('mem:', first)
+      })
+      const watcher = ctx.fs.watch('mem://bucket/a.txt')
+      const ready = vi.fn()
+      const changes: string[] = []
+      watcher.on('ready', ready)
+      watcher.on('change', (url) => { changes.push(url.href) })
+      first.calls[0].watcher.emit('ready')
+      await vi.waitFor(() => expect(ready).toHaveBeenCalledTimes(1))
+
+      await mount.dispose()
+      ctx.fs.mount('mem:', second)
+      expect(second.calls.map(call => call.url.href)).to.deep.equal(['mem://bucket/a.txt'])
+      second.calls[0].watcher.emit('ready')
+      second.calls[0].watcher.emit('change', new URL('mem://bucket/a.txt'))
+      await vi.waitFor(() => expect(changes).to.deep.equal(['mem://bucket/a.txt']))
+      expect(ready).toHaveBeenCalledTimes(1)
+    })
+
+    it('moves a watch to the provider of a longer prefix mounted later, and back when it ends', async () => {
+      const ctx = await setup()
+      const outer = fakeProvider()
+      const inner = fakeProvider()
+      ctx.fs.mount('file:///', outer)
+      ctx.fs.watch('file:///data/a.txt')
+      const mount = await ctx.inject(['fs'], (ctx) => {
+        ctx.fs.mount('file:///data/', inner)
+      })
+      expect(outer.calls.map(call => call.stopped)).to.deep.equal([true])
+      expect(inner.calls.map(call => call.url.href)).to.deep.equal(['file:///data/a.txt'])
+
+      await mount.dispose()
+      expect(inner.calls.map(call => call.stopped)).to.deep.equal([true])
+      expect(outer.calls.map(call => call.stopped)).to.deep.equal([true, false])
+    })
+
+    it('reports an error of a provider that takes over a watch', async () => {
+      const ctx = await setup()
+      const mount = await ctx.inject(['fs'], (ctx) => {
+        ctx.fs.mount('mem:', fakeProvider())
+      })
+      const watcher = ctx.fs.watch('mem://a.txt')
+      const errors: unknown[] = []
+      watcher.on('error', (error) => { errors.push(error) })
+      await mount.dispose()
+
+      ctx.fs.mount('mem:', {})
+      expect(errors).to.have.length(1)
+      expect(errors[0]).to.include({ code: 'NotSupported' })
+    })
+
+    it('stops the watch of the provider when the calling fiber ends', async () => {
+      const ctx = await setup()
+      const provider = fakeProvider()
+      ctx.fs.mount('mem:', provider)
+      const fiber = await ctx.inject(['fs'], (ctx) => {
+        ctx.fs.watch('mem://a.txt')
+      })
+      await fiber.dispose()
+      expect(provider.calls.map(call => call.stopped)).to.deep.equal([true])
+
+      ctx.fs.mount('mem://bucket/', fakeProvider())
+      expect(provider.calls).to.have.length(1)
     })
 
     it('mounts a subclass of `BaseFs` at its default mount point or at `config.mount`', async () => {
@@ -123,56 +188,32 @@ describe('Fs', () => {
     })
   })
 
-  describe('path', () => {
-    async function resolved(input: string, baseUrl?: string) {
-      const ctx = await setup(baseUrl)
-      const provider = fakeProvider()
-      ctx.fs.mount('file:', provider)
-      ctx.fs.mount('mem:', provider)
-      ctx.fs.watch(input)
-      return provider.calls[0].url.href
-    }
-
-    it('resolves a relative path against the calling context', async () => {
-      const base = pathToFileURL(resolve('/app/cordis.yml')).href
-      expect(await resolved('data/a.txt', base)).to.equal(pathToFileURL(resolve('/app/data/a.txt')).href)
+  describe('resolve', () => {
+    it('resolves a relative reference against `ctx.baseUrl`', async () => {
+      const ctx = await setup('file:///app/cordis.yml')
+      expect(ctx.fs.resolve('data/a.txt').href).to.equal('file:///app/data/a.txt')
+      expect(ctx.fs.resolve('/a.txt').href).to.equal('file:///a.txt')
     })
 
-    it('resolves a relative path against the working directory without a context directory', async () => {
-      expect(await resolved('a.txt')).to.equal(pathToFileURL(resolve('a.txt')).href)
+    it('takes an absolute URL independently of `ctx.baseUrl`', async () => {
+      const ctx = await setup('file:///app/cordis.yml')
+      expect(ctx.fs.resolve('mem://bucket/a.txt').href).to.equal('mem://bucket/a.txt')
+      const url = new URL('mem://bucket/b.txt')
+      expect(ctx.fs.resolve(url)).to.equal(url)
     })
 
-    it('resolves an absolute local path independently of the context directory', async () => {
-      const path = resolve('/app/a.txt')
-      const base = pathToFileURL(resolve('/other/cordis.yml')).href
-      expect(await resolved(path, base)).to.equal(pathToFileURL(path).href)
-    })
-
-    it('forwards a path with empty segments to the provider mounted at its normalized location', async () => {
+    it('rejects a relative reference without `ctx.baseUrl`', async () => {
       const ctx = await setup()
-      const outer = fakeProvider()
-      const inner = fakeProvider()
-      ctx.fs.mount('file:', outer)
-      ctx.fs.mount(pathToFileURL(resolve('/app/data')), inner)
-      ctx.fs.watch(resolve('/app') + '//data/a.txt')
-      expect(inner.calls.map(call => call.url.href)).to.deep.equal([pathToFileURL(resolve('/app/data/a.txt')).href])
+      expect(() => ctx.fs.resolve('a.txt')).to.throw(TypeError)
+      expect(ctx.fs.resolve('file:///a.txt').href).to.equal('file:///a.txt')
     })
 
-    it.each([
-      ['mem://user:pass@bucket/dir/config.yml', 'mem://user:pass@bucket'],
-      ['mem:/dir/config.yml', 'mem:'],
-    ])('resolves relative and rooted paths within the non-file base %s', async (base, prefix) => {
-      expect(await resolved('a.txt', base)).to.equal(`${prefix}/dir/a.txt`)
-      expect(await resolved('/a.txt', base)).to.equal(`${prefix}/a.txt`)
-    })
-
-    it('keeps URL syntax and backslashes literal in non-file paths', async () => {
-      expect(await resolved(' a\\b#%?.txt\n', 'mem:/dir/config.yml'))
-        .to.equal('mem:/dir/%20a%5Cb%23%25%3F.txt%0A')
-    })
-
-    it.runIf(process.platform !== 'win32')('takes a relative POSIX path with a drive-letter shape as a path', async () => {
-      expect(await resolved('C:foo')).to.equal(pathToFileURL(resolve('C:foo')).href)
+    it('watches the resolved location', async () => {
+      const ctx = await setup('mem://bucket/dir/config.yml')
+      const provider = fakeProvider()
+      ctx.fs.mount('mem:', provider)
+      ctx.fs.watch('a.txt')
+      expect(provider.calls.map(call => call.url.href)).to.deep.equal(['mem://bucket/dir/a.txt'])
     })
   })
 })
