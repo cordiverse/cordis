@@ -1,10 +1,11 @@
 {
   "name": "@cordisjs/include",
   "version": "1.2.0",
+  "description": "Load plugins from a configuration file",
   "sideEffects": false,
   "type": "module",
   "main": "lib/index.js",
-  "typings": "lib/index.d.ts",
+  "types": "lib/index.d.ts",
   "files": [
     "lib"
   ],

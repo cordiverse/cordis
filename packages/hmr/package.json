@@ -1,11 +1,11 @@
 {
   "name": "@cordisjs/hmr",
-  "description": "Transactional Hot Module Replacement for Cordis",
+  "description": "Hot module replacement for Cordis",
   "version": "1.1.2",
   "sideEffects": false,
   "type": "module",
   "main": "lib/index.js",
-  "typings": "lib/index.d.ts",
+  "types": "lib/index.d.ts",
   "files": [
     "lib"
   ],

@@ -1,6 +1,6 @@
 {
   "name": "@cordisjs/env",
-  "description": "Environment variables service for cordis",
+  "description": "Environment variables service for Cordis",
   "version": "1.0.1",
   "sideEffects": false,
   "type": "module",

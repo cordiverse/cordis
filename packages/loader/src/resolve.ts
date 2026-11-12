@@ -9,7 +9,7 @@ export type Resolve = (specifier: string) => string
 
 // Order matters: the directory ignores itself before the helper appears in it.
 const HELPER_FILES = {
-  '.gitignore': '# created by cordis automatically\n*\n',
+  '.gitignore': '# created by Cordis automatically\n*\n',
   // The one-argument form of `import.meta.resolve` anchors on this file, so
   // resolution happens in the project scope. A resolve call also survives a
   // bundling host, which transforms modules inside its root and redirects the

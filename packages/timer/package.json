@@ -1,6 +1,6 @@
 {
   "name": "@cordisjs/timer",
-  "description": "Timer service for cordis",
+  "description": "Timer service for Cordis",
   "version": "1.1.4",
   "sideEffects": false,
   "type": "module",
