@@ -28,7 +28,7 @@ export function apply(ctx: Context, config: Config) {
     })
 
   ctx.cli
-    .command('run [url]', 'Start a cordis application')
+    .command('run [url]', 'Start a Cordis application')
     .option('-d, --daemon', 'Run as daemon', { default: config.daemon.enabled })
     .action(async ({ args, options }) => {
       const workerConfig: Config = { ...config }
