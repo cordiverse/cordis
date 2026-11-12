@@ -1,7 +1,7 @@
 {
   "name": "@cordisjs/http-socks",
   "description": "SOCKS proxy agent support for @cordisjs/http",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "sideEffects": false,
   "type": "module",
   "main": "lib/index.js",
@@ -42,13 +42,13 @@
     }
   },
   "devDependencies": {
-    "@cordisjs/http": "^1.5.2",
-    "cordis": "^4.0.0-rc.12",
+    "@cordisjs/http": "^1.6.0",
+    "cordis": "^4.0.0-rc.13",
     "undici": "^8.1.0"
   },
   "peerDependencies": {
-    "@cordisjs/http": "^1.5.2",
-    "cordis": "^4.0.0-rc.12"
+    "@cordisjs/http": "^1.6.0",
+    "cordis": "^4.0.0-rc.13"
   },
   "dependencies": {
     "socks": "^2.8.7"

@@ -69,34 +69,34 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@cordisjs/cli-cordis@workspace:packages/cli-cordis"
   dependencies:
-    "@cordisjs/cli": "npm:^4.0.0-rc.0"
+    "@cordisjs/cli": "npm:^4.0.0"
     "@cordisjs/fs": "npm:^2.0.0-rc.0"
     "@cordisjs/fs-node": "npm:^0.1.0"
-    "@cordisjs/loader": "npm:^1.0.0-rc.9"
-    "@cordisjs/logger-console": "npm:^1.0.0"
-    cordis: "npm:^4.0.0-rc.12"
+    "@cordisjs/loader": "npm:^1.0.0-rc.10"
+    "@cordisjs/logger-console": "npm:^1.0.1"
+    cordis: "npm:^4.0.0-rc.13"
     cosmokit: "npm:^1.8.1"
     kleur: "npm:^4.1.5"
   peerDependencies:
-    "@cordisjs/cli": ^4.0.0-rc.0
+    "@cordisjs/cli": ^4.0.0
     "@cordisjs/fs": ^2.0.0-rc.0
     "@cordisjs/fs-node": ^0.1.0
-    "@cordisjs/loader": ^1.0.0-rc.9
-    cordis: ^4.0.0-rc.12
+    "@cordisjs/loader": ^1.0.0-rc.10
+    cordis: ^4.0.0-rc.13
   languageName: unknown
   linkType: soft
 
-"@cordisjs/cli@npm:^4.0.0-rc.0, @cordisjs/cli@workspace:packages/cli":
+"@cordisjs/cli@npm:^4.0.0, @cordisjs/cli@workspace:packages/cli":
   version: 0.0.0-use.local
   resolution: "@cordisjs/cli@workspace:packages/cli"
   dependencies:
-    "@cordisjs/loader": "npm:^1.0.0-rc.9"
-    cordis: "npm:^4.0.0-rc.12"
+    "@cordisjs/loader": "npm:^1.0.0-rc.10"
+    cordis: "npm:^4.0.0-rc.13"
     cosmokit: "npm:^1.8.1"
     kleur: "npm:^4.1.5"
   peerDependencies:
-    "@cordisjs/loader": ^1.0.0-rc.9
-    cordis: ^4.0.0-rc.12
+    "@cordisjs/loader": ^1.0.0-rc.10
+    cordis: ^4.0.0-rc.13
   languageName: unknown
   linkType: soft
 
@@ -104,11 +104,11 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@cordisjs/env@workspace:packages/env"
   dependencies:
-    cordis: "npm:^4.0.0-rc.12"
+    cordis: "npm:^4.0.0-rc.13"
     dotenv: "npm:^17.4.2"
     dotenv-expand: "npm:^12.0.3"
   peerDependencies:
-    cordis: ^4.0.0-rc.12
+    cordis: ^4.0.0-rc.13
   languageName: unknown
   linkType: soft
 
@@ -146,12 +146,12 @@ __metadata:
     "@cordisjs/fs": "npm:^2.0.0-rc.0"
     "@types/picomatch": "npm:^3.0.2"
     chokidar: "npm:^4.0.3"
-    cordis: "npm:^4.0.0-rc.12"
+    cordis: "npm:^4.0.0-rc.13"
     cosmokit: "npm:^1.8.1"
     picomatch: "npm:^4.0.3"
   peerDependencies:
     "@cordisjs/fs": ^2.0.0-rc.0
-    cordis: ^4.0.0-rc.12
+    cordis: ^4.0.0-rc.13
   languageName: unknown
   linkType: soft
 
@@ -159,10 +159,10 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@cordisjs/fs@workspace:packages/fs"
   dependencies:
-    cordis: "npm:^4.0.0-rc.12"
+    cordis: "npm:^4.0.0-rc.13"
     cosmokit: "npm:^1.8.1"
   peerDependencies:
-    cordis: ^4.0.0-rc.12
+    cordis: ^4.0.0-rc.13
   languageName: unknown
   linkType: soft
 
@@ -170,11 +170,11 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@cordisjs/group@workspace:packages/group"
   dependencies:
-    "@cordisjs/loader": "npm:^1.0.0-rc.9"
-    cordis: "npm:^4.0.0-rc.12"
+    "@cordisjs/loader": "npm:^1.0.0-rc.10"
+    cordis: "npm:^4.0.0-rc.13"
   peerDependencies:
-    "@cordisjs/loader": ^1.0.0-rc.9
-    cordis: ^4.0.0-rc.12
+    "@cordisjs/loader": ^1.0.0-rc.10
+    cordis: ^4.0.0-rc.13
   languageName: unknown
   linkType: soft
 
@@ -185,16 +185,16 @@ __metadata:
     "@babel/code-frame": "npm:^7.29.0"
     "@cordisjs/fs": "npm:^2.0.0-rc.0"
     "@cordisjs/fs-node": "npm:^0.1.0"
-    "@cordisjs/include": "npm:^1.2.0"
-    "@cordisjs/loader": "npm:^1.0.0-rc.9"
-    "@cordisjs/logger-console": "npm:^1.0.0"
+    "@cordisjs/include": "npm:^2.0.0-rc.0"
+    "@cordisjs/loader": "npm:^1.0.0-rc.10"
+    "@cordisjs/logger-console": "npm:^1.0.1"
     "@types/babel__code-frame": "npm:^7.27.0"
-    cordis: "npm:^4.0.0-rc.12"
+    cordis: "npm:^4.0.0-rc.13"
     esbuild: "npm:^0.27.3"
     schemastery: "npm:^3.18.0"
   peerDependencies:
     "@cordisjs/fs": ^2.0.0-rc.0
-    cordis: ^4.0.0-rc.12
+    cordis: ^4.0.0-rc.13
     node-addon-require-builtin: ^0.1.0
   peerDependenciesMeta:
     "@cordisjs/fs":
@@ -208,28 +208,28 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@cordisjs/http-socks@workspace:packages/http-socks"
   dependencies:
-    "@cordisjs/http": "npm:^1.5.2"
-    cordis: "npm:^4.0.0-rc.12"
+    "@cordisjs/http": "npm:^1.6.0"
+    cordis: "npm:^4.0.0-rc.13"
     socks: "npm:^2.8.7"
     undici: "npm:^8.1.0"
   peerDependencies:
-    "@cordisjs/http": ^1.5.2
-    cordis: ^4.0.0-rc.12
+    "@cordisjs/http": ^1.6.0
+    cordis: ^4.0.0-rc.13
   languageName: unknown
   linkType: soft
 
-"@cordisjs/http@npm:^1.5.2, @cordisjs/http@workspace:packages/http":
+"@cordisjs/http@npm:^1.6.0, @cordisjs/http@workspace:packages/http":
   version: 0.0.0-use.local
   resolution: "@cordisjs/http@workspace:packages/http"
   dependencies:
     "@cordisjs/fetch-file": "npm:^1.0.3"
-    "@cordisjs/logger-console": "npm:^1.0.0"
-    cordis: "npm:^4.0.0-rc.12"
+    "@cordisjs/logger-console": "npm:^1.0.1"
+    cordis: "npm:^4.0.0-rc.13"
     cosmokit: "npm:^1.8.1"
     schemastery: "npm:^3.18.0"
     undici: "npm:^8.1.0"
   peerDependencies:
-    cordis: ^4.0.0-rc.12
+    cordis: ^4.0.0-rc.13
     undici: "*"
   peerDependenciesMeta:
     undici:
@@ -237,32 +237,32 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@cordisjs/include@npm:^1.2.0, @cordisjs/include@workspace:packages/include":
+"@cordisjs/include@npm:^2.0.0-rc.0, @cordisjs/include@workspace:packages/include":
   version: 0.0.0-use.local
   resolution: "@cordisjs/include@workspace:packages/include"
   dependencies:
     "@cordisjs/fs": "npm:^2.0.0-rc.0"
     "@cordisjs/fs-node": "npm:^0.1.0"
-    "@cordisjs/loader": "npm:^1.0.0-rc.9"
-    "@cordisjs/logger-console": "npm:^1.0.0"
-    cordis: "npm:^4.0.0-rc.12"
+    "@cordisjs/loader": "npm:^1.0.0-rc.10"
+    "@cordisjs/logger-console": "npm:^1.0.1"
+    cordis: "npm:^4.0.0-rc.13"
     cosmokit: "npm:^1.8.1"
     yaml: "npm:^2.9.1"
   peerDependencies:
-    "@cordisjs/loader": ^1.0.0-rc.9
-    cordis: ^4.0.0-rc.12
+    "@cordisjs/loader": ^1.0.0-rc.10
+    cordis: ^4.0.0-rc.13
   languageName: unknown
   linkType: soft
 
-"@cordisjs/loader@npm:^1.0.0-rc.9, @cordisjs/loader@workspace:packages/loader":
+"@cordisjs/loader@npm:^1.0.0-rc.10, @cordisjs/loader@workspace:packages/loader":
   version: 0.0.0-use.local
   resolution: "@cordisjs/loader@workspace:packages/loader"
   dependencies:
-    "@cordisjs/logger-console": "npm:^1.0.0"
-    cordis: "npm:^4.0.0-rc.12"
+    "@cordisjs/logger-console": "npm:^1.0.1"
+    cordis: "npm:^4.0.0-rc.13"
     cosmokit: "npm:^1.8.1"
   peerDependencies:
-    cordis: ^4.0.0-rc.12
+    cordis: ^4.0.0-rc.13
     node-addon-require-builtin: ^0.1.0
   peerDependenciesMeta:
     node-addon-require-builtin:
@@ -270,16 +270,16 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@cordisjs/logger-console@npm:^1.0.0, @cordisjs/logger-console@workspace:packages/logger-console":
+"@cordisjs/logger-console@npm:^1.0.1, @cordisjs/logger-console@workspace:packages/logger-console":
   version: 0.0.0-use.local
   resolution: "@cordisjs/logger-console@workspace:packages/logger-console"
   dependencies:
-    cordis: "npm:^4.0.0-rc.12"
+    cordis: "npm:^4.0.0-rc.13"
     cosmokit: "npm:^1.8.1"
     schemastery: "npm:^3.18.0"
     supports-color: "npm:^9.4.0"
   peerDependencies:
-    cordis: ^4.0.0-rc.12
+    cordis: ^4.0.0-rc.13
   languageName: unknown
   linkType: soft
 
@@ -287,12 +287,12 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@cordisjs/package-manager@workspace:packages/package-manager"
   dependencies:
-    cordis: "npm:^4.0.0-rc.12"
+    cordis: "npm:^4.0.0-rc.13"
     cosmokit: "npm:^1.8.1"
     schemastery: "npm:^3.18.0"
     yaml: "npm:^2.9.1"
   peerDependencies:
-    cordis: ^4.0.0-rc.12
+    cordis: ^4.0.0-rc.13
   languageName: unknown
   linkType: soft
 
@@ -341,10 +341,10 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@cordisjs/timer@workspace:packages/timer"
   dependencies:
-    cordis: "npm:^4.0.0-rc.12"
+    cordis: "npm:^4.0.0-rc.13"
     cosmokit: "npm:^1.8.1"
   peerDependencies:
-    cordis: ^4.0.0-rc.12
+    cordis: ^4.0.0-rc.13
   languageName: unknown
   linkType: soft
 
@@ -1966,7 +1966,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"cordis@npm:^4.0.0-rc.12, cordis@npm:^4.0.0-rc.4, cordis@workspace:packages/core":
+"cordis@npm:^4.0.0-rc.13, cordis@npm:^4.0.0-rc.4, cordis@workspace:packages/core":
   version: 0.0.0-use.local
   resolution: "cordis@workspace:packages/core"
   dependencies:
@@ -1975,8 +1975,8 @@ __metadata:
   peerDependencies:
     "@cordisjs/fs": ^2.0.0-rc.0
     "@cordisjs/fs-node": ^0.1.0
-    "@cordisjs/include": ^1.2.0
-    "@cordisjs/loader": ^1.0.0-rc.9
+    "@cordisjs/include": ^2.0.0-rc.0
+    "@cordisjs/loader": ^1.0.0-rc.10
   peerDependenciesMeta:
     "@cordisjs/fs":
       optional: true
