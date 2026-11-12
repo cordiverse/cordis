@@ -17,7 +17,7 @@ interface Event {
 
 export function apply(ctx: Context, config: Config) {
   ctx.cli
-    .command('', 'Meta-Framework for Modern Applications')
+    .command('', 'Meta-framework of spatiotemporal composability')
     .option('-v, --version', 'Show version')
     .action(({ options }) => {
       if (options.version) {

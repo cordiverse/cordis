@@ -1,6 +1,6 @@
 {
   "name": "cordis",
-  "description": "Meta-Framework for Modern Applications",
+  "description": "Meta-framework of spatiotemporal composability",
   "version": "4.0.0-rc.12",
   "sideEffects": false,
   "type": "module",

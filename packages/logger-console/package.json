@@ -1,6 +1,6 @@
 {
   "name": "@cordisjs/logger-console",
-  "description": "Console logger exporter for cordis",
+  "description": "Console logger exporter for Cordis",
   "version": "1.0.0",
   "sideEffects": false,
   "type": "module",
