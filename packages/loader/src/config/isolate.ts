@@ -28,9 +28,16 @@ export function accessGlobal(key: string, label: string) {
   return Symbol.for(`cordis:isolate:${JSON.stringify([key, label])}`)
 }
 
-export default function isolate(ctx: Context) {
-  const delims: Dict<symbol> = Object.create(null)
+function within(table: Dict<symbol> | null, boundary: Dict<symbol>, name: string) {
+  while (table) {
+    if (table === boundary) return true
+    if (Object.hasOwn(table, name)) return false
+    table = Object.getPrototypeOf(table)
+  }
+  return false
+}
 
+export default function isolate(ctx: Context) {
   ctx.on('loader/entry-init', (entry) => {
     entry.ctx[Context.isolate] = Object.create(entry.ctx[Context.isolate])
   })
@@ -45,22 +52,26 @@ export default function isolate(ctx: Context) {
     }
 
     // step 2: generate service diff
-    const diff: Dict<[symbol, symbol, symbol, symbol]> = Object.create(null)
+    // `inside`: whether the provider resolves the name through the entry
+    const diff: Dict<[symbol, symbol, boolean]> = Object.create(null)
     const oldMap = entry.ctx[Context.isolate]
-    for (const name in { ...newMap, ...delims }) {
+    // `for...in` includes the names inherited from the old and new parents
+    const names = new Set<string>()
+    for (const name in oldMap) names.add(name)
+    for (const name in newMap) names.add(name)
+    for (const name of names) {
       if (newMap[name] === oldMap[name]) continue
-      const delim = delims[name] ??= Symbol(`delim:${name}`)
-      entry.ctx[delim] = Symbol(`${name}#${entry.id}`)
       for (const symbol of [oldMap[name], newMap[name]]) {
         const impl = symbol && entry.ctx.reflect.store[symbol]
         if (!impl) continue
-        const fiber = impl.ctx.fiber
-        if (!fiber) {
+        if (!impl.ctx.fiber) {
           entry.ctx.logger.warn(new Error(`expected service ${name} to be implemented`))
           continue
         }
-        diff[name] = [oldMap[name], newMap[name], entry.ctx[delim], fiber.ctx[delim]]
-        if (entry.ctx[delim] !== fiber.ctx[delim]) break
+        // the provision context, which may isolate the name apart from its fiber
+        const inside = within(impl.ctx[Context.isolate], oldMap, name)
+        diff[name] = [oldMap[name], newMap[name], inside]
+        if (!inside) break
       }
     }
 
@@ -72,9 +83,9 @@ export default function isolate(ctx: Context) {
     await next()
 
     // step 5: replace service impl
-    for (const [symbol1, symbol2, flag1, flag2] of Object.values(diff)) {
+    for (const [symbol1, symbol2, inside] of Object.values(diff)) {
       const impl = entry.ctx.reflect.store[symbol1]
-      if (flag1 === flag2 && impl && !entry.ctx.reflect.store[symbol2]) {
+      if (inside && impl && !entry.ctx.reflect.store[symbol2]) {
         entry.ctx.reflect.store[symbol2] = impl
         delete entry.ctx.reflect.store[symbol1]
         impl.isolate = symbol2
@@ -82,18 +93,12 @@ export default function isolate(ctx: Context) {
     }
 
     // step 6: reflect notify
+    // the entry's isolate map is swapped in place, so `oldMap` is still the
+    // boundary; a context is affected if it lies on the other side of it
     ctx.reflect.notify(Object.keys(diff), (ctx, name) => {
-      const [symbol1, symbol2, flag1, flag2] = diff[name]
+      const [symbol1, symbol2, inside] = diff[name]
       const symbol3 = ctx[Context.isolate][name]
-      const flag3 = ctx[delims[name]]
-      return (symbol1 === symbol3 || symbol2 === symbol3) && (flag1 === flag3) !== (flag1 === flag2)
+      return (symbol1 === symbol3 || symbol2 === symbol3) && within(ctx[Context.isolate], oldMap, name) !== inside
     })
-
-    // step 7: clean up delimiters
-    for (const name in delims) {
-      if (!Reflect.ownKeys(newMap).includes(name)) {
-        delete entry.ctx[delims[name]]
-      }
-    }
   })
 }

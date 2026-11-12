@@ -1,5 +1,5 @@
 import { expect, describe, it } from 'vitest'
-import { Context, FiberState } from 'cordis'
+import { Context, Fiber, FiberState } from 'cordis'
 import { setImmediate } from 'node:timers/promises'
 import { accessGlobal } from '../src/index.ts'
 import MockLoader from './utils.ts'
@@ -276,6 +276,34 @@ describe('Service Isolation: provide migration', () => {
     const left = slots(root, 'svc')
     expect(left.some(slot => slot.impl === stay.impl)).to.equal(true)
     expect(left.some(slot => slot.impl === move.impl)).to.equal(false)
+  })
+
+  it('keeps a provider pinned by an isolated context when its entry moves', async () => {
+    let inner!: Fiber
+    const consumer = Object.assign((ctx: Context) => {
+      inner = ctx.fiber
+    }, { inject: ['svc'] })
+    const { root, loader } = await boot({
+      prov: (ctx) => {
+        const pinned = ctx.isolate('svc', accessGlobal('svc', 'A'))
+        pinned.provide('svc', { tag: 'pinned' })
+        pinned.plugin(consumer)
+      },
+      outer: Object.assign(() => {}, { inject: ['svc'] }),
+    })
+
+    const id = await loader.create({ name: 'prov', isolate: { svc: 'A' } })
+    await started(loader, id)
+    const outerId = await loader.create({ name: 'outer', isolate: { svc: 'B' } })
+    await inner.await()
+    expect(inner.state).to.equal(FiberState.ACTIVE)
+
+    await loader.update(id, { isolate: { svc: 'B' } })
+    await loader.await()
+    expect(root.reflect.store[accessGlobal('svc', 'A')]?.value.tag).to.equal('pinned')
+    expect(root.reflect.store[accessGlobal('svc', 'B')]).to.be.undefined
+    expect(inner.state).to.equal(FiberState.ACTIVE)
+    expect(loader.expectFiber(outerId).state).to.equal(FiberState.PENDING)
   })
 
   it.each(['fiber', 'provide'])('notifies the retained realm on %s disposal after a blocked move', async (mode) => {
