@@ -278,6 +278,29 @@ describe('Service Isolation: provide migration', () => {
     expect(left.some(slot => slot.impl === move.impl)).to.equal(false)
   })
 
+  it('reports the service of each realm when a provider moves', async () => {
+    const { root, loader } = await boot({
+      prov: (ctx) => {
+        ctx.provide('svc', { tag: 'prov' })
+      },
+    })
+    const id = await loader.create({ name: 'prov' })
+    await started(loader, id)
+
+    const outside: unknown[] = []
+    const inside: unknown[] = []
+    root.on('internal/service', (name, value) => {
+      if (name === 'svc') outside.push(value?.tag)
+    })
+    root.isolate('svc', accessGlobal('svc', 'A')).on('internal/service', (name, value) => {
+      if (name === 'svc') inside.push(value?.tag)
+    })
+    await loader.update(id, { isolate: { svc: 'A' } })
+    expect(root.get('svc')).to.be.undefined
+    expect(outside).to.deep.equal([undefined])
+    expect(inside).to.deep.equal(['prov'])
+  })
+
   it('keeps a provider pinned by an isolated context when its entry moves', async () => {
     let inner!: Fiber
     const consumer = Object.assign((ctx: Context) => {
