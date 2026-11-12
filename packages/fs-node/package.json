@@ -1,6 +1,6 @@
 {
   "name": "@cordisjs/fs-node",
-  "description": "Node.js File System Service for Cordis",
+  "description": "Node.js File System Provider for Cordis",
   "version": "0.1.0",
   "sideEffects": false,
   "type": "module",
@@ -32,12 +32,19 @@
     "description": {
       "en": "File System",
       "zh": "文件系统"
+    },
+    "service": {
+      "required": [
+        "fs"
+      ]
     }
   },
   "peerDependencies": {
+    "@cordisjs/fs": "^2.0.0-rc.0",
     "cordis": "^4.0.0-rc.12"
   },
   "devDependencies": {
+    "@cordisjs/fs": "^2.0.0-rc.0",
     "@types/picomatch": "^3.0.2",
     "cordis": "^4.0.0-rc.12"
   },

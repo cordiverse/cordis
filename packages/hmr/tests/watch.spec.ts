@@ -1,6 +1,7 @@
 import { Context, Fiber, Service } from 'cordis'
 import Loader from '@cordisjs/loader'
-import Fs, { WatchOptions } from '@cordisjs/fs-node'
+import Fs, { WatchOptions } from '@cordisjs/fs'
+import NodeFs from '@cordisjs/fs-node'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, resolve, sep } from 'node:path'
 import { format } from 'node:util'
@@ -26,7 +27,7 @@ export function apply(ctx: Context) {
 interface Watch {
   path: string
   options?: WatchOptions
-  listeners: ((filename: string) => void)[]
+  listeners: ((url: URL) => void)[]
 }
 
 // stands in for `@cordisjs/fs-node`, so that changes are reported by hand
@@ -37,11 +38,11 @@ class FakeFs extends Service {
     super(ctx, 'fs')
   }
 
-  watch(path: string, options?: WatchOptions) {
-    const watch: Watch = { path, options, listeners: [] }
+  watch(url: URL, options?: WatchOptions) {
+    const watch: Watch = { path: fileURLToPath(url), options, listeners: [] }
     FakeFs.watches.push(watch)
     return {
-      on: (name: string, listener: (filename: string) => void) => {
+      on: (name: string, listener: (url: URL) => void) => {
         if (name === 'change') watch.listeners.push(listener)
         return () => {}
       },
@@ -52,7 +53,7 @@ class FakeFs extends Service {
 function change(filename: string) {
   for (const { path, listeners } of FakeFs.watches) {
     if (!filename.startsWith(path)) continue
-    for (const listener of listeners) listener(filename)
+    for (const listener of listeners) listener(pathToFileURL(filename))
   }
 }
 
@@ -336,6 +337,7 @@ export const apply = ctx => ctx.on('hmr-watch/shadow', () => value)
     ctx.baseUrl = import.meta.url
     fiber = await ctx.use(Loader)
     await ctx.use(Fs)
+    await ctx.use(NodeFs)
     hmr = await ctx.use(Hmr, { watch: { enabled: true, files: ['__watch__'], debounce: 50 } })
     const path = await load('disk.ts', component('disk', 'v1'))
 

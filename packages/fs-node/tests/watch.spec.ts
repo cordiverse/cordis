@@ -1,10 +1,11 @@
 import { Context, Fiber } from 'cordis'
 import { mkdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, resolve } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { FSWatcher } from 'chokidar'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import Fs, { WatchOptions } from '../src/index.ts'
+import Fs, { WatchOptions } from '@cordisjs/fs'
+import NodeFs from '../src/index.ts'
 
 const testDir = dirname(fileURLToPath(import.meta.url))
 const fixture = resolve(testDir, '__fixtures__')
@@ -42,10 +43,11 @@ function write(name: string, content = '') {
   return path
 }
 
-// resolves once the initial scan is done
+// An absolute local path is watched as its file URL, and a change is reported
+// as a local path. Resolves once the initial scan is done.
 async function watch(ctx: Context, path: string | URL, listener: (filename: string) => void, options?: WatchOptions) {
-  const watcher = ctx.fs.watch(path, options)
-  watcher.on('change', listener)
+  const watcher = ctx.fs.watch(typeof path === 'string' && isAbsolute(path) ? pathToFileURL(path) : path, options)
+  watcher.on('change', url => listener(fileURLToPath(url)))
   await new Promise<void>(resolve => watcher.on('ready', resolve))
   return watcher
 }
@@ -68,31 +70,22 @@ describe('Fs', () => {
     rmSync(fixture, { recursive: true, force: true })
   })
 
-  async function setup(baseUrl: string | null = import.meta.url) {
+  async function setup() {
     const root = new Context()
-    root.baseUrl = baseUrl ?? undefined
+    root.baseUrl = import.meta.url
     fiber = await root.use(Fs)
+    await root.use(NodeFs)
     let ctx!: Context
     await root.inject(['fs'], (inner) => { ctx = inner })
     return ctx
   }
 
   describe('path', () => {
-    it('resolves a relative path against the calling context', async () => {
+    it('watches the local path of a relative reference against the calling context', async () => {
       const path = write('base with spaces # %/relative.txt')
       const ctx = await setup()
       const seen: string[] = []
-      await watch(ctx, '__fixtures__/base with spaces # %/relative.txt', (filename) => { seen.push(filename) })
-
-      await touch(path, () => seen.length)
-      expect([...new Set(seen)]).to.deep.equal([path])
-    }, 15000)
-
-    it('resolves a relative path against the working directory without a context directory', async () => {
-      const path = write('cwd.txt')
-      const ctx = await setup(null)
-      const seen: string[] = []
-      await watch(ctx, relative(process.cwd(), path), (filename) => { seen.push(filename) })
+      await watch(ctx, '__fixtures__/base%20with%20spaces%20%23%20%25/relative.txt', (filename) => { seen.push(filename) })
 
       await touch(path, () => seen.length)
       expect([...new Set(seen)]).to.deep.equal([path])
@@ -135,33 +128,13 @@ describe('Fs', () => {
       await touch(path, () => calls > 0)
     }, 15000)
 
-    // `_resolve` rather than `watch()`: without the guard these start a recursive
-    // watch on a real volume and hang, which hides the result instead of failing it.
+    // The provider checks the path synchronously, before it starts a watch:
+    // without the guard these start a recursive watch on a real volume.
     it.runIf(process.platform === 'win32')('rejects a file URL that resolves to a drive-relative path', async () => {
       const ctx = await setup()
-      const resolved = (input: string | URL) => (ctx.fs as any)._resolve(input)
       for (const input of ['file:C:', 'file:/C:', 'file:/../C:', 'file:.\\C:']) {
-        expect(() => resolved(input), `${input} resolved to a drive-relative path`)
+        expect(() => ctx.fs.watch(new URL(input)), `${input} resolved to a drive-relative path`)
           .to.throw(/drive-relative form/)
-      }
-    }, 15000)
-
-    // the string branch reaches the same state through `resolve('C:')`
-    it.runIf(process.platform === 'win32')('rejects a drive-relative path passed as a plain string', async () => {
-      const ctx = await setup()
-      const resolved = (input: string | URL) => (ctx.fs as any)._resolve(input)
-      // `C:Windows` is the shape that matters: it resolves to a real directory
-      for (const input of ['C:', 'c:', 'X:', 'Z:', 'C:.', 'C:..', 'C:./', 'C:x\\..', 'c:foo', 'C:Windows']) {
-        expect(() => resolved(input), `${input} is drive-relative, not a path`)
-          .to.throw(/drive-relative form/)
-      }
-    }, 15000)
-
-    it.runIf(process.platform === 'win32')('does not reject a path that names a location on a drive', async () => {
-      const ctx = await setup()
-      const resolved = (input: string | URL) => (ctx.fs as any)._resolve(input)
-      for (const input of ['C:\\', 'C:\\x', 'C:\\x\\y.yml', 'C:/x', 'C://x', 'C://x//y.yml', 'C://', '\\\\server\\share\\x']) {
-        expect(isAbsolute(resolved(input)), `${input} names a location on a drive`).to.be.true
       }
     }, 15000)
   })
@@ -333,7 +306,7 @@ describe('Fs', () => {
     it('rejects a `filter` entry leading outside the watched directory', async () => {
       const ctx = await setup()
       for (const entry of ['../outside', '!../outside', 'a/../../outside', '/absolute']) {
-        expect(() => ctx.fs.watch(fixture, { filter: [entry] })).to.throw(TypeError)
+        expect(() => ctx.fs.watch(pathToFileURL(fixture), { filter: [entry] })).to.throw(TypeError)
       }
     })
 
@@ -394,7 +367,7 @@ describe('Fs', () => {
       const inner = await ctx.use({
         inject: ['fs'],
         apply: (ctx: Context) => {
-          ctx.fs.watch(path).on('change', () => { calls++ })
+          ctx.fs.watch(pathToFileURL(path)).on('change', () => { calls++ })
         },
       })
       await watch(ctx, path, () => { others++ })
@@ -419,7 +392,7 @@ describe('Fs', () => {
     it('calls a `ready` listener added by another one once', async () => {
       const path = write('ready-nested.txt')
       const ctx = await setup()
-      const watcher = ctx.fs.watch(path)
+      const watcher = ctx.fs.watch(pathToFileURL(path))
       let calls = 0
       watcher.on('ready', () => {
         watcher.on('ready', () => { calls++ })
@@ -433,7 +406,7 @@ describe('Fs', () => {
     it('does not call a listener removed by another one in the same dispatch', async () => {
       const path = write('removed.txt')
       const ctx = await setup()
-      const watcher = ctx.fs.watch(path)
+      const watcher = ctx.fs.watch(pathToFileURL(path))
       let calls = 0
       watcher.on('ready', () => { remove() })
       const remove = watcher.on('ready', () => { calls++ })
@@ -461,7 +434,7 @@ describe('Fs', () => {
     it('calls a function added again in the same dispatch once for `ready`', async () => {
       const path = write('readded-dispatch.txt')
       const ctx = await setup()
-      const watcher = ctx.fs.watch(path)
+      const watcher = ctx.fs.watch(pathToFileURL(path))
       let calls = 0
       const listener = () => { calls++ }
       watcher.on('ready', () => {

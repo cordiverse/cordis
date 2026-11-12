@@ -1,5 +1,7 @@
 import { Context } from 'cordis'
 import { noop } from 'cosmokit'
+import Fs from '@cordisjs/fs'
+import NodeFs from '@cordisjs/fs-node'
 import { EntryOptions, Loader } from '@cordisjs/loader'
 import * as daemon from './daemon.ts'
 
@@ -33,6 +35,8 @@ export async function start(config: Config) {
   if (config.daemon.enabled) {
     await ctx.use(daemon, config.daemon)
   }
+  await ctx.use(Fs)
+  await ctx.use(NodeFs)
   await ctx.use(Loader)
   for (const options of config.prelude ?? []) {
     await ctx.loader.create(options)

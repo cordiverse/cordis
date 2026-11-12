@@ -12,7 +12,7 @@ import {
 import { stringifyString } from 'yaml/util'
 import { applyJournal, flatten, Journal, merge, reconcile, record } from './journal.ts'
 import { applyPatches, ensureIds, ensureInsertIds, PatchIndex, PatchOptions, routeJournal } from './patch.ts'
-import type {} from '@cordisjs/fs-node'
+import type {} from '@cordisjs/fs'
 
 // A Windows drive-letter path, e.g. `C:\app\cordis.yml` or `C:/app/cordis.yml`.
 const driveLetter = /^[A-Za-z]:[\\/]/
@@ -293,7 +293,7 @@ export class Include extends EntryTree {
 
     if (config.watch) {
       ctx.inject(['fs'], (ctx) => {
-        ctx.fs.watch(this.filename).on('change', () => this.refresh())
+        ctx.fs.watch(pathToFileURL(this.filename)).on('change', () => this.refresh())
       })
     }
   }

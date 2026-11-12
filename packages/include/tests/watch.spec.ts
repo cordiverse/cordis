@@ -1,8 +1,10 @@
 import { Context, Fiber, Service } from 'cordis'
 import Loader from '@cordisjs/loader'
-import Fs from '@cordisjs/fs-node'
+import Fs from '@cordisjs/fs'
+import NodeFs from '@cordisjs/fs-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readFile, rm, writeFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 import * as yaml from 'yaml'
 import Include from '../src/index.ts'
 import { fixture, component } from './utils.ts'
@@ -14,8 +16,8 @@ class FakeFs extends Service {
     super(ctx, 'fs')
   }
 
-  watch(path: string) {
-    FakeFs.paths.push(path)
+  watch(url: URL) {
+    FakeFs.paths.push(fileURLToPath(url))
     return { on: () => () => {} }
   }
 }
@@ -76,6 +78,7 @@ describe('Include watch with fs', () => {
     await writeFile(filename, yaml.stringify([component('a', 0)]))
     const ctx = new Context()
     await ctx.use(Fs)
+    await ctx.use(NodeFs)
     fiber = await ctx.use(Loader, { baseUrl: import.meta.url })
     const id = await ctx.loader.create({
       name: '@cordisjs/include',
