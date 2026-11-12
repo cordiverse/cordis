@@ -138,6 +138,29 @@ function toPath(url: string) {
   if (url.startsWith('file:')) return fileURLToPath(url)
 }
 
+/**
+ * The message for a process that cannot reach Node's internal loader.
+ *
+ * `reason` is what the loader recorded about its own lookup, and it is absent when
+ * that lookup succeeded — the two probes are separate (this one also classifies the
+ * module-job API) so HMR can fail where the loader did not. Appending it turns "install
+ * the addon" into the actual failure, which for a user who already installed it is the
+ * only part that helps.
+ */
+export function internalsUnavailable(reason?: string) {
+  const base = 'loader internals are unavailable, pass --expose-internals or install node-addon-require-builtin'
+  return reason ? `${base} (${reason})` : base
+}
+
+/**
+ * The part of `loader` this file reads. It is declared here rather than imported:
+ * `@cordisjs/hmr` does not depend on `@cordisjs/loader`, and adding the dependency for
+ * one optional string would make every host that mounts HMR without a loader pull it in.
+ */
+interface LoaderLike {
+  internalReason?: string
+}
+
 class Hmr extends Service {
   /** The resolved `base`. `watch.files` and logged paths are relative to it. */
   public baseDir: string
@@ -164,7 +187,8 @@ class Hmr extends Service {
     super(ctx, 'hmr')
     const loader = ModuleLoader.fromInternal()
     if (!loader) {
-      throw new Error('loader internals are unavailable, pass --expose-internals or install node-addon-require-builtin')
+      const host = ctx as Context & { loader?: LoaderLike }
+      throw new Error(internalsUnavailable(host.loader?.internalReason))
     }
     this._loader = loader
     this._modules = new ModuleCaches(loader)

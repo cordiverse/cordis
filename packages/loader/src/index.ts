@@ -5,7 +5,7 @@ import { EntryGroup } from './config/group.ts'
 import isolate from './config/isolate.ts'
 import { EntryChange, EntryTree } from './config/tree.ts'
 import { interpolate } from './config/utils.ts'
-import { getInternalLoader, unwrapExports } from './internal.ts'
+import { findInternalLoader, unwrapExports } from './internal.ts'
 
 export * from './config/entry.ts'
 export * from './config/group.ts'
@@ -45,6 +45,9 @@ export namespace Loader {
   }
 }
 
+/** Whether the reason internals are unavailable has already been logged, so it is not repeated. */
+let reportedInternals = false
+
 export class Loader extends EntryTree {
   declare [Service.metadata]: Loader.Intercept
 
@@ -53,10 +56,24 @@ export class Loader extends EntryTree {
     : { startTime: Date.now() }
 
   public name = 'loader'
-  public internal = getInternalLoader()
+
+  // The lookup is per instance, and the reason is read off the same object that
+  // produced `internal`, so a caller holding a degraded `Loader` can ask it why
+  // without importing anything: `@cordisjs/loader` publishes `lib/` only, and a
+  // symbol reachable solely through `src/` is not reachable from an installed copy.
+  private readonly _lookup = findInternalLoader()
+  public internal = this._lookup.loader
+  /** Why `internal` is `undefined`, or `undefined` when it is there. */
+  public internalReason = this._lookup.reason
 
   constructor(ctx: Context, public config: Loader.Config = {}) {
     super(ctx)
+    // HMR degrades to config reloading without internals, so the reason is detail one
+    // level below the warning. The outcome is fixed per process, so report it once.
+    if (!this.internal && !reportedInternals && this.internalReason) {
+      reportedInternals = true
+      ctx.logger.debug('loader internals are unavailable:', this.internalReason)
+    }
     if (config.baseUrl) {
       this.ctx.baseUrl = config.baseUrl
     }

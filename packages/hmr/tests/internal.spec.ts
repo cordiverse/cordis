@@ -1,5 +1,23 @@
 import { expect, describe, it } from 'vitest'
 import { ModuleLoader } from '../src/runtime/index.ts'
+import { internalsUnavailable } from '../src/index.ts'
+
+// The message is built in one place so it can be asserted here: the throw itself is
+// only reachable in a process that cannot reach the internals, which is the one
+// environment a test cannot ask for.
+describe('internalsUnavailable', () => {
+  it('keeps the instruction when there is no reason', () => {
+    expect(internalsUnavailable()).to.equal(
+      'loader internals are unavailable, pass --expose-internals or install node-addon-require-builtin')
+  })
+
+  it('appends the reason the loader recorded', () => {
+    // a user who already installed the addon is the one this line is for
+    const message = internalsUnavailable('node-addon-require-builtin: Cannot find module')
+    expect(message).to.include('pass --expose-internals')
+    expect(message).to.include('node-addon-require-builtin: Cannot find module')
+  })
+})
 
 describe('ModuleLoader.fromInternal', () => {
   it('tags the running loader with the resolver signature it accepts', () => {
