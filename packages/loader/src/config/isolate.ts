@@ -13,67 +13,23 @@ declare module './entry.ts' {
   }
 }
 
-export abstract class Realm {
-  protected store: Dict<symbol> = Object.create(null)
+export class LocalRealm {
+  private store: Dict<symbol> = Object.create(null)
 
-  abstract get suffix(): string
+  constructor(private entry: Entry) {}
 
-  access(key: string, create = false) {
-    if (create) {
-      return this.store[key] ??= Symbol(`${key}${this.suffix}`)
-    } else {
-      return this.store[key] ?? Symbol(`${key}${this.suffix}`)
-    }
-  }
-
-  delete(key: string) {
-    delete this.store[key]
-  }
-
-  get size() {
-    return Object.keys(this.store).length
+  access(key: string) {
+    return this.store[key] ??= Symbol(`${key}#${this.entry.options.id}`)
   }
 }
 
-export class LocalRealm extends Realm {
-  constructor(private entry: Entry) {
-    super()
-  }
-
-  get suffix() {
-    return '#' + this.entry.options.id
-  }
-}
-
-export class GlobalRealm extends Realm {
-  constructor(public label: string) {
-    super()
-  }
-
-  get suffix() {
-    return '@' + this.label
-  }
+/** The symbol of a service in a global realm, shared by every entry with the same label. */
+export function accessGlobal(key: string, label: string) {
+  return Symbol.for(`cordis:isolate:${JSON.stringify([key, label])}`)
 }
 
 export default function isolate(ctx: Context) {
-  const realms: Dict<GlobalRealm> = Object.create(null)
   const delims: Dict<symbol> = Object.create(null)
-
-  function access(entry: Entry, name: string, create: true): symbol
-  function access(entry: Entry, name: string, create?: boolean): symbol | undefined
-  function access(entry: Entry, name: string, create = false) {
-    let realm: Realm | undefined
-    const label = entry.options.isolate?.[name]
-    if (label === undefined) return
-    if (label === true) {
-      realm = entry.realm ??= new LocalRealm(entry)
-    } else if (create) {
-      realm = realms[label] ??= new GlobalRealm(label)
-    } else {
-      realm = realms[label]
-    }
-    return realm?.access(name, create)
-  }
 
   ctx.on('loader/entry-init', (entry) => {
     entry.ctx[Context.isolate] = Object.create(entry.ctx[Context.isolate])
@@ -82,8 +38,10 @@ export default function isolate(ctx: Context) {
   ctx.on('loader/patch-context', async (entry, next) => {
     // step 1: generate new isolate map
     const newMap: Dict<symbol> = Object.create(entry.parent.ctx[Context.isolate])
-    for (const name of Object.keys(entry.options.isolate ?? {})) {
-      newMap[name] = access(entry, name, true)
+    for (const [name, label] of Object.entries(entry.options.isolate ?? {})) {
+      newMap[name] = label === true
+        ? (entry.realm ??= new LocalRealm(entry)).access(name)
+        : accessGlobal(name, label)
     }
 
     // step 2: generate service diff
@@ -135,25 +93,6 @@ export default function isolate(ctx: Context) {
     for (const name in delims) {
       if (!Reflect.ownKeys(newMap).includes(name)) {
         delete entry.ctx[delims[name]]
-      }
-    }
-  })
-
-  ctx.on('loader/partial-dispose', (entry, legacy, active) => {
-    for (const [name, label] of Object.entries(legacy.isolate ?? {})) {
-      if (label === true) continue
-      if (active && entry.options.isolate?.[name] === label) continue
-      const realm = realms[label]
-      if (!realm) continue
-
-      // realm garbage collection
-      for (const entry of ctx.loader.entries()) {
-        // has reference to this realm
-        if (entry.options.isolate?.[name] === realm.label) return
-      }
-      realm.delete(name)
-      if (!realm.size) {
-        delete realms[realm.label]
       }
     }
   })

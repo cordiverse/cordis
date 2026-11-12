@@ -1,6 +1,6 @@
 import { Context, Fiber, FiberState, Service, ValidationError } from 'cordis'
 import { Awaitable, defineProperty } from 'cosmokit'
-import { Entry, EntryOptions } from './config/entry.ts'
+import { Entry } from './config/entry.ts'
 import { EntryGroup } from './config/group.ts'
 import isolate from './config/isolate.ts'
 import { EntryChange, EntryTree } from './config/tree.ts'
@@ -18,7 +18,6 @@ declare module 'cordis' {
     'exit'(signal: NodeJS.Signals): Promise<void>
     'loader/config-update'(): void
     'loader/entry-init'(entry: Entry): void
-    'loader/partial-dispose'(entry: Entry, legacy: Partial<EntryOptions>, active: boolean): void
     'loader/patch-context'(entry: Entry, next: () => Awaitable<void>): Awaitable<void>
   }
 

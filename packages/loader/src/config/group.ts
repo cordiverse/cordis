@@ -46,7 +46,6 @@ export class EntryGroup {
     if (entry) {
       delete this.tree.store[id]
       entry.dispose()
-      this.context.emit('loader/partial-dispose', entry, entry.options, false)
     }
     const frames = this.getOuterStack(id)
     if (!frames.length) return error
@@ -74,7 +73,6 @@ export class EntryGroup {
     if (!isDispose) {
       this.unlink(entry.options)
     }
-    this.context.emit('loader/partial-dispose', entry, entry.options, false)
   }
 
   async update(config: EntryOptions[]) {

@@ -252,7 +252,6 @@ export class Entry {
       .keys({ ...this.options, ...legacy })
       .filter(key => !deepEqual(this.options[key], legacy[key]))
     if (!diff.length && !force) return
-    this.context.emit('loader/partial-dispose', this, legacy, true)
     await this._patchContext(diff)
   }
 
