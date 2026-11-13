@@ -1,7 +1,0 @@
-/external
-
-dist
-lib
-tests
-
-*.js

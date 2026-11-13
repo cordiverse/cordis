@@ -27,7 +27,6 @@ report.*.json
 
 .agents
 .claude
-.eslintcache
 .DS_Store
 .idea
 .vscode

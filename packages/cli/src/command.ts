@@ -46,7 +46,6 @@ export type TakeUntil<S extends string, D extends string, O extends string = ''>
   ? C extends D ? [O, S, C] : TakeUntil<S, D, `${O}${C}`>
   : [O, S]
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export type ParseParamType<S extends string, D extends string, T> =
   | TakeUntil<S, ':' | D> extends [string, infer S extends string, infer C]
   ? | C extends ':'
@@ -58,13 +57,11 @@ export type ParseParamType<S extends string, D extends string, T> =
     : []
   : []
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export type ParseOptionType<S extends string, D extends string, T> =
   | ParseParamType<S, D, T> extends [infer T, string]
   ? S extends `..${string}` ? T[] : T
   : never
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export type ParseOption<S extends string, T, K extends string = never> =
   | S extends `${infer C}${infer S}`
   ? | C extends ' ' | ',' | '-'
@@ -78,7 +75,6 @@ export type ParseOption<S extends string, T, K extends string = never> =
     : never
   : { [P in K]?: boolean }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export type ParseArgument<S extends string, A extends any[] = []> =
   | S extends `${infer C}${infer S}`
   ? | C extends '<'
