@@ -231,3 +231,18 @@ describe('Service', () => {
     expect(dispose.mock.calls).to.have.length(1)
   })
 })
+
+describe('Service[Symbol.hasInstance]', () => {
+  // a value with no `constructor` must answer the question instead of throwing
+  it('answers for null and undefined', () => {
+    expect((null as any) instanceof Service).to.equal(false)
+    expect((undefined as any) instanceof Service).to.equal(false)
+  })
+
+  // `Function.prototype` has no `prototype` of its own, so this walks the chain
+  // to its end before answering
+  it('answers for a plain object after walking to the end of the chain', () => {
+    expect({} instanceof Service).to.equal(false)
+    expect([] instanceof Service).to.equal(false)
+  })
+})
