@@ -23,9 +23,13 @@ export class LocalRealm {
   }
 }
 
+function quote(value: string) {
+  return /^\w*$/.test(value) ? value : JSON.stringify(value)
+}
+
 /** The symbol of a service in a global realm, shared by every entry with the same label. */
 export function accessGlobal(key: string, label: string) {
-  return Symbol.for(`cordis:isolate:${JSON.stringify([key, label])}`)
+  return Symbol.for(`cordis.isolate.${quote(key)}@${quote(label)}`)
 }
 
 /**
