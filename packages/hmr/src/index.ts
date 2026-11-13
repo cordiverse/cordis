@@ -198,6 +198,18 @@ class Hmr extends Service {
       this.ctx.logger.info('watching %o in %s', files, this.baseDir)
     }
 
+    // A module URL is a real path (HMR does not support `--preserve-symlinks`),
+    // while the watcher reports the spelling it was given. A watch root below a
+    // symlink keeps that spelling, so the event is resolved to its real path
+    // before it becomes a root. A path that no longer exists is kept as it is.
+    const canonical = (filename: string) => {
+      try {
+        return realpathSync(filename)
+      } catch {
+        return filename
+      }
+    }
+
     const stashed = new Set<string>()
     const retained = new Set<string>()
     let timer: NodeJS.Timeout | undefined
@@ -236,7 +248,7 @@ class Hmr extends Service {
     ctx.fs.watch(pathToFileURL(this.baseDir), { filter: files }).on('change', (url) => {
       const filename = fileURLToPath(url)
       this.ctx.logger.debug('change detected at %C', relative(this.baseDir, filename))
-      stashed.add(filename)
+      stashed.add(canonical(filename))
       clearTimeout(timer)
       timer = setTimeout(() => flushing = flushing.then(flush), debounce)
     })
