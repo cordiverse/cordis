@@ -336,8 +336,10 @@ export class Include extends EntryTree {
   }
 
   /**
-   * Resolves once every pending read and write has been processed and the
-   * tree reflects the outcome. Unlike `refresh()`, this does wait for writes.
+   * Resolves once the pending reads and writes have been processed and the
+   * tree reflects their outcome. A write can remain owed after a failed read:
+   * the loop stops with `dirtyWrite` set for the next trigger. `refresh()`
+   * ends with this call as well, so it waits for the same work.
    */
   async flush() {
     while (this._draining || this._applyTask) {
