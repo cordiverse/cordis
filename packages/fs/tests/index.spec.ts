@@ -172,14 +172,13 @@ describe('Fs', () => {
       expect(provider.calls).to.have.length(1)
     })
 
-    it('mounts a subclass of `BaseFs` at its default mount point or at `config.mount`', async () => {
+    it('mounts a subclass of `BaseFs` at `config.mount`', async () => {
       const ctx = await setup()
       const { calls, watch } = fakeProvider()
       class Provider extends BaseFs {
-        static mount = 'file:///'
         watch = watch
       }
-      await ctx.use(Provider)
+      await ctx.use(Provider, { mount: 'file:///' })
       await ctx.use(Provider, { mount: 'mem:' })
 
       ctx.fs.watch('file:///a.txt')

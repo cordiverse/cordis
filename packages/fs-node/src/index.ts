@@ -1,4 +1,5 @@
 import { AccessMode, BaseFs, FsError, Watcher } from '@cordisjs/fs'
+import { Context } from 'cordis'
 import { access, constants, FileHandle, lstat, open, rename, rmdir, unlink } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -46,7 +47,9 @@ const CHUNK_SIZE = 64 * 1024
 
 /** The local file system of Node.js. */
 class NodeFs extends BaseFs {
-  static mount = 'file:'
+  constructor(ctx: Context, config: NodeFs.Config = {}) {
+    super(ctx, { mount: config.mount ?? 'file:' })
+  }
 
   read(url: URL): ReadableStream<Uint8Array> {
     const filename = toPath(url)
@@ -119,6 +122,13 @@ class NodeFs extends BaseFs {
 
   watch(watcher: Watcher) {
     return watchPath(watcher, toPath(watcher.url))
+  }
+}
+
+namespace NodeFs {
+  export interface Config {
+    /** a scheme or a `file:` URL ending with `/`, `file:` by default */
+    mount?: string
   }
 }
 

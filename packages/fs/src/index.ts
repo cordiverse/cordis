@@ -246,23 +246,19 @@ export interface FsProvider {
 
 export interface BaseFs extends FsProvider {}
 
-/** A provider that mounts itself, at `config.mount` or at its static `mount`. */
+/** A provider that mounts itself at `config.mount`. */
 export abstract class BaseFs {
   static inject = ['fs']
-  /** The default mount point of the subclass. */
-  static mount?: string
 
-  constructor(public ctx: Context, config: BaseFs.Config = {}) {
-    const mount = config.mount ?? (new.target as typeof BaseFs).mount
-    if (!mount) throw new TypeError('expected a mount point in the config')
-    ctx.fs.mount(mount, this)
+  constructor(public ctx: Context, config: BaseFs.Config) {
+    ctx.fs.mount(config.mount, this)
   }
 }
 
 export namespace BaseFs {
   export interface Config {
     /** a scheme such as `s3:`, or a URL such as `file:///` */
-    mount?: string
+    mount: string
   }
 }
 
