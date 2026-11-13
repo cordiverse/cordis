@@ -3,7 +3,7 @@ import Loader from '@cordisjs/loader'
 import Fs, { WatchOptions } from '@cordisjs/fs'
 import NodeFs from '@cordisjs/fs-node'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, resolve, sep } from 'node:path'
+import { basename, dirname, resolve, sep } from 'node:path'
 import { format } from 'node:util'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, MockInstance, vi } from 'vitest'
@@ -247,6 +247,67 @@ export const apply = 'not a function'`))
     await second
     expect(ctx.bail('hmr-watch/queued' as any)).to.equal('v2')
   })
+
+  it('reconciles an edit that arrives while a batch is still running', async () => {
+    await setup()
+    const target = resolve(fixtureDir, 'inflight.ts')
+    writeFileSync(target, `export const value = 'v1'\n`)
+
+    // hold the first batch open, so the second change lands inside it
+    let release!: () => void
+    const held = new Promise<void>((resolve) => (release = resolve))
+    const batches: string[][] = []
+    let calls = 0
+    reconcile.mockImplementation(async (callback: any) => {
+      calls += 1
+      batches.push([...callback()].map((file: string) => basename(file)).sort())
+      if (calls === 1) await held
+      return { skipped: [], aborted: [] } as any
+    })
+
+    change(target)
+    await vi.waitFor(() => expect(calls).to.equal(1))
+    change(target)
+    // longer than the debounce, so the second batch is due while the first is held
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    release()
+
+    await vi.waitFor(() => expect(calls).to.equal(2))
+    expect(batches[1], 'the edit arrived during the first batch and belongs to the second').to.deep.equal(['inflight.ts'])
+  }, 15000)
+
+  it('carries the files a running batch retained into the batch queued behind it', async () => {
+    await setup()
+    const retained = resolve(fixtureDir, 'retained-a.ts')
+    const later = resolve(fixtureDir, 'retained-b.ts')
+    writeFileSync(retained, `export const a = 'v1'\n`)
+    writeFileSync(later, `export const b = 'v1'\n`)
+
+    let release!: () => void
+    const held = new Promise<void>((resolve) => (release = resolve))
+    const batches: string[][] = []
+    let calls = 0
+    reconcile.mockImplementation(async (callback: any) => {
+      calls += 1
+      batches.push([...callback()].map((file: string) => basename(file)).sort())
+      if (calls === 1) {
+        await held
+        // aborting on `retained` is what puts it in the set the next batch merges in
+        return { skipped: [], aborted: [{ urls: [pathToFileURL(retained).href], error: new Error('probe') }] } as any
+      }
+      return { skipped: [], aborted: [] } as any
+    })
+
+    change(retained)
+    await vi.waitFor(() => expect(calls).to.equal(1))
+    // a batch queued behind the running one, whose own file is unrelated
+    change(later)
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    release()
+
+    await vi.waitFor(() => expect(calls).to.equal(2))
+    expect(batches[1], 'the queued batch must take what the running one retained').to.deep.equal(['retained-a.ts', 'retained-b.ts'])
+  }, 15000)
 
   it('retries an entry that a manifest has moved with the next batch', async () => {
     await setup({}, undefined, pathToFileURL(fixtureDir + sep).href)
