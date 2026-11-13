@@ -3,7 +3,7 @@ import Loader from '@cordisjs/loader'
 import Logger from '@cordisjs/logger-console'
 import { cpSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
-import { expect, describe, it, beforeAll, afterAll, afterEach, beforeEach } from 'vitest'
+import { expect, describe, it, beforeAll, afterAll, afterEach, beforeEach, vi } from 'vitest'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import Hmr from '../src/index.ts'
 import { ModuleLoader } from '../src/runtime/index.ts'
@@ -415,15 +415,16 @@ describe('HMR', () => {
       let firstInstalled: Fiber | undefined
       let updating: Promise<void> | undefined
       let reenabled: Promise<void> | undefined
-      const stop = ctx.on('loader/patch-context', async (patched, next) => {
-        if (patched !== entry) return next()
+      const patch = entry._patchContext
+      const spy = vi.spyOn(entry, '_patchContext').mockImplementation(async (diff) => {
         if (++patches === 1) {
           await firstHold
         } else if (patches === 2) {
           await secondHold
         }
-        return next()
+        return patch.call(entry, diff)
       })
+      const stop = () => spy.mockRestore()
       try {
         await entry.update({ disabled: true })
         updating = entry.update({ disabled: false })

@@ -1,8 +1,7 @@
 import { Context, Fiber, FiberState, Service, ValidationError } from 'cordis'
-import { Awaitable, defineProperty } from 'cosmokit'
-import { Entry, EntryOptions } from './config/entry.ts'
+import { defineProperty } from 'cosmokit'
+import { Entry } from './config/entry.ts'
 import { EntryGroup } from './config/group.ts'
-import isolate from './config/isolate.ts'
 import { EntryChange, EntryTree } from './config/tree.ts'
 import { interpolate } from './config/utils.ts'
 import { getInternalLoader, unwrapExports } from './internal.ts'
@@ -17,9 +16,6 @@ declare module 'cordis' {
   interface Events {
     'exit'(signal: NodeJS.Signals): Promise<void>
     'loader/config-update'(): void
-    'loader/entry-init'(entry: Entry): void
-    'loader/partial-dispose'(entry: Entry, legacy: Partial<EntryOptions>, active: boolean): void
-    'loader/patch-context'(entry: Entry, next: () => Awaitable<void>): Awaitable<void>
   }
 
   interface Context {
@@ -168,8 +164,6 @@ export class Loader extends EntryTree {
       entry.parent.tree.commit({ id: entry.options.id, group: entry.parent, options: entry.options, legacy })
       if (entry.outerFiber) entry.dispose()
     })
-
-    ctx.use(isolate)
   }
 
   commit(_change: EntryChange) {

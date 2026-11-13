@@ -1,5 +1,6 @@
-import { expect, describe, it, beforeAll, beforeEach } from 'vitest'
+import { expect, describe, it, beforeAll, beforeEach, vi } from 'vitest'
 import { Context, FiberState } from 'cordis'
+import { Entry } from '../src/index.ts'
 import MockLoader, { sleep } from './utils.ts'
 
 declare module 'cordis' {
@@ -71,13 +72,16 @@ describe('Loader: entry rebuild', () => {
         return original.call(loader, name)
       }
     } else {
-      stop = root.on('loader/patch-context', async (entry, next) => {
-        if (entry.options.name === 'a') {
+      const patch = Entry.prototype._patchContext
+      const spy = vi.spyOn(Entry.prototype, '_patchContext')
+      spy.mockImplementation(async function (this: Entry, diff) {
+        if (this.options.name === 'a') {
           entered.resolve()
           await promise
         }
-        await next()
+        return patch.call(this, diff)
       })
+      stop = () => spy.mockRestore()
     }
     try {
       const creating = loader.root.update([{ id: 'x', name: 'a' }])
@@ -297,20 +301,26 @@ describe('Loader: active entry rebuild (#218)', () => {
       }
       return load.call(loader, name)
     }
-    root.on('loader/patch-context', async (entry, next) => {
-      await next()
-      if (entry.options.name !== 'b' || stage !== 'context patch') return
+    const patch = Entry.prototype._patchContext
+    const spy = vi.spyOn(Entry.prototype, '_patchContext')
+    spy.mockImplementation(async function (this: Entry, diff) {
+      await patch.call(this, diff)
+      if (this.options.name !== 'b' || stage !== 'context patch') return
       entered.resolve()
       await gate.promise
     })
 
-    const first = loader.root.update([{ id: 'x', name: 'b' }])
-    await entered.promise
-    const second = loader.root.update([{ id: 'x', name: 'c' }])
-    expect(loader.getTasks().length).to.be.greaterThan(0)
-    gate.resolve()
-    await Promise.all([first, second])
-    await loader.await()
+    try {
+      const first = loader.root.update([{ id: 'x', name: 'b' }])
+      await entered.promise
+      const second = loader.root.update([{ id: 'x', name: 'c' }])
+      expect(loader.getTasks().length).to.be.greaterThan(0)
+      gate.resolve()
+      await Promise.all([first, second])
+      await loader.await()
+    } finally {
+      spy.mockRestore()
+    }
 
     expect(loader.store.x!.options.name).to.equal('c')
     expect(b.mock.calls).to.have.length(0)

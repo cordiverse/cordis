@@ -3,6 +3,7 @@ import { deepEqual, Dict, isNullable } from 'cosmokit'
 import { Loader } from '../index.ts'
 import { EntryGroup } from './group.ts'
 import { EntryTree, ModuleNotFoundError } from './tree.ts'
+import { patchIsolate } from './isolate.ts'
 import { evaluate, ExprTrace, formatIssues, formatLocation, interpolate, isJsExpr, relocate, swap } from './utils.ts'
 
 export interface EntryOptions {
@@ -69,7 +70,7 @@ export class Entry {
 
   constructor(public loader: Loader) {
     this.ctx = loader.ctx.extend({ [Entry.key]: this })
-    this.context.emit('loader/entry-init', this)
+    this.ctx[Context.isolate] = Object.create(this.ctx[Context.isolate])
   }
 
   static merge(target: Partial<EntryOptions>, options: Partial<EntryOptions>) {
@@ -178,8 +179,8 @@ export class Entry {
     }
   }
 
-  private async _patchContext(diff: string[]) {
-    await this.context.waterfall('loader/patch-context', this, async () => {
+  async _patchContext(diff: string[]) {
+    await patchIsolate(this, async () => {
       Object.setPrototypeOf(this.ctx, this.parent.ctx)
       Object.setPrototypeOf(this._intercept, this.parent.ctx[Context.intercept])
 
@@ -252,7 +253,6 @@ export class Entry {
       .keys({ ...this.options, ...legacy })
       .filter(key => !deepEqual(this.options[key], legacy[key]))
     if (!diff.length && !force) return
-    this.context.emit('loader/partial-dispose', this, legacy, true)
     await this._patchContext(diff)
   }
 

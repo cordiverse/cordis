@@ -1,4 +1,4 @@
-import { expect, describe, it, beforeAll, beforeEach } from 'vitest'
+import { expect, describe, it, beforeAll, beforeEach, vi } from 'vitest'
 import { Context, FiberState } from 'cordis'
 import { Entry } from '../src/index.ts'
 import MockLoader from './utils.ts'
@@ -558,6 +558,7 @@ describe('Loader: entry evaluation context', () => {
   it.each(['import', 'patch'])('drops entries removed or disabled during %s', async (window) => {
     await loader.read([settings({})])
     const original = loader.import
+    const patch = Entry.prototype._patchContext
     try {
       for (const inject of [undefined, ['settings']]) {
         for (const action of ['remove', 'disable']) {
@@ -573,13 +574,15 @@ describe('Loader: entry evaluation context', () => {
               return original.call(loader, name)
             }
           } else {
-            stop = root.on('loader/patch-context', async (entry, next) => {
-              if (entry.options.id === 'worker') {
+            const spy = vi.spyOn(Entry.prototype, '_patchContext')
+            spy.mockImplementation(async function (this: Entry, diff) {
+              if (this.options.id === 'worker') {
                 entered.resolve()
                 await release.promise
               }
-              await next()
+              return patch.call(this, diff)
             })
+            stop = () => spy.mockRestore()
           }
           const creating = loader.create({ id: 'worker', name: 'worker', inject })
           let entry!: Entry
