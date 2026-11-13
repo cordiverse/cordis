@@ -1,3 +1,7 @@
 {
   "extends": "../../../tsconfig.test",
+  "include": ["./**/*"],
+  "compilerOptions": {
+    "incremental": false
+  }
 }
