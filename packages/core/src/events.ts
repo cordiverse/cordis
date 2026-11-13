@@ -15,7 +15,6 @@ export type DispatchMode = 'emit' | 'parallel' | 'serial' | 'bail' | 'waterfall'
 
 declare module './context.ts' {
   export interface Context {
-    /* eslint-disable max-len */
     parallel<K extends keyof Events>(name: K, ...args: Parameters<Events[K]>): Promise<void>
     parallel<K extends keyof Events>(thisArg: NoInfer<ThisType<Events[K]>>, name: K, ...args: Parameters<Events[K]>): Promise<void>
     emit<K extends keyof Events>(name: K, ...args: Parameters<Events[K]>): void
@@ -28,7 +27,6 @@ declare module './context.ts' {
     waterfall<K extends keyof Events>(thisArg: NoInfer<ThisType<Events[K]>>, name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
     on<K extends keyof Events>(name: K, listener: Events[K], options?: boolean | EventOptions): () => boolean
     once<K extends keyof Events>(name: K, listener: Events[K], options?: boolean | EventOptions): () => boolean
-    /* eslint-enable max-len */
   }
 }
 
