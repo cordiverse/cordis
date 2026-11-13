@@ -654,4 +654,108 @@ describe('Fiber: concurrent updates', () => {
       await root.fiber.dispose()
     })
   })
+
+  describe('whenStable outside an update', () => {
+    // `_resolvedConfig` was assigned only in `update()`, so a fiber that had been
+    // loaded and never updated held `undefined`, and `_commit()` compares the entry's
+    // key against it: every registration from the first load was dropped in silence.
+    it('fires a commit registered during the first load', async () => {
+      const root = new Context()
+      const committed: number[] = []
+      const fiber = await root.plugin((ctx: Context) => {
+        ctx.fiber.whenStable(ctx.fiber.config, () => committed.push(ctx.fiber.config.value))
+      }, { value: 7 })
+      await fiber.await()
+      await new Promise((resolve) => setTimeout(resolve, 30))
+      expect(committed).to.deep.equal([7])
+      await root.fiber.dispose()
+    })
+
+    // The replay's waterfall is the call `update()` wraps in a `try` because a
+    // handler may throw before returning anything. Without the same guard the flag
+    // stayed set, and every later `whenStable` queued behind a replay that had ended.
+    it('clears the replay marker when a handler throws synchronously', async () => {
+      const root = new Context()
+      const started = Promise.withResolvers<void>()
+      const release = Promise.withResolvers<void>()
+      const fiber = await root.plugin((ctx: Context) => {
+        ctx.on('internal/update', function (config: { value: number }, next: any) {
+          // only the replay throws, which is what `_replaying` marks
+          if ((ctx.fiber as any)._replaying) throw new Error('replay boom')
+          if (config.value === 1) {
+            started.resolve()
+            void release.promise
+          }
+          return next()
+        })
+      }, { value: 0 })
+      await fiber.await()
+
+      const first = Promise.resolve(fiber.update({ value: 1 }))
+      await started.promise
+      await fiber.update({ value: 2 }).catch(() => {})
+      release.resolve()
+      await first.catch(() => {})
+      await new Promise((resolve) => setTimeout(resolve, 60))
+
+      expect((fiber as any)._replaying, 'a throw in a replay must not leave it set').to.equal(false)
+      await root.fiber.dispose()
+    })
+  })
+
+  describe('whenStable with a replay', () => {
+    async function harness() {
+      const root = new Context()
+      const started = Promise.withResolvers<void>()
+      const release = Promise.withResolvers<void>()
+      let applied = 0
+      const committed: number[] = []
+      const fiber = await root.plugin((ctx: Context) => {
+        ctx.on('internal/update', async (config: { value: number }, next: any) => {
+          if (config.value === 1) {
+            started.resolve()
+            await release.promise
+          }
+          applied = config.value
+          ctx.fiber.whenStable(config, () => committed.push(applied))
+          return next()
+        })
+      }, { value: 0 })
+      return { root, started, release, fiber, committed, get applied() { return applied } }
+    }
+
+    it('commits once, after the replay has repaired the state', async () => {
+      const h = await harness()
+      const first = Promise.resolve(h.fiber.update({ value: 1 }))
+      await h.started.promise
+      const second = Promise.resolve(h.fiber.update({ value: 2 }))
+      await second
+      h.release.resolve()
+      await first
+      await h.root.fiber.dispose()
+
+      // The replay re-enters the handler, so the same config is registered twice;
+      // one entry per config keeps that from becoming two commits. And the commit
+      // has to wait for the repair: registering it while the replay is still
+      // running would report the state the replay is about to correct.
+      expect(h.committed).to.deep.equal([2])
+      expect(h.applied).to.equal(2)
+    })
+
+    it('does not fire for a configuration the store has moved past', async () => {
+      const h = await harness()
+      const first = Promise.resolve(h.fiber.update({ value: 1 }))
+      await h.started.promise
+      const second = Promise.resolve(h.fiber.update({ value: 2 }))
+      await second
+      h.release.resolve()
+      await first
+      await h.root.fiber.dispose()
+
+      // `1` does reach the queue -- its chain settles last, so its registration is
+      // still deferred -- but it never fires: by then the fiber stores `2`, and
+      // `_commit` drops an entry whose config is not that one.
+      expect(h.committed).to.not.include(1)
+    })
+  })
 })
