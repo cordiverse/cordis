@@ -32,7 +32,7 @@
     "typescript": "^5.9.3",
     "vite": "^7.3.2",
     "vitest": "^4.1.5",
-    "yakumo": "^3.4.1",
+    "yakumo": "^3.4.2",
     "yakumo-esbuild": "^3.1.1",
     "yakumo-tsc": "^3.1.1",
     "yakumo-vitest": "^1.4.1"
