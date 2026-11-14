@@ -48,6 +48,8 @@ jobs:
         run: yarn build core
       - name: Build (2)
         run: yarn build
+      - name: Type Check
+        run: yarn tsc -b packages/*/tests
 
   test:
     runs-on: ${{ matrix.os }}

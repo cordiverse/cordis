@@ -2,6 +2,12 @@ import { Context, Service } from 'cordis'
 import { EntryGroup, EntryTree } from '@cordisjs/loader'
 import { version } from './tree-dep.ts'
 
+declare module 'cordis' {
+  interface Events {
+    'hmr-test/get-tree'(): string
+  }
+}
+
 export const name = 'component-tree'
 
 /**
@@ -45,5 +51,5 @@ export default class Tree extends EntryTree {
     }
   }
 
-  write() {}
+  commit() {}
 }

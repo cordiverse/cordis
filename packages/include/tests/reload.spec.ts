@@ -29,7 +29,7 @@ interface Harness {
 
 describe('Include reload', () => {
   let ctx: Context | undefined
-  let fiber: Fiber<Context> | undefined
+  let fiber: Fiber | undefined
   let filename: string | undefined
 
   afterEach(async () => {

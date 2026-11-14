@@ -23,7 +23,7 @@ function fakeProvider() {
 }
 
 describe('Fs', () => {
-  const fibers: Fiber<Context>[] = []
+  const fibers: Fiber[] = []
 
   afterEach(async () => {
     for (const fiber of fibers.splice(0)) await fiber.dispose()

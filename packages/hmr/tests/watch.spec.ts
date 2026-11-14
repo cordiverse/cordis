@@ -59,9 +59,9 @@ function change(filename: string) {
 
 describe('Hmr with fs', () => {
   let ctx: Context
-  let fiber: Fiber<Context> | undefined
+  let fiber: Fiber | undefined
   // HMR is a sibling of the loader, and at most one instance is active at a time
-  let hmr: Fiber<Context> | undefined
+  let hmr: Fiber | undefined
   let reconcile: MockInstance<Hmr['reconcile']>
 
   beforeEach(() => {
@@ -91,7 +91,7 @@ describe('Hmr with fs', () => {
     ctx.baseUrl = baseUrl
     fiber = await ctx.use(Loader)
     await ctx.use(FakeFs)
-    hmr = await ctx.use(Hmr, { base, watch: { enabled: true, debounce: 50, ...config } })
+    hmr = await ctx.use(Hmr, { base, watch: { enabled: true, debounce: 50, ...config } } as Hmr.Config)
   }
 
   async function load(name: string, content: string) {
@@ -112,7 +112,7 @@ describe('Hmr with fs', () => {
     async function create(base?: string, baseUrl: string | null = import.meta.url) {
       ctx = new Context()
       ctx.baseUrl = baseUrl ?? undefined
-      fiber = await ctx.use(Hmr, { base })
+      fiber = await ctx.use(Hmr, { base } as Hmr.Config)
       // a trailing separator does not matter
       return resolve(ctx.hmr.baseDir)
     }

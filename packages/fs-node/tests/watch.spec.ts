@@ -53,7 +53,7 @@ async function watch(ctx: Context, path: string | URL, listener: (filename: stri
 }
 
 describe('Fs', () => {
-  let fiber: Fiber<Context> | undefined
+  let fiber: Fiber | undefined
 
   beforeAll(() => {
     rmSync(fixture, { recursive: true, force: true })

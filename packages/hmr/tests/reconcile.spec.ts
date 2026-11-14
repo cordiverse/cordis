@@ -42,9 +42,9 @@ function fixture(name: string, content: string) {
 
 describe('Hmr.reconcile', () => {
   let ctx: Context
-  let fiber: Fiber<Context> | undefined
+  let fiber: Fiber | undefined
   // HMR is a sibling of the loader, and at most one instance is active at a time
-  let hmr: Fiber<Context> | undefined
+  let hmr: Fiber | undefined
 
   beforeAll(() => {
     rmSync(fixtureDir, { recursive: true, force: true })

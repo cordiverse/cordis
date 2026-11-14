@@ -23,7 +23,7 @@ class FakeFs extends Service {
 }
 
 describe('Include watch', () => {
-  let fiber: Fiber<Context> | undefined
+  let fiber: Fiber | undefined
   const filename = fixture('watch.yml')
 
   afterEach(async () => {
@@ -65,7 +65,7 @@ describe('Include watch', () => {
 })
 
 describe('Include watch with fs', () => {
-  let fiber: Fiber<Context> | undefined
+  let fiber: Fiber | undefined
   const filename = fixture('watch-fs.yml')
 
   afterEach(async () => {

@@ -56,7 +56,7 @@ function waitFor(condFn: () => boolean | any, timeout = 8000, interval = 100): P
   })
 }
 
-async function createContext(group: string, configFile: string): Promise<{ ctx: Context; fiber: Fiber<Context> }> {
+async function createContext(group: string, configFile: string): Promise<{ ctx: Context; fiber: Fiber }> {
   const dir = copyFixtures(group)
   const ctx = new Context()
   await ctx.use(Logger)
@@ -158,7 +158,7 @@ describe('HMR', () => {
 
   describe('nested entry tree', () => {
     let ctx: Context
-    let fiber: Fiber<Context>
+    let fiber: Fiber
     const treeDep = fixture('nested', 'tree-dep.ts')
 
     beforeAll(async () => {
@@ -222,7 +222,7 @@ describe('HMR', () => {
 
   describe('resource handoff on reload', () => {
     let ctx: Context
-    let fiber: Fiber<Context>
+    let fiber: Fiber
     const drainDep = fixture('drain', 'drain-dep.ts')
 
     beforeAll(async () => {
@@ -273,7 +273,7 @@ describe('HMR', () => {
 
   describe('component with multiple entries', () => {
     let ctx: Context
-    let fiber: Fiber<Context>
+    let fiber: Fiber
     const componentMulti = fixture('multi', 'component-multi.ts')
 
     beforeAll(async () => {

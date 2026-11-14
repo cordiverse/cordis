@@ -169,7 +169,7 @@ describe('Events', () => {
     const remaining = mock.fn()
     root.on(event, remaining)
 
-    await root[mode](event)
+    await (root[mode] as (name: typeof event) => unknown)(event)
     expect(removed.mock.calls).to.have.length(0)
     expect(remaining.mock.calls).to.have.length(1)
   })
@@ -179,9 +179,9 @@ describe('Events', () => {
     const added = mock.fn()
     root.on(event, () => { root.on(event, added) })
 
-    await root[mode](event)
+    await (root[mode] as (name: typeof event) => unknown)(event)
     expect(added.mock.calls).to.have.length(0)
-    await root[mode](event)
+    await (root[mode] as (name: typeof event) => unknown)(event)
     expect(added.mock.calls).to.have.length(1)
   })
 
