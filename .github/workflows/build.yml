@@ -69,6 +69,39 @@ jobs:
         run: npm install -g --force corepack@latest
       - name: Enable Corepack
         run: corepack enable
+      # Corepack's own store: the default locations, which are outside the
+      # workspace (so an extracted bundle does not inherit this repository's
+      # `"type": "module"`). Only one exists per runner.
+      - name: Cache Corepack
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/node/corepack
+            ~/Library/Caches/node/corepack
+            ~/AppData/Local/node/corepack
+          # the version list lives in this file, so a change to it has to change
+          # the key: `cache` saves only on a miss, and a restored-but-stale store
+          # would re-download the new version on every run
+          key: corepack-${{ runner.os }}-${{ hashFiles('package.json', '.github/workflows/build.yml') }}
+      # A version Corepack does not have is downloaded at its first use, and that
+      # download has no timeout of its own: a connection that is accepted but
+      # never answered stays silent until undici's five-minute header timeout,
+      # which `run()` kills at 60 s as "produced no output". Fetching them here
+      # makes that a failed step named for it, not a failed test named for a
+      # precondition.
+      - name: Prepare the package managers the tests start
+        shell: bash
+        timeout-minutes: 3
+        run: |
+          # the three pnpm versions the tests name, then this project's yarn,
+          # which `corepack install` reads from `packageManager`
+          for attempt in 1 2 3; do
+            if corepack install -g pnpm@9.15.4 pnpm@10.33.0 pnpm@11.28.5 && corepack install; then
+              exit 0
+            fi
+            echo "attempt $attempt failed, retrying" >&2
+          done
+          exit 1
       - name: Install
         run: yarn
       - name: Unit Test
