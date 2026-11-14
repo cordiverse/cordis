@@ -181,14 +181,23 @@ export class Http extends Service<Http.Intercept> {
 
   static {
     const require = createRequire(import.meta.url)
+    // The bundled copy answers with what this Node actually runs; the package is
+    // the fallback. Which one is available is a fact `require` reports, not one
+    // `argv` predicts -- Node accepts `_` for `-` in every flag, so
+    // `--expose_internals` opens the bundled copy while a check for the
+    // hyphenated spelling says it does not.
+    //
+    // Both candidates stay inside the one `try`: `undici` is an optional peer, so a
+    // failure here must leave `Http.undici` unset as before, not escape the static
+    // block and fail the import.
     try {
-      if (process.execArgv.includes('--expose-internals')) {
-        this.undici = require('internal/deps/undici/undici')
-        setupInternalUndici(this.undici)
-      } else {
+      this.undici = require('internal/deps/undici/undici')
+      setupInternalUndici(this.undici)
+    } catch {
+      try {
         this.undici = require('undici')
-      }
-    } catch {}
+      } catch {}
+    }
 
     for (const method of ['get', 'delete'] as const) {
       defineProperty(Http.prototype, method, async function (this: Http, url: string | URL, config?: Http.Config) {
