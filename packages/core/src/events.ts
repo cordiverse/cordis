@@ -1,6 +1,6 @@
 import { Awaitable, defineProperty, Promisify } from 'cosmokit'
 import { Context } from './context.ts'
-import { Fiber, FiberState, resolveConfig } from './fiber.ts'
+import { type Disposable, Fiber, FiberState, resolveConfig } from './fiber.ts'
 import { DisposableList, symbols } from './utils.ts'
 
 export function isBailed(value: any) {
@@ -25,8 +25,8 @@ declare module './context.ts' {
     bail<K extends keyof Events>(thisArg: NoInfer<ThisType<Events[K]>>, name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
     waterfall<K extends keyof Events>(name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
     waterfall<K extends keyof Events>(thisArg: NoInfer<ThisType<Events[K]>>, name: K, ...args: Parameters<Events[K]>): ReturnType<Events[K]>
-    on<K extends keyof Events>(name: K, listener: Events[K], options?: boolean | EventOptions): () => boolean
-    once<K extends keyof Events>(name: K, listener: Events[K], options?: boolean | EventOptions): () => boolean
+    on<K extends keyof Events>(name: K, listener: Events[K], options?: boolean | EventOptions): Disposable<Awaitable<void>>
+    once<K extends keyof Events>(name: K, listener: Events[K], options?: boolean | EventOptions): Disposable<Awaitable<void>>
   }
 }
 
@@ -217,6 +217,6 @@ export interface Events {
   'internal/config'(fiber: Fiber, next: () => any): any
   'internal/get'(ctx: Context, name: string, error: Error, next: () => any): any
   'internal/set'(ctx: Context, name: string, value: any, error: Error, next: () => boolean): boolean
-  'internal/listener'(this: Context, name: string, listener: any, options: EventOptions): void
+  'internal/listener'(this: Context, name: string, listener: any, options: EventOptions): void | Disposable<Awaitable<void>>
   'internal/dispatch'(mode: DispatchMode, name: string | symbol, args: any[], thisArg: any): void
 }
