@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { Context } from 'cordis'
+import { Context, Logger } from 'cordis'
 import { pathToFileURL } from 'node:url'
 import Fs from '@cordisjs/fs'
 import NodeFs from '@cordisjs/fs-node'
@@ -9,12 +9,34 @@ import Loader from '@cordisjs/loader'
 const ctx = new Context()
 ctx.baseUrl = pathToFileURL(process.cwd()).href + '/'
 
+// Surface bootstrap errors that core buffers without a console exporter attached.
+// Disposed once the initial load settles, so the non-zero exit code it sets stays
+// scoped to the bootstrap window.
+const exporter = {
+  colors: false,
+  export(msg) {
+    if (msg.type !== 'error') return
+    process.exitCode = 1
+    // `Logger.format` renders an error as its stack, so a cause core already
+    // logged on its own is not repeated here
+    console.error(Logger.format(exporter, msg))
+  },
+}
+const dispose = ctx.logger.exporter(exporter)
+
 await ctx.use(Fs)
 await ctx.use(NodeFs)
 await ctx.use(Loader)
-await ctx.loader.create({
-  name: '@cordisjs/include',
-  config: {
-    path: './cordis.yml',
-  },
-})
+try {
+  await ctx.loader.create({
+    name: '@cordisjs/include',
+    config: {
+      path: './cordis.yml',
+    },
+  })
+  await ctx.loader.await()
+} catch {
+  // the exporter above already reported this failure
+} finally {
+  dispose()
+}
