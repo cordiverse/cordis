@@ -228,6 +228,29 @@ export class Fiber {
     return 'root'
   }
 
+  /**
+   * The error that stopped this fiber from loading, if any.
+   *
+   * Stays `undefined` while the fiber is pending, loading or active, and is
+   * cleared when `update()` retries a failed fiber. Useful for hosts that
+   * watch `internal/status` and need to explain why a plugin did not load.
+   */
+  get error() {
+    return this._error
+  }
+
+  /**
+   * Injected service names that are not resolved right now.
+   *
+   * A fiber with a non-empty list stays `PENDING` until those services show
+   * up, so this is the reason a registered plugin may never start. Empty for
+   * a disposed fiber, which no longer waits for anything.
+   */
+  get missing(): string[] {
+    if (this.uid === null) return []
+    return Object.keys(this.inject).filter((name) => !this._store[name])
+  }
+
   assertActive() {
     if (this.uid !== null) return
     throw new CordisError('INACTIVE_EFFECT')
