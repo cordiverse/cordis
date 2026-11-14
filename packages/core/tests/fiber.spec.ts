@@ -261,6 +261,33 @@ describe('Fiber', () => {
     }
   })
 
+  // The same shape sits at the `_updateState()` calls inside `_unload()` and `_reload()`.
+  // A second transition with the listener still installed reaches them, and before the
+  // fix each left its own promise unobserved.
+  it('leaves no unobserved rejection across two transitions under a throwing listener', async () => {
+    const seen: string[] = []
+    const handler = (error: any) => seen.push(String(error && error.message))
+    const root = new Context()
+    const fiber = await root.plugin((ctx) => { ctx.provide('probe2', 1) })
+    await fiber.await()
+
+    process.on('unhandledRejection', handler)
+    try {
+      const off = root.on('internal/status', () => {
+        throw new Error('boom')
+      })
+      try {
+        await (fiber as any).restart().catch(() => {})
+        await new Promise((resolve) => setTimeout(resolve, 120))
+      } finally {
+        off()
+      }
+    } finally {
+      process.off('unhandledRejection', handler)
+    }
+    expect(seen, 'a rejection nobody waited for ends the process').to.deep.equal([])
+  })
+
   it('keeps the active dispose sequence stable', async () => {
     const root = new Context()
     const fiber = root.use(() => {})
