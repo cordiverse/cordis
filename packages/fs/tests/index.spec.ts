@@ -203,7 +203,7 @@ describe('Fs', () => {
 
     it('rejects a relative reference without `ctx.baseUrl`', async () => {
       const ctx = await setup()
-      expect(() => ctx.fs.resolve('a.txt')).to.throw(TypeError)
+      expect(() => ctx.fs.resolve('a.txt')).to.throw(FsError).with.property('code', 'InvalidPath')
       expect(ctx.fs.resolve('file:///a.txt').href).to.equal('file:///a.txt')
     })
 
@@ -280,6 +280,15 @@ describe('Fs', () => {
       expect(await code(ctx.fs.access('mem://a.txt', 'write'))).to.equal('NotSupported')
       expect(await code(ctx.fs.rename('mem://a.txt', 'mem://b.txt'))).to.equal('NotSupported')
       expect(await code(ctx.fs.remove('mem://a.txt'))).to.equal('NotSupported')
+    })
+
+    it('rejects an unknown access mode before forwarding it', async () => {
+      const ctx = await setup()
+      const { calls, provider } = recorder()
+      ctx.fs.mount('mem:', provider)
+      const error = await ctx.fs.access('mem://a.txt', 'execute' as any).catch(error => error)
+      expect(error).to.be.instanceOf(TypeError)
+      expect(calls).to.deep.equal([])
     })
 
     it('rejects a rename between two mounts with `CrossesDevices`', async () => {

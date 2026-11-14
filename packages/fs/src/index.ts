@@ -28,6 +28,8 @@ interface Connection {
 
 export type AccessMode = 'write'
 
+const accessModes: readonly string[] = ['write'] satisfies AccessMode[]
+
 export interface RemoveOptions {
   /** A missing location is not an error. */
   force?: boolean
@@ -80,18 +82,20 @@ export class Fs extends Service {
 
   /**
    * Resolve a URL reference against `ctx.baseUrl`. A reference that cannot be
-   * parsed throws an `FsError` with the code `InvalidPath`.
+   * parsed, including a relative reference without `ctx.baseUrl`, throws an
+   * `FsError` with the code `InvalidPath`.
    */
   resolve(path: string | URL): URL {
     if (path instanceof URL) return path
     const base = this.ctx.baseUrl
-    if (!base && !URL.canParse(path)) {
-      throw new TypeError(`cannot resolve the relative reference ${JSON.stringify(path)} without ctx.baseUrl`)
-    }
     try {
       return new URL(path, base)
     } catch (error) {
-      throw new FsError('InvalidPath', undefined, `invalid URL ${JSON.stringify(path)}`, { cause: error })
+      // a reference without a scheme is relative, and resolvable against a base
+      const message = !base && !/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(path)
+        ? `cannot resolve the relative reference ${JSON.stringify(path)} without ctx.baseUrl`
+        : `invalid URL ${JSON.stringify(path)}`
+      throw new FsError('InvalidPath', undefined, message, { cause: error })
     }
   }
 
@@ -165,6 +169,10 @@ export class Fs extends Service {
    * rejects with `NotFound`, and a denial by the storage with `PermissionDenied`.
    */
   async access(path: string | URL, mode: AccessMode): Promise<void> {
+    // checked here, so that a provider receives only the modes it is declared to receive
+    if (!accessModes.includes(mode)) {
+      throw new TypeError(`expected an access mode of ${accessModes.map(mode => JSON.stringify(mode)).join(', ')}, got ${JSON.stringify(mode)}`)
+    }
     const url = this.resolve(path)
     return this._provider(url, 'access').access(url, mode)
   }
