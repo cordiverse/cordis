@@ -55,6 +55,27 @@ describe('Reflect', () => {
     })
   })
 
+  it('object source mixin', () => {
+    const root = new Context()
+    const source = {
+      value: 1,
+      getValue() {
+        return this.value
+      },
+    }
+    ;(source as any).self = source
+
+    root.mixin(source, {
+      value: 'objectValue',
+      getValue: 'getObjectValue',
+    })
+
+    expect((root as any).objectValue).to.equal(1)
+    expect((root as any).getObjectValue()).to.equal(1)
+    ;(root as any).objectValue = 2
+    expect(source.value).to.equal(2)
+  })
+
   it('access error', async () => {
     const root = new Context()
     root.provide('foo')
