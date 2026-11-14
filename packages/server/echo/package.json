@@ -1,0 +1,43 @@
+{
+  "name": "@cordisjs/server-echo",
+  "description": "Echo routes for @cordisjs/server",
+  "version": "1.1.1",
+  "sideEffects": false,
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "files": [
+    "lib"
+  ],
+  "author": "Shigma <shigma10826@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cordiverse/cordis.git",
+    "directory": "packages/server/echo"
+  },
+  "bugs": {
+    "url": "https://github.com/cordiverse/cordis/issues"
+  },
+  "homepage": "https://github.com/cordiverse/cordis",
+  "keywords": [
+    "cordis",
+    "echo",
+    "http",
+    "server",
+    "service",
+    "component",
+    "websocket"
+  ],
+  "peerDependencies": {
+    "@cordisjs/server": "^1.7.0",
+    "cordis": "^4.0.0-rc.13"
+  },
+  "devDependencies": {
+    "@cordisjs/server": "^1.7.0",
+    "cordis": "^4.0.0-rc.13"
+  },
+  "dependencies": {
+    "schemastery": "^3.18.0"
+  }
+}

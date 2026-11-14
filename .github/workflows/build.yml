@@ -49,7 +49,10 @@ jobs:
       - name: Build (2)
         run: yarn build
       - name: Type Check
-        run: yarn tsc -b packages/*/tests
+        run: |
+          yarn tsc -b $(yarn workspaces list --json | jq -r '.location + "/tests"' | while read -r dir; do
+            if [ -d "$dir" ]; then echo "$dir"; fi
+          done)
 
   test:
     runs-on: ${{ matrix.os }}

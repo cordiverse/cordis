@@ -1,0 +1,47 @@
+{
+  "name": "@cordisjs/server-static",
+  "description": "Static file server for @cordisjs/server",
+  "version": "1.2.1",
+  "sideEffects": false,
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "files": [
+    "lib"
+  ],
+  "author": "Shigma <shigma10826@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cordiverse/cordis.git",
+    "directory": "packages/server/static"
+  },
+  "bugs": {
+    "url": "https://github.com/cordiverse/cordis/issues"
+  },
+  "homepage": "https://github.com/cordiverse/cordis",
+  "keywords": [
+    "cordis",
+    "router",
+    "http",
+    "static",
+    "public",
+    "server",
+    "service",
+    "component"
+  ],
+  "peerDependencies": {
+    "@cordisjs/server": "^1.7.0",
+    "cordis": "^4.0.0-rc.13"
+  },
+  "devDependencies": {
+    "@cordisjs/logger-console": "^1.0.1",
+    "@cordisjs/server": "^1.7.0",
+    "cordis": "^4.0.0-rc.13"
+  },
+  "dependencies": {
+    "@cordisjs/fetch-file": "^1.0.3",
+    "picomatch": "^4.0.0",
+    "schemastery": "^3.18.0"
+  }
+}
