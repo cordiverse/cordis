@@ -15,7 +15,7 @@ describe('quoted positional arguments', () => {
     try {
       const result = command.parse(new Input.String(source))
       expect(result.args).to.deep.equal(['--verbose'])
-      expect(result.options.verbose).to.be.undefined
+      expect(result.options).to.deep.equal({})
     } finally {
       command.dispose()
     }
@@ -37,7 +37,7 @@ describe('quoted positional arguments', () => {
     const command = ctx.cli.command('echo', { unknownOption: 'allow' })
     try {
       const result = command.parse(new Input.String('--value "--literal"'))
-      expect(result.options.value).to.equal('--literal')
+      expect(result.options).to.deep.equal({ value: '--literal' })
     } finally {
       command.dispose()
     }
