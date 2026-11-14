@@ -297,17 +297,36 @@ export class Fiber {
     const disposables: Disposable[] = []
     const dispose = () => {
       let task!: void | Promise<void>
-      for (const dispose of disposables.splice(0).reverse()) {
-        if (task) {
-          task = task.then(dispose)
-        } else {
+      const errors: unknown[] = []
+      // A failing disposer must not skip the ones registered after it: collect
+      // the failures, drain the whole list, and report them as one error.
+      const run = (dispose: Disposable) => {
+        try {
           const result = dispose()
           if (isObject(result) && 'then' in result) {
-            task = result as any
+            return Promise.resolve(result as any).catch((error) => {
+              errors.push(error)
+            })
           }
+        } catch (error) {
+          errors.push(error)
         }
       }
-      return task
+      for (const dispose of disposables.splice(0).reverse()) {
+        if (task) {
+          task = task.then(() => run(dispose))
+        } else {
+          const result = run(dispose)
+          if (result) task = result
+        }
+      }
+      const finish = () => {
+        if (!errors.length) return
+        throw errors.length === 1
+          ? errors[0]
+          : new AggregateError(errors, 'one or more disposers of an effect failed')
+      }
+      return task ? task.then(finish) : finish()
     }
 
     const meta: EffectMeta = { label, children: [] }

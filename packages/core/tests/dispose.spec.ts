@@ -4,6 +4,40 @@ import { mock } from 'node:test'
 import { sleep, withTimers } from './utils.ts'
 
 describe('Effects', () => {
+  it('keeps draining the disposers of an effect after one throws', async () => {
+    const root = new Context()
+    const order: string[] = []
+    const fiber = await root.use((ctx) => {
+      ctx.effect(() => [
+        () => order.push('first'),
+        () => order.push('second'),
+        () => {
+          order.push('third')
+          throw new Error('boom')
+        },
+      ], 'throwing')
+    })
+    await fiber.dispose()
+    expect(order).to.deep.equal(['third', 'second', 'first'])
+  })
+
+  it('keeps draining the disposers of an effect after one rejects', async () => {
+    const root = new Context()
+    const order: string[] = []
+    const fiber = await root.use((ctx) => {
+      ctx.effect(() => [
+        () => order.push('first'),
+        async () => {
+          order.push('second')
+          throw new Error('boom')
+        },
+        () => order.push('third'),
+      ], 'rejecting')
+    })
+    await fiber.dispose()
+    expect(order).to.deep.equal(['third', 'second', 'first'])
+  })
+
   it('dispose by component', async () => {
     const root = new Context()
     const dispose = mock.fn()
