@@ -120,6 +120,27 @@ export class Logger {
   }
 
   private _method(type: LoggerType, level: number): LoggerMethod {
+    // The logger is what failed, so the report cannot go back through it.
+    const report = (error: any) => {
+      // `emitWarning` takes a string or an Error and throws `ERR_INVALID_ARG_TYPE`
+      // for anything else. Reporting runs inside the `catch` that exists to keep a
+      // failing sink from reaching the caller, so a sink that throws a number or a
+      // plain object would break the caller from inside the guard itself.
+      let reported = error
+      if (!(error instanceof Error)) {
+        try {
+          reported = String(error)
+        } catch {
+          reported = 'a value was thrown that cannot be turned into a string'
+        }
+      }
+      if (typeof process !== 'undefined' && typeof process.emitWarning === 'function') {
+        process.emitWarning(reported)
+      } else {
+        // eslint-disable-next-line no-console
+        console.error(error)
+      }
+    }
     return (...args: any[]) => {
       if (args.length === 1 && args[0] instanceof Error) {
         if (args[0].cause) {
@@ -135,10 +156,19 @@ export class Logger {
       const sn = ++this.service._snMessage
       const ts = Date.now()
       for (const exporter of this.service.exporters.values()) {
-        const targetLevel = exporter.levels?.[this.name] ?? exporter.levels?.default ?? this.level ?? LoggerLevel.INFO
-        if (targetLevel < level) continue
-        const message: Message = { sn, ts, type, level, name: this.name, ...this.meta, args }
-        exporter.export(message)
+        try {
+          const targetLevel = exporter.levels?.[this.name] ?? exporter.levels?.default ?? this.level ?? LoggerLevel.INFO
+          if (targetLevel < level) continue
+          const message: Message = { sn, ts, type, level, name: this.name, ...this.meta, args }
+          // An exporter is user code: one failing sink must not decide the
+          // control flow of whatever logged, nor starve the sinks after it.
+          const result = exporter.export(message) as any
+          if (typeof result?.then === 'function') {
+            result.then(undefined, report)
+          }
+        } catch (error) {
+          report(error)
+        }
       }
     }
   }
