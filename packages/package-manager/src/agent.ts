@@ -49,6 +49,15 @@ export interface Adapter {
 
 type PartialInfo = Omit<AgentInfo, 'layout'>
 
+/**
+ * How long a probing command may stay silent before it counts as hung.
+ *
+ * The two `config` reads answer in under a second or have hung, so this bounds a
+ * health check. The version probe can also be downloading (a 3.8 MB tarball on a
+ * cold Corepack store), which is why only that one takes `config.timeout`.
+ */
+const HEALTH_CHECK = 60000
+
 /** The agent of a project with its detected layout. */
 export interface Agent {
   info: AgentInfo
@@ -57,7 +66,7 @@ export interface Agent {
 }
 
 async function getConfig(info: PartialInfo, root: string, env: Env, key: string) {
-  const { stdout } = await run(info.executable, ['config', 'get', key], { cwd: root, env, timeout: 60000 })
+  const { stdout } = await run(info.executable, ['config', 'get', key], { cwd: root, env, timeout: HEALTH_CHECK })
   return stdout.trim().split(/\r?\n/).pop()?.trim()
 }
 
@@ -69,7 +78,7 @@ function selectOption<T>(info: PartialInfo, key: string, value: string | undefin
 }
 
 async function getYarnClassicLayout(info: PartialInfo, root: string, env: Env, manifest: any) {
-  const { stdout } = await run(info.executable, ['config', 'list', '--json'], { cwd: root, env, timeout: 60000 })
+  const { stdout } = await run(info.executable, ['config', 'list', '--json'], { cwd: root, env, timeout: HEALTH_CHECK })
   // the yarn configuration, then the npm configuration
   const [yarnrc = {}, npmrc = {}] = stdout.split(/\r?\n/).flatMap((line) => {
     try {
@@ -187,7 +196,7 @@ export const adapters: Record<AgentKind, Adapter> = {
   },
 }
 
-export async function detectAgent(root: string, env: Env): Promise<Agent> {
+export async function detectAgent(root: string, env: Env, timeout = HEALTH_CHECK): Promise<Agent> {
   const manifestPath = resolve(root, 'package.json')
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
   const spec = manifest.packageManager
@@ -203,7 +212,7 @@ export async function detectAgent(root: string, env: Env): Promise<Agent> {
 
   const executable = which(name, env)
   if (!executable) throw new Error(`${name} is not found in PATH`)
-  const { stdout } = await run(executable, ['--version'], { cwd: root, env, timeout: 60000 })
+  const { stdout } = await run(executable, ['--version'], { cwd: root, env, timeout })
   const version = stdout.trim().split(/\r?\n/).pop()!.trim()
   if (+version.split('.')[0] !== major) {
     throw new Error(`${executable} reports version ${version}, which does not match "${spec}"`)

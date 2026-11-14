@@ -45,7 +45,7 @@ class PackageManager extends Service {
   }
 
   async agent(): Promise<AgentInfo> {
-    return (await detectAgent(this.root, createEnv())).info
+    return (await detectAgent(this.root, createEnv(), this.config.timeout)).info
   }
 
   install(changes: DependencyChanges | [string, string | null][], options: PackageManager.InstallOptions = {}) {
@@ -59,7 +59,7 @@ class PackageManager extends Service {
     options.signal?.throwIfAborted()
     const root = this.root
     const env = createEnv()
-    const { info: agent, adapter, readState } = await detectAgent(root, env)
+    const { info: agent, adapter, readState } = await detectAgent(root, env, this.config.timeout)
     if (!adapter.lockfiles.some(file => existsSync(resolve(root, file)))) {
       throw new Error(`${root} has no lockfile, expected ${adapter.lockfiles.join(' or ')}`)
     }
