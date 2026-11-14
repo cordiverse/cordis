@@ -8,6 +8,9 @@ declare module 'cordis' {
   }
 }
 
+// Counters must survive module reloads, so they live on `globalThis`.
+const stats: any = ((globalThis as any).__hmrTest ??= {})
+
 export const name = 'component-tree'
 
 /**
@@ -45,7 +48,6 @@ export default class Tree extends EntryTree {
     // second HMR batch arrives: `_setEpoch()` bails out while `inertia` is
     // pending, so this fiber's unload — and with it the disposal of the
     // intermediate fiber below — is deferred until the stall ends.
-    const stats: any = ((globalThis as any).__hmrTest ??= {})
     if (stats.stallTreeInit) {
       await new Promise(resolve => setTimeout(resolve, stats.stallTreeInit))
     }
