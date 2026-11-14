@@ -139,6 +139,9 @@ export function applyPatches(data: EntryOptions[], patches: PatchOptions[] | und
 
     if (insert) {
       if (id && !target) return warn('patch insert: entry %C not found', id)
+      if (name && target && name !== target.name) {
+        return warn('patch insert: name mismatch for %C (expected %C, got %C), skipping', id, target.name, name)
+      }
       if (target && !target.group) return warn('patch insert: entry %C is not a group', id)
       const clone = structuredClone(insert)
       if (target) {
