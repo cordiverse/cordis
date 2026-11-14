@@ -9,6 +9,7 @@ import { applyChanges, DependencyChanges, normalizeChanges, stringifyManifest } 
 import { createEnv, run } from './process.ts'
 import { FileBackup } from './backup.ts'
 import { realpath } from './files.ts'
+import { reread } from './retry.ts'
 import { diffState, StateDiff } from './state.ts'
 
 export type { Adapter, AgentInfo, AgentKind, AgentLayout, AgentName } from './agent.ts'
@@ -68,6 +69,7 @@ class PackageManager extends Service {
     const original = await readFile(manifestPath, 'utf8')
     const manifest = JSON.parse(original)
     const before = await readState()
+
     const backup = await FileBackup.create(['package.json', ...adapter.lockfiles, ...adapter.restoredFiles].map(file => resolve(root, file)))
     options.signal?.throwIfAborted()
 
@@ -80,7 +82,7 @@ class PackageManager extends Service {
     try {
       await writeFile(manifestPath, stringifyManifest(applyChanges(manifest, changes), original))
       await run(agent.executable, adapter.installArgs, { ...runOptions, signal: options.signal })
-      return { agent, ...diffState(root, before, await readState()) }
+      return { agent, ...diffState(root, before, await reread(readState)) }
     } catch (error) {
       try {
         await backup.restore()
