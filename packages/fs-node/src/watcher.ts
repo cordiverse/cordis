@@ -80,6 +80,18 @@ export function watchPath(watcher: Watcher, filename: string) {
     ignored: (path, stats) => {
       path = resolve(path)
       if (path === root) return false
+      // A FIFO, a socket and a device are not files to watch. chokidar walks with
+      // `type: EV.ALL`, so readdirp counts every entry that is not a directory as a
+      // file and hands it to `_watchWithNodeFs()`, and on macOS that call opens the
+      // path read-only before watching it: an open of a FIFO with no writer blocks
+      // the process for good. Excluding it here is before that call, and before the
+      // `filter` below, which a caller may not set at all.
+      //
+      // This covers the walk and every rescan, which is where an entry is first
+      // seen. It does not cover an entry being replaced by one of these: `_handleFile`
+      // re-watches a file whose inode changed without consulting `ignored`, and there
+      // is no other hook here to reach that.
+      if (stats && !stats.isFile() && !stats.isDirectory() && !stats.isSymbolicLink()) return true
       if (isFile) return path !== filename
       if (!keep) return false
       // Without the stats, or with the `lstat()` of a symbolic link, the type

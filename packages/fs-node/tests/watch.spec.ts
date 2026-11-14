@@ -1,5 +1,6 @@
 import { Context, Fiber } from 'cordis'
 import { mkdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { basename, dirname, isAbsolute, resolve } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { FSWatcher } from 'chokidar'
@@ -302,6 +303,85 @@ describe('Fs', () => {
       await new Promise(r => setTimeout(r, 200))
       expect(seen).to.deep.equal([])
     }, 15000)
+
+    // chokidar walks with `type: EV.ALL`, so readdirp counts every entry that is not a
+    // directory as a file and hands it to `_watchWithNodeFs()`. On macOS that call opens
+    // the path read-only before watching it, and an open of a FIFO with no writer blocks
+    // for good — the process hangs with no event and no error. The entry is excluded in
+    // `ignored`, which chokidar consults before that call.
+    it.runIf(process.platform !== 'win32')('does not watch a FIFO below the watched directory', async () => {
+      const dir = resolve(fixture, 'fifo')
+      mkdirSync(dir, { recursive: true })
+      const fifo = resolve(dir, 'pipe')
+      rmSync(fifo, { force: true })
+      execFileSync('mkfifo', [fifo])
+
+      const ctx = await setup()
+      // a watch that would hang on the old adapter: the probe only returns if the
+      // FIFO never reaches `fs.watch`
+      const watcher = await watch(ctx, dir, () => {})
+      expect(watcher).to.be.ok
+
+      // the control: a normal file in the same directory still arrives
+      const path = write('fifo/control.txt')
+      const seen: string[] = []
+      await watch(ctx, dir, (filename) => { seen.push(filename) })
+      await touch(path, () => seen.length)
+      expect(seen).to.include(path)
+      await watcher.dispose()
+      rmSync(dir, { recursive: true, force: true })
+    }, 20000)
+
+    // The guard sits in `ignored`, which chokidar consults on each rescan and not only
+    // on the first one, so a FIFO that appears while the watch is running is dropped the
+    // same way. It is a separate case because the two reach `ignored` through different
+    // callers: the initial walk, and the directory event that follows the creation.
+    it.runIf(process.platform !== 'win32')('does not watch a FIFO that appears after the first scan', async () => {
+      const dir = resolve(fixture, 'fifo-late')
+      mkdirSync(dir, { recursive: true })
+      const control = write('fifo-late/control.txt')
+
+      const ctx = await setup()
+      const seen: string[] = []
+      await watch(ctx, dir, (filename) => { seen.push(filename) })
+      await touch(control, () => seen.length)
+
+      execFileSync('mkfifo', [resolve(dir, 'pipe')])
+      // a directory rescan is throttled to one per second, so the entry that is written
+      // second is what makes the scan include the FIFO for certain
+      await new Promise(r => setTimeout(r, 1200))
+      write('fifo-late/poke.txt')
+
+      const before = seen.length
+      await touch(control, () => seen.length > before)
+      expect(seen).to.include(control)
+      rmSync(dir, { recursive: true, force: true })
+    }, 20000)
+
+    // Naming a FIFO is the same rule as naming a path that is not there yet: `ready`
+    // fires, nothing is reported, and the watch starts if the entry becomes a regular
+    // file. Before the guard this case hung, so the assertion is that it returns at all.
+    it.runIf(process.platform !== 'win32')('reports nothing while the named path is a FIFO', async () => {
+      const dir = resolve(fixture, 'fifo-named')
+      mkdirSync(dir, { recursive: true })
+      const fifo = resolve(dir, 'pipe')
+      rmSync(fifo, { force: true })
+      execFileSync('mkfifo', [fifo])
+
+      const ctx = await setup()
+      const seen: string[] = []
+      await watch(ctx, fifo, (filename) => { seen.push(filename) })
+      expect(seen).to.deep.equal([])
+
+      // the entry becomes a regular file. The FIFO has to be removed first: writing to
+      // one blocks until a reader opens it, which would hang the test rather than the
+      // code under test.
+      rmSync(fifo)
+      const path = write('fifo-named/pipe')
+      await touch(path, () => seen.length)
+      expect([...new Set(seen)]).to.deep.equal([path])
+      rmSync(dir, { recursive: true, force: true })
+    }, 20000)
 
     it('rejects a `filter` entry leading outside the watched directory', async () => {
       const ctx = await setup()
