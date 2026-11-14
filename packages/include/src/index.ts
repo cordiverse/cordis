@@ -67,6 +67,9 @@ export interface ConfigIssue {
   location: SourceLocation
 }
 
+/** How long after a change to read once more, for a write the throttle never reported. */
+const CONFIRM = 60
+
 export class ConfigFileError extends Error {
   name = 'ConfigFileError'
 
@@ -292,7 +295,24 @@ export class Include extends EntryTree {
     })
 
     if (config.watch) {
-      ctx.fs.watch(this.url).on('change', () => this.refresh())
+      let timer: NodeJS.Timeout | undefined
+      // a timer has no caller to return a rejection to, so the failure is logged here
+      const fire = () => {
+        timer = undefined
+        this.refresh().catch(error => this.ctx.logger.warn(error))
+      }
+      this.ctx.effect(() => () => clearTimeout(timer))
+      ctx.fs.watch(this.url).on('change', () => {
+        // chokidar keeps one `change` per path per 50 ms, so a second write inside that window
+        // is never reported: the event is emitted for a state that does not persist. Waiting
+        // the window out before reading costs a single write the window itself, so read at once
+        // and read once more after it: the first read is final when the event carried the last
+        // write, the second covers the write that the throttle swallowed.
+        const read = this.refresh()
+        clearTimeout(timer)
+        timer = setTimeout(fire, CONFIRM)
+        return read
+      })
     }
   }
 
@@ -335,7 +355,7 @@ export class Include extends EntryTree {
 
   /**
    * Resolves once every pending read and write has been processed and the
-   * tree reflects the outcome. Unlike `refresh()`, this does wait for writes.
+   * tree reflects the outcome. `refresh()` ends here too, so both wait.
    */
   async flush() {
     while (this._draining || this._applyTask) {
