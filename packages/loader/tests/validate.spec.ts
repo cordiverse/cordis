@@ -97,8 +97,6 @@ describe('Loader: entry options validation', () => {
     const root = new Context()
     await root.use(MockLoader)
     const loader = root.loader as unknown as MockLoader
-    const errors: any[] = []
-    root.on('internal/error', error => errors.push(error))
     const foo = loader.mock('foo', () => {})
 
     await loader.read([{ id: 'a', name: 'foo' }, { id: 'b', name: 'foo' }])

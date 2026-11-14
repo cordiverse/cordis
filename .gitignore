@@ -22,7 +22,7 @@ yarn-debug.log
 yarn-error.log
 package-lock.json
 tsconfig.temp.json
-tsconfig.tsbuildinfo
+*.tsbuildinfo
 report.*.json
 
 .agents

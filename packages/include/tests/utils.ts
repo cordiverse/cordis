@@ -27,7 +27,7 @@ export const group = (id: string, config: any[]) => ({
  * fixture file; everything it created is disposed and removed after each test.
  */
 export function harness() {
-  let fiber: Fiber<Context> | undefined
+  let fiber: Fiber | undefined
   const files: string[] = []
 
   afterEach(async () => {

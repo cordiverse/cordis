@@ -275,7 +275,7 @@ describe('EntryTree.update: cross-tree moves', () => {
 
   it('rejects a move onto an id that the target tree already uses', async () => {
     const { id: tree, subtree } = await setup()
-    const id = await loader.create({ id: 'g', name: 'foo' } as any)
+    const id = await loader.create({ id: 'g', name: 'foo' })
     await loader.await()
     const entry = loader.store[id]!
     loader.changes = []

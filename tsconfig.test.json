@@ -3,9 +3,6 @@
   "compilerOptions": {
     "noEmit": true,
     "composite": false,
-    "types": [
-      "node",
-    ],
   },
   "include": [
     "**/*",

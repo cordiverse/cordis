@@ -14,7 +14,7 @@ function waitFor(condFn: () => any, timeout = 5000, interval = 100): Promise<voi
 
 describe('Include patches', () => {
   let ctx: Context
-  let fiber: Fiber<Context>
+  let fiber: Fiber
 
   afterEach(async () => {
     await fiber?.dispose()

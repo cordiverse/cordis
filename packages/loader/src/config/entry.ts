@@ -4,14 +4,14 @@ import { Loader } from '../index.ts'
 import { EntryGroup } from './group.ts'
 import { EntryTree, ModuleNotFoundError } from './tree.ts'
 import { patchIsolate } from './isolate.ts'
-import { evaluate, ExprTrace, formatIssues, formatLocation, interpolate, isJsExpr, relocate, swap } from './utils.ts'
+import { evaluate, ExprTrace, formatIssues, formatLocation, interpolate, isJsExpr, JsExpr, relocate, swap } from './utils.ts'
 
 export interface EntryOptions {
   id: string
   name: string
   config?: any
   group?: boolean | null
-  disabled?: boolean | null
+  disabled?: boolean | JsExpr | null
   inject?: Inject | null
   intercept?: Dict | null
 }

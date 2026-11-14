@@ -1,5 +1,11 @@
 import { Context } from 'cordis'
 
+declare module 'cordis' {
+  interface Events {
+    'hmr-test/get-multi'(label: string): string | undefined
+  }
+}
+
 const stats: any = ((globalThis as any).__hmrTest ??= {})
 
 export const name = 'component-multi'

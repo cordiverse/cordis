@@ -1,6 +1,12 @@
 import { Context } from 'cordis'
 import { version } from './drain-dep.ts'
 
+declare module 'cordis' {
+  interface Events {
+    'hmr-test/get-slow'(): string
+  }
+}
+
 const stats: any = ((globalThis as any).__hmrTest ??= {})
 
 export const name = 'component-slow'

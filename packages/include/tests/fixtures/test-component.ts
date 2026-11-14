@@ -1,5 +1,11 @@
 import { Context } from 'cordis'
 
+declare module 'cordis' {
+  interface Events {
+    'test/get-value'(): string
+  }
+}
+
 export const name = 'test-component'
 
 export let value = 'default'

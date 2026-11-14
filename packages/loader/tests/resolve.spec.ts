@@ -47,6 +47,7 @@ describe('bareImporter', () => {
   it('resolves bare specifiers against the project, not the loader', async () => {
     const { baseUrl } = await fixture()
     // The control: this package cannot see the fixture's dependency.
+    // @ts-expect-error: the dependency exists only in the fixture project
     await expect(import(/* @vite-ignore */ 'fixture-dep')).rejects.toThrow()
 
     const resolver = await createResolve(baseUrl)

@@ -1,5 +1,11 @@
 import { Context } from 'cordis'
 
+declare module 'cordis' {
+  interface Events {
+    'hmr-test/get-value'(): string
+  }
+}
+
 export const name = 'component-disabled-hmr'
 
 export let value = 'initial'

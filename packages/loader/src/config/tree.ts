@@ -138,7 +138,7 @@ export abstract class EntryTree {
     return entry.subgroup
   }
 
-  async create(options: Omit<EntryOptions, 'id'>, parent: string | null = null, position = Infinity) {
+  async create(options: Omit<EntryOptions, 'id'> & { id?: string }, parent: string | null = null, position = Infinity) {
     const group = this.resolveGroup(parent)
     const issues = validateOptions(options, EntryTree.sep, true)
     if (issues.length) throw new EntryValidationError(issues)
