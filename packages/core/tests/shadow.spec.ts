@@ -57,6 +57,97 @@ describe('Traceable caller', () => {
     expect(direct.outerShadow).toBe(outerOrigin!)
   })
 
+  it('returns private members as is and keeps the sites of the calling method', async () => {
+    let innerOrigin: Context
+    let outerOrigin: Context
+
+    class Inner extends Service {
+      constructor(ctx: Context) {
+        super(ctx, 'inner')
+        innerOrigin = ctx
+      }
+
+      inspect() {
+        return this._inspect()
+      }
+
+      _inspect() {
+        return {
+          caller: (this as any)[symbols.caller] as Context,
+          shadow: this.ctx[symbols.shadow] as Context,
+        }
+      }
+    }
+
+    class Outer extends Service {
+      static inject = ['inner']
+
+      constructor(ctx: Context) {
+        super(ctx, 'outer')
+        outerOrigin = ctx
+      }
+
+      inspect() {
+        return (this.ctx['inner'] as Inner).inspect()
+      }
+    }
+
+    const root = new Context()
+    await root.plugin(Inner)
+    await root.plugin(Outer)
+
+    expect((root['inner'] as Inner)._inspect).toBe(Inner.prototype._inspect)
+
+    let result!: ReturnType<Inner['inspect']>
+    await root.inject(['outer'], (ctx) => {
+      result = ctx['outer'].inspect()
+    })
+
+    expect(result.caller).toBe(outerOrigin!)
+    expect(result.shadow).toBe(innerOrigin!)
+  })
+
+  it('uses a service kept in a private field on behalf of the caller', async () => {
+    const disposed: string[] = []
+
+    class Inner extends Service {
+      constructor(ctx: Context) {
+        super(ctx, 'inner')
+      }
+
+      register(name: string) {
+        this.ctx.effect(() => () => disposed.push(name))
+      }
+    }
+
+    class Outer extends Service {
+      static inject = ['inner']
+
+      _inner: Inner
+
+      constructor(ctx: Context) {
+        super(ctx, 'outer')
+        this._inner = ctx['inner']
+      }
+
+      register(name: string) {
+        this._inner.register(name)
+      }
+    }
+
+    const root = new Context()
+    await root.plugin(Inner)
+    await root.plugin(Outer)
+
+    const fiber = root.inject(['outer'], (ctx) => {
+      ctx['outer'].register('caller')
+    })
+    await fiber
+    expect(disposed).toEqual([])
+    await fiber.dispose()
+    expect(disposed).toEqual(['caller'])
+  })
+
   it('applies the service inject when entered from root', async () => {
     class Inner extends Service {
       constructor(ctx: Context) {
