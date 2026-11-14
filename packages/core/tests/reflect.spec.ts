@@ -40,8 +40,8 @@ describe('Reflect', () => {
     expect(root.get('foo')).to.be.ok
     // bar is a mixin
     expect(root.get('bar')).to.be.undefined
-    // baseUrl is a property
-    expect(root.get('baseUrl')).to.be.undefined
+    // baz is a property
+    expect(root.extend({ baz: 1 }).get('baz')).to.be.undefined
 
     root.inject(['foo'], (ctx) => {
       warn.mock.resetCalls()

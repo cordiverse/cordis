@@ -37,9 +37,11 @@
     }
   },
   "peerDependencies": {
+    "@cordisjs/fs": "^2.0.0-rc.0",
     "cordis": "^4.0.0-rc.13"
   },
   "devDependencies": {
+    "@cordisjs/fs": "^2.0.0-rc.0",
     "cordis": "^4.0.0-rc.13"
   },
   "dependencies": {

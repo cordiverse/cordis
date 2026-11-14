@@ -267,20 +267,22 @@ export class Include extends EntryTree {
   private _seq = 0
 
   constructor(ctx: Context, public config: Include.Config) {
-    super(ctx)
-    this.enableLogs = config.enableLogs ?? ctx.fiber.entry?.parent.tree.enableLogs ?? false
     // On Windows, a drive-letter path is converted with `pathToFileURL`.
     // `new URL()` would read its `C:` as a URL scheme, which `fileURLToPath` rejects.
-    this.filename = fileURLToPath(process.platform === 'win32' && driveLetter.test(this.config.path)
-      ? pathToFileURL(this.config.path)
-      : new URL(this.config.path, this.ctx.baseUrl))
-    this.url = pathToFileURL(this.filename)
+    const filename = fileURLToPath(process.platform === 'win32' && driveLetter.test(config.path)
+      ? pathToFileURL(config.path)
+      : ctx.fs.resolve(config.path))
+    const url = pathToFileURL(filename)
+    // the entries of the file resolve their references against its directory
+    super(ctx.intercept('fs', { baseUrl: new URL('.', url).href }))
+    this.filename = filename
+    this.url = url
+    this.enableLogs = config.enableLogs ?? ctx.fiber.entry?.parent.tree.enableLogs ?? false
     const ext = extname(this.filename)
     if (!types[ext]) {
       throw new Error(`extension "${ext}" not supported`)
     }
     this.type = types[ext]
-    this.ctx.baseUrl = new URL('.', this.url).href
     ensureInsertIds(config.patches, id => !!this.store[id])
 
     ctx.on('internal/update', (config, next) => {

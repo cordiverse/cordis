@@ -104,10 +104,12 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@cordisjs/env@workspace:packages/env"
   dependencies:
+    "@cordisjs/fs": "npm:^2.0.0-rc.0"
     cordis: "npm:^4.0.0-rc.13"
     dotenv: "npm:^17.4.2"
     dotenv-expand: "npm:^12.0.3"
   peerDependencies:
+    "@cordisjs/fs": ^2.0.0-rc.0
     cordis: ^4.0.0-rc.13
   languageName: unknown
   linkType: soft
@@ -181,8 +183,6 @@ __metadata:
     cordis: ^4.0.0-rc.13
     node-addon-require-builtin: ^0.1.0
   peerDependenciesMeta:
-    "@cordisjs/fs":
-      optional: true
     node-addon-require-builtin:
       optional: true
   languageName: unknown
@@ -243,13 +243,17 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@cordisjs/loader@workspace:packages/loader"
   dependencies:
+    "@cordisjs/fs": "npm:^2.0.0-rc.0"
     "@cordisjs/logger-console": "npm:^1.0.1"
     cordis: "npm:^4.0.0-rc.13"
     cosmokit: "npm:^1.8.1"
   peerDependencies:
+    "@cordisjs/fs": ^2.0.0-rc.0
     cordis: ^4.0.0-rc.13
     node-addon-require-builtin: ^0.1.0
   peerDependenciesMeta:
+    "@cordisjs/fs":
+      optional: true
     node-addon-require-builtin:
       optional: true
   languageName: unknown
@@ -272,11 +276,13 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@cordisjs/package-manager@workspace:packages/package-manager"
   dependencies:
+    "@cordisjs/fs": "npm:^2.0.0-rc.0"
     cordis: "npm:^4.0.0-rc.13"
     cosmokit: "npm:^1.8.1"
     schemastery: "npm:^3.18.0"
     yaml: "npm:^2.9.1"
   peerDependencies:
+    "@cordisjs/fs": ^2.0.0-rc.0
     cordis: ^4.0.0-rc.13
   languageName: unknown
   linkType: soft

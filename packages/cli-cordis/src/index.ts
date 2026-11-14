@@ -4,11 +4,12 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { Context } from 'cordis'
 import type {} from '@cordisjs/cli'
+import type {} from '@cordisjs/fs'
 import type { Config } from './worker/index.ts'
 import kleur from 'kleur'
 
 export const name = 'cli-cordis'
-export const inject = ['cli']
+export const inject = ['cli', 'fs']
 
 interface Event {
   type: 'start' | 'shared' | 'heartbeat' | 'exit'
@@ -32,7 +33,7 @@ export function apply(ctx: Context, config: Config) {
     .option('-d, --daemon', 'Run as daemon', { default: config.daemon.enabled })
     .action(async ({ args, options }) => {
       const workerConfig: Config = { ...config }
-      workerConfig.baseUrl ??= ctx.baseUrl
+      workerConfig.baseUrl ??= ctx.fs.baseUrl
       if (args[0]) {
         workerConfig.path = args[0]
       }

@@ -25,11 +25,9 @@ describe('Include patches', () => {
   it('should load without patches', async () => {
     ctx = new Context()
     await ctx.use(LoggerConsole)
-    await ctx.use(Fs)
+    await ctx.use(Fs, { baseUrl: import.meta.url })
     await ctx.use(NodeFs)
-    fiber = await ctx.use(Loader, {
-      baseUrl: import.meta.url,
-    })
+    fiber = await ctx.use(Loader)
     await ctx.loader.create({
       name: '@cordisjs/include',
       config: {
@@ -43,11 +41,9 @@ describe('Include patches', () => {
   it('should disable an entry via patch', async () => {
     ctx = new Context()
     await ctx.use(LoggerConsole)
-    await ctx.use(Fs)
+    await ctx.use(Fs, { baseUrl: import.meta.url })
     await ctx.use(NodeFs)
-    fiber = await ctx.use(Loader, {
-      baseUrl: import.meta.url,
-    })
+    fiber = await ctx.use(Loader)
     await ctx.loader.create({
       name: '@cordisjs/include',
       config: {
@@ -65,11 +61,9 @@ describe('Include patches', () => {
   it('should override config via patch', async () => {
     ctx = new Context()
     await ctx.use(LoggerConsole)
-    await ctx.use(Fs)
+    await ctx.use(Fs, { baseUrl: import.meta.url })
     await ctx.use(NodeFs)
-    fiber = await ctx.use(Loader, {
-      baseUrl: import.meta.url,
-    })
+    fiber = await ctx.use(Loader)
     await ctx.loader.create({
       name: '@cordisjs/include',
       config: {
@@ -87,11 +81,9 @@ describe('Include patches', () => {
   it('should warn on name mismatch and skip patch', async () => {
     ctx = new Context()
     await ctx.use(LoggerConsole)
-    await ctx.use(Fs)
+    await ctx.use(Fs, { baseUrl: import.meta.url })
     await ctx.use(NodeFs)
-    fiber = await ctx.use(Loader, {
-      baseUrl: import.meta.url,
-    })
+    fiber = await ctx.use(Loader)
 
     let warned = false
     ;(ctx.logger as any).warn = () => { warned = true }
@@ -113,11 +105,9 @@ describe('Include patches', () => {
   it('should warn on non-existent id', async () => {
     ctx = new Context()
     await ctx.use(LoggerConsole)
-    await ctx.use(Fs)
+    await ctx.use(Fs, { baseUrl: import.meta.url })
     await ctx.use(NodeFs)
-    fiber = await ctx.use(Loader, {
-      baseUrl: import.meta.url,
-    })
+    fiber = await ctx.use(Loader)
     await ctx.loader.create({
       name: '@cordisjs/include',
       config: {
@@ -135,11 +125,9 @@ describe('Include patches', () => {
   it('should insert entries into root group', async () => {
     ctx = new Context()
     await ctx.use(LoggerConsole)
-    await ctx.use(Fs)
+    await ctx.use(Fs, { baseUrl: import.meta.url })
     await ctx.use(NodeFs)
-    fiber = await ctx.use(Loader, {
-      baseUrl: import.meta.url,
-    })
+    fiber = await ctx.use(Loader)
     await ctx.loader.create({
       name: '@cordisjs/include',
       config: {
@@ -162,11 +150,9 @@ describe('Include patches', () => {
   it('should insert entries into a specific group', async () => {
     ctx = new Context()
     await ctx.use(LoggerConsole)
-    await ctx.use(Fs)
+    await ctx.use(Fs, { baseUrl: import.meta.url })
     await ctx.use(NodeFs)
-    fiber = await ctx.use(Loader, {
-      baseUrl: import.meta.url,
-    })
+    fiber = await ctx.use(Loader)
     await ctx.loader.create({
       name: '@cordisjs/include',
       config: {
@@ -188,11 +174,9 @@ describe('Include patches', () => {
   it('should warn when inserting into a non-group entry', async () => {
     ctx = new Context()
     await ctx.use(LoggerConsole)
-    await ctx.use(Fs)
+    await ctx.use(Fs, { baseUrl: import.meta.url })
     await ctx.use(NodeFs)
-    fiber = await ctx.use(Loader, {
-      baseUrl: import.meta.url,
-    })
+    fiber = await ctx.use(Loader)
     await ctx.loader.create({
       name: '@cordisjs/include',
       config: {
@@ -215,11 +199,9 @@ describe('Include patches', () => {
   it('should apply multiple patches', async () => {
     ctx = new Context()
     await ctx.use(LoggerConsole)
-    await ctx.use(Fs)
+    await ctx.use(Fs, { baseUrl: import.meta.url })
     await ctx.use(NodeFs)
-    fiber = await ctx.use(Loader, {
-      baseUrl: import.meta.url,
-    })
+    fiber = await ctx.use(Loader)
     await ctx.loader.create({
       name: '@cordisjs/include',
       config: {
@@ -243,11 +225,9 @@ describe('Include patches', () => {
   it('should let a later patch address a row inserted by an earlier patch', async () => {
     ctx = new Context()
     await ctx.use(LoggerConsole)
-    await ctx.use(Fs)
+    await ctx.use(Fs, { baseUrl: import.meta.url })
     await ctx.use(NodeFs)
-    fiber = await ctx.use(Loader, {
-      baseUrl: import.meta.url,
-    })
+    fiber = await ctx.use(Loader)
     await ctx.loader.create({
       name: '@cordisjs/include',
       config: {
@@ -266,11 +246,9 @@ describe('Include patches', () => {
   it('should validate name consistency (matching name is ok)', async () => {
     ctx = new Context()
     await ctx.use(LoggerConsole)
-    await ctx.use(Fs)
+    await ctx.use(Fs, { baseUrl: import.meta.url })
     await ctx.use(NodeFs)
-    fiber = await ctx.use(Loader, {
-      baseUrl: import.meta.url,
-    })
+    fiber = await ctx.use(Loader)
     await ctx.loader.create({
       name: '@cordisjs/include',
       config: {

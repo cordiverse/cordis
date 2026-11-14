@@ -36,14 +36,19 @@
     "service"
   ],
   "devDependencies": {
+    "@cordisjs/fs": "^2.0.0-rc.0",
     "@cordisjs/logger-console": "^1.0.1",
     "cordis": "^4.0.0-rc.13"
   },
   "peerDependencies": {
+    "@cordisjs/fs": "^2.0.0-rc.0",
     "cordis": "^4.0.0-rc.13",
     "node-addon-require-builtin": "^0.1.0"
   },
   "peerDependenciesMeta": {
+    "@cordisjs/fs": {
+      "optional": true
+    },
     "node-addon-require-builtin": {
       "optional": true
     }

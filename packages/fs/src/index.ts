@@ -1,5 +1,6 @@
 import { Context, Service } from 'cordis'
 import { Awaitable } from 'cosmokit'
+import { pathToFileURL } from 'node:url'
 import { FsError } from './error.ts'
 import { FileRef } from './file.ts'
 import { Watcher, WatchOptions } from './watcher.ts'
@@ -43,17 +44,51 @@ function normalizePrefix(prefix: string | URL) {
   return href.endsWith('/') ? href : href + '/'
 }
 
+// the working directory as a URL with a trailing separator, on a runtime that has one
+function getWorkingDirectory() {
+  if (typeof process === 'undefined') return
+  const { href } = pathToFileURL(process.cwd())
+  return href.endsWith('/') ? href : href + '/'
+}
+
 /**
  * The file system service, which forwards each operation to the provider
  * mounted at its location.
  */
-export class Fs extends Service {
+export class Fs extends Service<Fs.Intercept> {
   private _mounts = new Map<string, Mount>()
   /** the connection that serves each watch, if any */
   private _watchers = new Map<Watcher, Connection | undefined>()
+  public config: Fs.Config
 
-  constructor(ctx: Context) {
+  constructor(ctx: Context, config: Fs.Config = {}) {
     super(ctx, 'fs')
+    this.config = { ...config, baseUrl: config.baseUrl ?? getWorkingDirectory() }
+  }
+
+  /**
+   * The base URL of relative references. Each `baseUrl` of the config and of
+   * the intercepts, from the outermost to the innermost, is resolved against
+   * the result of the preceding ones.
+   */
+  get baseUrl(): string | undefined {
+    return this[Service.resolveIntercept]().baseUrl
+  }
+
+  [Service.mergeIntercept](...values: Fs.Intercept[]): Fs.Intercept {
+    let baseUrl: string | undefined
+    for (const value of [this.config, ...values]) {
+      if (value?.baseUrl === undefined) continue
+      try {
+        baseUrl = new URL(value.baseUrl, baseUrl).href
+      } catch (error) {
+        const message = baseUrl
+          ? `invalid base URL ${JSON.stringify(value.baseUrl)}`
+          : `cannot resolve the base URL ${JSON.stringify(value.baseUrl)} without an outer one`
+        throw new TypeError(message, { cause: error })
+      }
+    }
+    return { ...Object.assign({}, ...values), baseUrl }
   }
 
   /**
@@ -81,19 +116,19 @@ export class Fs extends Service {
   }
 
   /**
-   * Resolve a URL reference against `ctx.baseUrl`. A reference that cannot be
-   * parsed, including a relative reference without `ctx.baseUrl`, throws an
+   * Resolve a URL reference against `baseUrl`. A reference that cannot be
+   * parsed, including a relative reference without `baseUrl`, throws an
    * `FsError` with the code `InvalidPath`.
    */
   resolve(path: string | URL): URL {
     if (path instanceof URL) return path
-    const base = this.ctx.baseUrl
+    const base = this.baseUrl
     try {
       return new URL(path, base)
     } catch (error) {
       // a reference without a scheme is relative, and resolvable against a base
       const message = !base && !/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(path)
-        ? `cannot resolve the relative reference ${JSON.stringify(path)} without ctx.baseUrl`
+        ? `cannot resolve the relative reference ${JSON.stringify(path)} without a base URL`
         : `invalid URL ${JSON.stringify(path)}`
       throw new FsError('InvalidPath', undefined, message, { cause: error })
     }
@@ -218,6 +253,24 @@ export class Fs extends Service {
         await connection?.dispose()
       }
     })
+  }
+}
+
+export namespace Fs {
+  export interface Intercept {
+    /**
+     * The base URL of relative references. A relative value is resolved
+     * against the base URL of the outer context.
+     */
+    baseUrl?: string
+  }
+
+  export interface Config {
+    /**
+     * The base URL of relative references, which is absolute. Defaults to
+     * the working directory, on a runtime that has one.
+     */
+    baseUrl?: string
   }
 }
 

@@ -139,6 +139,8 @@ function toPath(url: string) {
 }
 
 class Hmr extends Service {
+  static inject = ['fs']
+
   /** The resolved `base`. `watch.files` and logged paths are relative to it. */
   public baseDir: string
 
@@ -170,18 +172,14 @@ class Hmr extends Service {
     this._modules = new ModuleCaches(loader)
     ctx.effect(() => activate())
 
-    // `base` is resolved:
-    // - on Windows, as a drive-letter path through `pathToFileURL`, since
-    //   `new URL()` would read `C:` as a URL scheme;
-    // - as a URL against `ctx.baseUrl`, or as a file URL without one;
-    // - otherwise, against the working directory.
-    this.baseDir = process.platform === 'win32' && config.base && driveLetter.test(config.base)
-      ? fileURLToPath(pathToFileURL(config.base))
-      : ctx.baseUrl || config.base?.startsWith('file:')
-        ? fileURLToPath(new URL(config.base || '.', ctx.baseUrl))
-        : resolve(config.base || '.')
+    // `base` is resolved against `ctx.fs.baseUrl`, except that a Windows
+    // drive-letter path goes through `pathToFileURL`, since `new URL()` would
+    // read `C:` as a URL scheme.
+    this.baseDir = fileURLToPath(process.platform === 'win32' && config.base && driveLetter.test(config.base)
+      ? pathToFileURL(config.base)
+      : ctx.fs.resolve(config.base || '.'))
 
-    ctx.inject(['fs'], ctx => this._watch(ctx))
+    this._watch(ctx)
   }
 
   /**
@@ -766,7 +764,7 @@ namespace Hmr {
   }
 
   export const Config: z<Config> = z.object({
-    base: z.string().description('The base directory. Defaults to `ctx.baseUrl`.'),
+    base: z.string().description('The base directory, resolved against `ctx.fs.baseUrl`. Defaults to the directory of `ctx.fs.baseUrl`.'),
     watch: z.object({
       enabled: z.boolean().default(false).description('Reload on file changes. Requires the `fs` service.'),
       files: z.array(String).role('table').default([

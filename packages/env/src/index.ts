@@ -2,6 +2,7 @@ import { Context } from 'cordis'
 import { parse } from 'dotenv'
 import { expand } from 'dotenv-expand'
 import { readFileSync } from 'node:fs'
+import type {} from '@cordisjs/fs'
 
 declare module 'cordis' {
   interface Context {
@@ -27,7 +28,7 @@ export default function env(ctx: Context) {
   const merged: Record<string, string> = {}
   for (const file of files) {
     try {
-      Object.assign(merged, parse(readFileSync(new URL(file, ctx.baseUrl))))
+      Object.assign(merged, parse(readFileSync(ctx.fs.resolve(file))))
     } catch {}
   }
 
@@ -44,3 +45,5 @@ export default function env(ctx: Context) {
   // Register process.env as ctx.env
   ctx.provide('env', process.env)
 }
+
+env.inject = ['fs']
