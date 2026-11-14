@@ -280,4 +280,378 @@ describe('Fiber: concurrent updates', () => {
     expect(fiber.state).to.equal(FiberState.DISPOSED)
     await root.fiber.dispose()
   })
+
+  // #194: a listener that accepts the configuration without `next()` is invisible
+  // to the state machine, so two updates can settle out of order
+  describe('handler accepted without next()', () => {
+    async function harness() {
+      const root = new Context()
+      const started = Promise.withResolvers<void>()
+      const release = Promise.withResolvers<void>()
+      const runs: number[] = []
+      let applied = 0
+      const fiber = await root.plugin((ctx: Context) => {
+        ctx.on('internal/update', async (config: { value: number }) => {
+          runs.push(config.value)
+          if (config.value === 1) {
+            started.resolve()
+            await release.promise
+          }
+          applied = config.value
+        })
+      }, { value: 0 })
+      return {
+        root, started, release, runs, fiber,
+        get applied() { return applied },
+      }
+    }
+
+    it('replays a superseded handler against the stored config', async () => {
+      const h = await harness()
+      const first = Promise.resolve(h.fiber.update({ value: 1 }))
+      await h.started.promise
+      const second = Promise.resolve(h.fiber.update({ value: 2 }))
+      await second
+      expect(h.applied).to.equal(2)
+      h.release.resolve()
+      await first
+
+      expect(h.fiber.config).to.deep.equal({ value: 2 })
+      expect(h.applied).to.equal(2)
+      // the third run is the repair: the handler is re-run, not rewound
+      expect(h.runs).to.deep.equal([1, 2, 2])
+      await h.root.fiber.dispose()
+    })
+
+    it('keeps the plugin loaded when updates only overlap', async () => {
+      // #194: a plugin that accepts updates without calling next() must not be
+      // unloaded just because updates overlapped
+      const root = new Context()
+      const started = Promise.withResolvers<void>()
+      const release = Promise.withResolvers<void>()
+      const bodies: number[] = []
+      const disposed: number[] = []
+      const fiber = await root.plugin((ctx: Context, config: { value: number }) => {
+        bodies.push(config.value)
+        ctx.on('internal/update', async (config: { value: number }) => {
+          if (config.value === 1) {
+            started.resolve()
+            await release.promise
+          }
+        })
+        return () => { disposed.push(config.value) }
+      }, { value: 0 })
+
+      const first = Promise.resolve(fiber.update({ value: 1 }))
+      await started.promise
+      const second = Promise.resolve(fiber.update({ value: 2 }))
+      release.resolve()
+      await Promise.all([first, second, fiber.await()])
+
+      // an overlap unloads nothing: the body runs once and is never disposed
+      expect(bodies).to.deep.equal([0])
+      expect(disposed).to.deep.equal([])
+      expect(fiber.state).to.equal(FiberState.ACTIVE)
+      await root.fiber.dispose()
+    })
+
+    it('settles a burst of updates on the last config', async () => {
+      const h = await harness()
+      const first = Promise.resolve(h.fiber.update({ value: 1 }))
+      await h.started.promise
+      const rest = [2, 3, 4, 5].map((value) => Promise.resolve(h.fiber.update({ value })))
+      h.release.resolve()
+      await Promise.all([first, ...rest])
+
+      expect(h.fiber.config).to.deep.equal({ value: 5 })
+      expect(h.applied).to.equal(5)
+      await h.root.fiber.dispose()
+    })
+
+    it('replays once for a burst of updates', async () => {
+      const h = await harness()
+      const first = Promise.resolve(h.fiber.update({ value: 1 }))
+      await h.started.promise
+      const rest = [2, 3, 4, 5].map((value) => Promise.resolve(h.fiber.update({ value })))
+      h.release.resolve()
+      await Promise.all([first, ...rest])
+
+      // five runs plus one replay of the last config; replaying per superseded
+      // caller behind a per-revision guard runs the handler eight times and
+      // settles on the value the held chain wrote, the repair suppressed
+      expect(h.runs).to.deep.equal([1, 2, 3, 4, 5, 5])
+      await h.root.fiber.dispose()
+    })
+
+    it('accumulates handler-registered listeners across a replay', async () => {
+      const root = new Context()
+      const started = Promise.withResolvers<void>()
+      const release = Promise.withResolvers<void>()
+      let registrations = 0
+      let calls = 0
+      const fiber = await root.plugin((ctx: Context) => {
+        // a listener registered in the handler body is created once per run, so the
+        // replay repeats it; one in the plugin body would be created once per execution
+        ctx.on('internal/update', async (config: { value: number }) => {
+          registrations++
+          ;(ctx as any).on('probe-event', () => { calls++ })
+          if (config.value === 1) {
+            started.resolve()
+            await release.promise
+          }
+        })
+      }, { value: 0 })
+
+      const first = Promise.resolve(fiber.update({ value: 1 }))
+      await started.promise
+      const second = Promise.resolve(fiber.update({ value: 2 }))
+      await second
+      release.resolve()
+      await first
+
+      await (root as any).emit('probe-event')
+      expect(registrations).to.equal(3)
+      expect(calls).to.equal(3)
+      await root.fiber.dispose()
+    })
+
+    // A2 of #194: an update that is still held must not leave a replacement
+    // execution on its own state. The older handler does run after the restart
+    // — the paper keeps that in the emission layer (4.3.5) — but the settled
+    // state is the stored configuration, not the one the older handler wrote.
+    it('settles a replacement execution on the stored config', async () => {
+      const root = new Context()
+      const started = Promise.withResolvers<void>()
+      const release = Promise.withResolvers<void>()
+      let applied = 0
+      const order: string[] = []
+      const fiber = await root.plugin((ctx: Context, config: { value: number }) => {
+        applied = config.value
+        order.push('apply:' + config.value)
+        ctx.on('internal/update', async (config: { value: number }, next: () => any) => {
+          if (config.value === 1) {
+            started.resolve()
+            await release.promise
+          }
+          order.push('write:' + config.value)
+          applied = config.value
+          await next()
+        })
+      }, { value: 0 })
+
+      const first = Promise.resolve(fiber.update({ value: 1 }))
+      await started.promise
+      const second = Promise.resolve(fiber.update({ value: 2 }))
+      await second
+      release.resolve()
+      await Promise.all([first, second])
+      await new Promise((resolve) => setTimeout(resolve, 40))
+
+      expect(fiber.config).to.deep.equal({ value: 2 })
+      expect(applied).to.equal(2)
+      // the older write is still visible, and the replay is what corrects it:
+      // write:2 (the superseding chain), write:1 (the held handler resuming
+      // after the restart), write:2 again (the replay). The middle one is the
+      // emission layer of 4.3.5, the last one is the price of the repair.
+      expect(order.filter((line) => line.startsWith('write:'))).to.deep.equal(['write:2', 'write:1', 'write:2'])
+      await root.fiber.dispose()
+    })
+
+    it('adds no restart of its own when the handler calls next()', async () => {
+      const root = new Context()
+      const started = Promise.withResolvers<void>()
+      const release = Promise.withResolvers<void>()
+      // one plugin body run per restart
+      let runs = 0
+      const fiber = await root.plugin(async (ctx: Context) => {
+        runs++
+        ctx.on('internal/update', async (config: { value: number }, next: () => any) => {
+          if (config.value === 1) {
+            started.resolve()
+            await release.promise
+          }
+          return next()
+        })
+      }, { value: 0 })
+
+      const first = Promise.resolve(fiber.update({ value: 1 }))
+      await started.promise
+      const second = Promise.resolve(fiber.update({ value: 2 }))
+      await second
+      expect(runs).to.equal(2)
+      release.resolve()
+      await first
+      await fiber.await()
+
+      // the late `next()` restarts once; the replay that follows re-runs the
+      // handler against a no-op terminal, so it adds no restart of its own
+      expect(runs).to.equal(3)
+      await root.fiber.dispose()
+    })
+
+    it('does not commit the configuration again when it replays', async () => {
+      const h = await harness()
+      const commits: number[] = []
+      h.root.on('internal/commit', (_fiber, config: { value: number }) => {
+        commits.push(config.value)
+      })
+
+      const first = Promise.resolve(h.fiber.update({ value: 1 }))
+      await h.started.promise
+      const second = Promise.resolve(h.fiber.update({ value: 2 }))
+      await second
+      h.release.resolve()
+      await first
+      await h.fiber.await()
+
+      // the replay re-runs the handlers only; committing again would write the
+      // configuration back a second time on every superseded update
+      expect(commits).to.deep.equal([1, 2])
+      await h.root.fiber.dispose()
+    })
+
+    it('does not replay once the fiber has been unloaded', async () => {
+      const root = new Context()
+      const started = Promise.withResolvers<void>()
+      const release = Promise.withResolvers<void>()
+      const seen: any[] = []
+      const withdraw = root.provide('dep', {})
+      let target: any
+      // a listener bound to the fiber is destroyed with its execution, so this
+      // one has to outlive the unload to observe what the replay would run
+      root.on('internal/update', async function (this: any, config: any) {
+        if (this !== target) return
+        seen.push(config)
+        if (config?.value === 1) {
+          started.resolve()
+          await release.promise
+        }
+      }, { global: true })
+
+      target = await root.plugin({ inject: ['dep'], apply() {} }, { value: 0 })
+
+      const first = Promise.resolve(target.update({ value: 1 }))
+      await started.promise
+      withdraw()
+      await new Promise<void>((resolve) => setTimeout(resolve, 0))
+      expect(target.state).to.equal(FiberState.PENDING)
+
+      const second = Promise.resolve(target.update({ value: 2 }))
+      await second
+      release.resolve()
+      await first
+      await new Promise<void>((resolve) => setTimeout(resolve, 20))
+
+      // `update()` takes the restart branch without consulting the handlers while
+      // the fiber is unloaded: replaying here would hand the surviving listener the
+      // stored `{ value: 2 }` a second time, a configuration this execution never
+      // accepted — measured, `[{ value: 1 }, { value: 2 }]` with the guard removed
+      expect(seen).to.deep.equal([{ value: 1 }])
+      await root.fiber.dispose()
+    })
+
+    it('refuses acquisition from a handler that outlives disposal', async () => {
+      const root = new Context()
+      const started = Promise.withResolvers<void>()
+      const release = Promise.withResolvers<void>()
+      const errors: string[] = []
+      const disposed: string[] = []
+      let listenerCalls = 0
+      let uid: number | null = null
+      let state = -1
+      let acquired = 0
+      const fiber = await root.plugin((ctx: Context) => {
+        // registered before the update, so teardown owns them rather than the handler
+        ctx.effect(() => () => { disposed.push('effect') })
+        ;(ctx as any).on('probe-event', () => { listenerCalls++ })
+        ctx.on('internal/update', async (config: { value: number }) => {
+          if (config.value !== 1) return
+          started.resolve()
+          await release.promise
+          // disposal overtook this handler: what it may still do is the question
+          uid = ctx.fiber.uid
+          state = ctx.fiber.state
+          for (const acquire of [
+            () => ctx.on('probe-event', () => {}),
+            () => ctx.effect(() => {}),
+            () => ctx.provide('probe-value', 1),
+            () => ctx.set('probe-value', 1),
+          ]) {
+            try {
+              acquire()
+              acquired++
+            } catch (error) {
+              errors.push((error as Error).message)
+            }
+          }
+        })
+      }, { value: 0 })
+
+      const updating = Promise.resolve(fiber.update({ value: 1 }))
+      await started.promise
+      // the hooks are live before the disposal: this is the control for the emit below
+      await (root as any).emit('probe-event')
+      await fiber.dispose()
+      release.resolve()
+      await updating
+
+      expect(uid).to.equal(null)
+      expect(state).to.equal(FiberState.DISPOSED)
+      expect(acquired).to.equal(0)
+      expect(errors).to.deep.equal([
+        'cannot create effect on inactive context',
+        'cannot create effect on inactive context',
+        'cannot create effect on inactive context',
+        'cannot set property "probe-value" without provide',
+      ])
+      // nothing registered through cordis outlives the disposal: the effect's
+      // disposer ran, and the listener is unwound, so the emit calls it no more
+      await (root as any).emit('probe-event')
+      expect(listenerCalls).to.equal(1)
+      expect(disposed).to.deep.equal(['effect'])
+    })
+
+    it('converges when a handler updates the fiber itself', async () => {
+      const root = new Context()
+      const started = Promise.withResolvers<void>()
+      const release = Promise.withResolvers<void>()
+      const runs: number[] = []
+      let applied = 0
+      let selfUpdate = false
+      const fiber = await root.plugin((ctx: Context) => {
+        ctx.on('internal/update', async (config: { value: number }) => {
+          runs.push(config.value)
+          if (config.value === 1) {
+            started.resolve()
+            await release.promise
+          }
+          applied = config.value
+          // a handler may chain an update of its own: the nested chain runs
+          // against the config it names, and the replay that follows has to
+          // settle on that config rather than loop back to the one before it
+          if (!selfUpdate) {
+            selfUpdate = true
+            void fiber.update({ value: 5 })
+          }
+        })
+      }, { value: 0 })
+
+      const first = Promise.resolve(fiber.update({ value: 1 }))
+      await started.promise
+      const second = Promise.resolve(fiber.update({ value: 2 }))
+      await second
+      expect(fiber.config).to.deep.equal({ value: 5 })
+      release.resolve()
+      await first
+      await fiber.await()
+
+      // three handler chains (1, 2, 5) and one replay of the newest config: the
+      // nested update is a chain of its own, and the replay neither re-runs the
+      // superseded ones nor starts a second loop of its own
+      expect(runs).to.deep.equal([1, 2, 5, 5])
+      expect(applied).to.equal(5)
+      expect(fiber.config).to.deep.equal({ value: 5 })
+      await root.fiber.dispose()
+    })
+  })
 })
