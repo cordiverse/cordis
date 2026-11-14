@@ -3,6 +3,9 @@
   "compilerOptions": {
     "paths": {},
   },
+  "include": [
+    "**/*",
+  ],
   "references": [
     { "path": ".." },
   ],

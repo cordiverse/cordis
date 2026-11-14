@@ -5,6 +5,6 @@
     "composite": false,
   },
   "include": [
-    "${configDir}/**/*",
+    "**/*",
   ],
 }
