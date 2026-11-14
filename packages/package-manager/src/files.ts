@@ -36,12 +36,18 @@ export async function createRootSpelling(realRoot: string) {
   }
 }
 
+/** Whether the path is not there, as opposed to being there and unreadable. */
+export function isMissing(error: unknown) {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code
+  return code === 'ENOENT' || code === 'ENOTDIR'
+}
+
 /** Read a text file, or `undefined` if it does not exist. */
 export async function readText(path: string) {
   try {
     return await readFile(path, 'utf8')
-  } catch (error: any) {
-    if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return
+  } catch (error) {
+    if (isMissing(error)) return
     throw error
   }
 }
