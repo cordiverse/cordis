@@ -24,7 +24,7 @@ async function rejects(promise: Promise<unknown>, code: FsError.Code) {
 }
 
 describe('NodeFs', () => {
-  let fiber: Fiber<Context> | undefined
+  let fiber: Fiber | undefined
   let ctx: Context
 
   beforeEach(async () => {
