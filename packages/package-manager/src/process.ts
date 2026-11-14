@@ -155,7 +155,9 @@ export function run(file: string, args: string[], options: RunOptions): Promise<
       if (!timeout) return
       clearTimeout(timer)
       timer = setTimeout(() => {
-        terminate(new RunError(`${file} produced no output for ${timeout}ms`, output))
+        // the agent runs several commands, each with its own timeout, so the
+        // command is named here as it is in the exit message below
+        terminate(new RunError(`${file} ${args.join(' ')} produced no output for ${timeout}ms`, output))
       }, timeout)
     }
     const onAbort = () => terminate(signal!.reason)
