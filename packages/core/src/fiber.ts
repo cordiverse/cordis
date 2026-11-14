@@ -535,16 +535,28 @@ export class Fiber {
 
   update(config: any, noSave = false): Awaitable<void> {
     const fiber = this.ctx.fiber
-    fiber.assertActive()
+    try {
+      fiber.assertActive()
+    } catch (cause) {
+      // a synchronous throw escapes `.catch()`; return a handled rejection instead
+      const rejected = Promise.reject(cause)
+      rejected.catch(() => {})
+      return rejected
+    }
     const loaded = fiber._runner.epoch !== INACTIVE
     const resolved = loaded ? fiber._resolve(config) : undefined
     if (!noSave) fiber.context.emit('internal/commit', fiber, config)
     fiber.config = config
     fiber._error = undefined
     const restart = () => fiber.restart()
-    const result = loaded
-      ? fiber.context.waterfall(fiber, 'internal/update', resolved, restart)
-      : restart()
+    let result: any
+    try {
+      result = loaded
+        ? fiber.context.waterfall(fiber, 'internal/update', resolved, restart)
+        : restart()
+    } catch (error) {
+      result = Promise.reject(error)
+    }
     // a listener may veto the restart, in which case there is nothing to await
     if (result === undefined) return
     const task = Promise.resolve(result)

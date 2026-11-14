@@ -182,6 +182,28 @@ describe('Fiber', () => {
     expect(fiber.state).to.equal(FiberState.FAILED)
   })
 
+  // The same guarantee on the disposed path: the rejection is created here
+  // rather than by the fiber, so a dropped return value is handled explicitly.
+  it('update on a disposed fiber does not leak a dropped failure', async () => {
+    const root = new Context()
+    const fiber = root.plugin(() => {})
+    await fiber.await()
+    await fiber.dispose()
+
+    const leaked: unknown[] = []
+    const onUnhandled = (reason: unknown) => leaked.push(reason)
+    process.on('unhandledRejection', onUnhandled)
+    try {
+      // A caller that neither awaits nor attaches a handler.
+      fiber.update({})
+      await sleep()
+      await sleep()
+    } finally {
+      process.off('unhandledRejection', onUnhandled)
+    }
+    expect(leaked).to.have.length(0)
+  })
+
   it('dispose error', async () => {
     const root = new Context()
     const error = mock.fn()
@@ -365,6 +387,71 @@ describe('Fiber', () => {
     expect(Object.hasOwn(consumer, 'config')).to.equal(false)
     expect(Object.hasOwn(consumer, 'state')).to.equal(false)
     expect(Object.hasOwn(consumer, 'inertia')).to.equal(false)
+  })
+
+  it('update on a disposed fiber is observable through .catch()', async () => {
+    const root = new Context()
+    const fiber = root.plugin(() => {})
+    await fiber.await()
+    await fiber.dispose()
+
+    let syncThrew = false
+    let promise: any
+    try {
+      // A caller that never awaits still attaches a handler.
+      promise = fiber.update({})
+    } catch {
+      syncThrew = true
+    }
+    expect(syncThrew).to.equal(false)
+    const caught = await new Promise<any>((resolve) => {
+      promise?.catch?.(resolve)
+    })
+    expect(caught).to.be.an('error')
+    expect(caught.code).to.equal('INACTIVE_EFFECT')
+  })
+
+  it('update listener failure is observable through .catch()', async () => {
+    const root = new Context()
+    const fiber = root.plugin((ctx) => {
+      ctx.on('internal/update', () => {
+        throw new Error('update failed')
+      })
+    })
+    await fiber.await()
+
+    let caught: any
+    await fiber.update({}).catch((e) => { caught = e })
+    expect(caught).to.be.an('error')
+    expect(caught.message).to.equal('update failed')
+  })
+
+  // `_error` marks a failed *load*, and `_setEpoch()` returns early while it is set
+  // ("a failed fiber only recovers through update()"). A listener that throws is not a
+  // failed load, so recording it there would freeze epoch propagation until the next
+  // update -- a provider replaced afterwards would not reach the consumers.
+  it('does not make a listener failure look like a failed load', async () => {
+    const root = new Context()
+    let fail = true
+    const applied: number[] = []
+    const fiber = root.plugin((ctx, config: { value: number }) => {
+      applied.push(config.value)
+      ctx.on('internal/update', (config: any, next: any) => {
+        if (fail) throw new Error('update failed')
+        return next()
+      })
+    }, { value: 1 })
+    await fiber.await()
+    expect(applied).to.deep.equal([1])
+
+    await fiber.update({ value: 2 }).catch(() => {})
+    // the load did not fail, so nothing is recorded as one
+    expect((fiber as any)._error).to.be.undefined
+
+    // and the fiber is not frozen: the next update still runs and still applies
+    fail = false
+    await fiber.update({ value: 3 })
+    expect(applied).to.deep.equal([1, 3])
   })
 })
 
