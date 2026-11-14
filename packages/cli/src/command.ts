@@ -228,7 +228,8 @@ export class Command<A extends any[] = any[], O extends {} = {}> {
       // normal argument
       // 1. tokens not starting with `-`
       // 2. quoted tokens
-      // 3. numeric tokens at numeric type
+      // 3. numeric tokens, unless `unknownNegative` reserves negatives for options
+      //    or the token is a known option name — no argument type is consulted
       let { content, quotes } = input.next()
       if (isParam(content)) {
         if (!param) throw new CliSyntaxError('too many arguments')

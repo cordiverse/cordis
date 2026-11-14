@@ -39,7 +39,7 @@ const RESERVED_WORDS = ['prototype', 'then']
 
 // - is a symbol
 // - is a reserved word (prototype, then)
-// - is a number string (0, 1, 2, ...)
+// - round-trips through `parseInt` (0, 1, 2, ... and `NaN`)
 // - starts with `_`
 function isSpecialProperty(prop: string | symbol): prop is symbol {
   return typeof prop === 'symbol'

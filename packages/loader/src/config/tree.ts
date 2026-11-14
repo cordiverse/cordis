@@ -218,8 +218,9 @@ export abstract class EntryTree {
       } else {
         // An `import()` written here anchors on this file, reaching the loader's
         // own dependencies. A helper inside the config file's project supplies
-        // that project as the anchor; the plain import applies when no project
-        // can be located.
+        // that project as the anchor; the plain import applies when no project can
+        // be located, and also when the helper cannot be written, e.g. on a
+        // read-only filesystem.
         const resolve = await createResolve(this.ctx.baseUrl)
         let url = name
         if (resolve) {

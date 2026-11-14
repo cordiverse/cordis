@@ -146,7 +146,10 @@ function setup(paths: Set<string>) {
       : original.readPackageJSON(path, isESM, base, specifier)
   }
 
-  /** The manifest found by a lookup through `manifests`, or `kDefer` if none of them is invalidated. */
+  /**
+   * The manifest found by a lookup through `manifests`: `kDefer` when none of them is
+   * invalidated, `undefined` when they are but none exists.
+   */
   const find = (manifests: string[], specifier?: string) => {
     const invalidated = manifests.map(path => isInvalidated(state, path))
     if (!invalidated.includes(true)) return kDefer
@@ -227,7 +230,8 @@ function setup(paths: Set<string>) {
    * Run `load` while `parent.path` reads as `\0<path>` once. The native
    * `_load` reads it first, to key the request cache, so the lookup and the
    * record of the request fall under a key that no request before the
-   * installation has been recorded under.
+   * installation has been recorded under. A `path` that is not a configurable
+   * value property has no bucket: `load` runs unchanged.
    */
   const inBucket = <T>(parent: Module, load: () => T) => {
     const descriptor = Object.getOwnPropertyDescriptor(parent, 'path')

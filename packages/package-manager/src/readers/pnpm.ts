@@ -70,7 +70,11 @@ function referenceOf(dependency: PnpmImporterDependency | undefined) {
 
 const DEPENDENCY_FIELDS: PnpmDependencyField[] = ['dependencies', 'devDependencies', 'optionalDependencies']
 
-/** Read the install state of a hoisted layout from `.modules.yaml`, which records the locations of the packages. */
+/**
+ * Read the install state of a hoisted layout. `.modules.yaml` gives the locations of
+ * the packages; a `link:` dependency of an importer is read from the lockfile and
+ * named after the manifest at its target, which `.modules.yaml` does not record.
+ */
 export async function readPnpmHoistedState(root: string): Promise<InstallState> {
   const state: InstallState = new Map()
   const { modules, lock = {} } = await readRecords(root)
@@ -119,7 +123,8 @@ function createPatternMatcher(patterns: string[]) {
     return { ignore, match: (input: string) => regexp.test(input) }
   })
   if (!matchers.some(({ ignore }) => !ignore)) {
-    // without an include pattern, every alias matches unless an ignore pattern matches it
+    // without an include pattern, an alias matches unless an ignore pattern matches it; no
+    // pattern at all matches nothing
     return (input: string) => matchers.length > 0 && !matchers.some(({ match }) => match(input))
   }
   return (input: string) => {

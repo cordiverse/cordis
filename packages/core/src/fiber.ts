@@ -192,9 +192,10 @@ export class Fiber {
             this.ctx.registry._unregister(runtime)
           }
           this._setEpoch(INACTIVE)
-          // `inertia` never rejects: `_reload` and `_unload` both log their
-          // own work errors. A rejection here would mean the logger itself
-          // failed, so let it propagate.
+          // `inertia` rejects only if something outside the work's own `try`
+          // blocks throws: `_reload` and `_unload` log their own work errors,
+          // but both end in `_updateState()`, whose `internal/status` emit is
+          // unguarded.
           while (this.inertia) {
             await this.inertia
           }
@@ -432,7 +433,7 @@ export class Fiber {
   private _setEpoch(epoch: string) {
     const oldEpoch = this._runner.epoch
     if (epoch === oldEpoch) return
-    // a failed fiber only recovers through update(), which clears _error
+    // a failed fiber recovers only through update() or _replace(), which clear _error
     if (this._error) return
     this._runner.epoch = epoch
     if (this.inertia) return

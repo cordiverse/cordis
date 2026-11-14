@@ -20,7 +20,7 @@ export function apply(ctx: Context) {
     const host = url.hostname
 
     // figure out if we want socks v4 or v5, based on the "protocol" used.
-    // Defaults to 5.
+    // `socks` and `socks5h` both mean v5; any other scheme throws below.
     switch (url.protocol.slice(0, -1)) {
       case 'socks4':
         shouldLookup = true
