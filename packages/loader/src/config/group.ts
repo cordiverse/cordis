@@ -18,7 +18,7 @@ export class EntryGroup {
     return this.ctx
   }
 
-  async create(options: Omit<EntryOptions, 'id'>) {
+  async create(options: Omit<EntryOptions, 'id'> & { id?: string }) {
     const issues = validateOptions(options, EntryTree.sep)
     if (issues.length) throw this._reject(options as EntryOptions, issues)
     const id = this.tree.ensureId(options)
