@@ -18,7 +18,7 @@ function isBerryBin(dir: string) {
 export function createEnv(base: Env = process.env): Env {
   const env: Env = { ...base }
   for (const key of Object.keys(env)) {
-    if (/^npm_(package_|lifecycle_|config_user_agent$|execpath$|node_execpath$|command$)/.test(key)) {
+    if (/^npm_(package_|lifecycle_|config_|execpath$|node_execpath$|command$)/.test(key)) {
       delete env[key]
     }
   }
