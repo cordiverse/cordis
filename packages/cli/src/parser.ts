@@ -68,8 +68,9 @@ export namespace Input {
     }
 
     drain(): string {
-      const input = this.input
+      const input = this.buffer.reverse().map(({ content }) => content).concat(this.input)
       this.input = []
+      this.buffer = []
       return input.join(' ')
     }
 
