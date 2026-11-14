@@ -100,10 +100,12 @@ export class Loader extends EntryTree {
 
     ctx.on('internal/commit', (fiber, config) => {
       if (!fiber.entry || fiber.parent.fiber?.entry === fiber.entry) return
-      const unparse = fiber.runtime?.Config?.['simplify']
+      // `config` is the config as passed in, not the resolved one: interpolation
+      // returns a new value, so expressions ride on as written and never get
+      // statically baked into what is persisted.
       const { entry } = fiber
       const legacy = { ...entry.options }
-      entry.options.config = unparse ? unparse(config) : config
+      entry.options.config = simplify(fiber, config)
       entry.parent.tree.commit({ id: entry.options.id, group: entry.parent, options: entry.options, legacy })
     })
 
@@ -192,6 +194,32 @@ export class Loader extends EntryTree {
 
   unwrapExports(exports: any) {
     return unwrapExports(exports)
+  }
+}
+
+/**
+ * The value to persist for `config`, with the keys the schema calls defaults left
+ * out, so a config file that only sets a few options does not grow one entry per
+ * plugin.
+ *
+ * `simplify` is a method on the schema and reads `this`, so it is called on the
+ * schema rather than through a detached reference.
+ *
+ * A schema that throws here is not a reason to lose the commit: the config as
+ * written still describes what the fiber runs, so it is persisted as written and
+ * the failure is reported. Without this, one schema that cannot simplify would
+ * stop every later change to that entry from being written at all -- silently,
+ * because the handler returns before `tree.commit()`.
+ */
+function simplify(fiber: Fiber, config: any) {
+  const schema = fiber.runtime?.Config
+  const unparse = schema?.['simplify']
+  if (!unparse) return config
+  try {
+    return unparse.call(schema, config)
+  } catch (error) {
+    fiber.ctx.logger.warn('cannot simplify the config of', fiber.entry?.options.name, error)
+    return config
   }
 }
 
