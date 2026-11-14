@@ -1,0 +1,51 @@
+{
+  "name": "@cordisjs/server",
+  "description": "HTTP and WebSocket server service for Cordis",
+  "version": "1.7.0",
+  "sideEffects": false,
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "files": [
+    "lib"
+  ],
+  "author": "Shigma <shigma10826@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cordiverse/cordis.git",
+    "directory": "packages/server/core"
+  },
+  "bugs": {
+    "url": "https://github.com/cordiverse/cordis/issues"
+  },
+  "homepage": "https://github.com/cordiverse/cordis",
+  "keywords": [
+    "cordis",
+    "router",
+    "http",
+    "ws",
+    "websocket",
+    "server",
+    "service",
+    "component"
+  ],
+  "peerDependencies": {
+    "cordis": "^4.0.0-rc.13"
+  },
+  "devDependencies": {
+    "@cordisjs/logger-console": "^1.0.1",
+    "@types/accepts": "^1.3.7",
+    "cordis": "^4.0.0-rc.13"
+  },
+  "dependencies": {
+    "@standard-schema/spec": "^1.1.0",
+    "@types/ws": "^8.18.1",
+    "accepts": "^1.3.8",
+    "cosmokit": "^1.8.1",
+    "path-to-regexp": "^8.3.0",
+    "path-to-regexp-typed": "^8.0.0",
+    "schemastery": "^3.18.0",
+    "ws": "^8.19.0"
+  }
+}

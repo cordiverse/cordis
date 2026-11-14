@@ -1,7 +1,7 @@
 // Environment: PR_TITLE, PR_HEAD_REF, PR_BODY.
 
 import { execFileSync } from 'node:child_process'
-import { readdirSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import semver from 'semver'
 
 const errors = []
@@ -14,6 +14,14 @@ function readManifest(path, ref) {
   const content = ref ? git('show', `${ref}:${path}`) : readFileSync(path, 'utf8')
   return JSON.parse(content)
 }
+
+// the manifests of the workspaces, excluding the root
+const manifestPaths = execFileSync('yarn', ['workspaces', 'list', '--json'], { encoding: 'utf8' })
+  .trim()
+  .split('\n')
+  .map(line => JSON.parse(line).location)
+  .filter(location => location !== '.')
+  .map(location => `${location}/package.json`)
 
 const version = readManifest('packages/core/package.json').version
 const tag = `v${version}`
@@ -41,13 +49,13 @@ const lockfiles = ['yarn.lock', 'package-lock.json', 'pnpm-lock.yaml']
 
 // a release pull request only bumps versions and updates the lockfile accordingly
 for (const path of git('diff', '--name-only', 'HEAD^1', 'HEAD').split('\n')) {
-  if (!lockfiles.includes(path) && !/^packages\/[^/]+\/package\.json$/.test(path)) {
+  if (!lockfiles.includes(path) && !manifestPaths.includes(path)) {
     errors.push(`${path} is changed`)
   }
 }
 
 // every internal dependency range is satisfied by the version in this repository
-const manifests = readdirSync('packages').map(name => readManifest(`packages/${name}/package.json`))
+const manifests = manifestPaths.map(path => readManifest(path))
 const versions = Object.fromEntries(manifests.map(manifest => [manifest.name, manifest.version]))
 for (const manifest of manifests) {
   if (manifest.private) continue

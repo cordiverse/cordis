@@ -4,6 +4,8 @@
     "paths": {
       "cordis": ["./packages/core/src/index.ts"],
       "create-cordis": ["./packages/create/src/index.ts"],
+      "@cordisjs/server": ["./packages/server/core/src/index.ts"],
+      "@cordisjs/server-*": ["./packages/server/*/src/index.ts"],
       "@cordisjs/*": ["./packages/*/src/index.ts"],
     },
   },

@@ -280,6 +280,88 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@cordisjs/server-acl@workspace:packages/server/acl":
+  version: 0.0.0-use.local
+  resolution: "@cordisjs/server-acl@workspace:packages/server/acl"
+  dependencies:
+    "@cordisjs/logger-console": "npm:^1.0.1"
+    "@cordisjs/server": "npm:^1.7.0"
+    "@types/ws": "npm:^8.18.1"
+    cordis: "npm:^4.0.0-rc.13"
+    schemastery: "npm:^3.18.0"
+    ws: "npm:^8.19.0"
+  peerDependencies:
+    "@cordisjs/server": ^1.7.0
+    cordis: ^4.0.0-rc.13
+  languageName: unknown
+  linkType: soft
+
+"@cordisjs/server-echo@workspace:packages/server/echo":
+  version: 0.0.0-use.local
+  resolution: "@cordisjs/server-echo@workspace:packages/server/echo"
+  dependencies:
+    "@cordisjs/server": "npm:^1.7.0"
+    cordis: "npm:^4.0.0-rc.13"
+    schemastery: "npm:^3.18.0"
+  peerDependencies:
+    "@cordisjs/server": ^1.7.0
+    cordis: ^4.0.0-rc.13
+  languageName: unknown
+  linkType: soft
+
+"@cordisjs/server-proxy@workspace:packages/server/proxy":
+  version: 0.0.0-use.local
+  resolution: "@cordisjs/server-proxy@workspace:packages/server/proxy"
+  dependencies:
+    "@cordisjs/http": "npm:^1.6.0"
+    "@cordisjs/logger-console": "npm:^1.0.1"
+    "@cordisjs/server": "npm:^1.7.0"
+    cordis: "npm:^4.0.0-rc.13"
+    schemastery: "npm:^3.18.0"
+    undici: "npm:^8.1.0"
+  peerDependencies:
+    "@cordisjs/http": ^1.6.0
+    "@cordisjs/server": ^1.7.0
+    cordis: ^4.0.0-rc.13
+  languageName: unknown
+  linkType: soft
+
+"@cordisjs/server-static@workspace:packages/server/static":
+  version: 0.0.0-use.local
+  resolution: "@cordisjs/server-static@workspace:packages/server/static"
+  dependencies:
+    "@cordisjs/fetch-file": "npm:^1.0.3"
+    "@cordisjs/logger-console": "npm:^1.0.1"
+    "@cordisjs/server": "npm:^1.7.0"
+    cordis: "npm:^4.0.0-rc.13"
+    picomatch: "npm:^4.0.0"
+    schemastery: "npm:^3.18.0"
+  peerDependencies:
+    "@cordisjs/server": ^1.7.0
+    cordis: ^4.0.0-rc.13
+  languageName: unknown
+  linkType: soft
+
+"@cordisjs/server@npm:^1.7.0, @cordisjs/server@workspace:packages/server/core":
+  version: 0.0.0-use.local
+  resolution: "@cordisjs/server@workspace:packages/server/core"
+  dependencies:
+    "@cordisjs/logger-console": "npm:^1.0.1"
+    "@standard-schema/spec": "npm:^1.1.0"
+    "@types/accepts": "npm:^1.3.7"
+    "@types/ws": "npm:^8.18.1"
+    accepts: "npm:^1.3.8"
+    cordis: "npm:^4.0.0-rc.13"
+    cosmokit: "npm:^1.8.1"
+    path-to-regexp: "npm:^8.3.0"
+    path-to-regexp-typed: "npm:^8.0.0"
+    schemastery: "npm:^3.18.0"
+    ws: "npm:^8.19.0"
+  peerDependencies:
+    cordis: ^4.0.0-rc.13
+  languageName: unknown
+  linkType: soft
+
 "@cordisjs/timer@workspace:packages/timer":
   version: 0.0.0-use.local
   resolution: "@cordisjs/timer@workspace:packages/timer"
@@ -1220,6 +1302,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/accepts@npm:^1.3.7":
+  version: 1.3.7
+  resolution: "@types/accepts@npm:1.3.7"
+  dependencies:
+    "@types/node": "npm:*"
+  checksum: 10c0/7b21efc78b98ed57063ac31588f871f11501c080cd1201ca3743cf02ee0aee74bdb5a634183bc0987dc8dc582b26316789fd203650319ccc89a66cf88311d64f
+  languageName: node
+  linkType: hard
+
 "@types/babel__code-frame@npm:^7.27.0":
   version: 7.27.0
   resolution: "@types/babel__code-frame@npm:7.27.0"
@@ -1300,6 +1391,15 @@ __metadata:
   version: 1.0.2
   resolution: "@types/which-pm-runs@npm:1.0.2"
   checksum: 10c0/5ab6f194db9e9501ca07153534e709a52c92ea46932b42a7f996a1f9acfdc03fdc5259740b9991e071f5410cce1ae9a5e682cad4bd8cee6f7185a56779d95c2f
+  languageName: node
+  linkType: hard
+
+"@types/ws@npm:^8.18.1":
+  version: 8.18.2
+  resolution: "@types/ws@npm:8.18.2"
+  dependencies:
+    "@types/node": "npm:*"
+  checksum: 10c0/8cf79499d26df06ffc27109fc86f1400371a5932082a4c1269be3f11e22b9e5a403a4ba2c1a3245d5fae420c270571aa833142a3d7fdce8f6cd24a45c52a98e4
   languageName: node
   linkType: hard
 
@@ -1430,6 +1530,16 @@ __metadata:
   version: 5.0.0
   resolution: "abbrev@npm:5.0.0"
   checksum: 10c0/8e88f5c798ea4562d28c5a3e9ad69e3879890bc5d695d8f2dffb8609be4c890aacc8f80ef4553fdd2c6a62d70c2ce8bc57b38074e383beb7487bdafa9ed42ea5
+  languageName: node
+  linkType: hard
+
+"accepts@npm:^1.3.8":
+  version: 1.3.8
+  resolution: "accepts@npm:1.3.8"
+  dependencies:
+    mime-types: "npm:~2.1.34"
+    negotiator: "npm:0.6.3"
+  checksum: 10c0/3a35c5f5586cfb9a21163ca47a5f77ac34fa8ceb5d17d2fa2c0d81f41cbd7f8c6fa52c77e2c039acc0f4d09e71abdc51144246900f6bef5e3c4b333f77d89362
   languageName: node
   linkType: hard
 
@@ -2526,7 +2636,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"mime-types@npm:^2.1.35":
+"mime-types@npm:^2.1.35, mime-types@npm:~2.1.34":
   version: 2.1.35
   resolution: "mime-types@npm:2.1.35"
   dependencies:
@@ -2585,6 +2695,13 @@ __metadata:
   bin:
     nanoid: bin/nanoid.cjs
   checksum: 10c0/b994b4e396730f8be2520923284e2040d61eaee55cc6d4935ef6d38d34bafdc46133eda4d3faea5073bda545aa6079d82b886caeac5c731cf9ac18bcc1301425
+  languageName: node
+  linkType: hard
+
+"negotiator@npm:0.6.3":
+  version: 0.6.3
+  resolution: "negotiator@npm:0.6.3"
+  checksum: 10c0/3ec9fd413e7bf071c937ae60d572bc67155262068ed522cf4b3be5edbe6ddf67d095ec03a3a14ebf8fc8e95f8e1d61be4869db0dbb0de696f6b837358bd43fc2
   languageName: node
   linkType: hard
 
@@ -2781,6 +2898,22 @@ __metadata:
   languageName: node
   linkType: hard
 
+"path-to-regexp-typed@npm:^8.0.0":
+  version: 8.0.0
+  resolution: "path-to-regexp-typed@npm:8.0.0"
+  peerDependencies:
+    path-to-regexp: ^8.0.0
+  checksum: 10c0/3f6459f8606fdf19a6c82f316c3b1ae2d9fdb1e844d0ff0ee5f1291ad7630cc29426a4808c1a4264d0a23fc87e6bbc2f5b5d250a8521b22884ec1b9a5be96d6c
+  languageName: node
+  linkType: hard
+
+"path-to-regexp@npm:^8.3.0":
+  version: 8.4.2
+  resolution: "path-to-regexp@npm:8.4.2"
+  checksum: 10c0/05b115c49b47ad252ce05faa32930f643f23769c68b8bcfe78ad833545140c48bbffb3266986d6c8d5db13a64cf12e07e0d72d9882cab830efeefa553533ebaf
+  languageName: node
+  linkType: hard
+
 "path-type@npm:^4.0.0":
   version: 4.0.0
   resolution: "path-type@npm:4.0.0"
@@ -2816,7 +2949,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"picomatch@npm:^4.0.3, picomatch@npm:^4.0.4, picomatch@npm:^4.0.5, picomatch@npm:^4.0.7":
+"picomatch@npm:^4.0.0, picomatch@npm:^4.0.3, picomatch@npm:^4.0.4, picomatch@npm:^4.0.5, picomatch@npm:^4.0.7":
   version: 4.0.7
   resolution: "picomatch@npm:4.0.7"
   checksum: 10c0/beb6ae02c43ae44e84883b90830196d9046b1726ead292adcf7f57945e0bb0d992d68563d87e03b484b6f3c9a5c6defda7523477f047d7f0e663f126cc01787f
@@ -3732,6 +3865,21 @@ __metadata:
   version: 1.0.2
   resolution: "wrappy@npm:1.0.2"
   checksum: 10c0/56fece1a4018c6a6c8e28fbc88c87e0fbf4ea8fd64fc6c63b18f4acc4bd13e0ad2515189786dd2c30d3eec9663d70f4ecf699330002f8ccb547e4a18231fc9f0
+  languageName: node
+  linkType: hard
+
+"ws@npm:^8.19.0":
+  version: 8.23.0
+  resolution: "ws@npm:8.23.0"
+  peerDependencies:
+    bufferutil: ^4.0.1
+    utf-8-validate: ">=5.0.2"
+  peerDependenciesMeta:
+    bufferutil:
+      optional: true
+    utf-8-validate:
+      optional: true
+  checksum: 10c0/1de9b70701c03cdb1b22abd17a1488dc6d22b4dc36a8c32b173d955356ea3634e78aea8ec734a78201dbb34f5a402d9603df32ef267bd477228cd54ae158e2f8
   languageName: node
   linkType: hard
 
