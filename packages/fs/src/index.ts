@@ -1,9 +1,11 @@
 import { Context, Service } from 'cordis'
 import { Awaitable } from 'cosmokit'
 import { FsError } from './error.ts'
+import { FileRef } from './file.ts'
 import { Watcher, WatchOptions } from './watcher.ts'
 
 export * from './error.ts'
+export * from './file.ts'
 export * from './watcher.ts'
 
 declare module 'cordis' {
@@ -22,6 +24,15 @@ interface Mount {
 interface Connection {
   mount: Mount
   dispose: () => Awaitable<void>
+}
+
+export type AccessMode = 'write'
+
+const accessModes: readonly string[] = ['write'] satisfies AccessMode[]
+
+export interface RemoveOptions {
+  /** A missing location is not an error. */
+  force?: boolean
 }
 
 function normalizePrefix(prefix: string | URL) {
@@ -69,14 +80,23 @@ export class Fs extends Service {
     }, 'ctx.fs.mount()')
   }
 
-  /** Resolve a URL reference against `ctx.baseUrl`. */
+  /**
+   * Resolve a URL reference against `ctx.baseUrl`. A reference that cannot be
+   * parsed, including a relative reference without `ctx.baseUrl`, throws an
+   * `FsError` with the code `InvalidPath`.
+   */
   resolve(path: string | URL): URL {
     if (path instanceof URL) return path
     const base = this.ctx.baseUrl
-    if (!base && !URL.canParse(path)) {
-      throw new TypeError(`cannot resolve the relative reference ${JSON.stringify(path)} without ctx.baseUrl`)
+    try {
+      return new URL(path, base)
+    } catch (error) {
+      // a reference without a scheme is relative, and resolvable against a base
+      const message = !base && !/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(path)
+        ? `cannot resolve the relative reference ${JSON.stringify(path)} without ctx.baseUrl`
+        : `invalid URL ${JSON.stringify(path)}`
+      throw new FsError('InvalidPath', undefined, message, { cause: error })
     }
-    return new URL(path, base)
   }
 
   private _match(url: URL): Mount | undefined {
@@ -94,6 +114,13 @@ export class Fs extends Service {
     const mount = this._match(url)
     if (!mount) throw new FsError('NoProvider', url, `no provider is mounted for ${url.href}`)
     return mount
+  }
+
+  private _provider<K extends Operation>(url: URL, name: K, mount = this._route(url)) {
+    if (!mount.provider[name]) {
+      throw new FsError('NotSupported', url, `the provider mounted at ${mount.prefix} does not support ${name}()`)
+    }
+    return mount.provider as FsProvider & Required<Pick<FsProvider, K>>
   }
 
   private _connect(watcher: Watcher, mount: Mount) {
@@ -132,6 +159,53 @@ export class Fs extends Service {
     return Promise.all(stops).then(() => {})
   }
 
+  /** Create a reference to a file. The location is resolved now, and routed at each operation. */
+  file(path: string | URL): FileRef {
+    return new FileRef(this, this.resolve(path))
+  }
+
+  /**
+   * Resolve unless the operation is known to be denied: a missing location
+   * rejects with `NotFound`, and a denial by the storage with `PermissionDenied`.
+   */
+  async access(path: string | URL, mode: AccessMode): Promise<void> {
+    // checked here, so that a provider receives only the modes it is declared to receive
+    if (!accessModes.includes(mode)) {
+      throw new TypeError(`expected an access mode of ${accessModes.map(mode => JSON.stringify(mode)).join(', ')}, got ${JSON.stringify(mode)}`)
+    }
+    const url = this.resolve(path)
+    return this._provider(url, 'access').access(url, mode)
+  }
+
+  /**
+   * Rename an entry. An existing file at `dest` is replaced; a non-empty
+   * directory fails with `DirectoryNotEmpty`. Locations of two different
+   * mounts fail with `CrossesDevices`.
+   */
+  async rename(src: string | URL, dest: string | URL): Promise<void> {
+    const from = this.resolve(src)
+    const to = this.resolve(dest)
+    const mount = this._route(from)
+    if (this._route(to) !== mount) {
+      throw new FsError('CrossesDevices', from, `cannot rename ${from.href} to ${to.href} of another mount`)
+    }
+    return this._provider(from, 'rename', mount).rename(from, to)
+  }
+
+  /**
+   * Remove a file or an empty directory. A symbolic link is removed itself,
+   * also when named with a trailing separator, and its target is not touched.
+   */
+  async remove(path: string | URL, options: RemoveOptions = {}): Promise<void> {
+    const url = this.resolve(path)
+    try {
+      await this._provider(url, 'remove').remove(url)
+    } catch (error) {
+      if (options.force && error instanceof FsError && error.code === 'NotFound') return
+      throw error
+    }
+  }
+
   /** Watch a file or a directory. The watch ends with the calling fiber. */
   watch(path: string | URL, options: WatchOptions = {}): Watcher {
     const url = this.resolve(path)
@@ -147,7 +221,29 @@ export class Fs extends Service {
   }
 }
 
+type Operation = 'read' | 'write' | 'access' | 'rename' | 'remove'
+
+/**
+ * A provider of the locations below its mount. An operation fails with an
+ * `FsError`; a missing method makes it fail with `NotSupported`.
+ */
 export interface FsProvider {
+  /**
+   * Return a stream of the content of a file. A failure, including a missing
+   * file, errors the stream.
+   */
+  read?(url: URL): ReadableStream<Uint8Array>
+  /**
+   * Replace the content of a file with the data of `body`, creating the file
+   * but not its parent directory. An error of `body` rejects the write.
+   */
+  write?(url: URL, body: ReadableStream<Uint8Array>): Promise<void>
+  /** Reject when the operation of `mode` is known to be denied. */
+  access?(url: URL, mode: AccessMode): Promise<void>
+  /** Rename an entry to a location of the same mount. */
+  rename?(src: URL, dest: URL): Promise<void>
+  /** Remove a file or an empty directory, and fail with `NotFound` on a missing location. */
+  remove?(url: URL): Promise<void>
   /**
    * Start serving `watcher`, and return a function that disposes it. The
    * provider reports through `watcher.emit()`, with a `ready` once the initial
@@ -158,23 +254,19 @@ export interface FsProvider {
 
 export interface BaseFs extends FsProvider {}
 
-/** A provider that mounts itself, at `config.mount` or at its static `mount`. */
+/** A provider that mounts itself at `config.mount`. */
 export abstract class BaseFs {
   static inject = ['fs']
-  /** The default mount point of the subclass. */
-  static mount?: string
 
-  constructor(public ctx: Context, config: BaseFs.Config = {}) {
-    const mount = config.mount ?? (new.target as typeof BaseFs).mount
-    if (!mount) throw new TypeError('expected a mount point in the config')
-    ctx.fs.mount(mount, this)
+  constructor(public ctx: Context, config: BaseFs.Config) {
+    ctx.fs.mount(config.mount, this)
   }
 }
 
 export namespace BaseFs {
   export interface Config {
     /** a scheme such as `s3:`, or a URL such as `file:///` */
-    mount?: string
+    mount: string
   }
 }
 
