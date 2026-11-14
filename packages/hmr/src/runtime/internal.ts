@@ -116,11 +116,13 @@ export type ModuleLoader = ModuleLoaderV1 | ModuleLoaderV2
  */
 export function requireInternal(id: string): any {
   const require = createRequire(import.meta.url)
-  if (process.execArgv.includes('--expose-internals')) {
-    try {
-      return require(id)
-    } catch {}
-  }
+  // Try the module rather than predict it from `argv`: a prediction matches only
+  // the spellings it knows, and Node accepts `_` for `-` in every flag, so
+  // `--expose_internals` reaches the module while a check for the hyphenated
+  // spelling reports that it cannot.
+  try {
+    return require(id)
+  } catch {}
   try {
     return require('node-addon-require-builtin').requireBuiltin(id)
   } catch {}
