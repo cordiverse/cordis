@@ -61,6 +61,43 @@ function isAggregateError(error: any): error is Error & { errors: Error[] } {
   return error instanceof Error && Array.isArray(error['errors'])
 }
 
+/**
+ * Every sequence a terminal consumes without showing it: CSI (colour, cursor) and
+ * OSC (a hyperlink, a window title). Counting these as visible text shortens the
+ * line by their length, and cutting inside one leaves the rest of it on screen.
+ */
+// eslint-disable-next-line no-control-regex
+const SEQUENCE = /\u001b(?:\[[0-?]*[ -/]*[@-~]|\][\s\S]*?(?:\u0007|\u001b\\))/g
+// the same, anchored at a cursor: at most one sequence is consumed per step
+const SEQUENCE_AT = new RegExp(SEQUENCE.source, 'y')
+/** Only a colour sequence changes what has to be closed at the cut. */
+// eslint-disable-next-line no-control-regex
+const COLOR = /\u001b\[[0-9;]*m/g
+
+/** Cuts at `maxLength` visible characters, never leaving a colour open or splitting a surrogate pair. */
+function truncate(line: string, maxLength: number): string {
+  const shown = [...line.replace(SEQUENCE, '')].length
+  if (shown <= maxLength) return line
+  let visible = 0, i = 0
+  while (i < line.length && visible < maxLength) {
+    SEQUENCE_AT.lastIndex = i
+    if (SEQUENCE_AT.exec(line)) {
+      i = SEQUENCE_AT.lastIndex
+      continue
+    }
+    // a code point above the BMP takes two UTF-16 units; take both or neither
+    i += line.codePointAt(i)! > 0xffff ? 2 : 1
+    visible += 1
+  }
+  const cut = i
+  if (cut >= line.length) return line
+  const kept = line.slice(0, cut)
+  const sequences = kept.match(COLOR) ?? []
+  // a reset closes every colour, so the last sequence decides the state
+  const last = sequences[sequences.length - 1]
+  return kept + '...' + (last && last !== '\u001b[0m' ? '\u001b[0m' : '')
+}
+
 export class Logger {
   static color(exporter: Exporter, code: number, value: any, decoration = '') {
     if (!exporter.colors) return '' + value
@@ -106,9 +143,7 @@ export class Logger {
     }
 
     const { maxLength = 10240 } = exporter
-    return format.split(/\r?\n/g).map(line => {
-      return line.slice(0, maxLength) + (line.length > maxLength ? '...' : '')
-    }).join('\n')
+    return format.split(/\r?\n/g).map(line => truncate(line, maxLength)).join('\n')
   }
 
   constructor(options: LoggerOptions, private service: LoggerService) {
