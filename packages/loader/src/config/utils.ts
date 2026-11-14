@@ -155,7 +155,8 @@ export class EntryValidationError extends TypeError {
   }
 }
 
-// only `disabled` takes an expression
+// an expression is accepted wherever a config value is interpolated: `config`,
+// `inject` and `intercept`; `disabled` is the only other field that takes one
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value) && !isJsExpr(value)
 }

@@ -74,7 +74,9 @@ interface YarnPackagePaths {
  * data of the pnpm linker is recorded:
  *
  * - by yarn 4, in `linkersCustomData` under `{"name":"PnpmLinker","version":3}`;
- * - by yarn 3.2 and later, in `installersCustomData` under `{"name":"PnpmInstaller","version":2}`.
+ * - by yarn 3.2 and 3.x, in `installersCustomData` under
+ *   `{"name":"PnpmInstaller","version":2}` — yarn 4 keeps the same two keys in the
+ *   first shape, so the version decides which field to read, not "3.2 and later".
  */
 interface YarnInstallState {
   linkersCustomData?: Map<string, { pathsByLocator: Map<string, YarnPackagePaths> }>

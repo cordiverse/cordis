@@ -77,7 +77,7 @@ export class ConfigFileError extends Error {
   }
 }
 
-/** The file changed under us between the pre-check and the rename. */
+/** The file changed or disappeared between the pre-check and the rename. */
 class StaleWriteError extends Error {
   name = 'StaleWriteError'
 }
@@ -426,8 +426,10 @@ export class Include extends EntryTree {
         throw new ConfigFileError('parse', this.filename, undefined, [{ message, location }])
       }
     }
-    // An empty or truncated file (routine mid-edit) parses to `undefined`, so
-    // every non-array shape is rejected here as one "invalid file" signal.
+    // A file that is empty, `null` or truncated mid-edit arrives here as
+    // something that is not an array -- `toJS()` answers `null` for the first
+    // two and a partial document for the third -- so every non-array shape is
+    // rejected as one "invalid file" signal.
     if (!Array.isArray(data)) {
       const message = 'config file must be a top-level array'
       const { document, lines } = syntax ?? parseSyntax(content)

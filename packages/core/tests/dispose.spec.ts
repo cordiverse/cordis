@@ -54,7 +54,8 @@ describe('Effects', () => {
       {
         label: 'anonymous',
         children: [
-          // only root level anonymous effects are included
+          // an effect yielded inside another becomes its child (`collect` in
+          // `fiber.effect`), so only the outermost ones are top-level entries here
           { label: 'ctx.on("custom-event")', children: [] },
           {
             label: 'anonymous',

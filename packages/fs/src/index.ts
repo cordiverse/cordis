@@ -44,8 +44,8 @@ function normalizePrefix(prefix: string | URL) {
 }
 
 /**
- * The file system service, which forwards each operation to the provider
- * mounted at its location.
+ * The file system service, which routes a watch to the provider mounted at
+ * its location.
  */
 export class Fs extends Service {
   private _mounts = new Map<string, Mount>()
@@ -62,8 +62,13 @@ export class Fs extends Service {
    * contains it. The mount ends with the calling fiber.
    *
    * Every watch follows the routing: a change of the mounts moves it to the
-   * provider its location goes to, and a watch without a provider is resumed
-   * once one is mounted. Changes while a watch has no provider are not reported.
+   * provider its location goes to, and an existing watch whose provider goes away
+   * is suspended until another one covers it. Changes while it is suspended are
+   * not reported.
+   *
+   * This is about watches that already exist. `watch()` needs a provider at the
+   * moment it is called and throws `NoProvider` otherwise, so a watch cannot be
+   * created first and mounted later.
    */
   mount(prefix: string | URL, provider: FsProvider) {
     const key = normalizePrefix(prefix)
@@ -206,7 +211,12 @@ export class Fs extends Service {
     }
   }
 
-  /** Watch a file or a directory. The watch ends with the calling fiber. */
+  /**
+   * Watch a file or a directory. The watch ends with the calling fiber.
+   *
+   * A provider has to cover `path` now: this throws `NoProvider` otherwise. Once
+   * the watch exists, `mount()` keeps it on whatever provider serves it.
+   */
   watch(path: string | URL, options: WatchOptions = {}): Watcher {
     const url = this.resolve(path)
     const mount = this._route(url)
