@@ -217,6 +217,12 @@ export class Fs extends Service {
         this._watchers.delete(watcher)
         await connection?.dispose()
       }
+    // routed per call rather than closed over the mount above: `mount()` reconnects
+    // existing watchers through `_reroute`, and a captured provider would keep
+    // answering for a location that is now served by another backend
+    }, (url) => {
+      const provider = this._match(url)?.provider
+      return provider?.shape?.(url)
     })
   }
 }
@@ -250,6 +256,14 @@ export interface FsProvider {
    * scan is done, and reports nothing once the returned function is called.
    */
   watch?(watcher: Watcher): () => Awaitable<void>
+  /**
+   * The type `url` has now, or `undefined` when the provider cannot read it.
+   * `Watcher.shape` and `Watcher.stale` are answered from here, so a backend
+   * that is not Node needs no `node:fs`: a provider without this method gets a
+   * watch that reports `stale: false`, because it has nothing to compare
+   * against.
+   */
+  shape?(url: URL): 'file' | 'dir' | undefined
 }
 
 export interface BaseFs extends FsProvider {}

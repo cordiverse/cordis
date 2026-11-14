@@ -1,6 +1,5 @@
 import { Watcher, WatchFilter } from '@cordisjs/fs'
 import { watch } from 'chokidar'
-import { statSync } from 'node:fs'
 import { dirname, posix, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import picomatch from 'picomatch'
@@ -71,7 +70,11 @@ export function watchPath(watcher: Watcher, filename: string) {
   const keep = watcher.options.filter && toPredicate(watcher.options.filter)
   // A file replaced through a rename, as by an atomic write, is lost by a
   // watch on the file itself, so its directory is watched instead.
-  const isFile = !statSync(filename, { throwIfNoEntry: false })?.isDirectory()
+  // `shape` is fixed by the one `stat` the constructor takes, and that one cannot
+  // throw; a second `stat` here would raise on a symlink loop or a permission wall
+  // and take `ctx.fs.watch()` down before it can report anything. Reading it also
+  // keeps the watch root and the reported shape from disagreeing.
+  const isFile = watcher.shape !== 'dir'
   const root = isFile ? dirname(filename) : filename
   const instance = watch(root, {
     ignoreInitial: true,
@@ -90,7 +93,15 @@ export function watchPath(watcher: Watcher, filename: string) {
     },
   })
   instance.on('error', error => watcher.emit('error', error))
-  instance.on('change', path => watcher.emit('change', pathToFileURL(resolve(path))))
+  // A directory is not a modified file; chokidar reports the entry with its new
+  // type. That report is the only sign on the event stream that the entry
+  // changed shape, and delivering it would break the promise that `change`
+  // reports a modified file. It is dropped here; the change is still observable
+  // through `stale`, which reads the location instead of remembering this event.
+  instance.on('change', (path, stats) => {
+    if (stats?.isDirectory()) return
+    watcher.emit('change', pathToFileURL(resolve(path)))
+  })
   instance.once('ready', () => watcher.emit('ready'))
   // `close()` removes the listeners at once.
   return () => instance.close()
