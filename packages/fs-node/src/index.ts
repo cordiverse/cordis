@@ -1,7 +1,7 @@
 import { AccessMode, BaseFs, FsError, Watcher } from '@cordisjs/fs'
 import { Context } from 'cordis'
-import { access, constants, FileHandle, lstat, open, rename, rmdir, unlink } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { access, constants, FileHandle, lstat, open, rename, rmdir, stat, unlink } from 'node:fs/promises'
+import { parse, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Operation, toFsError } from './error.ts'
 import { watchPath } from './watcher.ts'
@@ -21,13 +21,15 @@ function toPath(url: URL) {
   } catch (error) {
     throw invalidPath(url, `invalid file URL ${JSON.stringify(url.href)}`, error)
   }
-  // checked before `resolve()`, which makes a drive-relative path absolute
   if (process.platform === 'win32' && driveRelative.test(filename)) {
     throw invalidPath(url, `expected an absolute path, got the drive-relative form ${JSON.stringify(filename)} from ${JSON.stringify(url.href)}`)
   }
-  // `fileURLToPath()` keeps a trailing slash
-  return resolve(filename)
+  // A trailing separator is kept, so that `node:fs` rejects a non-directory with `ENOTDIR`.
+  // The path is absolute, and URL parsing has removed the dot segments.
+  return filename
 }
+
+const trailingSeparators = process.platform === 'win32' ? /[\\/]+$/ : /\/+$/
 
 async function run<T>(url: URL, operation: Operation, callback: (filename: string) => Promise<T>) {
   const filename = toPath(url)
@@ -53,25 +55,29 @@ class NodeFs extends BaseFs {
 
   read(url: URL): ReadableStream<Uint8Array> {
     const filename = toPath(url)
-    let handle: FileHandle | undefined
-    const close = () => {
-      const current = handle
-      handle = undefined
-      return current && call(url, 'read', () => current.close())
-    }
+    // `cancel()` may be called before the file is opened, so it waits for the
+    // opening instead of reading a handle assigned by `start()`
+    let opening: Promise<FileHandle>
+    let closing: Promise<void> | undefined
+    const close = () => closing ??= opening.then(
+      handle => call(url, 'read', () => handle.close()),
+      () => {},
+    )
     return new ReadableStream({
       start: async () => {
-        handle = await call(url, 'read', () => open(filename, 'r'))
+        opening = call(url, 'read', () => open(filename, 'r'))
+        await opening
       },
       pull: async (controller) => {
         try {
+          const handle = await opening
           const buffer = new Uint8Array(CHUNK_SIZE)
-          const { bytesRead } = await call(url, 'read', () => handle!.read(buffer, 0, CHUNK_SIZE, null))
+          const { bytesRead } = await call(url, 'read', () => handle.read(buffer, 0, CHUNK_SIZE, null))
           if (bytesRead) return controller.enqueue(buffer.subarray(0, bytesRead))
           await close()
           controller.close()
         } catch (error) {
-          await close()?.catch(() => {})
+          await close().catch(() => {})
           throw error
         }
       },
@@ -111,17 +117,29 @@ class NodeFs extends BaseFs {
 
   async remove(url: URL) {
     return run(url, 'remove', async (filename) => {
-      const stats = await lstat(filename)
-      if (stats.isDirectory()) {
-        await rmdir(filename)
+      // The entry is named without a trailing separator, so that a symbolic
+      // link in the last component is removed itself instead of its target.
+      const stripped = filename.replace(trailingSeparators, '')
+      const entry = filename.slice(0, Math.max(parse(filename).root.length, stripped.length))
+      const info = await lstat(entry)
+      // a trailing separator requires a directory, which a link resolves to
+      if (entry !== filename) {
+        const target = info.isSymbolicLink() ? await stat(entry) : info
+        if (!target.isDirectory()) {
+          throw new FsError('NotADirectory', url, `expected a directory at ${url.href}`)
+        }
+      }
+      if (info.isDirectory()) {
+        await rmdir(entry)
       } else {
-        await unlink(filename)
+        await unlink(entry)
       }
     })
   }
 
   watch(watcher: Watcher) {
-    return watchPath(watcher, toPath(watcher.url))
+    // a watch of `dir/` is a watch of `dir`
+    return watchPath(watcher, resolve(toPath(watcher.url)))
   }
 }
 

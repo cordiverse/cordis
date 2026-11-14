@@ -186,7 +186,7 @@ export class Fs extends Service {
 
   /**
    * Remove a file or an empty directory. A symbolic link is removed itself,
-   * and its target is not touched.
+   * also when named with a trailing separator, and its target is not touched.
    */
   async remove(path: string | URL, options: RemoveOptions = {}): Promise<void> {
     const url = this.resolve(path)

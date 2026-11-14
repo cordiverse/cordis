@@ -1,5 +1,5 @@
 import { Context, Fiber } from 'cordis'
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -73,6 +73,17 @@ describe('NodeFs', () => {
 
       await ctx.fs.file(url('b.bin')).write(ctx.fs.file(url('a.bin')).stream())
       expect(new Uint8Array(readFileSync(path('b.bin')))).to.deep.equal(content)
+    })
+
+    // the descriptors of the process are listed in `/dev/fd`
+    it.skipIf(process.platform === 'win32')('closes the file when a read is cancelled before the file is opened', async () => {
+      writeFileSync(path('a.txt'), 'foo')
+      const count = () => readdirSync('/dev/fd').length
+      const before = count()
+      await ctx.fs.file(url('a.txt')).stream().cancel()
+      // an opening left behind by the cancellation would complete meanwhile
+      await new Promise(r => setTimeout(r, 100))
+      expect(count()).to.equal(before)
     })
 
     it('rejects a write with the error of the stream', async () => {
@@ -178,6 +189,23 @@ describe('NodeFs', () => {
       expect(existsSync(path('dir/a.txt'))).to.be.true
     })
 
+    it('removes a link named with a trailing separator without its target', async () => {
+      mkdirSync(path('dir'))
+      symlinkSync(path('dir'), path('link'), 'junction')
+      await ctx.fs.remove(`${url('link')}/`)
+      expect(existsSync(path('link'))).to.be.false
+      expect(existsSync(path('dir'))).to.be.true
+    })
+
+    // creating a link to a file requires a privilege on Windows
+    it.skipIf(process.platform === 'win32')('keeps a link to a file named with a trailing separator', async () => {
+      writeFileSync(path('a.txt'), '')
+      symlinkSync(path('a.txt'), path('link'))
+      await rejects(ctx.fs.remove(`${url('link')}/`), 'NotADirectory')
+      expect(lstatSync(path('link')).isSymbolicLink()).to.be.true
+      expect(existsSync(path('a.txt'))).to.be.true
+    })
+
     it('fails on a missing location unless forced', async () => {
       await rejects(ctx.fs.remove(url('missing.txt')), 'NotFound')
       await ctx.fs.remove(url('missing.txt'), { force: true })
@@ -185,6 +213,20 @@ describe('NodeFs', () => {
   })
 
   describe('location', () => {
+    it('does not apply an operation on a directory location to a file', async () => {
+      writeFileSync(path('a.txt'), 'foo')
+      const dir = `${url('a.txt')}/`
+      for (const promise of [
+        ctx.fs.file(dir).text(),
+        ctx.fs.file(dir).write('bar'),
+        ctx.fs.rename(dir, url('b.txt')),
+        ctx.fs.remove(dir),
+      ]) {
+        expect(await promise.then(() => undefined, error => error)).to.be.instanceOf(FsError)
+      }
+      expect(readFileSync(path('a.txt'), 'utf8')).to.equal('foo')
+    })
+
     // a host is valid in a Windows file URL, where it names a UNC path
     it.skipIf(process.platform === 'win32')('rejects a file URL with a host', async () => {
       writeFileSync(path('a.txt'), '')

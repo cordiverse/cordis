@@ -32,6 +32,7 @@ function getCode(code: string, operation: Operation): FsError.Code {
 
 /** An error of `node:fs` with a POSIX code becomes an `FsError`; any other error is kept. */
 export function toFsError(error: unknown, url: URL, operation: Operation) {
+  if (error instanceof FsError) return error
   const code = (error as NodeJS.ErrnoException | undefined)?.code
   if (typeof code !== 'string' || !/^E[A-Z0-9]+$/.test(code)) return error
   return new FsError(getCode(code, operation), url, (error as Error).message, { cause: error })
