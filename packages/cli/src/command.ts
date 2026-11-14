@@ -205,10 +205,9 @@ export class Command<A extends any[] = any[], O extends {} = {}> {
     let variadic: Param | undefined
     let option: Option | undefined
     let names: string | string[]
-    let quotes: [string, string] | undefined
     const _options: Dict = Object.create(null)
 
-    const isParam = (content: string) => {
+    const isParam = (content: string, quotes?: [string, string]) => {
       return content[0] !== '-'
         || quotes
         || (+content) * 0 === 0 && this.config.unknownNegative !== 'option' && !this._optionDict[content.slice(1)]
@@ -230,7 +229,7 @@ export class Command<A extends any[] = any[], O extends {} = {}> {
       // 2. quoted tokens
       // 3. numeric tokens at numeric type
       let { content, quotes } = input.next()
-      if (isParam(content)) {
+      if (isParam(content, quotes)) {
         if (!param) throw new CliSyntaxError('too many arguments')
         args.push(param.parse(content))
         continue
@@ -274,7 +273,7 @@ export class Command<A extends any[] = any[], O extends {} = {}> {
           continue
         } else if (!input.isEmpty() && this.config.unknownOption === 'allow') {
           const token = input.next()
-          if (isParam(token.content)) {
+          if (isParam(token.content, token.quotes)) {
             content = token.content
             quotes = token.quotes
           } else {
