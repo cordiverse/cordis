@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Context } from 'cordis'
+import Fs from '@cordisjs/fs'
 import { Loader } from '../src/index.ts'
 import { createResolve } from '../src/resolve.ts'
 
@@ -175,11 +176,12 @@ describe('helper preparation', () => {
 })
 
 describe('EntryTree.import without internals', () => {
-  // Components are loaded through `entry.parent.tree`, which carries the tree's own
-  // base url; the `ctx.loader` accessor rebinds `ctx` to whoever reads it.
+  // Components are loaded through `entry.parent.tree`, whose context supplies the
+  // base URL; the `ctx.loader` accessor rebinds `ctx` to whoever reads it.
   async function treeFor(baseUrl: string) {
     const ctx = new Context()
-    await ctx.use(Loader, { baseUrl })
+    await ctx.use(Fs, { baseUrl })
+    await ctx.use(Loader)
     ctx.loader.internal = undefined
     return ctx.loader.root.tree
   }

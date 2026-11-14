@@ -72,8 +72,7 @@ describe('Fs', () => {
 
   async function setup() {
     const root = new Context()
-    root.baseUrl = import.meta.url
-    fiber = await root.use(Fs)
+    fiber = await root.use(Fs, { baseUrl: import.meta.url })
     await root.use(NodeFs)
     let ctx!: Context
     await root.inject(['fs'], (inner) => { ctx = inner })

@@ -32,10 +32,6 @@ declare module 'cordis' {
 }
 
 export namespace Loader {
-  export interface Config {
-    baseUrl?: string
-  }
-
   export interface Intercept {
     await?: boolean
   }
@@ -51,11 +47,8 @@ export class Loader extends EntryTree {
   public name = 'loader'
   public internal = getInternalLoader()
 
-  constructor(ctx: Context, public config: Loader.Config = {}) {
+  constructor(ctx: Context) {
     super(ctx)
-    if (config.baseUrl) {
-      this.ctx.baseUrl = config.baseUrl
-    }
     const self = this
 
     defineProperty(this, Service.tracker, {

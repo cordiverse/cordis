@@ -31,11 +31,10 @@ export async function start(config: Config) {
     ctx.logger.warn(error)
   })
 
-  ctx.baseUrl = config.baseUrl
   if (config.daemon.enabled) {
     await ctx.use(daemon, config.daemon)
   }
-  await ctx.use(Fs)
+  await ctx.use(Fs, { baseUrl: config.baseUrl })
   await ctx.use(NodeFs)
   await ctx.use(Loader)
   for (const options of config.prelude ?? []) {

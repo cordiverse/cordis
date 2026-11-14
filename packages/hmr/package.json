@@ -48,9 +48,6 @@
     "node-addon-require-builtin": "^0.1.0"
   },
   "peerDependenciesMeta": {
-    "@cordisjs/fs": {
-      "optional": true
-    },
     "node-addon-require-builtin": {
       "optional": true
     }

@@ -2,8 +2,9 @@ import { Context, Service } from 'cordis'
 import { existsSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import z from 'schemastery'
+import type {} from '@cordisjs/fs'
 import { AgentInfo, detectAgent } from './agent.ts'
 import { applyChanges, DependencyChanges, normalizeChanges, stringifyManifest } from './manifest.ts'
 import { createEnv, run } from './process.ts'
@@ -15,6 +16,9 @@ export type { Adapter, AgentInfo, AgentKind, AgentLayout, AgentName } from './ag
 export type { DependencyChanges } from './manifest.ts'
 export type { InstallState, PackageChange, PackageState, StateDiff } from './state.ts'
 
+// A Windows drive-letter path, e.g. `C:\app` or `C:/app`.
+const driveLetter = /^[A-Za-z]:[\\/]/
+
 declare module 'cordis' {
   interface Context {
     packageManager: PackageManager
@@ -22,6 +26,8 @@ declare module 'cordis' {
 }
 
 class PackageManager extends Service {
+  static inject = ['fs']
+
   /** the real path of the nearest directory with a `package.json` from `base` */
   public root!: string
 
@@ -33,8 +39,11 @@ class PackageManager extends Service {
 
   async* [Service.init]() {
     const { base } = this.config
-    const dir = this.ctx.baseUrl ? fileURLToPath(new URL('.', this.ctx.baseUrl)) : resolve('.')
-    const start = base ? resolve(dir, base) : dir
+    // On Windows, a drive-letter path is converted with `pathToFileURL`.
+    // `new URL()` would read its `C:` as a URL scheme, which `fileURLToPath` rejects.
+    const start = fileURLToPath(process.platform === 'win32' && base && driveLetter.test(base)
+      ? pathToFileURL(base)
+      : this.ctx.fs.resolve(base ?? '.'))
     let root = await realpath(start)
     while (!existsSync(join(root, 'package.json'))) {
       const parent = dirname(root)
@@ -101,7 +110,7 @@ namespace PackageManager {
   }
 
   export const Config: z<Config> = z.object({
-    base: z.string().description('The directory to look for the project from. Defaults to `ctx.baseUrl`.'),
+    base: z.string().description('The directory to look for the project from, resolved against `ctx.fs.baseUrl`. Defaults to the directory of `ctx.fs.baseUrl`.'),
     timeout: z.natural().role('ms').default(600000).description('Terminate the agent after it produces no output for this long, in milliseconds.'),
   })
 

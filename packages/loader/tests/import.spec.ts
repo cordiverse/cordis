@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from 'cordis'
 import { fileURLToPath } from 'node:url'
+import Fs from '@cordisjs/fs'
 import { Loader, ModuleNotFoundError } from '../src/index.ts'
 
 describe('Loader: component import', () => {
@@ -9,9 +10,8 @@ describe('Loader: component import', () => {
 
   async function setup(message: string) {
     const root = new Context()
-    // the service seen from `root` resolves against the caller's base
-    root.baseUrl = baseUrl
-    await root.use(Loader, { baseUrl })
+    await root.use(Fs, { baseUrl })
+    await root.use(Loader)
     const loader = root.loader
     // what Node's own loader throws, as the internal loader may not be reachable here
     loader.internal = {

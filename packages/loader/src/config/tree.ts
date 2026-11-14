@@ -5,6 +5,7 @@ import { Entry, EntryOptions } from './entry.ts'
 import { EntryGroup } from './group.ts'
 import { EntryValidationError, SourceLocation, validateOptions } from './utils.ts'
 import { createResolve } from '../resolve.ts'
+import type {} from '@cordisjs/fs'
 
 // A Windows drive-letter path, e.g. `C:\app\component.js` or `C:/app/component.js`.
 const driveLetter = /^[A-Za-z]:[\\/]/
@@ -77,7 +78,7 @@ export abstract class EntryTree {
   public store: Dict<Entry> = Object.create(null)
 
   constructor(ctx: Context) {
-    this.ctx = ctx.extend({ baseUrl: ctx.baseUrl })
+    this.ctx = ctx
     this.root = new EntryGroup(this.ctx, this)
     const entry = this.ctx.fiber.entry
     if (entry) entry.subtree = this
@@ -209,18 +210,20 @@ export abstract class EntryTree {
       // onImport.tracePromise.__proto__
       // internal.import
       info.offset += 3
+      // the file system service is optional, and supplies the base URL
+      const baseUrl = this.ctx.get('fs')?.baseUrl
       if (this.ctx.loader.internal) {
-        parent = this.ctx.baseUrl!
+        parent = baseUrl!
         return await this.ctx.loader.internal.import(name, parent, {})
       } else if (name.startsWith('.')) {
         parent = import.meta.url
-        return await import(/* @vite-ignore */ new URL(name, this.ctx.baseUrl).href)
+        return await import(/* @vite-ignore */ new URL(name, baseUrl).href)
       } else {
         // An `import()` written here anchors on this file, reaching the loader's
         // own dependencies. A helper inside the config file's project supplies
         // that project as the anchor; the plain import applies when no project
         // can be located.
-        const resolve = await createResolve(this.ctx.baseUrl)
+        const resolve = await createResolve(baseUrl)
         let url = name
         if (resolve) {
           try {
