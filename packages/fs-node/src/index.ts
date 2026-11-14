@@ -49,6 +49,16 @@ async function assertDirectory(entry: string, info: Stats, url: URL) {
   }
 }
 
+/**
+ * A location with a trailing separator names a directory, so an operation on
+ * the content of a file fails there without I/O. The check is made here rather
+ * than left to `node:fs`, which on Windows removes a trailing separator.
+ */
+function assertFile(filename: string, url: URL) {
+  if (!trailingSeparators.test(filename)) return
+  throw new FsError('IsADirectory', url, `expected a file at ${url.href}`)
+}
+
 async function run<T>(url: URL, operation: Operation, callback: (filename: string) => Promise<T>) {
   const filename = toPath(url)
   return call(url, operation, () => callback(filename))
@@ -83,7 +93,10 @@ class NodeFs extends BaseFs {
     )
     return new ReadableStream({
       start: async () => {
-        opening = call(url, 'read', () => open(filename, 'r'))
+        opening = call(url, 'read', () => {
+          assertFile(filename, url)
+          return open(filename, 'r')
+        })
         await opening
       },
       pull: async (controller) => {
@@ -106,7 +119,10 @@ class NodeFs extends BaseFs {
   }
 
   async write(url: URL, body: ReadableStream<Uint8Array>) {
-    const handle = await run(url, 'write', filename => open(filename, 'w'))
+    const handle = await run(url, 'write', (filename) => {
+      assertFile(filename, url)
+      return open(filename, 'w')
+    })
     try {
       // an error of `body` is kept as it is
       for await (const chunk of body) {
@@ -124,6 +140,9 @@ class NodeFs extends BaseFs {
 
   async access(url: URL, mode: AccessMode) {
     return run(url, 'access', async (filename) => {
+      // `node:fs` on Windows removes a trailing separator
+      const entry = toEntry(filename)
+      if (entry !== filename) await assertDirectory(entry, await stat(entry), url)
       if (mode === 'write') await access(filename, constants.W_OK)
     })
   }
@@ -134,7 +153,7 @@ class NodeFs extends BaseFs {
       const source = toEntry(from)
       const target = toEntry(to)
       if (source !== from || target !== to) {
-        await assertDirectory(source, await lstat(source), src)
+        await assertDirectory(source, await stat(source), src)
       }
       await rename(source, target)
     })

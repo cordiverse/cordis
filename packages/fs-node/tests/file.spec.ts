@@ -86,6 +86,13 @@ describe('NodeFs', () => {
       expect(count()).to.equal(before)
     })
 
+    it('fails to read or write a location named with a trailing separator', async () => {
+      mkdirSync(path('dir'))
+      await rejects(ctx.fs.file(`${url('dir')}/`).text(), 'IsADirectory')
+      await rejects(ctx.fs.file(`${url('missing')}/`).write('foo'), 'IsADirectory')
+      expect(existsSync(path('missing'))).to.be.false
+    })
+
     it('rejects a write with the error of the stream', async () => {
       const error = new Error('aborted')
       const body = new ReadableStream({
@@ -245,13 +252,15 @@ describe('NodeFs', () => {
     it('does not apply an operation on a directory location to a file', async () => {
       writeFileSync(path('a.txt'), 'foo')
       const dir = `${url('a.txt')}/`
-      for (const promise of [
-        ctx.fs.file(dir).text(),
-        ctx.fs.file(dir).write('bar'),
-        ctx.fs.rename(dir, url('b.txt')),
-        ctx.fs.remove(dir),
+      await rejects(ctx.fs.file(dir).text(), 'IsADirectory')
+      await rejects(ctx.fs.file(dir).write('bar'), 'IsADirectory')
+      // each operation is started after the previous one has settled
+      for (const operation of [
+        () => ctx.fs.access(dir, 'write'),
+        () => ctx.fs.rename(dir, url('b.txt')),
+        () => ctx.fs.remove(dir),
       ]) {
-        expect(await promise.then(() => undefined, error => error)).to.be.instanceOf(FsError)
+        await rejects(operation(), 'NotADirectory')
       }
       expect(readFileSync(path('a.txt'), 'utf8')).to.equal('foo')
     })
