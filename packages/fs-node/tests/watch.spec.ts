@@ -1,6 +1,6 @@
 import { Context, Fiber } from 'cordis'
-import { mkdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { basename, dirname, isAbsolute, resolve } from 'node:path'
+import { mkdirSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { FSWatcher } from 'chokidar'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -289,6 +289,344 @@ describe('Fs', () => {
       await touch(target, () => seen.length)
       expect([...new Set(seen)]).to.deep.equal([resolve(link, 'file.ts')])
     }, 15000)
+
+    // The shape is frozen at registration, and staleness is declared rather than implied by
+    // silence, so both are on the handle.
+    it('reports the shape it registered for, and says so when the entry stops being it', async () => {
+      const path = write('shape/a.txt')
+      const ctx = await setup()
+      const watcher = ctx.fs.watch(pathToFileURL(path))
+      const heard: string[] = []
+      watcher.on('change', (url) => { heard.push(fileURLToPath(url)) })
+      await new Promise<void>((r) => watcher.on('ready', () => r()))
+
+      expect(watcher.shape).to.equal('file')
+      expect(watcher.stale, 'a fresh watch is not stale').to.equal(false)
+
+      await touch(path, () => heard.length)
+      expect(watcher.stale, 'a plain write must not make it stale').to.equal(false)
+
+      rmSync(path)
+      mkdirSync(path, { recursive: true })
+      // the reporter is the only sign; wait for it rather than for a fixed delay
+      await waitFor(() => watcher.stale)
+      expect(watcher.stale).to.equal(true)
+      expect(watcher.shape, 'the shape is frozen at registration').to.equal('file')
+    }, 20000)
+
+    // The mirror of the row above, and the direction chokidar says nothing about: a directory
+    // watch loses its path to a file and hears nothing at all (measured 0 events), so `stale`
+    // is the only way to learn the watch is dead. `file` and `undefined` must stay apart, or
+    // this direction is answered as "unreadable, therefore fine".
+    it('says so when a directory watch loses its path to a file', async () => {
+      const dir = resolve(fixture, 'dir-to-file')
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(resolve(dir, 'inner.txt'), 'x')
+      const ctx = await setup()
+      const watcher = ctx.fs.watch(pathToFileURL(dir))
+      const heard: string[] = []
+      watcher.on('change', (url) => { heard.push(fileURLToPath(url)) })
+      await new Promise<void>((r) => watcher.on('ready', () => r()))
+      expect(watcher.shape).to.equal('dir')
+      expect(watcher.stale, 'a fresh directory watch is not stale').to.equal(false)
+
+      // control: a write below it must arrive, or silence below proves nothing
+      await touch(resolve(dir, 'inner.txt'), () => heard.length)
+      expect(watcher.stale, 'a write below it must not make it stale').to.equal(false)
+
+      rmSync(dir, { recursive: true })
+      writeFileSync(dir, 'now a file')
+      await waitFor(() => watcher.stale)
+      expect(watcher.stale).to.equal(true)
+      expect(watcher.shape, 'the shape is frozen at registration').to.equal('dir')
+
+      // and it clears once the path is a directory again
+      rmSync(dir)
+      mkdirSync(dir)
+      await waitFor(() => !watcher.stale)
+      expect(watcher.stale).to.equal(false)
+    }, 20000)
+
+    // A watch on a missing path takes file shape for life. Without a word from the handle,
+    // "a directory appeared there" and "nothing ever appeared" look the same: no events.
+    it('tells a missing path that became a directory apart from one that never appeared', async () => {
+      const asFile = resolve(fixture, 'missing-file.yml')
+      const asDir = resolve(fixture, 'missing-dir.yml')
+      const ctx = await setup()
+      const onFile = ctx.fs.watch(pathToFileURL(asFile))
+      const onDir = ctx.fs.watch(pathToFileURL(asDir))
+      await new Promise<void>((r) => onFile.on('ready', () => r()))
+      await new Promise<void>((r) => onDir.on('ready', () => r()))
+      expect(onFile.shape, 'a missing path takes file shape').to.equal('file')
+      expect(onDir.shape, 'a missing path takes file shape').to.equal('file')
+
+      writeFileSync(asFile, 'x')
+      mkdirSync(asDir)
+      await new Promise(r => setTimeout(r, 400))
+
+      expect(statSync(asFile).isFile(), 'the file exists').to.equal(true)
+      expect(statSync(asDir).isDirectory(), 'the directory exists').to.equal(true)
+      expect(onFile.stale, 'the file shape still holds').to.equal(false)
+      expect(onDir.stale, 'this one can no longer be followed, and says so').to.equal(true)
+    }, 20000)
+
+    // a query about state must answer, not throw: a symlink loop makes the stat fail with ELOOP,
+    // and a caller writing `if (watch.stale)` would get an exception instead of a boolean
+    it('answers `stale` rather than throwing when the path cannot be read', async () => {
+      const loop = resolve(fixture, 'loop/a')
+      mkdirSync(resolve(fixture, 'loop'), { recursive: true })
+      writeFileSync(loop, 'x')
+      const ctx = await setup()
+      const watcher = ctx.fs.watch(pathToFileURL(loop))
+      await new Promise<void>((r) => watcher.on('ready', () => r()))
+      expect(watcher.stale, 'a plain file').to.equal(false)
+
+      rmSync(loop)
+      symlinkSync(resolve(fixture, 'loop/b'), loop, 'junction')
+      symlinkSync(loop, resolve(fixture, 'loop/b'), 'junction')
+      await new Promise(r => setTimeout(r, 200))
+
+      expect(() => watcher.stale, 'ELOOP, EACCES and friends must not escape').to.not.throw()
+      expect(watcher.stale, 'unreadable is answered as "not stale"').to.equal(false)
+    }, 20000)
+
+    // every way a stat can fail, not just the two that `throwIfNoEntry: false` covers:
+    // a constructor that lets ELOOP or EACCES out takes `ctx.fs.watch()` down on the spot
+    it('constructs and answers for every path it cannot read', async () => {
+      const ctx = await setup()
+      const base = resolve(fixture, 'unreadable')
+      mkdirSync(base, { recursive: true })
+
+      const loopA = resolve(base, 'la')
+      symlinkSync(resolve(base, 'lb'), loopA, 'junction')
+      symlinkSync(loopA, resolve(base, 'lb'), 'junction')
+
+      const plain = resolve(base, 'plain.txt')
+      writeFileSync(plain, 'x')
+
+      const noPerm = resolve(base, 'noperm')
+      mkdirSync(noPerm)
+      writeFileSync(resolve(noPerm, 'inner.txt'), 'x')
+
+      const cases: [string, string][] = [
+        ['a symlink loop (ELOOP)', loopA],
+        ['a path below a file (ENOTDIR)', resolve(plain, 'inner')],
+        ['a path far too long (ENAMETOOLONG)', resolve(base, 'a'.repeat(200), 'b'.repeat(200))],
+        ['an entry that is not there (ENOENT)', resolve(base, 'nope.txt')],
+      ]
+      for (const [label, path] of cases) {
+        let watcher: ReturnType<typeof ctx.fs.watch> | undefined
+        expect(() => { watcher = ctx.fs.watch(pathToFileURL(path)) }, label).to.not.throw()
+        expect(() => watcher!.stale, label + ', read').to.not.throw()
+        expect(watcher!.stale, label + ', value').to.equal(false)
+      }
+    }, 20000)
+
+    // the other side of the same flag: it must not fire for anything that is not a shape change
+    it('stays fresh through writes, atomic saves, and changes below a watched directory', async () => {
+      const kept = write('fresh/a.txt')
+      const ctx = await setup()
+      const onFile = ctx.fs.watch(pathToFileURL(kept))
+      const onDir = ctx.fs.watch(pathToFileURL(resolve(fixture, 'fresh')))
+      const heard: string[] = []
+      onFile.on('change', (url) => { heard.push(fileURLToPath(url)) })
+      onDir.on('change', (url) => { heard.push(fileURLToPath(url)) })
+      await new Promise<void>((r) => onFile.on('ready', () => r()))
+      await new Promise<void>((r) => onDir.on('ready', () => r()))
+
+      for (let i = 1; i <= 5; i++) {
+        writeFileSync(kept, `v${i}`)
+        await new Promise(r => setTimeout(r, 120))
+      }
+      writeFileSync(kept + '.tmp', 'atomic')
+      renameSync(kept + '.tmp', kept)
+      writeFileSync(resolve(fixture, 'fresh/inner.txt'), 'inner')
+      await new Promise(r => setTimeout(r, 300))
+
+      expect(heard.length, 'the controls must have fired').to.be.greaterThan(0)
+      expect(onFile.stale, 'a plain file watch must not go stale').to.equal(false)
+      expect(onDir.stale, 'a directory watch must not go stale').to.equal(false)
+      expect(onFile.shape).to.equal('file')
+      expect(onDir.shape).to.equal('dir')
+    }, 20000)
+
+    // and it clears: the reporter delivers again once the entry is a file again, so a flag that
+    // stayed true would describe a watch that is in fact working
+    it('clears `stale` when the entry becomes a file once more', async () => {
+      const path = write('again/a.txt')
+      const ctx = await setup()
+      const watcher = ctx.fs.watch(pathToFileURL(path))
+      const heard: string[] = []
+      watcher.on('change', (url) => { heard.push(fileURLToPath(url)) })
+      await new Promise<void>((r) => watcher.on('ready', () => r()))
+
+      rmSync(path)
+      mkdirSync(path, { recursive: true })
+      await waitFor(() => watcher.stale)
+
+      rmSync(path, { recursive: true })
+      writeFileSync(path, 'back')
+      await waitFor(() => !watcher.stale)
+
+      expect(watcher.stale, 'the reporter delivers again, so the flag must clear').to.equal(false)
+      expect(watcher.shape, 'the registered shape never changes').to.equal('file')
+    }, 20000)
+
+    it('treats the same rule for a link to a directory', async () => {
+      // `stat` follows links, so a link to a directory reads as a directory too.
+      const kept = write('became-link/kept.txt')
+      const gone = write('became-link/gone.txt')
+      const target = write('became-link/target/file.ts')
+      const ctx = await setup()
+      const seen: string[] = []
+      const watcher = ctx.fs.watch(pathToFileURL(resolve(fixture, 'became-link')))
+      watcher.on('change', (url) => {
+        const path = fileURLToPath(url)
+        if (statSync(path, { throwIfNoEntry: false })?.isDirectory()) seen.push(path)
+      })
+      await new Promise<void>((r) => watcher.on('ready', () => r()))
+
+      // control: a plain write must arrive
+      const heard: string[] = []
+      watcher.on('change', (url) => { heard.push(fileURLToPath(url)) })
+      await touch(kept, () => heard.length)
+      expect(heard).to.include(kept)
+
+      rmSync(gone)
+      symlinkSync(dirname(target), gone, 'junction')
+      // the check below can tell a directory from a file, or its silence means nothing
+      expect(statSync(gone, { throwIfNoEntry: false })?.isDirectory()).to.equal(true)
+      // the target is inside the watched directory, so these writes are reported too
+      for (let i = 0; i < 12; i++) {
+        writeFileSync(resolve(gone, 'inner.txt'), `v${i}`)
+        await new Promise(r => setTimeout(r, 100))
+      }
+      expect(seen).to.deep.equal([])
+
+      // restore it and write again, so a watch gone deaf is not read as a pass
+      const back: string[] = []
+      watcher.on('change', (url) => { if (fileURLToPath(url) === gone) back.push(fileURLToPath(url)) })
+      rmSync(gone, { recursive: true })
+      writeFileSync(gone, 'back')
+      for (let i = 0; i < 3; i++) {
+        writeFileSync(gone, `back-${i}`)
+        await new Promise(r => setTimeout(r, 150))
+      }
+      expect(back.length).to.be.greaterThan(1)
+    }, 15000)
+
+    it('reports a file, never the directory it became', async () => {
+      const kept = write('became-dir/kept.txt')
+      const gone = write('became-dir/gone.txt')
+      const ctx = await setup()
+      const seen: string[] = []
+      const watcher = ctx.fs.watch(pathToFileURL(resolve(fixture, 'became-dir')))
+      // judged by what the path is when reported, not by the order of events
+      watcher.on('change', (url) => {
+        const path = fileURLToPath(url)
+        if (statSync(path, { throwIfNoEntry: false })?.isDirectory()) seen.push(path)
+      })
+      await new Promise<void>((r) => watcher.on('ready', () => r()))
+
+      // control: a plain write must arrive
+      const heard: string[] = []
+      watcher.on('change', (url) => { heard.push(fileURLToPath(url)) })
+      await touch(kept, () => heard.length)
+      expect(heard).to.include(kept)
+
+      // macOS reports these writes on the directory itself; Linux and Windows do not
+      rmSync(gone)
+      mkdirSync(gone, { recursive: true })
+      // the check below can tell a directory from a file, or its silence means nothing
+      expect(statSync(gone, { throwIfNoEntry: false })?.isDirectory()).to.equal(true)
+      for (let i = 0; i < 12; i++) {
+        writeFileSync(resolve(gone, 'inner.txt'), `v${i}`)
+        await new Promise(r => setTimeout(r, 100))
+      }
+      expect(seen).to.deep.equal([])
+
+      // restore it and write again, so a watch gone deaf is not read as a pass
+      const back: string[] = []
+      watcher.on('change', (url) => { if (fileURLToPath(url) === gone) back.push(fileURLToPath(url)) })
+      rmSync(gone, { recursive: true })
+      writeFileSync(gone, 'back')
+      for (let i = 0; i < 3; i++) {
+        writeFileSync(gone, `back-${i}`)
+        await new Promise(r => setTimeout(r, 150))
+      }
+      expect(back.length).to.be.greaterThan(1)
+    }, 15000)
+
+    // the same rule through the other entry point
+    it('reports a file, never the directory it became, when watching the file', async () => {
+      const kept = write('became-dir-file/kept.txt')
+      const ctx = await setup()
+      const seen: string[] = []
+      const watcher = ctx.fs.watch(pathToFileURL(kept))
+      watcher.on('change', (url) => {
+        const path = fileURLToPath(url)
+        if (statSync(path, { throwIfNoEntry: false })?.isDirectory()) seen.push(path)
+      })
+      await new Promise<void>((r) => watcher.on('ready', () => r()))
+
+      // same control as above
+      const heard: string[] = []
+      watcher.on('change', (url) => { heard.push(fileURLToPath(url)) })
+      await touch(kept, () => heard.length)
+      expect(heard).to.include(kept)
+
+      rmSync(kept)
+      mkdirSync(kept, { recursive: true })
+      // the check below can tell a directory from a file, or its silence means nothing
+      expect(statSync(kept, { throwIfNoEntry: false })?.isDirectory()).to.equal(true)
+      for (let i = 0; i < 12; i++) {
+        writeFileSync(resolve(kept, 'inner.txt'), `v${i}`)
+        await new Promise(r => setTimeout(r, 100))
+      }
+      expect(seen).to.deep.equal([])
+
+      // same reason as above
+      const back: string[] = []
+      watcher.on('change', (url) => { if (fileURLToPath(url) === kept) back.push(fileURLToPath(url)) })
+      rmSync(kept, { recursive: true })
+      writeFileSync(kept, 'back')
+      for (let i = 0; i < 3; i++) {
+        writeFileSync(kept, `back-${i}`)
+        await new Promise(r => setTimeout(r, 150))
+      }
+      expect(back.length).to.be.greaterThan(1)
+    }, 15000)
+
+    // the same path twice with a restore between: a guard that remembers what it dropped
+    // would pass the test above but fail here
+    it('still drops the second time the same path becomes a directory', async () => {
+      const path = write('twice/e.txt')
+      const ctx = await setup()
+      const seen: string[] = []
+      const watcher = ctx.fs.watch(pathToFileURL(resolve(fixture, 'twice')))
+      watcher.on('change', (url) => {
+        const path = fileURLToPath(url)
+        if (statSync(path, { throwIfNoEntry: false })?.isDirectory()) seen.push(path)
+      })
+      await new Promise<void>((r) => watcher.on('ready', () => r()))
+
+      const heard: string[] = []
+      watcher.on('change', (url) => { heard.push(fileURLToPath(url)) })
+      await touch(path, () => heard.length)
+      expect(heard).to.include(path)
+
+      for (let round = 0; round < 2; round++) {
+        rmSync(path, { force: true })
+        mkdirSync(path, { recursive: true })
+        expect(statSync(path, { throwIfNoEntry: false })?.isDirectory()).to.equal(true)
+        await new Promise(r => setTimeout(r, 900))
+        // nothing naming a directory, in either round
+        expect(seen, `round ${round + 1}`).to.deep.equal([])
+        rmSync(path, { recursive: true, force: true })
+        writeFileSync(path, `back-${round}`)
+        await new Promise(r => setTimeout(r, 900))
+      }
+    }, 20000)
 
     it('keeps no entry with an empty `filter`', async () => {
       const path = write('empty/file.txt')
