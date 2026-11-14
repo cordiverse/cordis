@@ -155,6 +155,35 @@ describe('NodeFs', () => {
       await rejects(ctx.fs.rename(url('a'), url('b')), 'DirectoryNotEmpty')
     })
 
+    it('renames a link named with a trailing separator without its target', async () => {
+      mkdirSync(path('dir'))
+      symlinkSync(path('dir'), path('link'), 'junction')
+      await ctx.fs.rename(`${url('link')}/`, url('moved'))
+      expect(lstatSync(path('moved')).isSymbolicLink()).to.be.true
+      expect(existsSync(path('link'))).to.be.false
+      expect(existsSync(path('dir'))).to.be.true
+    })
+
+    it('does not replace the target of a link named with a trailing separator', async () => {
+      mkdirSync(path('src'))
+      writeFileSync(path('src/a.txt'), '')
+      mkdirSync(path('dir'))
+      symlinkSync(path('dir'), path('link'), 'junction')
+      // the link may be replaced, or the rename may fail
+      await ctx.fs.rename(url('src'), `${url('link')}/`).catch(() => {})
+      expect(existsSync(path('dir/a.txt'))).to.be.false
+    })
+
+    it('requires a directory for a trailing separator of the destination', async () => {
+      writeFileSync(path('a.txt'), 'foo')
+      await rejects(ctx.fs.rename(url('a.txt'), `${url('b')}/`), 'NotADirectory')
+      expect(readFileSync(path('a.txt'), 'utf8')).to.equal('foo')
+
+      mkdirSync(path('src'))
+      await ctx.fs.rename(url('src'), `${url('b')}/`)
+      expect(lstatSync(path('b')).isDirectory()).to.be.true
+    })
+
     it('fails on a missing source', async () => {
       await rejects(ctx.fs.rename(url('missing.txt'), url('b.txt')), 'NotFound')
     })

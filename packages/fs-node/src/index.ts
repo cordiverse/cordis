@@ -1,6 +1,7 @@
 import { AccessMode, BaseFs, FsError, Watcher } from '@cordisjs/fs'
 import { Context } from 'cordis'
 import { access, constants, FileHandle, lstat, open, rename, rmdir, stat, unlink } from 'node:fs/promises'
+import type { Stats } from 'node:fs'
 import { parse, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Operation, toFsError } from './error.ts'
@@ -30,6 +31,23 @@ function toPath(url: URL) {
 }
 
 const trailingSeparators = process.platform === 'win32' ? /[\\/]+$/ : /\/+$/
+
+/**
+ * The path of the entry that the last component of `filename` names, without
+ * a trailing separator, so that a symbolic link there is not followed.
+ */
+function toEntry(filename: string) {
+  const stripped = filename.replace(trailingSeparators, '')
+  return filename.slice(0, Math.max(parse(filename).root.length, stripped.length))
+}
+
+// A trailing separator requires a directory, which a symbolic link may resolve to.
+async function assertDirectory(entry: string, info: Stats, url: URL) {
+  const target = info.isSymbolicLink() ? await stat(entry) : info
+  if (!target.isDirectory()) {
+    throw new FsError('NotADirectory', url, `expected a directory at ${url.href}`)
+  }
+}
 
 async function run<T>(url: URL, operation: Operation, callback: (filename: string) => Promise<T>) {
   const filename = toPath(url)
@@ -112,23 +130,22 @@ class NodeFs extends BaseFs {
 
   async rename(src: URL, dest: URL) {
     const to = toPath(dest)
-    return run(src, 'rename', from => rename(from, to))
+    return run(src, 'rename', async (from) => {
+      const source = toEntry(from)
+      const target = toEntry(to)
+      if (source !== from || target !== to) {
+        await assertDirectory(source, await lstat(source), src)
+      }
+      await rename(source, target)
+    })
   }
 
   async remove(url: URL) {
     return run(url, 'remove', async (filename) => {
-      // The entry is named without a trailing separator, so that a symbolic
-      // link in the last component is removed itself instead of its target.
-      const stripped = filename.replace(trailingSeparators, '')
-      const entry = filename.slice(0, Math.max(parse(filename).root.length, stripped.length))
+      // a symbolic link in the last component is removed itself
+      const entry = toEntry(filename)
       const info = await lstat(entry)
-      // a trailing separator requires a directory, which a link resolves to
-      if (entry !== filename) {
-        const target = info.isSymbolicLink() ? await stat(entry) : info
-        if (!target.isDirectory()) {
-          throw new FsError('NotADirectory', url, `expected a directory at ${url.href}`)
-        }
-      }
+      if (entry !== filename) await assertDirectory(entry, info, url)
       if (info.isDirectory()) {
         await rmdir(entry)
       } else {
