@@ -2,7 +2,7 @@ import { Context } from 'cordis'
 import { describe, it, expect } from 'vitest'
 import MockLoader, { sleep } from './utils'
 
-const GROUP = '@cordisjs/plugin-group'
+const GROUP = '@cordisjs/group'
 const TEARDOWN_MS = 50
 
 async function boot() {
