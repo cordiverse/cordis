@@ -1,0 +1,12 @@
+{
+  "extends": "../../../tsconfig.test",
+  "compilerOptions": {
+    "paths": {},
+  },
+  "include": [
+    "**/*",
+  ],
+  "references": [
+    { "path": ".." },
+  ],
+}
