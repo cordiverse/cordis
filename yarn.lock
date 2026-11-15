@@ -337,13 +337,18 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@cordisjs/server-static@workspace:packages/server/static"
   dependencies:
-    "@cordisjs/fetch-file": "npm:^1.0.3"
+    "@cordisjs/fs": "npm:^2.0.0-rc.0"
+    "@cordisjs/fs-node": "npm:^0.1.0"
     "@cordisjs/logger-console": "npm:^1.0.1"
     "@cordisjs/server": "npm:^1.7.0"
+    "@types/mime-types": "npm:^2.1.4"
     cordis: "npm:^4.0.0-rc.13"
+    file-type: "npm:^20.4.1"
+    mime-types: "npm:^2.1.35"
     picomatch: "npm:^4.0.0"
     schemastery: "npm:^3.18.0"
   peerDependencies:
+    "@cordisjs/fs": ^2.0.0-rc.0
     "@cordisjs/server": ^1.7.0
     cordis: ^4.0.0-rc.13
   languageName: unknown
@@ -1346,6 +1351,13 @@ __metadata:
   version: 1.0.9
   resolution: "@types/estree@npm:1.0.9"
   checksum: 10c0/3ad3286ca2988cd550dafb8f2ad599c8474868e954fa601a36655bdfefd8039f7c714b8c1c7f2ae219ffbd58bd4660e66fa7479a0120fc02d4777057d4865387
+  languageName: node
+  linkType: hard
+
+"@types/mime-types@npm:^2.1.4":
+  version: 2.1.4
+  resolution: "@types/mime-types@npm:2.1.4"
+  checksum: 10c0/a10d57881d14a053556b3d09292de467968d965b0a06d06732c748da39b3aa569270b5b9f32529fd0e9ac1e5f3b91abb894f5b1996373254a65cb87903c86622
   languageName: node
   linkType: hard
 
