@@ -336,17 +336,22 @@ export class Fiber {
     // disposer chain if it fails to settle cleanly.
     task?.catch(dispose).catch((error) => this.ctx.logger.error(error))
 
+    // The teardown starts on the first call. Every later call returns the
+    // same teardown, so that each caller can wait for it to settle.
+    let teardown: void | Promise<void>
+    const settle = (start: () => void | Promise<void>) => {
+      if (runner.epoch) {
+        runner.epoch = false
+        teardown = start()
+      }
+      return teardown
+    }
+
     const wrapper = defineProperty(() => {
-      if (!runner.epoch) return
-      runner.epoch = false
-      return task ? task.then(dispose) : dispose()
+      return settle(() => task ? task.then(dispose) : dispose())
     }, symbols.effect, meta) as AsyncDisposable
 
-    const disposeAsync = () => {
-      if (!runner.epoch) return
-      runner.epoch = false
-      return dispose()
-    }
+    const disposeAsync = () => settle(dispose)
     wrapper.then = async (onFulfilled, onRejected) => {
       return Promise.resolve(task)
         .then(() => disposeAsync)

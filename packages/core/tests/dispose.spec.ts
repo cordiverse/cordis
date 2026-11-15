@@ -202,6 +202,36 @@ describe('Effects', () => {
     expect(seq).to.deep.equal([1, 3, 5, 6, 4, 2])
   }))
 
+  it('repeated dispose waits for the pending teardown', withTimers(async (root) => {
+    const seq: number[] = []
+    const dispose = root.effect(() => async () => {
+      await sleep(100)
+      seq.push(1)
+    })
+    dispose()
+    const disposing = Promise.resolve(dispose()).then(() => seq.push(2))
+    await vi.advanceTimersByTimeAsync(100)
+    await disposing
+    expect(seq).to.deep.equal([1, 2])
+  }))
+
+  it('repeated async dispose waits for the pending teardown', withTimers(async (root) => {
+    const seq: number[] = []
+    const dispose = root.effect(async () => {
+      await sleep(100)
+      return async () => {
+        await sleep(100)
+        seq.push(1)
+      }
+    })
+    const [dispose2] = await Promise.all([dispose, vi.advanceTimersByTimeAsync(100)])
+    dispose2()
+    const disposing = Promise.resolve(dispose()).then(() => seq.push(2))
+    await vi.advanceTimersByTimeAsync(100)
+    await disposing
+    expect(seq).to.deep.equal([1, 2])
+  }))
+
   it('return with error', async () => {
     const root = new Context()
     const seq: number[] = []
