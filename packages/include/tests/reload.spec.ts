@@ -47,7 +47,7 @@ describe('Include reload', () => {
     await ctx.use(LoggerConsole)
     const messages: Message[] = []
     ctx.logger.exporter({ export: message => messages.push(message) })
-    await ctx.use(Fs, { baseUrl: import.meta.url })
+    await ctx.use(Fs, { baseUrl: new URL('.', import.meta.url).href })
     await ctx.use(NodeFs)
     fiber = await ctx.use(Loader)
     const id = await ctx.loader.create({

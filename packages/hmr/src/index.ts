@@ -21,9 +21,6 @@ type Awaitable<T> = T | Promise<T>
 // A specifier that is a URL, e.g. `file:` or `data:`.
 const scheme = /^[a-z][a-z\d+.-]*:/i
 
-// A Windows drive-letter path, e.g. `C:\app\cordis.yml` or `C:/app/cordis.yml`.
-const driveLetter = /^[A-Za-z]:[\\/]/
-
 // a builtin has no file and no dependencies to follow
 function isBuiltin(url: string) {
   return url.startsWith('node:')
@@ -141,7 +138,7 @@ function toPath(url: string) {
 class Hmr extends Service {
   static inject = ['fs']
 
-  /** The resolved `base`. `watch.files` and logged paths are relative to it. */
+  /** The local path of `ctx.fs.baseUrl`. `watch.files` and logged paths are relative to it. */
   public baseDir: string
 
   /** Node's internal ESM loader. */
@@ -172,12 +169,7 @@ class Hmr extends Service {
     this._modules = new ModuleCaches(loader)
     ctx.effect(() => activate())
 
-    // `base` is resolved against `ctx.fs.baseUrl`, except that a Windows
-    // drive-letter path goes through `pathToFileURL`, since `new URL()` would
-    // read `C:` as a URL scheme.
-    this.baseDir = fileURLToPath(process.platform === 'win32' && config.base && driveLetter.test(config.base)
-      ? pathToFileURL(config.base)
-      : ctx.fs.resolve(config.base || '.'))
+    this.baseDir = fileURLToPath(ctx.fs.baseUrl)
 
     this._watch(ctx)
   }
@@ -190,11 +182,7 @@ class Hmr extends Service {
   private _watch(ctx: Context) {
     const { enabled, files, debounce } = this.config.watch
     if (!enabled || !files.length) return
-    if (!this.config.base) {
-      this.ctx.logger.info('watching %o', files)
-    } else {
-      this.ctx.logger.info('watching %o in %s', files, this.baseDir)
-    }
+    this.ctx.logger.info('watching %o in %s', files, this.baseDir)
 
     const stashed = new Set<string>()
     const retained = new Set<string>()
@@ -759,19 +747,17 @@ namespace Hmr {
   }
 
   export interface Config {
-    base?: string
     watch: WatchConfig
   }
 
   export const Config: z<Config> = z.object({
-    base: z.string().description('The base directory, resolved against `ctx.fs.baseUrl`. Defaults to the directory of `ctx.fs.baseUrl`.'),
     watch: z.object({
       enabled: z.boolean().default(false).description('Reload on file changes. Requires the `fs` service.'),
       files: z.array(String).role('table').default([
         '.',
         '!**/node_modules',
         '!**/.*',
-      ]).description('Files to watch, in glob patterns relative to `base`, as `filter` of `ctx.fs.watch()`.'),
+      ]).description('Files to watch, in glob patterns relative to `ctx.fs.baseUrl`, as `filter` of `ctx.fs.watch()`.'),
       debounce: z.natural().role('ms').default(100).description('Debounce changes before reloading, in milliseconds.'),
     }).description('Watch'),
   })

@@ -44,11 +44,34 @@ function normalizePrefix(prefix: string | URL) {
   return href.endsWith('/') ? href : href + '/'
 }
 
-// the working directory as a URL with a trailing separator, on a runtime that has one
+// A Windows drive-letter path, e.g. `C:\app` or `C:/app`.
+const driveLetter = /^[A-Za-z]:[\\/]/
+
+// On Windows, a drive-letter path is a file path, which `new URL()` would read
+// as a URL of the scheme `c:`.
+function toReference(path: string) {
+  if (typeof process === 'undefined' || process.platform !== 'win32' || !driveLetter.test(path)) return path
+  return pathToFileURL(path).href
+}
+
+// the working directory as a URL, on a runtime that has one
 function getWorkingDirectory() {
   if (typeof process === 'undefined') return
-  const { href } = pathToFileURL(process.cwd())
-  return href.endsWith('/') ? href : href + '/'
+  return pathToFileURL(process.cwd()).href
+}
+
+// A base URL names a directory, and has no query or fragment. A URL with an
+// opaque path, such as `mem:bucket/`, cannot resolve a relative reference.
+function toDirectory(url: URL, input: string) {
+  try {
+    new URL('.', url)
+  } catch (error) {
+    throw new TypeError(`expected a base URL without an opaque path, got ${JSON.stringify(input)}`, { cause: error })
+  }
+  if (!url.pathname.endsWith('/')) url.pathname += '/'
+  url.search = ''
+  url.hash = ''
+  return url
 }
 
 /**
@@ -59,34 +82,44 @@ export class Fs extends Service<Fs.Intercept> {
   private _mounts = new Map<string, Mount>()
   /** the connection that serves each watch, if any */
   private _watchers = new Map<Watcher, Connection | undefined>()
-  public config: Fs.Config
+  public config: Required<Fs.Config>
 
   constructor(ctx: Context, config: Fs.Config = {}) {
     super(ctx, 'fs')
-    this.config = { ...config, baseUrl: config.baseUrl ?? getWorkingDirectory() }
+    const baseUrl = config.baseUrl ?? getWorkingDirectory()
+    if (baseUrl === undefined) {
+      throw new TypeError('expected `baseUrl` on a runtime without a working directory')
+    }
+    let url: URL
+    try {
+      url = new URL(toReference(baseUrl))
+    } catch (error) {
+      throw new TypeError(`expected an absolute base URL, got ${JSON.stringify(baseUrl)}`, { cause: error })
+    }
+    this.config = { ...config, baseUrl: toDirectory(url, baseUrl).href }
   }
 
   /**
-   * The base URL of relative references. Each `baseUrl` of the config and of
-   * the intercepts, from the outermost to the innermost, is resolved against
-   * the result of the preceding ones.
+   * The base URL of relative references, which names a directory: its path
+   * ends with `/`, and it has no query or fragment. The `baseUrl` of the
+   * config is followed by that of each intercept, from the outermost to the
+   * innermost, which is resolved against the result of the preceding ones.
    */
-  get baseUrl(): string | undefined {
-    return this[Service.resolveIntercept]().baseUrl
+  get baseUrl(): URL {
+    return new URL(this[Service.resolveIntercept]().baseUrl!)
   }
 
   [Service.mergeIntercept](...values: Fs.Intercept[]): Fs.Intercept {
-    let baseUrl: string | undefined
-    for (const value of [this.config, ...values]) {
+    let baseUrl = this.config.baseUrl
+    for (const value of values) {
       if (value?.baseUrl === undefined) continue
+      let url: URL
       try {
-        baseUrl = new URL(value.baseUrl, baseUrl).href
+        url = new URL(toReference(value.baseUrl), baseUrl)
       } catch (error) {
-        const message = baseUrl
-          ? `invalid base URL ${JSON.stringify(value.baseUrl)}`
-          : `cannot resolve the base URL ${JSON.stringify(value.baseUrl)} without an outer one`
-        throw new TypeError(message, { cause: error })
+        throw new TypeError(`invalid base URL ${JSON.stringify(value.baseUrl)}`, { cause: error })
       }
+      baseUrl = toDirectory(url, value.baseUrl).href
     }
     return { ...Object.assign({}, ...values), baseUrl }
   }
@@ -116,21 +149,17 @@ export class Fs extends Service<Fs.Intercept> {
   }
 
   /**
-   * Resolve a URL reference against `baseUrl`. A reference that cannot be
-   * parsed, including a relative reference without `baseUrl`, throws an
-   * `FsError` with the code `InvalidPath`.
+   * Resolve a URL reference against `baseUrl`. On Windows, a drive-letter
+   * path, such as `C:\app`, is taken as a file path. A reference that cannot be
+   * parsed throws an `FsError` with the code `InvalidPath`.
    */
   resolve(path: string | URL): URL {
     if (path instanceof URL) return path
     const base = this.baseUrl
     try {
-      return new URL(path, base)
+      return new URL(toReference(path), base)
     } catch (error) {
-      // a reference without a scheme is relative, and resolvable against a base
-      const message = !base && !/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(path)
-        ? `cannot resolve the relative reference ${JSON.stringify(path)} without a base URL`
-        : `invalid URL ${JSON.stringify(path)}`
-      throw new FsError('InvalidPath', undefined, message, { cause: error })
+      throw new FsError('InvalidPath', undefined, `invalid URL ${JSON.stringify(path)}`, { cause: error })
     }
   }
 
@@ -259,16 +288,18 @@ export class Fs extends Service<Fs.Intercept> {
 export namespace Fs {
   export interface Intercept {
     /**
-     * The base URL of relative references. A relative value is resolved
-     * against the base URL of the outer context.
+     * The base URL of relative references, which names a directory. A
+     * relative value is resolved against the base URL of the outer context.
+     * On Windows, a drive-letter path, such as `C:\app`, is taken as a file path.
      */
     baseUrl?: string
   }
 
   export interface Config {
     /**
-     * The base URL of relative references, which is absolute. Defaults to
-     * the working directory, on a runtime that has one.
+     * The base URL of relative references, which is absolute and names a
+     * directory. On Windows, a drive-letter path, such as `C:\app`, is taken as
+     * a file path. Defaults to the working directory.
      */
     baseUrl?: string
   }

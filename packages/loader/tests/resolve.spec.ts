@@ -37,7 +37,7 @@ async function fixture() {
   }))
   await writeFile(join(dep, 'index.js'), 'export const tag = "bare-dep"\n')
   await mkdir(join(root, 'src'))
-  return { root, baseUrl: pathToFileURL(join(root, 'src', 'cordis.yml')).href }
+  return { root, baseUrl: pathToFileURL(join(root, 'src')).href + '/' }
 }
 
 afterEach(async () => {

@@ -1,4 +1,4 @@
-import { Context, Fiber } from 'cordis'
+import { Context, Fiber, FiberState } from 'cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -37,11 +37,15 @@ describe('Fs', () => {
     return root
   }
 
-  // as on a runtime without a working directory
-  async function setupWithoutCwd() {
+  // starts the service as on a runtime without a working directory
+  async function startWithoutCwd(config: Fs.Config = {}) {
+    const root = new Context()
     vi.stubGlobal('process', undefined)
     try {
-      return await setup()
+      const fiber = root.plugin(Fs, config)
+      fibers.push(fiber)
+      await fiber.await().catch(() => {})
+      return { root, fiber }
     } finally {
       vi.unstubAllGlobals()
     }
@@ -200,13 +204,13 @@ describe('Fs', () => {
 
   describe('resolve', () => {
     it('resolves a relative reference against the base URL', async () => {
-      const ctx = await setup('file:///app/cordis.yml')
+      const ctx = await setup('file:///app/')
       expect(ctx.fs.resolve('data/a.txt').href).to.equal('file:///app/data/a.txt')
       expect(ctx.fs.resolve('/a.txt').href).to.equal('file:///a.txt')
     })
 
     it('takes an absolute URL independently of the base URL', async () => {
-      const ctx = await setup('file:///app/cordis.yml')
+      const ctx = await setup('file:///app/')
       expect(ctx.fs.resolve('mem://bucket/a.txt').href).to.equal('mem://bucket/a.txt')
       const url = new URL('mem://bucket/b.txt')
       expect(ctx.fs.resolve(url)).to.equal(url)
@@ -217,39 +221,66 @@ describe('Fs', () => {
       expect(ctx.fs.resolve('a.txt').href).to.equal(pathToFileURL(join(process.cwd(), 'a.txt')).href)
     })
 
-    it('rejects a relative reference without a base URL', async () => {
-      const ctx = await setupWithoutCwd()
-      expect(() => ctx.fs.resolve('a.txt')).to.throw(FsError).with.property('code', 'InvalidPath')
-      expect(ctx.fs.resolve('file:///a.txt').href).to.equal('file:///a.txt')
+    it('requires a base URL on a runtime without a working directory', async () => {
+      const { fiber } = await startWithoutCwd()
+      expect(fiber.state).to.equal(FiberState.FAILED)
+      const { root } = await startWithoutCwd({ baseUrl: 'mem://bucket/' })
+      expect(root.fs.resolve('a.txt').href).to.equal('mem://bucket/a.txt')
+    })
+
+    it('rejects a relative base URL of the config', async () => {
+      const root = new Context()
+      const fiber = root.plugin(Fs, { baseUrl: 'data/' })
+      fibers.push(fiber)
+      await fiber.await().catch(() => {})
+      expect(fiber.state).to.equal(FiberState.FAILED)
     })
 
     it('takes the base URL of the innermost intercept', async () => {
-      const ctx = await setup('file:///app/cordis.yml')
+      const ctx = await setup('file:///app/')
       const inner = ctx.intercept('fs', { baseUrl: 'mem://bucket/' }).intercept('fs', { baseUrl: 'file:///data/' })
       expect(inner.fs.resolve('a.txt').href).to.equal('file:///data/a.txt')
       expect(ctx.fs.resolve('a.txt').href).to.equal('file:///app/a.txt')
     })
 
     it('resolves a relative base URL against the outer one', async () => {
-      const ctx = await setup('file:///app/cordis.yml')
+      const ctx = await setup('file:///app/')
       const inner = ctx.intercept('fs', { baseUrl: 'data/' }).intercept('fs', { baseUrl: '../logs/' })
-      expect(inner.fs.baseUrl).to.equal('file:///app/logs/')
+      expect(inner.fs.baseUrl.href).to.equal('file:///app/logs/')
       expect(inner.fs.resolve('a.txt').href).to.equal('file:///app/logs/a.txt')
     })
 
-    it('rejects a relative base URL without an outer one', async () => {
-      const ctx = await setupWithoutCwd()
-      const inner = ctx.intercept('fs', { baseUrl: 'data/' })
-      expect(() => inner.fs.resolve('a.txt')).to.throw(TypeError)
+    it.each(['mem:bucket', 'mem:bucket/'])('rejects a base URL with an opaque path, such as %s', async (baseUrl) => {
+      const root = new Context()
+      const fiber = root.plugin(Fs, { baseUrl })
+      fibers.push(fiber)
+      await fiber.await().catch(() => {})
+      expect(fiber.state).to.equal(FiberState.FAILED)
+      const ctx = await setup('file:///app/')
+      expect(() => ctx.intercept('fs', { baseUrl }).fs.baseUrl).to.throw(TypeError)
+    })
+
+    it('takes a base URL as a directory without a query or fragment', async () => {
+      const ctx = await setup('file:///app?x')
+      const inner = ctx.intercept('fs', { baseUrl: 'data' }).intercept('fs', { baseUrl: 'logs?x#y' })
+      expect(ctx.fs.baseUrl.href).to.equal('file:///app/')
+      expect(inner.fs.baseUrl.href).to.equal('file:///app/data/logs/')
+    })
+
+    it.runIf(process.platform === 'win32')('takes a drive-letter path as a file path', async () => {
+      const ctx = await setup('C:\\app')
+      expect(ctx.fs.baseUrl.href).to.equal('file:///C:/app/')
+      expect(ctx.fs.resolve('D:\\data\\a.txt').href).to.equal('file:///D:/data/a.txt')
+      expect(ctx.intercept('fs', { baseUrl: 'D:/data' }).fs.baseUrl.href).to.equal('file:///D:/data/')
     })
 
     it('rejects a reference that cannot be parsed with `InvalidPath`', async () => {
-      const ctx = await setup('file:///app/cordis.yml')
+      const ctx = await setup('file:///app/')
       expect(() => ctx.fs.resolve('http://[')).to.throw(FsError).with.property('code', 'InvalidPath')
     })
 
         it('watches the resolved location', async () => {
-      const ctx = await setup('mem://bucket/dir/config.yml')
+      const ctx = await setup('mem://bucket/dir/')
       const provider = fakeProvider()
       ctx.fs.mount('mem:', provider)
       ctx.fs.watch('a.txt')

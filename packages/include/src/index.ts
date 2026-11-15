@@ -13,9 +13,6 @@ import { applyJournal, flatten, Journal, merge, reconcile, record } from './jour
 import { applyPatches, ensureIds, ensureInsertIds, PatchIndex, PatchOptions, routeJournal } from './patch.ts'
 import { FsError } from '@cordisjs/fs'
 
-// A Windows drive-letter path, e.g. `C:\app\cordis.yml` or `C:/app/cordis.yml`.
-const driveLetter = /^[A-Za-z]:[\\/]/
-
 const JsExpr: ScalarTag = {
   tag: 'tag:yaml.org,2002:js',
   identify: isJsExpr,
@@ -267,11 +264,7 @@ export class Include extends EntryTree {
   private _seq = 0
 
   constructor(ctx: Context, public config: Include.Config) {
-    // On Windows, a drive-letter path is converted with `pathToFileURL`.
-    // `new URL()` would read its `C:` as a URL scheme, which `fileURLToPath` rejects.
-    const filename = fileURLToPath(process.platform === 'win32' && driveLetter.test(config.path)
-      ? pathToFileURL(config.path)
-      : ctx.fs.resolve(config.path))
+    const filename = fileURLToPath(ctx.fs.resolve(config.path))
     const url = pathToFileURL(filename)
     // the entries of the file resolve their references against its directory
     super(ctx.intercept('fs', { baseUrl: new URL('.', url).href }))

@@ -63,7 +63,7 @@ describe('Hmr.reconcile', () => {
     fiber = undefined
   })
 
-  async function setup(baseUrl = import.meta.url) {
+  async function setup(baseUrl = new URL('.', import.meta.url).href) {
     ctx = new Context()
     await ctx.use(Fs, { baseUrl })
     fiber = await ctx.use(Loader)
