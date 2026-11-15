@@ -36,6 +36,7 @@
   },
   "dependencies": {
     "dotenv": "^17.4.2",
-    "dotenv-expand": "^13.0.0"
+    "dotenv-expand": "^13.0.0",
+    "schemastery": "^3.18.0"
   }
 }

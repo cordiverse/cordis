@@ -35,49 +35,95 @@ describe('env', () => {
     keys.clear()
   })
 
-  async function setup(provider: FsProvider, ...names: string[]) {
-    for (const name of names) keys.add(name)
+  async function setup(provider: FsProvider) {
     const root = new Context()
     fibers.push(await root.use(Fs, { baseUrl: 'mem://app/' }))
     root.fs.mount('mem:', provider)
     return root
   }
 
-  it('loads the files in priority order, without overriding existing variables', async () => {
+  // sets a variable of the process environment for the current test
+  function stub(key: string, value: string) {
+    keys.add(key)
+    process.env[key] = value
+  }
+
+  it('loads the files in priority order', async () => {
     const ctx = await setup(memory({
-      'mem://app/.env': 'CORDIS_ENV_A=env\nCORDIS_ENV_B=env\nCORDIS_ENV_C=env\nCORDIS_ENV_D=env\n',
+      'mem://app/.env': 'CORDIS_ENV_A=env\nCORDIS_ENV_B=env\nCORDIS_ENV_C=env\n',
       'mem://app/.env.local': 'CORDIS_ENV_B=local\nCORDIS_ENV_C=local\n',
       [`mem://app/.env.${mode}.local`]: 'CORDIS_ENV_C=mode-local\n',
-    }), 'CORDIS_ENV_A', 'CORDIS_ENV_B', 'CORDIS_ENV_C', 'CORDIS_ENV_D')
-    process.env.CORDIS_ENV_D = 'process'
+    }))
     fibers.push(await ctx.plugin(env))
-    expect(process.env.CORDIS_ENV_A).to.equal('env')
-    expect(process.env.CORDIS_ENV_B).to.equal('local')
-    expect(process.env.CORDIS_ENV_C).to.equal('mode-local')
-    expect(process.env.CORDIS_ENV_D).to.equal('process')
+    expect(ctx.get('env')).to.include({
+      CORDIS_ENV_A: 'env',
+      CORDIS_ENV_B: 'local',
+      CORDIS_ENV_C: 'mode-local',
+    })
+  })
+
+  it('takes a variable of the process environment over the files', async () => {
+    const ctx = await setup(memory({
+      'mem://app/.env': 'CORDIS_ENV_A=env\nCORDIS_ENV_B=env\n',
+    }))
+    stub('CORDIS_ENV_A', 'process')
+    fibers.push(await ctx.plugin(env))
+    expect(ctx.get('env')).to.include({ CORDIS_ENV_A: 'process', CORDIS_ENV_B: 'env' })
+  })
+
+  it('does not modify the process environment', async () => {
+    const ctx = await setup(memory({
+      'mem://app/.env': 'CORDIS_ENV_A=env\nCORDIS_ENV_B=env\n',
+    }))
+    stub('CORDIS_ENV_B', 'process')
+    const before = { ...process.env }
+    fibers.push(await ctx.plugin(env))
+    expect(ctx.get('env')?.CORDIS_ENV_A).to.equal('env')
+    expect(process.env).to.deep.equal(before)
   })
 
   it('expands a reference to a variable declared before', async () => {
     const ctx = await setup(memory({
       // the referenced variable sorts after the one that references it
       'mem://app/.env': 'CORDIS_ENV_Z_HOST=localhost\nCORDIS_ENV_A_URL=http://${CORDIS_ENV_Z_HOST}/\n',
-    }), 'CORDIS_ENV_Z_HOST', 'CORDIS_ENV_A_URL')
+    }))
     fibers.push(await ctx.plugin(env))
-    expect(process.env.CORDIS_ENV_A_URL).to.equal('http://localhost/')
+    expect(ctx.get('env')?.CORDIS_ENV_A_URL).to.equal('http://localhost/')
+  })
+
+  it('expands a reference to a variable of the process environment', async () => {
+    const ctx = await setup(memory({
+      'mem://app/.env': 'CORDIS_ENV_URL=http://${CORDIS_ENV_HOST}/\n',
+    }))
+    stub('CORDIS_ENV_HOST', 'localhost')
+    fibers.push(await ctx.plugin(env))
+    expect(ctx.get('env')?.CORDIS_ENV_URL).to.equal('http://localhost/')
+  })
+
+  it('reads the files again on a restart', async () => {
+    const files = { 'mem://app/.env': 'CORDIS_ENV_A=old\nCORDIS_ENV_B=old\n' }
+    const ctx = await setup(memory(files))
+    const fiber = await ctx.plugin(env)
+    fibers.push(fiber)
+    files['mem://app/.env'] = 'CORDIS_ENV_A=new\n'
+    await fiber.restart()
+    expect(ctx.get('env')?.CORDIS_ENV_A).to.equal('new')
+    expect(ctx.get('env')).not.to.have.property('CORDIS_ENV_B')
   })
 
   it('resolves the files against `ctx.fs.baseUrl`', async () => {
     const ctx = await setup(memory({
       'mem://other/.env': 'CORDIS_ENV_A=other\n',
-    }), 'CORDIS_ENV_A')
-    fibers.push(await ctx.intercept('fs', { baseUrl: 'mem://other/' }).plugin(env))
-    expect(process.env.CORDIS_ENV_A).to.equal('other')
+    }))
+    const scoped = ctx.intercept('fs', { baseUrl: 'mem://other/' })
+    fibers.push(await scoped.plugin(env))
+    expect(ctx.get('env')?.CORDIS_ENV_A).to.equal('other')
   })
 
   it('provides `ctx.env` once the files are loaded', async () => {
     const ctx = await setup(memory({
       'mem://app/.env': 'CORDIS_ENV_A=env\n',
-    }), 'CORDIS_ENV_A')
+    }))
     let value: string | undefined
     const consumer = ctx.inject(['env'], (ctx) => {
       value = ctx.env.CORDIS_ENV_A
@@ -86,6 +132,43 @@ describe('env', () => {
     fibers.push(await ctx.plugin(env))
     await consumer
     expect(value).to.equal('env')
+  })
+
+  it('provides a read-only `ctx.env`', async () => {
+    const ctx = await setup(memory({
+      'mem://app/.env': 'CORDIS_ENV_A=env\n',
+    }))
+    fibers.push(await ctx.plugin(env))
+    expect(Object.isFrozen(ctx.get('env'))).to.equal(true)
+  })
+
+  describe('populate', () => {
+    it('assigns the variables of the files while the component is active', async () => {
+      const ctx = await setup(memory({
+        'mem://app/.env': 'CORDIS_ENV_A=env\nCORDIS_ENV_B=env\n',
+      }))
+      keys.add('CORDIS_ENV_A')
+      stub('CORDIS_ENV_B', 'process')
+      const fiber = await ctx.plugin(env, { populate: true })
+      fibers.push(fiber)
+      expect(process.env.CORDIS_ENV_A).to.equal('env')
+      expect(process.env.CORDIS_ENV_B).to.equal('process')
+      await fiber.dispose()
+      expect(process.env).not.to.have.property('CORDIS_ENV_A')
+      expect(process.env.CORDIS_ENV_B).to.equal('process')
+    })
+
+    it('keeps a variable changed by others after the assignment', async () => {
+      const ctx = await setup(memory({
+        'mem://app/.env': 'CORDIS_ENV_A=env\n',
+      }))
+      keys.add('CORDIS_ENV_A')
+      const fiber = await ctx.plugin(env, { populate: true })
+      fibers.push(fiber)
+      process.env.CORDIS_ENV_A = 'other'
+      await fiber.dispose()
+      expect(process.env.CORDIS_ENV_A).to.equal('other')
+    })
   })
 
   it('fails on an error other than a missing file', async () => {

@@ -108,6 +108,7 @@ __metadata:
     cordis: "npm:^4.0.0-rc.13"
     dotenv: "npm:^17.4.2"
     dotenv-expand: "npm:^13.0.0"
+    schemastery: "npm:^3.18.0"
   peerDependencies:
     "@cordisjs/fs": ^2.0.0-rc.0
     cordis: ^4.0.0-rc.13
