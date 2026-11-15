@@ -112,6 +112,17 @@ describe('@cordisjs/server', () => {
       expect(await res.text()).to.equal('hello world')
     })
 
+    it('should keep plus signs in path params', async () => {
+      ctx.server.get('/files/:name', async (req, res, next) => {
+        res.body = req.params.name
+      })
+      await sleep()
+
+      const res = await fetch(`${url}/files/a+b`)
+      expect(res.status).to.equal(200)
+      expect(await res.text()).to.equal('a+b')
+    })
+
     it('should handle wildcard path params', async () => {
       ctx.server.get('{/*path}', async (req, res, next) => {
         res.body = req.params.path ?? null

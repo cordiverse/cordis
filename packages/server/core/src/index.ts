@@ -62,8 +62,8 @@ export abstract class Route {
       params = {}
       this.keys.forEach(({ name }, index) => {
         if (capture[index + 1] === undefined) return
-        // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/decodeURIComponent#decoding_query_parameters_from_a_url
-        params[name] = decodeURIComponent(capture[index + 1].replace(/\+/g, ' '))
+        // a path is percent-encoded, in which `+` stands for itself rather than a space
+        params[name] = decodeURIComponent(capture[index + 1])
       })
     } else {
       params = capture

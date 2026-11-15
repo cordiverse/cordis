@@ -24,11 +24,29 @@ export const Config: z<Config> = z.object({
 
 export const name = 'server:proxy'
 
+// The characters that `encodeURIComponent` encodes, but that RFC 3986 allows in
+// a path segment: the sub-delimiters `$&+,;=`, `:` and `@`.
+const segmentChars = /%(?:24|26|2B|2C|3A|3B|3D|40)/g
+
+function encodeSegment(segment: string) {
+  return encodeURIComponent(segment).replace(segmentChars, decodeURIComponent)
+}
+
 export const inject = ['http', 'server']
 
 export function apply(ctx: Context, config: Config) {
   // the target as a directory, so that the paths of requests are resolved under it
-  const target = config.target.replace(/\/+$/, '') + '/'
+  const target = new URL(config.target)
+  target.pathname = target.pathname.replace(/\/*$/, '/')
+
+  // The URL under the target for the path of a request, or `undefined` outside of
+  // it. The router decodes the path, so each segment is encoded again, and `..`
+  // remains a dot segment, which the URL parser removes.
+  function locate(path = '') {
+    const url = new URL('./' + path.split('/').map(encodeSegment).join('/'), target)
+    if (url.origin === target.origin && url.pathname.startsWith(target.pathname)) return url
+  }
+
   const bodyMethods = new Set(['POST', 'PUT', 'PATCH'])
 
   ctx.reflect.provide('server.proxy', {
@@ -38,7 +56,8 @@ export function apply(ctx: Context, config: Config) {
   } satisfies ServerProxy)
 
   ctx.server.all('{/*path}', async (req, res, next) => {
-    const url = new URL(req.params.path ?? '', target)
+    const url = locate(req.params.path)
+    if (!url) return new Response(null, { status: 400, statusText: 'Bad Request' })
     url.search = req.query.toString()
     ctx.logger?.debug('%s %s -> %s', req.method, req.url, url.href)
     const response = await ctx.http(url.href, {
@@ -58,7 +77,11 @@ export function apply(ctx: Context, config: Config) {
   })
 
   ctx.server.ws('{/*path}', async (req, accept) => {
-    const httpUrl = new URL(req.params.path ?? '', target)
+    const httpUrl = locate(req.params.path)
+    if (!httpUrl) {
+      ctx.logger?.debug('WS %s is outside the target', req.url)
+      return
+    }
     const wsUrl = new URL(httpUrl)
     wsUrl.protocol = httpUrl.protocol === 'https:' ? 'wss:' : 'ws:'
     wsUrl.search = req.query.toString()

@@ -179,4 +179,64 @@ describe('@cordisjs/server-proxy', () => {
       await sleep()
     })
   })
+
+  describe('request paths', () => {
+    // a proxy of its own, forwarding to `target`
+    async function createProxy(target: string) {
+      const scoped = new Context().intercept('logger', { level: 3 })
+      await scoped.use(LoggerConsole)
+      await scoped.use(Server, { host: '127.0.0.1', port: 0 })
+      await scoped.use(HTTP)
+      await scoped.use(Proxy, { target })
+      return scoped
+    }
+
+    it('should forward reserved characters as part of the path', async () => {
+      upstream.server.get('{/*path}', async (req, res) => {
+        res.body = req.path
+      })
+      await sleep()
+
+      const res = await fetch(`${proxyUrl}/a%3Fb%23c+d`)
+      expect(res.status).to.equal(200)
+      expect(await res.text()).to.equal('/a%3Fb%23c+d')
+    })
+
+    it('should reject a path outside the target', async () => {
+      let reached = false
+      upstream.server.get('{/*path}', async (req, res) => {
+        reached = true
+        res.body = req.path
+      })
+      await sleep()
+
+      const scoped = await createProxy(upstreamUrl + '/api/v1/')
+      // fetch() removes a literal `..`, but keeps an encoded separator
+      const res = await fetch(`${scoped.server.publicUrl}/..%2Fsecret`)
+      expect(res.status).to.equal(400)
+      expect(reached).to.equal(false)
+
+      await scoped.fiber.dispose()
+      await sleep()
+    })
+
+    it.each(['?key=value', '#fragment'])('should forward under the path of a target with %s', async (suffix) => {
+      upstream.server.get('{/*path}', async (req, res) => {
+        res.body = req.path
+      })
+      await sleep()
+
+      const scoped = await createProxy(upstreamUrl + '/api/v1' + suffix)
+      const res1 = await fetch(`${scoped.server.publicUrl}/users`)
+      expect(res1.status).to.equal(200)
+      expect(await res1.text()).to.equal('/api/v1/users')
+      // a sibling of the target directory with the same prefix
+      const res2 = await fetch(`${scoped.server.publicUrl}/v10/secret`)
+      expect(res2.status).to.equal(200)
+      expect(await res2.text()).to.equal('/api/v1/v10/secret')
+
+      await scoped.fiber.dispose()
+      await sleep()
+    })
+  })
 })
