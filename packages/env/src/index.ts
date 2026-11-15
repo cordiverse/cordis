@@ -1,16 +1,27 @@
 import { Context } from 'cordis'
 import { parse } from 'dotenv'
 import { expand } from 'dotenv-expand'
-import { readFileSync } from 'node:fs'
-import type {} from '@cordisjs/fs'
+import { FsError } from '@cordisjs/fs'
+import z from 'schemastery'
 
 declare module 'cordis' {
   interface Context {
-    env: NodeJS.ProcessEnv
+    env: Readonly<Record<string, string | undefined>>
   }
 }
 
-export default function env(ctx: Context) {
+export const name = 'env'
+export const inject = ['fs']
+
+export interface Config {
+  populate?: boolean
+}
+
+export const Config: z<Config> = z.object({
+  populate: z.boolean().default(false).description('Also assign the variables of the env files to `process.env` while the component is active.'),
+})
+
+export async function apply(ctx: Context, config: Config = {}) {
   const mode = process.env.NODE_ENV ?? 'development'
 
   // Load in priority order (low to high):
@@ -25,25 +36,49 @@ export default function env(ctx: Context) {
     `./.env.${mode}.local`,
   ]
 
-  const merged: Record<string, string> = {}
-  for (const file of files) {
+  // a missing file is skipped
+  const contents = await Promise.all(files.map(async (file) => {
     try {
-      Object.assign(merged, parse(readFileSync(ctx.fs.resolve(file))))
-    } catch {}
-  }
-
-  // Expand variable references (e.g. ${VAR})
-  expand({ parsed: merged, processEnv: process.env as Record<string, string> })
-
-  // Apply to process.env (don't override existing values)
-  for (const [key, value] of Object.entries(merged)) {
-    if (process.env[key] === undefined) {
-      process.env[key] = value
+      return await ctx.fs.file(file).text()
+    } catch (error) {
+      if (error instanceof FsError && error.code === 'NotFound') return
+      throw error
     }
+  }))
+
+  const merged: Record<string, string> = {}
+  for (const content of contents) {
+    if (content !== undefined) Object.assign(merged, parse(content))
   }
 
-  // Register process.env as ctx.env
-  ctx.provide('env', process.env)
-}
+  // a variable of the process environment takes precedence over the files
+  const env: Record<string, string | undefined> = { ...process.env }
+  expand({ parsed: merged, processEnv: env as Record<string, string> })
 
-env.inject = ['fs']
+  if (config.populate) {
+    ctx.effect(() => {
+      // the values that the assignment replaces
+      const previous = new Map<string, string | undefined>()
+      for (const key of Object.keys(merged)) {
+        if (process.env[key] === env[key]) continue
+        previous.set(key, process.env[key])
+        process.env[key] = env[key]
+      }
+      // A variable is restored only if it still has the assigned value, so
+      // that a later change by others is kept.
+      return () => {
+        for (const [key, value] of previous) {
+          if (process.env[key] !== env[key]) continue
+          if (value === undefined) {
+            delete process.env[key]
+          } else {
+            process.env[key] = value
+          }
+        }
+      }
+    }, 'env.populate')
+  }
+
+  // frozen, so that the values compared at the restoration are the assigned ones
+  ctx.provide('env', Object.freeze(env))
+}
