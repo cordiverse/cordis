@@ -2,6 +2,7 @@ import { Context } from 'cordis'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, resolve } from 'node:path'
+import { readFileSync } from 'node:fs'
 import * as http from 'node:http'
 import Fs, { FsError } from '@cordisjs/fs'
 import NodeFs from '@cordisjs/fs-node'
@@ -40,10 +41,17 @@ describe('@cordisjs/server-static', () => {
 
   describe('root', () => {
     it('should resolve a relative root against the base URL of fs', async () => {
-      ({ ctx, url } = await setup({ root: 'fixtures' }, { baseUrl: import.meta.url }))
+      ({ ctx, url } = await setup({ root: 'fixtures' }, { baseUrl: new URL('.', import.meta.url).href }))
       const res = await fetch(`${url}/hello.html`)
       expect(res.status).to.equal(200)
       expect(await res.text()).to.equal('<h1>Hello</h1>\n')
+    })
+
+    it('should take a root without a trailing slash as a directory', async () => {
+      ({ ctx, url } = await setup({ root: pathToFileURL(fixturesDir).href }))
+      const res = await fetch(`${url}/sub/`)
+      expect(res.status).to.equal(200)
+      expect(await res.text()).to.equal(readFileSync(resolve(fixturesDir, 'sub/index.html'), 'utf8'))
     })
   })
 

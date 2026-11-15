@@ -33,7 +33,7 @@ describe('Include watch', () => {
   async function setup(config: any = {}) {
     await writeFile(filename, '[]\n')
     const ctx = new Context()
-    await ctx.use(FakeFs, { baseUrl: import.meta.url })
+    await ctx.use(FakeFs, { baseUrl: new URL('.', import.meta.url).href })
     await ctx.use(NodeFs)
     fiber = await ctx.use(Loader)
     const id = await ctx.loader.create({
@@ -75,7 +75,7 @@ describe('Include watch with fs', () => {
   it('keeps watching the file across its own rename-based writes', async () => {
     await writeFile(filename, yaml.stringify([component('a', 0)]))
     const ctx = new Context()
-    await ctx.use(Fs, { baseUrl: import.meta.url })
+    await ctx.use(Fs, { baseUrl: new URL('.', import.meta.url).href })
     await ctx.use(NodeFs)
     fiber = await ctx.use(Loader)
     const id = await ctx.loader.create({

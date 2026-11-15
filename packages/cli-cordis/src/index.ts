@@ -33,7 +33,7 @@ export function apply(ctx: Context, config: Config) {
     .option('-d, --daemon', 'Run as daemon', { default: config.daemon.enabled })
     .action(async ({ args, options }) => {
       const workerConfig: Config = { ...config }
-      workerConfig.baseUrl ??= ctx.fs.baseUrl
+      workerConfig.baseUrl ??= ctx.fs.baseUrl.href
       if (args[0]) {
         workerConfig.path = args[0]
       }

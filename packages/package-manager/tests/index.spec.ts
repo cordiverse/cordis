@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, relative, sep } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import PackageManager from '../src/index.ts'
 import { adapters, AgentKind, AgentLayout } from '../src/agent.ts'
@@ -166,8 +167,8 @@ function createProject(files: Record<string, string>) {
 
 async function setup(dir: string) {
   const root = new Context()
-  await root.use(Fs)
-  await root.use(PackageManager, { base: dir, timeout: 120000 })
+  await root.use(Fs, { baseUrl: pathToFileURL(dir).href })
+  await root.use(PackageManager, { timeout: 120000 })
   let ctx!: Context
   await root.inject(['packageManager'], (inner) => { ctx = inner })
   return ctx.packageManager

@@ -211,7 +211,7 @@ export abstract class EntryTree {
       // internal.import
       info.offset += 3
       // the file system service is optional, and supplies the base URL
-      const baseUrl = this.ctx.get('fs')?.baseUrl
+      const baseUrl = this.ctx.get('fs')?.baseUrl.href
       if (this.ctx.loader.internal) {
         parent = baseUrl!
         return await this.ctx.loader.internal.import(name, parent, {})
