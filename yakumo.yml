@@ -1,4 +1,9 @@
 - name: yakumo
+  config:
+    alias:
+      core: /packages/core
+      server: /packages/server/core
+      server-*: /packages/server/*
 - name: yakumo-tsc
 - name: yakumo-esbuild
 - name: yakumo-vitest
