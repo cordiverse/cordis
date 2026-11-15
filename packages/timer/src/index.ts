@@ -115,7 +115,10 @@ export class TimerService extends Service {
     const wrapper: any = (...args: any[]) => {
       if (isDisposed) return
       clearTimeout(timer)
-      timer = trigger(args)
+      timer = undefined
+      const next = trigger(args)
+      // A re-entering callback may schedule a trailing call before `trigger` returns; keep its handle.
+      if (next !== undefined) timer = next
     }
     wrapper.dispose = dispose
     return wrapper
