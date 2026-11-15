@@ -340,7 +340,7 @@ describe('ctx.timer', () => {
       assert.strictEqual(callback.mock.calls.length, 0)
     }))
 
-    it('keeps a trailing call scheduled by the callback', withContext(async (ctx) => {
+    it('context dispose with re-entrant callback', withContext(async (ctx) => {
       const callback = mock.fn()
       let throttled!: () => void
       const fiber = await ctx.use({

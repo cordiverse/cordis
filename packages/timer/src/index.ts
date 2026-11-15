@@ -117,8 +117,7 @@ export class TimerService extends Service {
       clearTimeout(timer)
       timer = undefined
       const next = trigger(args)
-      // The leading edge runs `callback` before `trigger` returns, and the trailing
-      // handle a re-entering callback scheduled is the live one, so keep it.
+      // A re-entering callback may schedule a trailing call before `trigger` returns; keep its handle.
       if (next !== undefined) timer = next
     }
     wrapper.dispose = dispose
