@@ -1,6 +1,12 @@
 import { FsError } from '@cordisjs/fs'
 
-export type Operation = 'read' | 'write' | 'access' | 'rename' | 'remove'
+export type Operation =
+  | 'read' | 'write' | 'access' | 'rename' | 'remove'
+  | 'stat' | 'readdir' | 'mkdir' | 'copy' | 'symlink' | 'readlink'
+
+// the operations that change an existing entry, for which `EPERM` on Windows
+// is most often an entry held open by another process
+const changes: readonly Operation[] = ['write', 'rename', 'remove', 'copy']
 
 /**
  * The code is determined by the error of `node:fs` and the operation alone, so
@@ -13,11 +19,12 @@ function getCode(code: string, operation: Operation): FsError.Code {
     case 'EEXIST': return operation === 'remove' || operation === 'rename' ? 'DirectoryNotEmpty' : 'AlreadyExists'
     case 'ENOTDIR': return 'NotADirectory'
     case 'EISDIR': return 'IsADirectory'
+    // `readlink()` reports an entry that is not a symbolic link with `EINVAL`
+    case 'EINVAL': return operation === 'readlink' ? 'NotALink' : 'Unknown'
     case 'ENOTEMPTY': return 'DirectoryNotEmpty'
     case 'EPERM':
-      // libuv reports `ERROR_ACCESS_DENIED` as `EPERM`, which for these
-      // operations is most often an entry held open by another process
-      if (process.platform === 'win32' && operation !== 'read' && operation !== 'access') return 'Busy'
+      // libuv reports `ERROR_ACCESS_DENIED` as `EPERM`
+      if (process.platform === 'win32' && changes.includes(operation)) return 'Busy'
       return 'PermissionDenied'
     case 'EACCES':
     case 'EROFS': return 'PermissionDenied'

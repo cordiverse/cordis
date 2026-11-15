@@ -127,11 +127,22 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@cordisjs/fs-conformance@npm:^0.0.0, @cordisjs/fs-conformance@workspace:packages/fs/conformance":
+  version: 0.0.0-use.local
+  resolution: "@cordisjs/fs-conformance@workspace:packages/fs/conformance"
+  dependencies:
+    "@cordisjs/fs": "npm:^2.0.0-rc.0"
+    cordis: "npm:^4.0.0-rc.13"
+    vitest: "npm:^4.1.5"
+  languageName: unknown
+  linkType: soft
+
 "@cordisjs/fs-memory@npm:^0.1.0, @cordisjs/fs-memory@workspace:packages/fs/memory":
   version: 0.0.0-use.local
   resolution: "@cordisjs/fs-memory@workspace:packages/fs/memory"
   dependencies:
     "@cordisjs/fs": "npm:^2.0.0-rc.0"
+    "@cordisjs/fs-conformance": "npm:^0.0.0"
     cordis: "npm:^4.0.0-rc.13"
   peerDependencies:
     "@cordisjs/fs": ^2.0.0-rc.0
@@ -144,6 +155,7 @@ __metadata:
   resolution: "@cordisjs/fs-node@workspace:packages/fs/node"
   dependencies:
     "@cordisjs/fs": "npm:^2.0.0-rc.0"
+    "@cordisjs/fs-conformance": "npm:^0.0.0"
     chokidar: "npm:^4.0.3"
     cordis: "npm:^4.0.0-rc.13"
     cosmokit: "npm:^1.8.1"

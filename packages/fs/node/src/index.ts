@@ -1,8 +1,11 @@
-import { AccessMode, BaseFs, FsError, Watcher } from '@cordisjs/fs'
+import { AccessMode, BaseFs, EntryType, FsError, Stats as FsStats, Watcher } from '@cordisjs/fs'
 import { Context } from 'cordis'
-import { access, constants, FileHandle, lstat, open, rename, rmdir, stat, unlink } from 'node:fs/promises'
-import type { Stats } from 'node:fs'
-import { parse, resolve } from 'node:path'
+import {
+  access, constants, copyFile, FileHandle, lstat, mkdir, open, opendir,
+  readlink, rename, rm, rmdir, stat, symlink, unlink,
+} from 'node:fs/promises'
+import type { BigIntStats, Dirent, Stats } from 'node:fs'
+import { dirname, join, parse, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Operation, toFsError } from './error.ts'
 import { watchPath } from './watcher.ts'
@@ -42,7 +45,7 @@ function toEntry(filename: string) {
 }
 
 // A trailing separator requires a directory, which a symbolic link may resolve to.
-async function assertDirectory(entry: string, info: Stats, url: URL) {
+async function assertDirectory(entry: string, info: Stats | BigIntStats, url: URL) {
   const target = info.isSymbolicLink() ? await stat(entry) : info
   if (!target.isDirectory()) {
     throw new FsError('NotADirectory', url, `expected a directory at ${url.href}`)
@@ -70,6 +73,24 @@ async function call<T>(url: URL, operation: Operation, callback: () => Promise<T
     return await callback()
   } catch (error) {
     throw toFsError(error, url, operation)
+  }
+}
+
+function getType(info: Stats | BigIntStats | Dirent): EntryType | undefined {
+  if (info.isFile()) return 'file'
+  if (info.isDirectory()) return 'directory'
+  if (info.isSymbolicLink()) return 'symlink'
+  if (info.isBlockDevice() || info.isCharacterDevice() || info.isFIFO() || info.isSocket()) return 'other'
+}
+
+function toStats(info: BigIntStats): FsStats {
+  return {
+    type: getType(info) ?? 'other',
+    size: Number(info.size),
+    mtime: info.mtime,
+    mode: Number(info.mode & 0o7777n),
+    ino: info.ino,
+    dev: info.dev,
   }
 }
 
@@ -159,17 +180,111 @@ class NodeFs extends BaseFs {
     })
   }
 
-  async remove(url: URL) {
+  async remove(url: URL, options: { recursive: boolean }) {
     return run(url, 'remove', async (filename) => {
       // a symbolic link in the last component is removed itself
       const entry = toEntry(filename)
       const info = await lstat(entry)
       if (entry !== filename) await assertDirectory(entry, info, url)
-      if (info.isDirectory()) {
-        await rmdir(entry)
-      } else {
+      if (!info.isDirectory()) {
         await unlink(entry)
+      } else if (options.recursive) {
+        // `rm()` removes the links below the directory without following them
+        await rm(entry, { recursive: true })
+      } else {
+        await rmdir(entry)
       }
+    })
+  }
+
+  async stat(url: URL, options: { follow: boolean }) {
+    return run(url, 'stat', async (filename) => {
+      // `node:fs` on Windows removes a trailing separator
+      const entry = toEntry(filename)
+      if (entry !== filename) {
+        // a trailing separator follows a link in the last component
+        const info = await stat(entry, { bigint: true })
+        await assertDirectory(entry, info, url)
+        return toStats(info)
+      }
+      return toStats(options.follow ? await stat(entry, { bigint: true }) : await lstat(entry, { bigint: true }))
+    })
+  }
+
+  async* readdir(url: URL) {
+    const filename = toPath(url)
+    const dir = await call(url, 'readdir', () => opendir(filename))
+    try {
+      while (true) {
+        const dirent = await call(url, 'readdir', () => dir.read())
+        if (!dirent) return
+        let type = getType(dirent)
+        if (!type) {
+          // the type is not reported by every file system
+          const info = await call(url, 'readdir', () => lstat(join(filename, dirent.name))).catch((error) => {
+            if (error instanceof FsError && error.code === 'NotFound') return
+            throw error
+          })
+          // an entry removed meanwhile is not listed
+          if (!info) continue
+          type = getType(info) ?? 'other'
+        }
+        yield { name: dirent.name, type }
+      }
+    } finally {
+      await dir.close().catch(() => {})
+    }
+  }
+
+  async mkdir(url: URL, options: { recursive: boolean }) {
+    return run(url, 'mkdir', async (filename) => {
+      // An existing directory, also through a link, is not an error of a
+      // recursive creation, while `node:fs` reports an existing file with `EEXIST`.
+      await mkdir(filename, { recursive: options.recursive })
+    })
+  }
+
+  async copy(src: URL, dest: URL) {
+    const to = toPath(dest)
+    return run(src, 'copy', async (from) => {
+      assertFile(from, src)
+      assertFile(to, dest)
+      await copyFile(from, to)
+    })
+  }
+
+  async symlink(target: string, url: URL) {
+    return run(url, 'symlink', async (filename) => {
+      const entry = toEntry(filename)
+      if (entry !== filename) {
+        // A trailing separator names a directory, which a link is not.
+        // `node:fs` on Windows would remove the separator.
+        await lstat(entry)
+        throw new FsError('AlreadyExists', url, `an entry exists at ${url.href}`)
+      }
+      try {
+        // the type of the link is detected from the target on Windows
+        await symlink(target, entry)
+      } catch (error) {
+        // A link to a directory requires a privilege on Windows, which a
+        // junction does not. A junction stores the absolute target.
+        if (process.platform !== 'win32' || (error as NodeJS.ErrnoException).code !== 'EPERM') throw error
+        const info = await stat(resolve(dirname(entry), target)).catch(() => undefined)
+        if (!info?.isDirectory()) throw error
+        await symlink(target, entry, 'junction')
+      }
+    })
+  }
+
+  async readlink(url: URL) {
+    return run(url, 'readlink', async (filename) => {
+      const entry = toEntry(filename)
+      if (entry !== filename) {
+        // a trailing separator names the directory that a link resolves to
+        await assertDirectory(entry, await stat(entry), url)
+        throw new FsError('NotALink', url, `expected a symbolic link at ${url.href}`)
+      }
+      return readlink(entry)
     })
   }
 

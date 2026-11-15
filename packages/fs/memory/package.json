@@ -45,6 +45,7 @@
   },
   "devDependencies": {
     "@cordisjs/fs": "^2.0.0-rc.0",
+    "@cordisjs/fs-conformance": "^0.0.0",
     "cordis": "^4.0.0-rc.13"
   }
 }

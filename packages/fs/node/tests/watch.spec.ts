@@ -203,62 +203,6 @@ describe('Fs', () => {
       expect(tested.filter(([path]) => !path || isAbsolute(path) || path.includes('\\'))).to.deep.equal([])
     }, 15000)
 
-    it('selects the files by glob patterns relative to the watched directory', async () => {
-      const selected = [
-        write('glob/lib/file.txt'),
-        write('glob/src/index.ts'),
-        write('glob/src/deep/index.ts'),
-        write('glob/src/log1.ts'),
-        write('glob/packages/a/deep/file.js'),
-      ]
-      const others = [
-        write('glob/lib/.hidden.txt'),
-        write('glob/src/index.js'),
-        write('glob/src/logx.ts'),
-        write('glob/other.txt'),
-      ]
-      const ctx = await setup()
-      const seen: string[] = []
-      await watch(ctx, resolve(fixture, 'glob'), (filename) => { seen.push(filename) }, {
-        filter: ['lib', 'src/**/*.ts', 'packages/*', '!**/.*', '!src/log[!0-9].ts'],
-      })
-
-      await touch([...selected, ...others], () => selected.every(path => seen.includes(path)))
-      await new Promise(r => setTimeout(r, 200))
-      expect([...new Set(seen)].sort()).to.deep.equal(selected.sort())
-    }, 15000)
-
-    it('decides an entry by the last pattern that matches it or one of its ancestors', async () => {
-      const selected = [
-        write('ordered/src/index.ts'),
-        write('ordered/src/gen/keep.ts'),
-      ]
-      const others = [
-        write('ordered/src/gen/other.ts'),
-      ]
-      const ctx = await setup()
-      const seen: string[] = []
-      await watch(ctx, resolve(fixture, 'ordered'), (filename) => { seen.push(filename) }, {
-        filter: ['src', '!src/gen', 'src/gen/keep.ts'],
-      })
-
-      await touch([...selected, ...others], () => selected.every(path => seen.includes(path)))
-      await new Promise(r => setTimeout(r, 200))
-      expect([...new Set(seen)].sort()).to.deep.equal(selected.sort())
-    }, 15000)
-
-    it('descends into a directory whose name a pattern escapes', async () => {
-      const path = write('escaped/pkg[one]/file.ts')
-      const ctx = await setup()
-      const seen: string[] = []
-      await watch(ctx, resolve(fixture, 'escaped'), (filename) => { seen.push(filename) }, {
-        filter: ['pkg\\[one\\]/*.ts'],
-      })
-
-      await touch(path, () => seen.length)
-      expect([...new Set(seen)]).to.deep.equal([path])
-    }, 15000)
-
     it('treats a symbolic link to a directory as a directory', async () => {
       const target = write('symlink/target/file.ts')
       const link = resolve(fixture, 'symlink/root/linked')
@@ -288,19 +232,6 @@ describe('Fs', () => {
       symlinkSync(dirname(target), link, 'junction')
       await touch(target, () => seen.length)
       expect([...new Set(seen)]).to.deep.equal([resolve(link, 'file.ts')])
-    }, 15000)
-
-    it('keeps no entry with an empty `filter`', async () => {
-      const path = write('empty/file.txt')
-      const ctx = await setup()
-      const seen: string[] = []
-      const fromFile: string[] = []
-      await watch(ctx, resolve(fixture, 'empty'), (filename) => { seen.push(filename) }, { filter: [] })
-      await watch(ctx, path, (filename) => { fromFile.push(filename) })
-
-      await touch(path, () => fromFile.length)
-      await new Promise(r => setTimeout(r, 200))
-      expect(seen).to.deep.equal([])
     }, 15000)
 
     // A FIFO is held open for reading and writing, so that no open of it blocks:
@@ -355,13 +286,6 @@ describe('Fs', () => {
         await touch(path, () => seen.length)
         expect([...new Set(seen)]).to.deep.equal([path])
       }, 20000)
-    })
-
-    it('rejects a `filter` entry leading outside the watched directory', async () => {
-      const ctx = await setup()
-      for (const entry of ['../outside', '!../outside', 'a/../../outside', '/absolute']) {
-        expect(() => ctx.fs.watch(pathToFileURL(fixture), { filter: [entry] })).to.throw(TypeError)
-      }
     })
 
     it('does not apply `filter` to the watched directory', async () => {

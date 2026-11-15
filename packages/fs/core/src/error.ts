@@ -34,6 +34,8 @@ export namespace FsError {
     | 'NotADirectory'
     /** A file operation is applied to a directory. */
     | 'IsADirectory'
+    /** An operation on a symbolic link is applied to an entry that is not one. */
+    | 'NotALink'
     /** The operation requires an empty directory, and the directory is not empty. */
     | 'DirectoryNotEmpty'
     /** The storage denies the operation. */
