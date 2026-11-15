@@ -1,8 +1,7 @@
 import { Context } from 'cordis'
 import { parse } from 'dotenv'
 import { expand } from 'dotenv-expand'
-import { readFileSync } from 'node:fs'
-import type {} from '@cordisjs/fs'
+import { FsError } from '@cordisjs/fs'
 
 declare module 'cordis' {
   interface Context {
@@ -10,7 +9,10 @@ declare module 'cordis' {
   }
 }
 
-export default function env(ctx: Context) {
+export const name = 'env'
+export const inject = ['fs']
+
+export async function apply(ctx: Context) {
   const mode = process.env.NODE_ENV ?? 'development'
 
   // Load in priority order (low to high):
@@ -25,11 +27,19 @@ export default function env(ctx: Context) {
     `./.env.${mode}.local`,
   ]
 
-  const merged: Record<string, string> = {}
-  for (const file of files) {
+  // a missing file is skipped
+  const contents = await Promise.all(files.map(async (file) => {
     try {
-      Object.assign(merged, parse(readFileSync(ctx.fs.resolve(file))))
-    } catch {}
+      return await ctx.fs.file(file).text()
+    } catch (error) {
+      if (error instanceof FsError && error.code === 'NotFound') return
+      throw error
+    }
+  }))
+
+  const merged: Record<string, string> = {}
+  for (const content of contents) {
+    if (content !== undefined) Object.assign(merged, parse(content))
   }
 
   // Expand variable references (e.g. ${VAR})
@@ -45,5 +55,3 @@ export default function env(ctx: Context) {
   // Register process.env as ctx.env
   ctx.provide('env', process.env)
 }
-
-env.inject = ['fs']

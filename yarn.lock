@@ -107,7 +107,7 @@ __metadata:
     "@cordisjs/fs": "npm:^2.0.0-rc.0"
     cordis: "npm:^4.0.0-rc.13"
     dotenv: "npm:^17.4.2"
-    dotenv-expand: "npm:^12.0.3"
+    dotenv-expand: "npm:^13.0.0"
   peerDependencies:
     "@cordisjs/fs": ^2.0.0-rc.0
     cordis: ^4.0.0-rc.13
@@ -1664,19 +1664,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"dotenv-expand@npm:^12.0.3":
-  version: 12.0.3
-  resolution: "dotenv-expand@npm:12.0.3"
+"dotenv-expand@npm:^13.0.0":
+  version: 13.0.0
+  resolution: "dotenv-expand@npm:13.0.0"
   dependencies:
-    dotenv: "npm:^16.4.5"
-  checksum: 10c0/0824bdc74fc816a28b0744b7853a23e046602e9616c82121dfdae21ebc13c6e89afeb773e794e97c35d48be2be0a990fbca721ee3869a49c04210a58a3cf296f
-  languageName: node
-  linkType: hard
-
-"dotenv@npm:^16.4.5":
-  version: 16.6.1
-  resolution: "dotenv@npm:16.6.1"
-  checksum: 10c0/15ce56608326ea0d1d9414a5c8ee6dcf0fffc79d2c16422b4ac2268e7e2d76ff5a572d37ffe747c377de12005f14b3cc22361e79fc7f1061cce81f77d2c973dc
+    dotenv: "npm:^17.4.2"
+  checksum: 10c0/debebb7807fedebb21078dc661d28d69d373f3a673165afea7f7a8c3b82f0da675e417b2d42c40b1f3d357741c8b24a77d6f4376886092a82456225b3d241b88
   languageName: node
   linkType: hard
 
