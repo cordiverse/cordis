@@ -38,7 +38,7 @@ export class Request {
     this.url = _req.url!
     this.method = _req.method!
     this.path = this.url.split('?')[0]
-    this.query = new URLSearchParams(this.url.split('?')[1])
+    this.query = new URLSearchParams(this.url.slice(this.path.length))
     this.headers = new Headers()
     for (const [key, value] of Object.entries(_req.headers)) {
       if (Array.isArray(value)) {

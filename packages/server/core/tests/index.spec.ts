@@ -145,6 +145,17 @@ describe('@cordisjs/server', () => {
       expect(await res.text()).to.equal('hello')
     })
 
+    it('should keep question marks inside query string', async () => {
+      ctx.server.get('/search', async (req, res, next) => {
+        res.body = req.query.get('next') ?? ''
+      })
+      await sleep()
+
+      const res = await fetch(`${url}/search?next=/a?b=1`)
+      expect(res.status).to.equal(200)
+      expect(await res.text()).to.equal('/a?b=1')
+    })
+
     it('should not leak query string into path params', async () => {
       ctx.server.get('{/*path}', async (req, res, next) => {
         res.body = req.params.path ?? null
