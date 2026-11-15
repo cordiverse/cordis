@@ -9,7 +9,7 @@ import z from 'schemastery'
 
 export interface Config {
   root: string
-  download?: boolean
+  disposition?: 'attachment' | 'inline'
   fallthrough?: boolean
   exclude: string[]
   index: string[]
@@ -19,14 +19,14 @@ export interface Config {
 }
 
 export const Config: z<Config> = z.object({
-  root: z.string().required(),
-  download: z.boolean(),
-  fallthrough: z.boolean(),
-  exclude: z.array(String),
-  index: z.array(String).default(['index.html', 'index.htm']),
-  redirect: z.boolean().default(true),
-  extensions: z.array(String),
-  errorPages: z.dict(String),
+  root: z.string().required().description('The directory to serve, resolved against `ctx.fs.baseUrl`.'),
+  disposition: z.union(['attachment', 'inline']).description('The `Content-Disposition` of the files: `attachment` for a download, and `inline` for display. Without it, none is sent.'),
+  fallthrough: z.boolean().description('Pass a request for a missing file to the next route, instead of responding with 404.'),
+  exclude: z.array(String).description('Files that are not served, in glob patterns relative to `root`. A request for such a file is answered as for a missing one.'),
+  index: z.array(String).default(['index.html', 'index.htm']).description('The files to serve for a request for a directory, in the order they are tried.'),
+  redirect: z.boolean().default(true).description('Redirect a request for a directory without a trailing slash to the path with one.'),
+  extensions: z.array(String).description('Extensions to append to the path of a missing file, in the order they are tried, such as `.html`.'),
+  errorPages: z.dict(String).description('The pages to serve for error statuses, keyed by status, in paths relative to `root`. A page is served with the status it stands for.'),
 })
 
 export const name = 'server:static'
@@ -97,8 +97,8 @@ export function apply(ctx: Context, config: Config) {
 
   // The response of a file, or the error that prevents reading it. The status is
   // known only after the first chunk, since a provider reports a failure through
-  // the stream. `download` sets the content disposition when it is given.
-  async function read(url: URL, download?: boolean): Promise<Response | FsError> {
+  // the stream. `disposition` sets the content disposition when it is given.
+  async function read(url: URL, disposition?: Config['disposition']): Promise<Response | FsError> {
     let reader: ReadableStreamDefaultReader<Uint8Array>
     let first: ReadableStreamReadResult<Uint8Array>
     try {
@@ -128,9 +128,9 @@ export function apply(ctx: Context, config: Config) {
     const headers = new Headers({
       'content-type': mime || contentType(filename) || 'application/octet-stream',
     })
-    if (download === true) {
+    if (disposition === 'attachment') {
       headers.set('content-disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`)
-    } else if (download === false) {
+    } else if (disposition === 'inline') {
       headers.set('content-disposition', 'inline')
     }
     return new Response(body, { status: 200, statusText: 'OK', headers })
@@ -141,13 +141,13 @@ export function apply(ctx: Context, config: Config) {
   async function tryFile(url: URL): Promise<Response | FsError | undefined> {
     let result: Response | FsError | undefined
     if (!isExcluded(relativePath(url))) {
-      result = await read(url, config.download)
+      result = await read(url, config.disposition)
       if (result instanceof Response) return result
     }
     for (const ext of config.extensions) {
       const candidate = new URL(url.href + encodeURIComponent(ext))
       if (isExcluded(relativePath(candidate))) continue
-      const response = await read(candidate, config.download)
+      const response = await read(candidate, config.disposition)
       if (response instanceof Response) return response
     }
     return result

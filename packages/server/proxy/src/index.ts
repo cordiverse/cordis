@@ -10,15 +10,16 @@ declare module '@cordisjs/server' {
 }
 
 export interface ServerProxy {
-  readonly baseUrl: string
+  /** The public URL of the proxy. */
+  readonly publicUrl: string
 }
 
 export interface Config {
-  baseUrl?: string
+  target: string
 }
 
 export const Config: z<Config> = z.object({
-  baseUrl: z.string(),
+  target: z.string().required().description('The URL to forward requests to, under which their paths are resolved.'),
 })
 
 export const name = 'server:proxy'
@@ -26,17 +27,18 @@ export const name = 'server:proxy'
 export const inject = ['http', 'server']
 
 export function apply(ctx: Context, config: Config) {
-  const upstreamBase = config.baseUrl ? config.baseUrl.replace(/\/+$/, '') + '/' : undefined
+  // the target as a directory, so that the paths of requests are resolved under it
+  const target = config.target.replace(/\/+$/, '') + '/'
   const bodyMethods = new Set(['POST', 'PUT', 'PATCH'])
 
   ctx.reflect.provide('server.proxy', {
-    get baseUrl() {
-      return ctx.server.baseUrl
+    get publicUrl() {
+      return ctx.server.publicUrl
     },
   } satisfies ServerProxy)
 
   ctx.server.all('{/*path}', async (req, res, next) => {
-    const url = new URL(req.params.path ?? '', upstreamBase)
+    const url = new URL(req.params.path ?? '', target)
     url.search = req.query.toString()
     ctx.logger?.debug('%s %s -> %s', req.method, req.url, url.href)
     const response = await ctx.http(url.href, {
@@ -56,7 +58,7 @@ export function apply(ctx: Context, config: Config) {
   })
 
   ctx.server.ws('{/*path}', async (req, accept) => {
-    const httpUrl = new URL(req.params.path ?? '', upstreamBase)
+    const httpUrl = new URL(req.params.path ?? '', target)
     const wsUrl = new URL(httpUrl)
     wsUrl.protocol = httpUrl.protocol === 'https:' ? 'wss:' : 'ws:'
     wsUrl.search = req.query.toString()

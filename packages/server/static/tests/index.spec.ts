@@ -26,7 +26,7 @@ async function setup(config: Partial<Static.Config> = {}, fsConfig: Fs.Config = 
     root: pathToFileURL(fixturesDir).href + '/',
     ...config,
   } as Static.Config)
-  return { ctx, url: ctx.server.baseUrl }
+  return { ctx, url: ctx.server.publicUrl }
 }
 
 describe('@cordisjs/server-static', () => {
@@ -175,8 +175,8 @@ describe('@cordisjs/server-static', () => {
       expect(await res.text()).to.equal('<h1>Not Found</h1>\n')
     })
 
-    it('should display the error page regardless of download', async () => {
-      ({ ctx, url } = await setup({ download: true, errorPages: { 404: 'errors/404.html' } }))
+    it('should display the error page regardless of disposition', async () => {
+      ({ ctx, url } = await setup({ disposition: 'attachment', errorPages: { 404: 'errors/404.html' } }))
       const res = await fetch(`${url}/nonexistent`)
       expect(res.status).to.equal(404)
       expect(res.headers.get('content-disposition')).to.equal(null)
@@ -213,17 +213,17 @@ describe('@cordisjs/server-static', () => {
     })
   })
 
-  describe('download mode', () => {
-    it('should set content-disposition when download is true', async () => {
-      ({ ctx, url } = await setup({ download: true }))
+  describe('disposition', () => {
+    it('should set an attachment disposition', async () => {
+      ({ ctx, url } = await setup({ disposition: 'attachment' }))
       const res = await fetch(`${url}/hello.html`)
       expect(res.status).to.equal(200)
       const disposition = res.headers.get('content-disposition')
       expect(disposition).to.include('attachment')
     })
 
-    it('should set inline content-disposition when download is false', async () => {
-      ({ ctx, url } = await setup({ download: false }))
+    it('should set an inline disposition', async () => {
+      ({ ctx, url } = await setup({ disposition: 'inline' }))
       const res = await fetch(`${url}/hello.html`)
       expect(res.status).to.equal(200)
       const disposition = res.headers.get('content-disposition')

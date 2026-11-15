@@ -46,7 +46,7 @@ export const Config: z<Config> = z.object({
   allowedHosts: z.union([
     z.boolean(),
     z.array(String),
-  ]).description('允许访问的 Host 列表。`true` 表示任意 Host；`false` 表示仅允许本地回环；字符串数组为显式白名单（本地回环始终允许）。支持 `.example.com` 形式的子域通配。'),
+  ]).description('The hosts allowed to access the routes. `true` allows any host, and `false` allows the loopback hosts only. A list allows the loopback hosts and the listed ones, where an entry such as `.example.com` matches the domain and its subdomains. The `allowedHosts` option of a route overrides it.'),
 })
 
 export const name = 'server:acl'

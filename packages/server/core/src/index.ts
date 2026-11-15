@@ -133,7 +133,7 @@ class Server extends Service<Server.Intercept> {
   }
 
   Config: z<Server.Intercept> = z.object({
-    path: z.string().description('服务器监听的基础路径。'),
+    path: z.string().description('The path prefix of the routes registered in this context, which is also appended to `publicUrl`.'),
     routes: z.dict(z.any()).hidden(),
   })
 
@@ -275,8 +275,8 @@ class Server extends Service<Server.Intercept> {
       })
     })
 
-    if (config.baseUrl) {
-      config.baseUrl = trimSlash(config.baseUrl)
+    if (config.publicUrl) {
+      config.publicUrl = trimSlash(config.publicUrl)
     }
   }
 
@@ -290,10 +290,11 @@ class Server extends Service<Server.Intercept> {
     yield () => this.ctx.logger?.info(`server closing at %C`, `http://${this.host}:${this.port}`)
   }
 
-  get baseUrl() {
+  /** The public URL of the routes in this context, with the path prefix of its intercepts. */
+  get publicUrl() {
     const intercept = this[Service.resolveIntercept]()
     const pathPrefix = intercept.path ?? ''
-    if (this.config.baseUrl) return this.config.baseUrl + pathPrefix
+    if (this.config.publicUrl) return this.config.publicUrl + pathPrefix
     const wildcard = ['0.0.0.0', '::']
     const host = wildcard.includes(this.host) ? '127.0.0.1' : this.host
     let root: string
@@ -328,14 +329,14 @@ namespace Server {
     host: string
     port: number
     maxPort?: number
-    baseUrl?: string
+    publicUrl?: string
   }
 
   export const Config: z<Config> = z.object({
-    host: z.string().default('127.0.0.1').description('要监听的 IP 地址。如果将此设置为 `0.0.0.0` 将监听所有地址，包括局域网和公网地址。'),
-    port: z.natural().required().max(65535).description('要监听的初始端口号。'),
-    maxPort: z.natural().max(65535).description('允许监听的最大端口号。'),
-    baseUrl: z.string().role('link').description('应用暴露在公网的地址。'),
+    host: z.string().default('127.0.0.1').description('The IP address to listen on. `0.0.0.0` listens on all addresses, including those of the local network and the public network.'),
+    port: z.natural().required().max(65535).description('The first port to try.'),
+    maxPort: z.natural().max(65535).description('The last port to try. A port that is in use or denied is skipped for the next one. Defaults to `port`.'),
+    publicUrl: z.string().role('link').description('The public URL of the server. Defaults to the URL of the address that the server listens on.'),
   })
 }
 

@@ -22,7 +22,7 @@ describe('@cordisjs/server-proxy', () => {
       host: '127.0.0.1',
       port: 0,
     })
-    upstreamUrl = upstream.server.baseUrl
+    upstreamUrl = upstream.server.publicUrl
 
     // proxy server
     proxy = new Context().intercept('logger', { level: 3 })
@@ -33,9 +33,9 @@ describe('@cordisjs/server-proxy', () => {
     })
     await proxy.use(HTTP)
     await proxy.use(Proxy, {
-      baseUrl: upstreamUrl,
+      target: upstreamUrl,
     })
-    proxyUrl = proxy.server.baseUrl
+    proxyUrl = proxy.server.publicUrl
   })
 
   afterEach(async () => {
@@ -151,8 +151,8 @@ describe('@cordisjs/server-proxy', () => {
     })
   })
 
-  describe('baseUrl with path prefix', () => {
-    it('should correctly join with baseUrl path', async () => {
+  describe('target with path prefix', () => {
+    it('should correctly join with target path', async () => {
       upstream.server.get('/api/v1/data', async (req, res, next) => {
         res.body = 'scoped'
       })
@@ -167,9 +167,9 @@ describe('@cordisjs/server-proxy', () => {
       })
       await scoped.use(HTTP)
       await scoped.use(Proxy, {
-        baseUrl: upstreamUrl + '/api/v1/',
+        target: upstreamUrl + '/api/v1/',
       })
-      const scopedUrl = scoped.server.baseUrl
+      const scopedUrl = scoped.server.publicUrl
 
       const res = await fetch(`${scopedUrl}/data`)
       expect(res.status).to.equal(200)

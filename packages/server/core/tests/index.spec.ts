@@ -14,7 +14,7 @@ async function setup(config: Partial<Server.Config> = {}) {
     port: 0,
     ...config,
   })
-  return { ctx, url: ctx.server.baseUrl }
+  return { ctx, url: ctx.server.publicUrl }
 }
 
 describe('@cordisjs/server', () => {
@@ -602,20 +602,20 @@ describe('@cordisjs/server', () => {
     })
   })
 
-  describe('baseUrl', () => {
-    it('should compute baseUrl from host and port', async () => {
+  describe('publicUrl', () => {
+    it('should compute publicUrl from host and port', async () => {
       ({ ctx } = await setup())
-      expect(ctx.server.baseUrl).to.match(/^http:\/\/127\.0\.0\.1:\d+$/)
+      expect(ctx.server.publicUrl).to.match(/^http:\/\/127\.0\.0\.1:\d+$/)
     })
 
     it('should resolve wildcard host to 127.0.0.1', async () => {
       ({ ctx } = await setup({ host: '0.0.0.0' }))
-      expect(ctx.server.baseUrl).to.match(/^http:\/\/127\.0\.0\.1:\d+$/)
+      expect(ctx.server.publicUrl).to.match(/^http:\/\/127\.0\.0\.1:\d+$/)
     })
 
-    it('should prefer config.baseUrl when set', async () => {
-      ({ ctx } = await setup({ baseUrl: 'https://example.com/' }))
-      expect(ctx.server.baseUrl).to.equal('https://example.com')
+    it('should prefer config.publicUrl when set', async () => {
+      ({ ctx } = await setup({ publicUrl: 'https://example.com/' }))
+      expect(ctx.server.publicUrl).to.equal('https://example.com')
     })
   })
 
