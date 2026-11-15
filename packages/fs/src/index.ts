@@ -7,6 +7,7 @@ import { Watcher, WatchOptions } from './watcher.ts'
 
 export * from './error.ts'
 export * from './file.ts'
+export * from './filter.ts'
 export * from './watcher.ts'
 
 declare module 'cordis' {

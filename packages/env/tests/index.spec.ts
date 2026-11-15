@@ -1,29 +1,10 @@
 import { Context, Fiber, FiberState } from 'cordis'
-import Fs, { FsError, FsProvider } from '@cordisjs/fs'
+import Fs, { FsError } from '@cordisjs/fs'
+import { Volume } from '@cordisjs/fs-memory'
 import { afterEach, describe, expect, it } from 'vitest'
 import * as env from '../src/index.ts'
 
 const mode = process.env.NODE_ENV ?? 'development'
-
-// serves the files of `files` below `mem://`, and fails on the locations of `errors`
-function memory(files: Record<string, string>, errors: Record<string, FsError.Code> = {}): FsProvider {
-  return {
-    read(url) {
-      return new ReadableStream({
-        start(controller) {
-          if (url.href in errors) {
-            controller.error(new FsError(errors[url.href], url, `cannot read ${url.href}`))
-          } else if (url.href in files) {
-            controller.enqueue(new TextEncoder().encode(files[url.href]))
-            controller.close()
-          } else {
-            controller.error(new FsError('NotFound', url, `${url.href} does not exist`))
-          }
-        },
-      })
-    },
-  }
-}
 
 describe('env', () => {
   const fibers: Fiber[] = []
@@ -35,10 +16,10 @@ describe('env', () => {
     keys.clear()
   })
 
-  async function setup(provider: FsProvider) {
+  async function setup(volume: Volume) {
     const root = new Context()
     fibers.push(await root.use(Fs, { baseUrl: 'mem://app/' }))
-    root.fs.mount('mem:', provider)
+    root.fs.mount('mem:', volume)
     return root
   }
 
@@ -49,7 +30,7 @@ describe('env', () => {
   }
 
   it('loads the files in priority order', async () => {
-    const ctx = await setup(memory({
+    const ctx = await setup(new Volume({
       'mem://app/.env': 'CORDIS_ENV_A=env\nCORDIS_ENV_B=env\nCORDIS_ENV_C=env\n',
       'mem://app/.env.local': 'CORDIS_ENV_B=local\nCORDIS_ENV_C=local\n',
       [`mem://app/.env.${mode}.local`]: 'CORDIS_ENV_C=mode-local\n',
@@ -63,7 +44,7 @@ describe('env', () => {
   })
 
   it('takes a variable of the process environment over the files', async () => {
-    const ctx = await setup(memory({
+    const ctx = await setup(new Volume({
       'mem://app/.env': 'CORDIS_ENV_A=env\nCORDIS_ENV_B=env\n',
     }))
     stub('CORDIS_ENV_A', 'process')
@@ -72,7 +53,7 @@ describe('env', () => {
   })
 
   it('does not modify the process environment', async () => {
-    const ctx = await setup(memory({
+    const ctx = await setup(new Volume({
       'mem://app/.env': 'CORDIS_ENV_A=env\nCORDIS_ENV_B=env\n',
     }))
     stub('CORDIS_ENV_B', 'process')
@@ -83,7 +64,7 @@ describe('env', () => {
   })
 
   it('expands a reference to a variable declared before', async () => {
-    const ctx = await setup(memory({
+    const ctx = await setup(new Volume({
       // the referenced variable sorts after the one that references it
       'mem://app/.env': 'CORDIS_ENV_Z_HOST=localhost\nCORDIS_ENV_A_URL=http://${CORDIS_ENV_Z_HOST}/\n',
     }))
@@ -92,7 +73,7 @@ describe('env', () => {
   })
 
   it('expands a reference to a variable of the process environment', async () => {
-    const ctx = await setup(memory({
+    const ctx = await setup(new Volume({
       'mem://app/.env': 'CORDIS_ENV_URL=http://${CORDIS_ENV_HOST}/\n',
     }))
     stub('CORDIS_ENV_HOST', 'localhost')
@@ -101,18 +82,19 @@ describe('env', () => {
   })
 
   it('reads the files again on a restart', async () => {
-    const files = { 'mem://app/.env': 'CORDIS_ENV_A=old\nCORDIS_ENV_B=old\n' }
-    const ctx = await setup(memory(files))
+    const ctx = await setup(new Volume({
+      'mem://app/.env': 'CORDIS_ENV_A=old\nCORDIS_ENV_B=old\n',
+    }))
     const fiber = await ctx.plugin(env)
     fibers.push(fiber)
-    files['mem://app/.env'] = 'CORDIS_ENV_A=new\n'
+    await ctx.fs.file('mem://app/.env').write('CORDIS_ENV_A=new\n')
     await fiber.restart()
     expect(ctx.get('env')?.CORDIS_ENV_A).to.equal('new')
     expect(ctx.get('env')).not.to.have.property('CORDIS_ENV_B')
   })
 
   it('resolves the files against `ctx.fs.baseUrl`', async () => {
-    const ctx = await setup(memory({
+    const ctx = await setup(new Volume({
       'mem://other/.env': 'CORDIS_ENV_A=other\n',
     }))
     const scoped = ctx.intercept('fs', { baseUrl: 'mem://other/' })
@@ -121,7 +103,7 @@ describe('env', () => {
   })
 
   it('provides `ctx.env` once the files are loaded', async () => {
-    const ctx = await setup(memory({
+    const ctx = await setup(new Volume({
       'mem://app/.env': 'CORDIS_ENV_A=env\n',
     }))
     let value: string | undefined
@@ -135,7 +117,7 @@ describe('env', () => {
   })
 
   it('provides a read-only `ctx.env`', async () => {
-    const ctx = await setup(memory({
+    const ctx = await setup(new Volume({
       'mem://app/.env': 'CORDIS_ENV_A=env\n',
     }))
     fibers.push(await ctx.plugin(env))
@@ -144,7 +126,7 @@ describe('env', () => {
 
   describe('populate', () => {
     it('assigns the variables of the files while the component is active', async () => {
-      const ctx = await setup(memory({
+      const ctx = await setup(new Volume({
         'mem://app/.env': 'CORDIS_ENV_A=env\nCORDIS_ENV_B=env\n',
       }))
       keys.add('CORDIS_ENV_A')
@@ -159,7 +141,7 @@ describe('env', () => {
     })
 
     it('keeps a variable changed by others after the assignment', async () => {
-      const ctx = await setup(memory({
+      const ctx = await setup(new Volume({
         'mem://app/.env': 'CORDIS_ENV_A=env\n',
       }))
       keys.add('CORDIS_ENV_A')
@@ -172,8 +154,11 @@ describe('env', () => {
   })
 
   it('fails on an error other than a missing file', async () => {
-    const ctx = await setup(memory({}, {
-      'mem://app/.env.local': 'PermissionDenied',
+    const ctx = await setup(new Volume({}, {
+      hook(operation, url) {
+        if (url.href !== 'mem://app/.env.local') return
+        throw new FsError('PermissionDenied', url, `cannot ${operation} ${url.href}`)
+      },
     }))
     const fiber = ctx.plugin(env)
     fibers.push(fiber)
