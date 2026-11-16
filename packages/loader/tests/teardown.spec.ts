@@ -1,6 +1,6 @@
 import { Context } from 'cordis'
 import { describe, it, expect } from 'vitest'
-import MockLoader, { sleep } from './utils'
+import MockLoader, { sleep } from './utils.js'
 
 const GROUP = '@cordisjs/group'
 const TEARDOWN_MS = 50
