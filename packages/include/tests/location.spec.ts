@@ -8,6 +8,8 @@ function at(filename: string, source: string, needle: string) {
   return `${filename}:${lines.length}:${lines.at(-1)!.length + 1}`
 }
 
+const escape = (source: string) => source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
 describe('Include source locations', () => {
   const { setup } = harness()
 
@@ -188,7 +190,33 @@ describe('Include source locations', () => {
         `    at b (${app.filename}:4:3)`,
       ].join('\n'))
     }, 10000)
+
+    it('points aliases without a preceding anchor at the alias', async () => {
+      const app = await start('tmp-location-alias-unresolved.yml', '[]\n')
+      const source = [
+        '- id: a',
+        '  name: ./schema-component',
+        '  config: *missing',
+        '- id: b',
+        '  name: ./schema-component',
+        '  config: *later',
+        '- id: c',
+        '  name: ./schema-component',
+        '  config: &later { port: 80 }',
+        '',
+      ].join('\n')
+      await writeFile(app.filename, source)
+      await app.settle()
+
+      const [message, ...rest] = app.logs('warn')
+      expect(rest).toEqual([])
+      expect(message).toContain(`failed to parse config file ${app.filename}`)
+      // an alias followed by its anchor is told apart by naming the anchor
+      expect(message).toMatch(new RegExp(`\\*missing\\b.*\\(at ${escape(at(app.filename, source, '*missing'))}\\)`))
+      expect(message).toMatch(new RegExp(`\\*later\\b.*anchor.*\\(at ${escape(at(app.filename, source, '*later'))}\\)`))
+    }, 10000)
   })
+
   it('locates entries of a group config replaced by a patch', async () => {
     const inner = fixture('tmp-location-group-inner.yml')
     await writeFile(inner, '- id: g\n  name: \'@cordisjs/group\'\n  group: true\n  config: []\n')
