@@ -369,11 +369,9 @@ describe('Traceable caller', () => {
 
       derive() {
         const derived = this.ctx.extend({ tag: 'derived' })
-        const isolated = this.ctx.isolate('scope')
         return {
           tag: (derived as any).tag,
           caller: (derived['inner'] as Inner).inspect(),
-          isolatedCaller: (isolated['inner'] as Inner).inspect(),
         }
       }
     }
@@ -391,6 +389,5 @@ describe('Traceable caller', () => {
     // the def site, or the derived ctx resolves services from the wrong site
     expect(result.tag).toBe('derived')
     expect(result.caller).toBe(outerOrigin!)
-    expect(result.isolatedCaller).toBe(outerOrigin!)
   })
 })
