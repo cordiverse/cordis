@@ -70,6 +70,62 @@ describe('Service disposal', () => {
     await root.fiber.dispose()
   })
 
+  it.each(['returned', 'awaited'])('waits for a cleanup started by the %s disposer before the provider unloads', async (kind) => {
+    const root = new Context()
+    const gate = Promise.withResolvers<void>()
+    const timeline: string[] = []
+    const provider = await root.use((ctx) => {
+      ctx.provide('foo', {})
+      ctx.effect(() => () => {
+        timeline.push('provider closed')
+      })
+    })
+    let stop!: () => void | Promise<void>
+    await root.inject(['foo'], async (ctx) => {
+      const dispose = ctx.effect(() => async () => {
+        await gate.promise
+        timeline.push('consumer finished')
+      })
+      stop = kind === 'returned' ? dispose : await dispose
+    })
+    const stopping = stop()
+    const unloading = provider.dispose()
+    await setImmediate()
+    gate.resolve()
+    await Promise.all([stopping, unloading])
+    expect(timeline).toEqual(['consumer finished', 'provider closed'])
+    await root.fiber.dispose()
+  })
+
+  it('waits for the rollback of a failed effect before the provider unloads', async () => {
+    const root = new Context()
+    const gate = Promise.withResolvers<void>()
+    const timeline: string[] = []
+    const provider = await root.use((ctx) => {
+      ctx.provide('foo', {})
+      ctx.effect(() => () => {
+        timeline.push('provider closed')
+      })
+    })
+    let setup!: PromiseLike<unknown>
+    await root.inject(['foo'], (ctx) => {
+      setup = ctx.effect(async function* () {
+        yield async () => {
+          await gate.promise
+          timeline.push('consumer finished')
+        }
+        throw new Error('test')
+      })
+    })
+    await expect(Promise.resolve(setup)).rejects.toThrow('test')
+    const unloading = provider.dispose()
+    await setImmediate()
+    gate.resolve()
+    await unloading
+    expect(timeline).toEqual(['consumer finished', 'provider closed'])
+    await root.fiber.dispose()
+  })
+
   it('withdraws one binding without waiting for another binding from the same provider', async () => {
     const root = new Context()
     const gate = Promise.withResolvers<void>()
