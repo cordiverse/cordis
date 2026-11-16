@@ -74,7 +74,6 @@ export class EntryGroup {
     if (!isDispose) {
       this.unlink(entry.options)
     }
-    this.context.emit('loader/partial-dispose', entry, entry.options, false)
     return task
   }
 
