@@ -5,8 +5,8 @@ import { basename, dirname, extname, join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
-  Document, isAlias, isMap, isNode, isScalar, isSeq, LineCounter, parseDocument,
-  Range, Scalar, ScalarTag, SchemaOptions, stringify, YAMLError,
+  Alias, Document, isAlias, isMap, isNode, isScalar, isSeq, LineCounter, parseDocument,
+  Range, Scalar, ScalarTag, SchemaOptions, stringify, visit, YAMLError, YAMLParseError,
 } from 'yaml'
 import { stringifyString } from 'yaml/util'
 import { applyJournal, flatten, Journal, merge, reconcile, record } from './journal.ts'
@@ -47,6 +47,31 @@ function parseSyntax(content: string): Syntax {
   const lines = new LineCounter()
   const document = parseDocument(content, { ...yamlOptions, prettyErrors: false, lineCounter: lines })
   return { document, lines }
+}
+
+/**
+ * The parser accepts an alias without a preceding anchor, which only fails in
+ * `toJS()` with an unlocated `ReferenceError`. Nodes are visited in document
+ * order, so an anchor is known exactly when it precedes the alias.
+ */
+function unresolvedAliases(document: Document) {
+  const anchors = new Set<string>()
+  const unresolved: Alias[] = []
+  visit(document, (_, node) => {
+    if (isAlias(node)) {
+      if (!anchors.has(node.source)) unresolved.push(node)
+    } else if (isNode(node) && node.anchor) {
+      anchors.add(node.anchor)
+    }
+  })
+  // every anchor is known once the scan ends
+  return unresolved.map((node) => {
+    const [start, end] = node.range!
+    const message = anchors.has(node.source)
+      ? `Alias *${node.source} must follow its anchor`
+      : `Unresolved alias: *${node.source}`
+    return new YAMLParseError([start, end], 'BAD_ALIAS', message)
+  })
 }
 
 interface Snapshot {
@@ -404,7 +429,7 @@ export class Include extends EntryTree {
       syntax = parseSyntax(content)
       const { document, lines } = syntax
       // unknown tags are only warnings to the parser, but leave the data incomplete
-      const errors: YAMLError[] = [...document.errors, ...document.warnings]
+      const errors: YAMLError[] = [...document.errors, ...document.warnings, ...unresolvedAliases(document)]
       if (errors.length) {
         const issues = errors.map(error => ({ message: error.message, location: this._locate(lines, error.pos[0]) }))
         throw new ConfigFileError('parse', this.filename, undefined, issues)
