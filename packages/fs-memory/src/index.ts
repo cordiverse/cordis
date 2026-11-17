@@ -3,7 +3,6 @@ import { Context } from 'cordis'
 
 interface File {
   type: 'file'
-  /** replaced by each write and never modified, so that a read keeps the content it started with */
   content: Uint8Array
 }
 
@@ -14,7 +13,7 @@ interface Directory {
 
 type Entry = File | Directory
 
-/** A location of the volume: the root of its URL and the decoded names below it. */
+/** A location: the root of its URL and the decoded names below it. */
 interface Location {
   url: URL
   /** the URL without its path, such as `memory://app`; each root is a directory of its own */
@@ -73,10 +72,10 @@ function locate(url: URL): Location {
   }
 }
 
-// The URL of a location as reported by a watch. The characters that end a path
-// or a segment (`%`, `?`, `#`, `\`), and the controls and the space, which the
-// URL parser removes at the ends of the input or, for a tab or a newline,
-// anywhere, are percent-encoded, as the parser encodes the others of them.
+// The URL of a location, as reported by a watch. A name is percent-encoded
+// where the URL parser would change it: `%`, `?`, `#` and `\` end a segment,
+// and the parser removes controls and spaces at the ends of the input, and
+// tabs and newlines anywhere.
 function format(root: string, names: string[]) {
   const path = names.map(name => name.replace(/[\x00-\x20%?#\\]/g, (char) => {
     return '%' + char.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')
@@ -88,14 +87,15 @@ function format(root: string, names: string[]) {
 interface Scope {
   /**
    * The base of the keys of the top level of `files`: the mount, or
-   * `<scheme>:///` for a scheme. A scheme whose URLs require a host, such as
-   * `https:`, has no such URL and no base.
+   * `<scheme>:///` for a mount at a scheme. Absent for the empty string and
+   * for a scheme whose URLs require a host, such as `https:`.
    */
   base?: URL
   contains(url: URL): boolean
 }
 
 function toScope(mount: string): Scope {
+  if (mount === '') return { contains: () => true }
   if (/^[a-zA-Z][a-zA-Z\d+.-]*:$/.test(mount)) {
     const protocol = mount.toLowerCase()
     const contains = (url: URL) => url.protocol === protocol
@@ -173,9 +173,10 @@ class MemoryFs implements FsProvider {
       try {
         url = new URL(key, base)
       } catch (error) {
-        const message = base
-          ? `invalid location ${JSON.stringify(key)}`
-          : `expected an absolute URL as a key of the top level, as the mount has no URL without a host, got ${JSON.stringify(key)}`
+        // a key with a scheme is parsed as an absolute URL, whatever the base
+        const message = base || /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(key)
+          ? `invalid URL ${JSON.stringify(key)}`
+          : `expected an absolute URL as a key of the top level, as the mount has no base URL, got ${JSON.stringify(key)}`
         throw new TypeError(message, { cause: error })
       }
       if (!scope.contains(url)) {
@@ -183,10 +184,10 @@ class MemoryFs implements FsProvider {
       }
       if (typeof value === 'string' || value instanceof Uint8Array) {
         const location = locate(url)
-        if (location.directory) throw new FsError('IsADirectory', url, `expected a file at ${url.href}`)
         const { parent, name, entry } = this._lookup(location, true)
-        if (!parent) throw new FsError('IsADirectory', url, `expected a file at ${url.href}`)
-        if (entry?.type === 'directory') throw new FsError('IsADirectory', url, `expected a file at ${url.href}`)
+        if (location.directory || !parent || entry?.type === 'directory') {
+          throw new FsError('IsADirectory', url, `expected a file at ${url.href}`)
+        }
         parent.children.set(name!, { type: 'file', content: toBytes(value) })
       } else {
         if (!url.pathname.endsWith('/')) url.pathname += '/'
@@ -250,7 +251,7 @@ class MemoryFs implements FsProvider {
 
   read(url: URL): ReadableStream<Uint8Array> {
     return new ReadableStream({
-      // called at once, so that the stream has the content of the file at this call
+      // called synchronously, so that the stream has the content at the time of the call
       start: (controller) => {
         const location = locate(url)
         if (location.directory) throw new FsError('IsADirectory', url, `is a directory: ${url.href}`)
@@ -366,20 +367,21 @@ class MemoryFs implements FsProvider {
 
 namespace MemoryFs {
   /**
-   * A tree of entries. Each key is a URL reference, resolved against the
-   * directory of its parent; a key of the top level is resolved against the
-   * mount, or against `<scheme>:///` for a mount at a scheme. A key of the top
-   * level of a mount at a scheme whose URLs require a host, such as `https:`,
-   * is an absolute URL. A key that resolves outside the mount fails. A string or a `Uint8Array` is the
-   * content of a file, and an object is a directory. Missing parent
-   * directories are created.
+   * A tree of entries. A string or a `Uint8Array` is the content of a file,
+   * and an object is a directory; missing parent directories are created.
+   *
+   * Each key is a URL reference, resolved against the directory of its
+   * parent, or at the top level against the mount (`<scheme>:///` for a mount
+   * at a scheme). At the top level of a mount at the empty string, or at a
+   * scheme whose URLs require a host, such as `https:`, a key is an absolute
+   * URL. A key outside the mount fails.
    */
   export interface Tree {
     [key: string]: string | Uint8Array | Tree
   }
 
   export interface Config {
-    /** a scheme or a URL ending with `/`, `memory:` by default */
+    /** a scheme, a URL, or the empty string for every location; `memory:` by default */
     mount?: string
     /** the initial entries */
     files?: Tree

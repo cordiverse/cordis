@@ -87,7 +87,7 @@ describe('env', () => {
     })
     const fiber = await ctx.plugin(env)
     fibers.push(fiber)
-    await ctx.fs.file('mem:///.env').write('CORDIS_ENV_A=new\n')
+    await ctx.fs.file('.env').write('CORDIS_ENV_A=new\n')
     await fiber.restart()
     expect(ctx.get('env')?.CORDIS_ENV_A).to.equal('new')
     expect(ctx.get('env')).not.to.have.property('CORDIS_ENV_B')
