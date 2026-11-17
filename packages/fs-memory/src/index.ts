@@ -84,6 +84,36 @@ function format(root: string, names: string[]) {
   return new URL(root + '/' + path.join('/'))
 }
 
+// the locations that a mount serves, as `ctx.fs.mount()` routes them
+interface Scope {
+  /**
+   * The base of the keys of the top level of `files`: the mount, or
+   * `<scheme>:///` for a scheme. A scheme whose URLs require a host, such as
+   * `https:`, has no such URL and no base.
+   */
+  base?: URL
+  contains(url: URL): boolean
+}
+
+function toScope(mount: string): Scope {
+  if (/^[a-zA-Z][a-zA-Z\d+.-]*:$/.test(mount)) {
+    const protocol = mount.toLowerCase()
+    const contains = (url: URL) => url.protocol === protocol
+    try {
+      return { base: new URL(protocol + '///'), contains }
+    } catch {
+      return { contains }
+    }
+  }
+  try {
+    const { href } = new URL(mount)
+    const prefix = href.endsWith('/') ? href : href + '/'
+    return { base: new URL(prefix), contains: url => url.href.startsWith(prefix) || url.href + '/' === prefix }
+  } catch (error) {
+    throw new TypeError(`expected a scheme or a URL as the mount, got ${JSON.stringify(mount)}`, { cause: error })
+  }
+}
+
 // whether `names` lies below `base`, or is `base` itself
 function startsWith(names: string[], base: string[]) {
   return base.length <= names.length && base.every((name, index) => names[index] === name)
@@ -131,17 +161,25 @@ class MemoryFs implements FsProvider {
   private _subscriptions = new Set<Subscription>()
 
   constructor(ctx: Context, config: MemoryFs.Config = {}) {
-    this._populate(config.files ?? {})
-    ctx.fs.mount(config.mount ?? 'memory:', this)
+    const mount = config.mount ?? 'memory:'
+    const scope = toScope(mount)
+    this._populate(config.files ?? {}, scope, scope.base)
+    ctx.fs.mount(mount, this)
   }
 
-  private _populate(tree: MemoryFs.Tree, base?: URL) {
+  private _populate(tree: MemoryFs.Tree, scope: Scope, base: URL | undefined) {
     for (const [key, value] of Object.entries(tree)) {
       let url: URL
       try {
         url = new URL(key, base)
       } catch (error) {
-        throw new TypeError(`invalid location ${JSON.stringify(key)}`, { cause: error })
+        const message = base
+          ? `invalid location ${JSON.stringify(key)}`
+          : `expected an absolute URL as a key of the top level, as the mount has no URL without a host, got ${JSON.stringify(key)}`
+        throw new TypeError(message, { cause: error })
+      }
+      if (!scope.contains(url)) {
+        throw new TypeError(`expected a location of the mount, got ${JSON.stringify(key)} at ${url.href}`)
       }
       if (typeof value === 'string' || value instanceof Uint8Array) {
         const location = locate(url)
@@ -156,7 +194,7 @@ class MemoryFs implements FsProvider {
         const { parent, name, entry } = this._lookup(location, true)
         if (entry?.type === 'file') throw new FsError('NotADirectory', url, `expected a directory at ${url.href}`)
         if (!entry) parent!.children.set(name!, { type: 'directory', children: new Map() })
-        this._populate(value, url)
+        this._populate(value, scope, url)
       }
     }
   }
@@ -329,9 +367,12 @@ class MemoryFs implements FsProvider {
 namespace MemoryFs {
   /**
    * A tree of entries. Each key is a URL reference, resolved against the
-   * directory of its parent; a key of the top level is an absolute URL. A
-   * string or a `Uint8Array` is the content of a file, and an object is a
-   * directory. Missing parent directories are created.
+   * directory of its parent; a key of the top level is resolved against the
+   * mount, or against `<scheme>:///` for a mount at a scheme. A key of the top
+   * level of a mount at a scheme whose URLs require a host, such as `https:`,
+   * is an absolute URL. A key that resolves outside the mount fails. A string or a `Uint8Array` is the
+   * content of a file, and an object is a directory. Missing parent
+   * directories are created.
    */
   export interface Tree {
     [key: string]: string | Uint8Array | Tree
