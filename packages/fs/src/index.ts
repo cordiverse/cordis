@@ -17,7 +17,7 @@ declare module 'cordis' {
 }
 
 interface Mount {
-  /** a scheme such as `s3:`, or a URL ending with `/` */
+  /** a scheme such as `s3:`, a URL ending with `/`, or the empty string for every location */
   prefix: string
   provider: FsProvider
 }
@@ -38,6 +38,7 @@ export interface RemoveOptions {
 }
 
 function normalizePrefix(prefix: string | URL) {
+  if (prefix === '') return ''
   if (typeof prefix === 'string' && /^[a-zA-Z][a-zA-Z\d+.-]*:$/.test(prefix)) {
     return prefix.toLowerCase()
   }
@@ -126,9 +127,12 @@ export class Fs extends Service<Fs.Intercept> {
   }
 
   /**
-   * Mount a provider at a scheme, such as `s3:`, or at a URL, such as
-   * `file:///`. A location goes to the provider of the longest prefix that
-   * contains it. The mount ends with the calling fiber.
+   * Mount a provider at a scheme, such as `s3:`, at a URL, such as
+   * `file:///`, or at the empty string, which contains every location. A
+   * location goes to the provider of the longest prefix that contains it, so a
+   * provider at the empty string serves the locations of no other mount, and
+   * no location fails with `NoProvider` while it is mounted. The mount ends
+   * with the calling fiber.
    *
    * Every watch follows the routing: a change of the mounts moves it to the
    * provider its location goes to, and a watch without a provider is resumed
@@ -350,7 +354,7 @@ export abstract class BaseFs {
 
 export namespace BaseFs {
   export interface Config {
-    /** a scheme such as `s3:`, or a URL such as `file:///` */
+    /** a scheme such as `s3:`, a URL such as `file:///`, or the empty string for every location */
     mount: string
   }
 }
