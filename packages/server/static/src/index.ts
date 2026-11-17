@@ -142,6 +142,8 @@ export function apply(ctx: Context, config: Config) {
     if (!isExcluded(relativePath(url))) {
       result = await read(url, config.disposition)
       if (result instanceof Response) return result
+      // a directory is not a missing file, so the extensions do not apply
+      if (result?.code === 'IsADirectory') return result
     }
     for (const ext of config.extensions) {
       const candidate = new URL(url.href + encodeURIComponent(ext))
