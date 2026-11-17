@@ -417,6 +417,24 @@ describe('Fs', () => {
       expect(await new Response(file.stream()).text()).to.equal(json)
     })
 
+    it('keeps each chunk read when the provider reuses its memory', async () => {
+      const ctx = await setup()
+      ctx.fs.mount('mem:', {
+        read() {
+          const chunk = new Uint8Array(1)
+          const values = [...'ABC']
+          return new ReadableStream<Uint8Array>({
+            pull(controller) {
+              if (!values.length) return controller.close()
+              chunk[0] = values.shift()!.charCodeAt(0)
+              controller.enqueue(chunk)
+            },
+          }, { highWaterMark: 0 })
+        },
+      })
+      expect(await ctx.fs.file('mem://a.txt').text()).to.equal('ABC')
+    })
+
     it('writes each kind of data as a stream', async () => {
       const ctx = await setup()
       const { written, provider } = memory(new Uint8Array(), 1)

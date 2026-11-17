@@ -133,7 +133,6 @@ __metadata:
   dependencies:
     "@cordisjs/fs": "npm:^2.0.0-rc.0"
     cordis: "npm:^4.0.0-rc.13"
-    cosmokit: "npm:^1.8.1"
   peerDependencies:
     "@cordisjs/fs": ^2.0.0-rc.0
     cordis: ^4.0.0-rc.13
