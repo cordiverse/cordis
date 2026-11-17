@@ -38,9 +38,11 @@
     "cordis": "^4.0.0-rc.13"
   },
   "devDependencies": {
+    "@types/picomatch": "^3.0.2",
     "cordis": "^4.0.0-rc.13"
   },
   "dependencies": {
-    "cosmokit": "^1.8.1"
+    "cosmokit": "^1.8.1",
+    "picomatch": "^4.0.3"
   }
 }

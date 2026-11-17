@@ -1,13 +1,31 @@
-import { expect, describe, it } from 'vitest'
-import { readFile, chmod, writeFile } from 'node:fs/promises'
+import { expect, describe, it, afterEach } from 'vitest'
+import { AccessMode, FsError } from '@cordisjs/fs'
+import MemoryFs from '@cordisjs/fs-memory'
 import * as yaml from 'yaml'
 import Include from '../src/index.ts'
 import type { PatchOptions } from '../src/patch.ts'
 import { applied } from './fixtures/config-component.ts'
-import { fixture, group, harness, component } from './utils.ts'
+import { group, harness, component } from './utils.ts'
+
+/** The locations whose writes are denied, as for a file without write permission. */
+const readonly = new Set<string>()
+
+class ReadOnlyFs extends MemoryFs {
+  async access(url: URL, mode: AccessMode) {
+    if (readonly.has(url.href)) throw new FsError('PermissionDenied', url, `permission denied: ${url.href}`)
+    return super.access(url, mode)
+  }
+
+  async write(url: URL, body: ReadableStream<Uint8Array>) {
+    if (readonly.has(url.href)) throw new FsError('PermissionDenied', url, `permission denied: ${url.href}`)
+    return super.write(url, body)
+  }
+}
 
 describe('Include sync', () => {
   const { setup } = harness()
+
+  afterEach(() => readonly.clear())
 
   it('coalesces consecutive writes into the latest state', async () => {
     const app = await setup('tmp-sync-coalesce.yml', [component('a', 1)])
@@ -40,7 +58,7 @@ describe('Include sync', () => {
     expect(app.config('b')).toBeTruthy()
 
     const after = '# keep me\n' + yaml.stringify([component('a', 1)])
-    await writeFile(app.filename, after)
+    await app.write(after)
     await app.settle()
 
     expect(app.config('b')).toBeUndefined()
@@ -52,7 +70,7 @@ describe('Include sync', () => {
     const app = await setup('tmp-sync-disable.yml', '# keep me\n' + yaml.stringify([component('a', 1)]))
 
     const after = '# keep me\n' + yaml.stringify([component('a', 1, { disabled: true })])
-    await writeFile(app.filename, after)
+    await app.write(after)
     await app.settle()
 
     expect(app.config('a')).toBeUndefined()
@@ -63,7 +81,7 @@ describe('Include sync', () => {
     const app = await setup('tmp-sync-merge.yml', [component('a', 1), component('b', 1)])
 
     // the file changes under us without any watcher telling us
-    await writeFile(app.filename, yaml.stringify([component('a', 1), component('b', 2)]))
+    await app.write(yaml.stringify([component('a', 1), component('b', 2)]))
     await app.update('a', { config: { tag: 'a', value: 2 } })
     await app.settle()
 
@@ -81,7 +99,7 @@ describe('Include sync', () => {
     it(`merges a watcher-driven file edit racing a runtime edit (${order})`, async () => {
       const app = await setup(`tmp-sync-race-${order.replace(' ', '-')}.yml`, [component('a', 1), component('b', 1)])
 
-      await writeFile(app.filename, yaml.stringify([component('a', 1), component('b', 2)]))
+      await app.write(yaml.stringify([component('a', 1), component('b', 2)]))
       const tasks: Promise<unknown>[] = []
       if (order === 'refresh first') tasks.push(app.include().refresh())
       tasks.push(app.update('a', { config: { tag: 'a', value: 2 } }))
@@ -101,7 +119,7 @@ describe('Include sync', () => {
   it('lets the file win a conflict on the same entry and reports it', async () => {
     const app = await setup('tmp-sync-conflict.yml', [component('a', 1)])
 
-    await writeFile(app.filename, yaml.stringify([component('a', 3)]))
+    await app.write(yaml.stringify([component('a', 3)]))
     await app.update('a', { config: { tag: 'a', value: 2 } })
     await app.settle()
 
@@ -116,7 +134,7 @@ describe('Include sync', () => {
   it('combines a move in the file with an edit at runtime', async () => {
     const app = await setup('tmp-sync-move.yml', [component('a', 1), group('g', [])])
 
-    await writeFile(app.filename, yaml.stringify([group('g', [component('a', 1)])]))
+    await app.write(yaml.stringify([group('g', [component('a', 1)])]))
     await app.update('a', { config: { tag: 'a', value: 2 } })
     await app.settle()
 
@@ -132,7 +150,7 @@ describe('Include sync', () => {
   it('never writes over a file it cannot parse', async () => {
     const app = await setup('tmp-sync-broken.yml', [component('a', 1)])
 
-    await writeFile(app.filename, '- {\n')
+    await app.write('- {\n')
     await app.update('a', { config: { tag: 'a', value: 2 } })
     await app.include().refresh()
     expect(app.logs('warn').some(line => line.includes('failed to parse'))).toBe(true)
@@ -140,7 +158,7 @@ describe('Include sync', () => {
     expect(app.config('a').value).toBe(2)
 
     // once the file is valid again the pending change goes out with the merge
-    await writeFile(app.filename, yaml.stringify([component('a', 1), component('b', 1)]))
+    await app.write(yaml.stringify([component('a', 1), component('b', 1)]))
     await app.settle()
     const [a, b] = await app.read()
     expect(a.config.value).toBe(2)
@@ -149,18 +167,16 @@ describe('Include sync', () => {
   }, 10000)
 
   it('routes changes to patch-owned keys into the parent config', async () => {
-    const inner = fixture('tmp-sync-inner-patch.yml')
+    const inner = 'tmp-sync-inner-patch.yml'
     const innerText = yaml.stringify([component('a', 1)])
-    await writeFile(inner, innerText)
     const app = await setup('tmp-sync-outer-patch.yml', [{
       id: 'inc',
       name: '@cordisjs/include',
       config: {
-        path: './tmp-sync-inner-patch.yml',
+        path: `./${inner}`,
         patches: [{ id: 'a', disabled: true }],
       },
-    }])
-    app.files.push(inner)
+    }], {}, { files: { [inner]: innerText } })
     const innerInclude = () => app.include().store['inc']!.subtree as Include
     await innerInclude().refresh()
     expect(app.config('a')).toBeUndefined()
@@ -170,25 +186,23 @@ describe('Include sync', () => {
     await app.settle()
 
     expect(app.config('a').value).toBe(1)
-    expect(await readFile(inner, 'utf8')).toBe(innerText)
+    expect(await app.text(inner)).toBe(innerText)
     const [entry] = await app.read()
     expect(entry.config.patches).toEqual([{ id: 'a', disabled: false }])
     expect(app.logs('error')).toEqual([])
   }, 10000)
 
   it('routes changes to inserted entries into their patch', async () => {
-    const inner = fixture('tmp-sync-inner-insert.yml')
+    const inner = 'tmp-sync-inner-insert.yml'
     const innerText = yaml.stringify([component('a', 1)])
-    await writeFile(inner, innerText)
     const app = await setup('tmp-sync-outer-insert.yml', [{
       id: 'inc',
       name: '@cordisjs/include',
       config: {
-        path: './tmp-sync-inner-insert.yml',
+        path: `./${inner}`,
         patches: [{ insert: [component('x', 1)] }],
       },
-    }])
-    app.files.push(inner)
+    }], {}, { files: { [inner]: innerText } })
     const innerInclude = () => app.include().store['inc']!.subtree as Include
     await innerInclude().refresh()
     await app.ctx.loader.await()
@@ -199,7 +213,7 @@ describe('Include sync', () => {
     await app.settle()
 
     expect(app.config('x').value).toBe(2)
-    expect(await readFile(inner, 'utf8')).toBe(innerText)
+    expect(await app.text(inner)).toBe(innerText)
     const [entry] = await app.read()
     expect(entry.config.patches).toEqual([{ insert: [component('x', 2)] }])
   }, 10000)
@@ -241,19 +255,17 @@ describe('Include sync', () => {
 
     for (const scenario of scenarios) {
       it(`persists each key to its effective owner (${scenario.name})`, async () => {
-        const inner = fixture('tmp-owner-inner.yml')
+        const inner = 'tmp-owner-inner.yml'
         const innerText = yaml.stringify([component('a', 1)])
-        await writeFile(inner, innerText)
         const app = await setup('tmp-owner-outer.yml', [{
           id: 'inc',
           name: '@cordisjs/include',
           config: {
-            path: './tmp-owner-inner.yml',
+            path: `./${inner}`,
             patches: scenario.patches,
           },
-        }])
-        app.files.push(inner)
-        const include = () => app.include().store['inc']!.subtree as Include
+        }], {}, { files: { [inner]: innerText } })
+            const include = () => app.include().store['inc']!.subtree as Include
         expect(app.config('x').value).toBe(scenario.initial)
 
         await app.update('inc:x', { config: config(3), disabled: false })
@@ -263,26 +275,24 @@ describe('Include sync', () => {
         expect(app.config('x').value).toBe(3)
         const [entry] = await app.read()
         expect(entry.config.patches).toEqual(scenario.expected)
-        expect(await readFile(inner, 'utf8')).toBe(innerText)
+        expect(await app.text(inner)).toBe(innerText)
         expect(app.logs('error')).toEqual([])
       }, 10000)
     }
   })
 
   it('routes past a name-mismatched override', async () => {
-    const inner = fixture('tmp-file-owner-inner.yml')
-    await writeFile(inner, yaml.stringify([component('x', 1)]))
+    const inner = 'tmp-file-owner-inner.yml'
     // `applyPatches` skips this patch, so it owns nothing and the change is the file's
     const patches: PatchOptions[] = [{ id: 'x', name: 'wrong-component', config: { tag: 'x', value: 2 } }]
     const app = await setup('tmp-file-owner-outer.yml', [{
       id: 'inc',
       name: '@cordisjs/include',
       config: {
-        path: './tmp-file-owner-inner.yml',
+        path: `./${inner}`,
         patches,
       },
-    }])
-    app.files.push(inner)
+    }], {}, { files: { [inner]: yaml.stringify([component('x', 1)]) } })
     const include = () => app.include().store['inc']!.subtree as Include
     expect(app.config('x').value).toBe(1)
 
@@ -293,25 +303,23 @@ describe('Include sync', () => {
     expect(app.config('x').value).toBe(3)
     const [entry] = await app.read()
     expect(entry.config.patches).toEqual(patches)
-    expect(yaml.parse(await readFile(inner, 'utf8'))).toEqual([component('x', 3)])
+    expect(await app.read(inner)).toEqual([component('x', 3)])
     expect(app.logs('error')).toEqual([])
   }, 10000)
 
   describe('entries of a group config replaced by a patch', () => {
     async function start(name: string, config: any[] = [component('a', 1)]) {
-      const inner = fixture(`tmp-sync-inner-${name}.yml`)
+      const inner = `tmp-sync-inner-${name}.yml`
       const innerText = yaml.stringify([group('g', [component('hidden', 1)])])
-      await writeFile(inner, innerText)
       const app = await setup(`tmp-sync-outer-${name}.yml`, [{
         id: 'inc',
         name: '@cordisjs/include',
         config: {
-          path: `./tmp-sync-inner-${name}.yml`,
+          path: `./${inner}`,
           patches: [{ id: 'g', config }],
         },
-      }])
-      app.files.push(inner)
-      const innerInclude = () => app.include().store['inc']!.subtree as Include
+      }], {}, { files: { [inner]: innerText } })
+        const innerInclude = () => app.include().store['inc']!.subtree as Include
       await innerInclude().refresh()
       await app.ctx.loader.await()
       expect(app.config('a').value).toBe(1)
@@ -329,7 +337,7 @@ describe('Include sync', () => {
       await app.settle()
 
       expect(app.config('a').value).toBe(2)
-      expect(await readFile(app.inner, 'utf8')).toBe(app.innerText)
+      expect(await app.text(app.inner)).toBe(app.innerText)
       const [entry] = await app.read()
       expect(entry.config.patches).toEqual([{ id: 'g', config: [component('a', 2)] }])
     }, 10000)
@@ -340,7 +348,7 @@ describe('Include sync', () => {
       await app.settle()
 
       expect(app.config('b').value).toBe(1)
-      expect(await readFile(app.inner, 'utf8')).toBe(app.innerText)
+      expect(await app.text(app.inner)).toBe(app.innerText)
       const [entry] = await app.read()
       expect(entry.config.patches).toEqual([{ id: 'g', config: [component('a', 1), expect.objectContaining({ config: { tag: 'b', value: 1 } })] }])
     }, 10000)
@@ -351,7 +359,7 @@ describe('Include sync', () => {
       await app.settle()
 
       expect(app.config('a')).toBeUndefined()
-      expect(await readFile(app.inner, 'utf8')).toBe(app.innerText)
+      expect(await app.text(app.inner)).toBe(app.innerText)
       const [entry] = await app.read()
       expect(entry.config.patches).toEqual([{ id: 'g', config: [] }])
     }, 10000)
@@ -361,24 +369,22 @@ describe('Include sync', () => {
       const find = () => Object.values(app.innerInclude().store).find(entry => entry.options.config?.tag === 'a')
       const before = find()
 
-      await writeFile(app.inner, '# touched\n' + app.innerText)
+      await app.write('# touched\n' + app.innerText, app.inner)
       await app.settle()
       expect(find()).toBe(before)
     }, 10000)
   })
 
   it('routes an edit to an entry whose group moved in the same batch', async () => {
-    const inner = fixture('tmp-sync-inner-batch-move.yml')
-    await writeFile(inner, yaml.stringify([group('h', [])]))
+    const inner = 'tmp-sync-inner-batch-move.yml'
     const app = await setup('tmp-sync-outer-batch-move.yml', [{
       id: 'inc',
       name: '@cordisjs/include',
       config: {
-        path: './tmp-sync-inner-batch-move.yml',
+        path: `./${inner}`,
         patches: [{ insert: [group('g', [component('x', 1)])] }],
       },
-    }])
-    app.files.push(inner)
+    }], {}, { files: { [inner]: yaml.stringify([group('h', [])]) } })
     const innerInclude = () => app.include().store['inc']!.subtree as Include
     await innerInclude().refresh()
     await app.ctx.loader.await()
@@ -393,7 +399,7 @@ describe('Include sync', () => {
 
     expect(app.config('x').value).toBe(2)
     expect(app.logs('error')).toEqual([])
-    expect(yaml.parse(await readFile(inner, 'utf8'))).toEqual([group('h', [group('g', [component('x', 2)])])])
+    expect(await app.read(inner)).toEqual([group('h', [group('g', [component('x', 2)])])])
     const [entry] = await app.read()
     expect(entry.config.patches).toEqual([{ insert: [] }])
   }, 10000)
@@ -407,7 +413,7 @@ describe('Include sync', () => {
     const applies = applied.filter(tag => tag === 'anon').length
 
     const edited = yaml.stringify([anonymous, component('b', 2)])
-    await writeFile(app.filename, edited)
+    await app.write(edited)
     await app.settle()
 
     expect(app.config('b').value).toBe(2)
@@ -443,7 +449,7 @@ describe('Include sync', () => {
     )
     const applies = applied.filter(tag => tag === 'x').length
 
-    await writeFile(app.filename, yaml.stringify([shape()]))
+    await app.write(yaml.stringify([shape()]))
     await app.settle()
 
     const surviving = Object.values(app.include().store).filter(entry => entry.options.config?.tag === 'x')
@@ -468,7 +474,7 @@ describe('Include sync', () => {
     const childId = childEntry!.options.id
     const childApplies = applied.filter(tag => tag === 'child').length
 
-    await writeFile(app.filename, yaml.stringify([anonGroup, component('b', 2)]))
+    await app.write(yaml.stringify([anonGroup, component('b', 2)]))
     await app.settle()
 
     expect(app.config('b').value).toBe(2)
@@ -487,7 +493,7 @@ describe('Include sync', () => {
     const id = live!.options.id
     expect(await app.text()).not.toContain(id)
 
-    await writeFile(app.filename, yaml.stringify([
+    await app.write(yaml.stringify([
       anonymous,
       { id, name: './config-component', config: { tag: 'other', value: 1 } },
     ]))
@@ -518,7 +524,7 @@ describe('Include sync', () => {
     await app.ctx.loader.await()
 
     // a byte change forces a reread; the assigned id stays out of the file
-    await writeFile(app.filename, `# reread\n${yaml.stringify([anonymous])}`)
+    await app.write(`# reread\n${yaml.stringify([anonymous])}`)
     await app.settle()
 
     const store = app.include().store
@@ -530,9 +536,9 @@ describe('Include sync', () => {
   }, 10000)
 
   it('keeps runtime changes in memory when the file is read-only', async () => {
-    const app = await setup('tmp-sync-readonly.yml', [component('a', 1), component('b', 1)])
+    const app = await setup('tmp-sync-readonly.yml', [component('a', 1), component('b', 1)], {}, { Provider: ReadOnlyFs })
     const text = await app.text()
-    await chmod(app.filename, 0o444)
+    readonly.add(app.url.href)
 
     await app.update('a', { config: { tag: 'a', value: 2 } })
     await app.settle()
@@ -542,9 +548,9 @@ describe('Include sync', () => {
     expect(app.logs('warn').some(line => line.includes('read-only'))).toBe(true)
 
     // an unrelated file edit keeps the in-memory overlay
-    await chmod(app.filename, 0o644)
-    await writeFile(app.filename, yaml.stringify([component('a', 1), component('b', 2)]))
-    await chmod(app.filename, 0o444)
+    readonly.delete(app.url.href)
+    await app.write(yaml.stringify([component('a', 1), component('b', 2)]))
+    readonly.add(app.url.href)
     await app.settle()
 
     expect(app.config('a').value).toBe(2)
@@ -566,16 +572,16 @@ describe('Include sync', () => {
   }, 10000)
 
   it('retries a write that failed earlier when disposing', async () => {
-    const app = await setup('tmp-sync-dispose-retry.yml', [component('a', 1)])
+    const app = await setup('tmp-sync-dispose-retry.yml', [component('a', 1)], {}, { Provider: ReadOnlyFs })
     const text = await app.text()
-    await chmod(app.filename, 0o444)
+    readonly.add(app.url.href)
 
     await app.update('a', { config: { tag: 'a', value: 2 } })
     await app.settle()
     expect(await app.text()).toBe(text)
 
     // the file becomes writable again, but nothing else touches the tree
-    await chmod(app.filename, 0o644)
+    readonly.delete(app.url.href)
     await app.dispose()
 
     expect((await app.read())[0].config.value).toBe(2)
@@ -593,12 +599,11 @@ describe('Include sync', () => {
 
   it('moves an entry into another include as a single instance', async () => {
     const app = await setup('tmp-sync-move-source.yml', [component('m', 1)])
-    const target = fixture('tmp-sync-move-target.yml')
-    app.files.push(target)
-    await writeFile(target, yaml.stringify([group('g', [])]))
+    const target = 'tmp-sync-move-target.yml'
+    await app.write(yaml.stringify([group('g', [])]), target)
     const targetId = await app.ctx.loader.create({
       name: '@cordisjs/include',
-      config: { path: './fixtures/tmp-sync-move-target.yml' },
+      config: { path: `./fixtures/${target}` },
     })
     await app.ctx.loader.await()
     const targetInclude = () => app.ctx.loader.store[targetId]!.subtree as Include
@@ -615,7 +620,7 @@ describe('Include sync', () => {
     await app.ctx.loader.await()
 
     expect(await app.read()).toEqual([])
-    expect(yaml.parse(await readFile(target, 'utf8'))).toEqual([group('g', [component('m', 1)])])
+    expect(await app.read(target)).toEqual([group('g', [component('m', 1)])])
     expect(running()).toEqual(['m'])
     expect(app.ctx.loader.resolve(`${targetId}:m`).options.config).toEqual({ tag: 'm', value: 1 })
     expect(() => app.ctx.loader.resolve(`${app.id}:m`)).toThrow()
@@ -625,6 +630,6 @@ describe('Include sync', () => {
     await app.ctx.loader.await()
 
     expect(running()).toEqual([])
-    expect(yaml.parse(await readFile(target, 'utf8'))).toEqual([group('g', [])])
+    expect(await app.read(target)).toEqual([group('g', [])])
   }, 10000)
 })

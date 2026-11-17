@@ -1,0 +1,50 @@
+{
+  "name": "@cordisjs/fs-memory",
+  "description": "In-memory file system provider for Cordis",
+  "version": "0.1.0",
+  "sideEffects": false,
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "files": [
+    "lib"
+  ],
+  "author": "Shigma <shigma10826@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cordiverse/cordis.git",
+    "directory": "packages/fs-memory"
+  },
+  "bugs": {
+    "url": "https://github.com/cordiverse/cordis/issues"
+  },
+  "homepage": "https://cordis.io/",
+  "keywords": [
+    "cordis",
+    "component",
+    "fs",
+    "memory",
+    "file",
+    "test"
+  ],
+  "cordis": {
+    "description": {
+      "en": "In-Memory File System",
+      "zh": "内存文件系统"
+    },
+    "service": {
+      "required": [
+        "fs"
+      ]
+    }
+  },
+  "peerDependencies": {
+    "@cordisjs/fs": "^2.0.0-rc.0",
+    "cordis": "^4.0.0-rc.13"
+  },
+  "devDependencies": {
+    "@cordisjs/fs": "^2.0.0-rc.0",
+    "cordis": "^4.0.0-rc.13"
+  }
+}

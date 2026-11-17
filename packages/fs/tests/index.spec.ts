@@ -75,6 +75,20 @@ describe('Fs', () => {
       expect(provider.calls.map(call => call.url.href)).to.deep.equal(['mem://bucket/a.txt'])
     })
 
+    it('forwards the locations of no other mount to the provider mounted at the empty string', async () => {
+      const ctx = await setup()
+      const fallback = fakeProvider()
+      const provider = fakeProvider()
+      ctx.fs.mount('', fallback)
+      ctx.fs.mount('mem:', provider)
+
+      ctx.fs.watch('mem://bucket/a.txt')
+      ctx.fs.watch('file:///a.txt')
+      ctx.fs.watch('https://example.com/a.txt')
+      expect(provider.calls.map(call => call.url.href)).to.deep.equal(['mem://bucket/a.txt'])
+      expect(fallback.calls.map(call => call.url.href)).to.deep.equal(['file:///a.txt', 'https://example.com/a.txt'])
+    })
+
     it('rejects a second provider at the same prefix', async () => {
       const ctx = await setup()
       ctx.fs.mount('file:///data', fakeProvider())
@@ -415,6 +429,24 @@ describe('Fs', () => {
       expect(await file.bytes()).to.deep.equal(content)
       expect(new Uint8Array(await file.arrayBuffer())).to.deep.equal(content)
       expect(await new Response(file.stream()).text()).to.equal(json)
+    })
+
+    it('keeps each chunk read when the provider reuses its memory', async () => {
+      const ctx = await setup()
+      ctx.fs.mount('mem:', {
+        read() {
+          const chunk = new Uint8Array(1)
+          const values = [...'ABC']
+          return new ReadableStream<Uint8Array>({
+            pull(controller) {
+              if (!values.length) return controller.close()
+              chunk[0] = values.shift()!.charCodeAt(0)
+              controller.enqueue(chunk)
+            },
+          }, { highWaterMark: 0 })
+        },
+      })
+      expect(await ctx.fs.file('mem://a.txt').text()).to.equal('ABC')
     })
 
     it('writes each kind of data as a stream', async () => {

@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import { writeFile } from 'node:fs/promises'
 import { harness } from './utils.ts'
 
 describe('Include parse', () => {
@@ -34,7 +33,7 @@ describe('Include parse', () => {
     expect(text).toContain(`    value: !!js "'#' + 2"\n`)
 
     // force a re-read of what was written
-    await writeFile(app.filename, text + '# touched\n')
+    await app.write(text + '# touched\n')
     await app.settle()
     expect(app.config('a').value).toBe('#2')
   }, 10000)

@@ -28,7 +28,8 @@ export class FileRef {
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
-      chunks.push(value)
+      // copied at once, as the provider may reuse the memory of a chunk
+      chunks.push(new Uint8Array(value))
       length += value.byteLength
     }
     const result = new Uint8Array(length)

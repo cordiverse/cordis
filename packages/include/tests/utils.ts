@@ -1,14 +1,20 @@
 import { Context, Fiber, Message } from 'cordis'
 import Loader from '@cordisjs/loader'
 import Fs from '@cordisjs/fs'
-import NodeFs from '@cordisjs/fs-node'
+import MemoryFs from '@cordisjs/fs-memory'
 import { afterEach } from 'vitest'
-import { chmod, readFile, rm, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import * as yaml from 'yaml'
 import Include from '../src/index.ts'
 
-export const fixture = (name: string) => fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url))
+/**
+ * The directory of the config files and of the components they load. The
+ * config files exist only in memory, at a mount of this URL; the components
+ * are imported from disk.
+ */
+export const fixtures = new URL('./fixtures/', import.meta.url)
+
+export const fixture = (name: string) => fileURLToPath(new URL(name, fixtures))
 
 export const component = (id: string, value: number, extra: any = {}) => ({
   id,
@@ -24,39 +30,41 @@ export const group = (id: string, config: any[]) => ({
   config,
 })
 
+export interface Options {
+  /** other files that exist before the include starts, by their names in `fixtures` */
+  files?: MemoryFs.Tree
+  Provider?: typeof MemoryFs
+}
+
 /**
- * Per-suite harness: `setup` boots a loader with one include over a fresh
- * fixture file; everything it created is disposed and removed after each test.
+ * Per-suite harness: `setup` boots a loader with one include over a config
+ * file in memory; everything it created is disposed after each test.
+ * `defaults` applies to every `setup` of the suite.
  */
-export function harness() {
+export function harness(defaults: Options = {}) {
   let fiber: Fiber | undefined
-  const files: string[] = []
 
   afterEach(async () => {
     await fiber?.dispose()
     fiber = undefined
-    for (const file of files.splice(0)) {
-      await chmod(file, 0o644).catch(() => {})
-      await rm(file, { force: true })
-    }
   })
 
-  async function setup(name: string, data: any[] | string, config: any = {}) {
-    const filename = fixture(name)
-    files.push(filename)
-    await writeFile(filename, typeof data === 'string' ? data : yaml.stringify(data))
-
+  async function setup(name: string, data: any[] | string, config: any = {}, options: Options = {}) {
+    const { files, Provider = MemoryFs } = { ...defaults, ...options }
     const ctx = new Context()
     const messages: Message[] = []
     ctx.logger.exporter({ export: message => messages.push(message) })
     await ctx.use(Fs, { baseUrl: new URL('.', import.meta.url).href })
-    await ctx.use(NodeFs)
+    await ctx.use(Provider, {
+      mount: fixtures.href,
+      files: { ...files, [name]: typeof data === 'string' ? data : yaml.stringify(data) },
+    })
     fiber = await ctx.use(Loader)
     const id = await ctx.loader.create({
       name: '@cordisjs/include',
       config: { path: `./fixtures/${name}`, ...config },
     })
-    await ctx.loader.store[id]!.innerFiber!.await()
+    await ctx.loader.await()
 
     const include = () => ctx.loader.store[id]!.subtree as Include
     // what `ctx.fs.watch()` triggers on a change; `refresh` also waits for any write
@@ -66,17 +74,22 @@ export function harness() {
     }
     await settle()
 
+    // a file of `fixtures`, the config file of the include by default
+    const file = (path = name) => ctx.fs.file(new URL(path, fixtures))
+    const text = (path?: string) => file(path).text()
+
     return {
       ctx,
       id,
-      filename,
+      url: new URL(name, fixtures),
+      filename: fixture(name),
       include,
       settle,
       messages,
-      files,
       dispose: () => fiber!.dispose(),
-      text: () => readFile(filename, 'utf8'),
-      read: async () => yaml.parse(await readFile(filename, 'utf8')) as any[],
+      text,
+      read: async (path?: string) => yaml.parse(await text(path)) as any[],
+      write: (content: string, path?: string) => file(path).write(content),
       config: (tag: string) => ctx.bail('test/config', tag),
       logs: (type: Message['type']) => messages.filter(m => m.type === type).map(m => m.args.join(' ')),
       update: (local: string, options: any) => ctx.loader.update(`${id}:${local}`, options),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { writeFile } from 'node:fs/promises'
+import MemoryFs from '@cordisjs/fs-memory'
 import { fixture, harness } from './utils.ts'
 
 /** `file:line:column` of the first occurrence of `needle`, as the loader prints it. */
@@ -13,8 +13,8 @@ const escape = (source: string) => source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 describe('Include source locations', () => {
   const { setup } = harness()
 
-  async function start(name: string, source: string) {
-    const app = await setup(name, source)
+  async function start(name: string, source: string, files?: MemoryFs.Tree) {
+    const app = await setup(name, source, {}, { files })
     const stacks = () => app.messages
       .filter(message => message.type === 'error')
       .map(message => message.args[0].stack as string)
@@ -76,8 +76,6 @@ describe('Include source locations', () => {
   }, 10000)
 
   it('locates patched values in the file that declares the patch', async () => {
-    const inner = fixture('tmp-location-inner.yml')
-    await writeFile(inner, '- id: a\n  name: ./schema-component\n  config:\n    port: 80\n')
     const app = await start('tmp-location-outer.yml', [
       '- id: inc',
       '  name: \'@cordisjs/include\'',
@@ -91,8 +89,9 @@ describe('Include source locations', () => {
       '            name: ./schema-component',
       '            config: { port: 80, hosts: [1] }',
       '',
-    ].join('\n'))
-    app.files.push(inner)
+    ].join('\n'), {
+      'tmp-location-inner.yml': '- id: a\n  name: ./schema-component\n  config:\n    port: 80\n',
+    })
 
     const stacks = app.stacks()
     expect(stacks.find(stack => stack.includes('at a ('))).toContain(`(at port, ${app.at('"80"')})`)
@@ -100,8 +99,6 @@ describe('Include source locations', () => {
   }, 10000)
 
   it('locates overrides of inserted entries in the override', async () => {
-    const inner = fixture('tmp-location-insert-inner.yml')
-    await writeFile(inner, '[]\n')
     const app = await start('tmp-location-insert-outer.yml', [
       '- id: inc',
       '  name: \'@cordisjs/include\'',
@@ -115,8 +112,7 @@ describe('Include source locations', () => {
       '      - id: a',
       '        config: { port: "80" }',
       '',
-    ].join('\n'))
-    app.files.push(inner)
+    ].join('\n'), { 'tmp-location-insert-inner.yml': '[]\n' })
 
     expect(app.stacks()).toEqual([expect.stringContaining(`(at port, ${app.at('"80"')})`)])
   }, 10000)
@@ -205,7 +201,7 @@ describe('Include source locations', () => {
         '  config: &later { port: 80 }',
         '',
       ].join('\n')
-      await writeFile(app.filename, source)
+      await app.write(source)
       await app.settle()
 
       const [message, ...rest] = app.logs('warn')
@@ -219,7 +215,6 @@ describe('Include source locations', () => {
 
   it('locates entries of a group config replaced by a patch', async () => {
     const inner = fixture('tmp-location-group-inner.yml')
-    await writeFile(inner, '- id: g\n  name: \'@cordisjs/group\'\n  group: true\n  config: []\n')
     const app = await start('tmp-location-group-outer.yml', [
       '- id: inc',
       '  name: \'@cordisjs/include\'',
@@ -232,8 +227,9 @@ describe('Include source locations', () => {
       '            name: ./schema-component',
       '            config: { port: "80" }',
       '',
-    ].join('\n'))
-    app.files.push(inner)
+    ].join('\n'), {
+      'tmp-location-group-inner.yml': '- id: g\n  name: \'@cordisjs/group\'\n  group: true\n  config: []\n',
+    })
 
     const [stack] = app.stacks()
     expect(stack).toContain(`(at port, ${app.at('"80"')})`)
@@ -242,7 +238,6 @@ describe('Include source locations', () => {
 
   it('ignores patches that do not apply', async () => {
     const inner = fixture('tmp-location-skip-inner.yml')
-    await writeFile(inner, '- id: a\n  name: ./schema-component\n  config: { port: "80" }\n')
     const app = await start('tmp-location-skip-outer.yml', [
       '- id: inc',
       '  name: \'@cordisjs/include\'',
@@ -253,8 +248,9 @@ describe('Include source locations', () => {
       '        name: ./other-component',
       '        config: { port: 80 }',
       '',
-    ].join('\n'))
-    app.files.push(inner)
+    ].join('\n'), {
+      'tmp-location-skip-inner.yml': '- id: a\n  name: ./schema-component\n  config: { port: "80" }\n',
+    })
 
     expect(app.stacks()).toEqual([expect.stringContaining(`(at port, ${inner}:3:19)`)])
   }, 10000)
@@ -262,17 +258,6 @@ describe('Include source locations', () => {
   it('follows patches across nested includes', async () => {
     const inner = fixture('tmp-location-nested-inner.yml')
     const middle = fixture('tmp-location-nested-middle.yml')
-    await writeFile(inner, '- id: a\n  name: ./schema-component\n  config: { port: 80 }\n')
-    await writeFile(middle, [
-      '- id: inc',
-      '  name: \'@cordisjs/include\'',
-      '  config:',
-      '    path: ./tmp-location-nested-inner.yml',
-      '    patches:',
-      '      - id: a',
-      '        config: { port: "middle" }',
-      '',
-    ].join('\n'))
     // the outer patch replaces the whole config of `inc`, its patches included
     const app = await start('tmp-location-nested-outer.yml', [
       '- id: mid',
@@ -287,8 +272,19 @@ describe('Include source locations', () => {
       '            - id: a',
       '              config: { port: "outer" }',
       '',
-    ].join('\n'))
-    app.files.push(inner, middle)
+    ].join('\n'), {
+      'tmp-location-nested-inner.yml': '- id: a\n  name: ./schema-component\n  config: { port: 80 }\n',
+      'tmp-location-nested-middle.yml': [
+        '- id: inc',
+        '  name: \'@cordisjs/include\'',
+        '  config:',
+        '    path: ./tmp-location-nested-inner.yml',
+        '    patches:',
+        '      - id: a',
+        '        config: { port: "middle" }',
+        '',
+      ].join('\n'),
+    })
 
     const [stack] = app.stacks()
     expect(stack).toContain(`(at port, ${app.at('"outer"')})`)
@@ -362,14 +358,14 @@ describe('Include source locations', () => {
       const fiber = app.include().store['a']!.innerFiber!
 
       const invalid = '- id: a\n  name: ./test-component\n  group: 1\n'
-      await writeFile(app.filename, invalid)
+      await app.write(invalid)
       await app.settle()
       expect(app.stacks()).toEqual([expect.stringContaining(`(at group, ${at(app.filename, invalid, '1\n')})`)])
       expect(app.include().store['a']).toBeUndefined()
       expect(fiber.uid).toBeNull()
       expect(await app.text()).toBe(invalid)
 
-      await writeFile(app.filename, source)
+      await app.write(source)
       await app.settle()
       expect(app.include().store['a']!.innerFiber!.uid).toBeTruthy()
     }, 10000)
@@ -406,7 +402,7 @@ describe('Include source locations', () => {
         '  config: [null]',
         '',
       ].join('\n')
-      await writeFile(app.filename, invalid)
+      await app.write(invalid)
       await app.settle()
 
       expect(app.logs('warn')).toEqual([expect.stringContaining([
@@ -481,7 +477,7 @@ describe('Include source locations', () => {
           '  name: ./missing-dep-component',
           '',
         ].join('\n')
-        await writeFile(app.filename, source)
+        await app.write(source)
         await app.settle()
 
         const stacks = app.stacks()
@@ -648,7 +644,7 @@ describe('Include source locations', () => {
       const app = await start('tmp-location-expr-update.yml', '- id: a\n  name: ./schema-component\n  config:\n    port: 80\n')
       const fiber = app.include().store['a']!.innerFiber!
       const source = '- id: a\n  name: ./schema-component\n  config:\n    port: !!js "1 + foo"\n'
-      await writeFile(app.filename, source)
+      await app.write(source)
       await app.settle()
 
       expect(app.stacks()).toEqual([[
@@ -684,7 +680,7 @@ describe('Include source locations', () => {
   it('points parse errors at the source', async () => {
     const app = await start('tmp-location-parse.yml', '[]\n')
     const source = '- id: a\n  name: !foo ./schema-component\n'
-    await writeFile(app.filename, source)
+    await app.write(source)
     await app.settle()
 
     expect(app.logs('warn')).toEqual([expect.stringContaining(
@@ -709,7 +705,7 @@ describe('Include source locations', () => {
     it('points syntax errors at the source', async () => {
       const app = await start('tmp-location-syntax.json', '[]\n')
       const source = '[\n  { "id": "a", }\n]\n'
-      await writeFile(app.filename, source)
+      await app.write(source)
       await app.settle()
 
       const [message] = app.logs('warn')
@@ -720,7 +716,7 @@ describe('Include source locations', () => {
     it('points a non-array file at its value', async () => {
       const app = await start('tmp-location-shape.json', '[]\n')
       const source = '\n{ "id": "a" }\n'
-      await writeFile(app.filename, source)
+      await app.write(source)
       await app.settle()
 
       expect(app.logs('warn')).toEqual([expect.stringContaining(
