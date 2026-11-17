@@ -54,6 +54,9 @@ export async function apply(ctx: Context, config: Config = {}) {
   // a variable of the process environment takes precedence over the files
   const env: Record<string, string | undefined> = { ...process.env }
   expand({ parsed: merged, processEnv: env as Record<string, string> })
+  // `dotenv-expand` lets only a truthy variable of the process environment win,
+  // while `dotenv` treats a variable of an empty value as set as well
+  Object.assign(env, process.env)
 
   if (config.populate) {
     ctx.effect(() => {
