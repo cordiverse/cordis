@@ -526,6 +526,34 @@ describe('@cordisjs/server', () => {
       const res = await fetch(`${url}/overwrite`)
       expect(await res.text()).to.equal('second')
     })
+
+    it('should keep every value of a repeated response header', async () => {
+      ctx.server.get('/cookies', async (req, res, next) => {
+        res.headers.append('set-cookie', 'a=1; Path=/')
+        res.headers.append('set-cookie', 'b=2; Path=/')
+        res.text('ok')
+      })
+      await sleep()
+
+      const res = await fetch(`${url}/cookies`)
+      expect(res.headers.getSetCookie()).to.deep.equal(['a=1; Path=/', 'b=2; Path=/'])
+    })
+
+    it('should keep every value of a repeated header of a returned response', async () => {
+      ctx.server.get('/headers', async () => {
+        const headers = new Headers()
+        headers.append('set-cookie', 'a=1')
+        headers.append('set-cookie', 'b=2')
+        headers.append('link', '</a>; rel=preload')
+        headers.append('link', '</b>; rel=preload')
+        return new Response('ok', { headers })
+      })
+      await sleep()
+
+      const res = await fetch(`${url}/headers`)
+      expect(res.headers.getSetCookie()).to.deep.equal(['a=1', 'b=2'])
+      expect(res.headers.get('link')).to.equal('</a>; rel=preload, </b>; rel=preload')
+    })
   })
 
   describe('stream body concurrent reads', () => {
