@@ -127,9 +127,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@cordisjs/fs-memory@npm:^0.1.0, @cordisjs/fs-memory@workspace:packages/fs-memory":
+"@cordisjs/fs-memory@npm:^0.1.0, @cordisjs/fs-memory@workspace:packages/fs/memory":
   version: 0.0.0-use.local
-  resolution: "@cordisjs/fs-memory@workspace:packages/fs-memory"
+  resolution: "@cordisjs/fs-memory@workspace:packages/fs/memory"
   dependencies:
     "@cordisjs/fs": "npm:^2.0.0-rc.0"
     cordis: "npm:^4.0.0-rc.13"
@@ -139,9 +139,9 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@cordisjs/fs-node@npm:^0.1.0, @cordisjs/fs-node@workspace:packages/fs-node":
+"@cordisjs/fs-node@npm:^0.1.0, @cordisjs/fs-node@workspace:packages/fs/node":
   version: 0.0.0-use.local
-  resolution: "@cordisjs/fs-node@workspace:packages/fs-node"
+  resolution: "@cordisjs/fs-node@workspace:packages/fs/node"
   dependencies:
     "@cordisjs/fs": "npm:^2.0.0-rc.0"
     chokidar: "npm:^4.0.3"
@@ -153,9 +153,9 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@cordisjs/fs@npm:^2.0.0-rc.0, @cordisjs/fs@workspace:packages/fs":
+"@cordisjs/fs@npm:^2.0.0-rc.0, @cordisjs/fs@workspace:packages/fs/core":
   version: 0.0.0-use.local
-  resolution: "@cordisjs/fs@workspace:packages/fs"
+  resolution: "@cordisjs/fs@workspace:packages/fs/core"
   dependencies:
     "@types/picomatch": "npm:^3.0.2"
     cordis: "npm:^4.0.0-rc.13"

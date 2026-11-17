@@ -1,7 +1,7 @@
 {
-  "name": "@cordisjs/fs-node",
-  "description": "Node.js file system provider for Cordis",
-  "version": "0.1.0",
+  "name": "@cordisjs/fs",
+  "description": "File system service for Cordis",
+  "version": "2.0.0-rc.0",
   "sideEffects": false,
   "type": "module",
   "main": "lib/index.js",
@@ -14,41 +14,35 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/cordiverse/cordis.git",
-    "directory": "packages/fs-node"
+    "directory": "packages/fs/core"
   },
   "bugs": {
     "url": "https://github.com/cordiverse/cordis/issues"
   },
-  "homepage": "https://cordis.io/",
+  "homepage": "https://github.com/cordiverse/cordis",
   "keywords": [
     "cordis",
     "component",
     "fs",
-    "node",
     "file",
-    "watch"
+    "service"
   ],
   "cordis": {
-    "description": {
-      "en": "File System",
-      "zh": "文件系统"
-    },
     "service": {
-      "required": [
+      "implements": [
         "fs"
       ]
     }
   },
   "peerDependencies": {
-    "@cordisjs/fs": "^2.0.0-rc.0",
     "cordis": "^4.0.0-rc.13"
   },
   "devDependencies": {
-    "@cordisjs/fs": "^2.0.0-rc.0",
+    "@types/picomatch": "^3.0.2",
     "cordis": "^4.0.0-rc.13"
   },
   "dependencies": {
-    "chokidar": "^4.0.3",
-    "cosmokit": "^1.8.1"
+    "cosmokit": "^1.8.1",
+    "picomatch": "^4.0.3"
   }
 }

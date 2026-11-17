@@ -2,6 +2,8 @@
   config:
     alias:
       core: /packages/core
+      fs: /packages/fs/core
+      fs-*: /packages/fs/*
       server: /packages/server/core
       server-*: /packages/server/*
 - name: yakumo-tsc
