@@ -1,7 +1,7 @@
-import { Context, Fiber } from 'cordis'
+import { Context, Fiber, FiberState } from 'cordis'
 import { afterEach, describe, expect, it } from 'vitest'
 import Fs, { FsError, WatchOptions } from '@cordisjs/fs'
-import MemoryFs, { Volume } from '../src/index.ts'
+import MemoryFs from '../src/index.ts'
 
 async function rejects(promise: Promise<unknown>, code: FsError.Code) {
   const error = await promise.then(() => undefined, error => error)
@@ -10,20 +10,28 @@ async function rejects(promise: Promise<unknown>, code: FsError.Code) {
   return error as FsError
 }
 
-describe('Volume', () => {
+describe('MemoryFs', () => {
   const fibers: Fiber[] = []
 
   afterEach(async () => {
     for (const fiber of fibers.splice(0)) await fiber.dispose()
   })
 
-  async function setup(files: Volume.Tree = {}, options?: Volume.Options) {
+  async function setup(files: MemoryFs.Tree = {}) {
     const ctx = new Context()
     fibers.push(await ctx.plugin(Fs, { baseUrl: 'memory://app/' }))
-    const volume = new Volume(files, options)
-    ctx.fs.mount('memory:', volume)
-    return { ctx, volume }
+    fibers.push(await ctx.plugin(MemoryFs, { files }))
+    return { ctx }
   }
+
+  describe('mount', () => {
+    it('mounts at `memory:` by default, or at `config.mount`', async () => {
+      const { ctx } = await setup({ 'memory://app/a.txt': 'foo' })
+      fibers.push(await ctx.plugin(MemoryFs, { mount: 'other:', files: { 'other:///a.txt': 'bar' } }))
+      expect(await ctx.fs.file('a.txt').text()).to.equal('foo')
+      expect(await ctx.fs.file('other:///a.txt').text()).to.equal('bar')
+    })
+  })
 
   describe('files', () => {
     it('creates the initial entries and their parent directories', async () => {
@@ -41,9 +49,13 @@ describe('Volume', () => {
       await ctx.fs.remove('dir/empty/')
     })
 
-    it('rejects a file below another file', () => {
-      expect(() => new Volume({ 'memory:///a': 'foo', 'memory:///a/b': 'bar' }))
-        .to.throw(FsError).with.property('code', 'NotADirectory')
+    it('rejects a file below another file', async () => {
+      const ctx = new Context()
+      fibers.push(await ctx.plugin(Fs, { baseUrl: 'memory://app/' }))
+      const fiber = ctx.plugin(MemoryFs, { files: { 'memory:///a': 'foo', 'memory:///a/b': 'bar' } })
+      fibers.push(fiber)
+      await fiber.await().catch(() => {})
+      expect(fiber.state).to.equal(FiberState.FAILED)
     })
   })
 
@@ -56,28 +68,18 @@ describe('Volume', () => {
       expect(await file.text()).to.equal('bar')
     })
 
-    it('streams the content in chunks of `chunkSize`', async () => {
-      const content = new Uint8Array(10).map((_, index) => index)
-      const { ctx } = await setup({ 'memory://app/a.bin': content }, { chunkSize: 4 })
-      const chunks: number[] = []
-      for await (const chunk of ctx.fs.file('a.bin').stream()) chunks.push(chunk.byteLength)
-      expect(chunks).to.deep.equal([4, 4, 2])
-      expect(await ctx.fs.file('a.bin').bytes()).to.deep.equal(content)
-    })
-
-    it('keeps the content that a read started with', async () => {
-      const { ctx } = await setup({ 'memory://app/a.txt': 'foo' }, { chunkSize: 1 })
-      const reader = ctx.fs.file('a.txt').stream().getReader()
-      const first = await reader.read()
-      await ctx.fs.file('a.txt').write('bar')
-      const second = await reader.read()
-      expect(new TextDecoder().decode(new Uint8Array([...first.value!, ...second.value!]))).to.equal('fo')
-    })
-
-    it('does not let a reader modify the stored content', async () => {
+    it('reads the content of the file when the stream is created', async () => {
       const { ctx } = await setup({ 'memory://app/a.txt': 'foo' })
-      const bytes = await ctx.fs.file('a.txt').bytes()
-      bytes.fill(0)
+      const stream = ctx.fs.file('a.txt').stream()
+      await ctx.fs.file('a.txt').write('bar')
+      expect(await new Response(stream).text()).to.equal('foo')
+    })
+
+    it('keeps the content apart from the initial data and from the chunks read', async () => {
+      const data = Buffer.from('foo')
+      const { ctx } = await setup({ 'memory://app/a.txt': data })
+      data.fill(0)
+      for await (const chunk of ctx.fs.file('a.txt').stream()) chunk.fill(0)
       expect(await ctx.fs.file('a.txt').text()).to.equal('foo')
     })
 
@@ -133,6 +135,21 @@ describe('Volume', () => {
       })
       expect(await ctx.fs.file('a.txt').write(body).catch(error => error)).to.equal(error)
       expect(await ctx.fs.file('a.txt').text()).to.equal('foo')
+    })
+
+    it('keeps each chunk of the body when the producer reuses its memory', async () => {
+      const { ctx } = await setup()
+      const chunk = new Uint8Array(1)
+      const values = [...'ABC']
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (!values.length) return controller.close()
+          chunk[0] = values.shift()!.charCodeAt(0)
+          controller.enqueue(chunk)
+        },
+      }, { highWaterMark: 0 })
+      await ctx.fs.file('a.txt').write(body)
+      expect(await ctx.fs.file('a.txt').text()).to.equal('ABC')
     })
 
     it('fails when the parent directory is removed while the body is consumed', async () => {
@@ -258,23 +275,6 @@ describe('Volume', () => {
     })
   })
 
-  describe('hook', () => {
-    it('fails an operation with the error of the hook', async () => {
-      const denied = new URL('memory://app/a.txt')
-      const { ctx } = await setup({ 'memory://app/a.txt': 'foo' }, {
-        hook(operation, url) {
-          if (url.href === denied.href && operation !== 'access') {
-            throw new FsError('PermissionDenied', url, `cannot ${operation} ${url.href}`)
-          }
-        },
-      })
-      await rejects(ctx.fs.file('a.txt').text(), 'PermissionDenied')
-      await rejects(ctx.fs.file('a.txt').write('bar'), 'PermissionDenied')
-      await rejects(ctx.fs.remove('a.txt'), 'PermissionDenied')
-      await ctx.fs.access('a.txt', 'write')
-    })
-  })
-
   describe('watch', () => {
     function watch(ctx: Context, path: string, options?: WatchOptions) {
       const seen: string[] = []
@@ -308,11 +308,13 @@ describe('Volume', () => {
       expect(seen).to.deep.equal(['memory://app/dir/nested/b.txt', 'memory://app/dir/src/x/a.txt'])
     })
 
-    it('reports a location whose names contain characters that end a path', async () => {
+    it('reports the location of a file whose name the URL parser would change', async () => {
       const { ctx } = await setup()
       const seen = watch(ctx, '.')
-      await ctx.fs.file('a%23b%3Fc%25d.txt').write('')
-      expect(seen).to.deep.equal(['memory://app/a%23b%3Fc%25d.txt'])
+      const names = ['a%23b%3Fc%25d.txt', 'a%20', '%20a', 'a%09b', 'a%0Ab']
+      for (const name of names) await ctx.fs.file(name).write(name)
+      expect(seen).to.deep.equal(names.map(name => `memory://app/${name}`))
+      for (const name of names) expect(await ctx.fs.file(new URL(seen.shift()!)).text()).to.equal(name)
     })
 
     it('applies `filter` to the entries below a watched directory and their ancestors', async () => {
@@ -356,20 +358,5 @@ describe('Volume', () => {
       await ctx.fs.file('a.txt').write('')
       expect(seen).to.deep.equal([])
     })
-  })
-})
-
-describe('MemoryFs', () => {
-  it('mounts a volume with the initial entries at `memory:`, or at `config.mount`', async () => {
-    const ctx = new Context()
-    const fiber = await ctx.plugin(Fs, { baseUrl: 'memory://app/' })
-    try {
-      await ctx.plugin(MemoryFs, { files: { 'memory://app/a.txt': 'foo' } })
-      await ctx.plugin(MemoryFs, { mount: 'other:', files: { 'other:///a.txt': 'bar' } })
-      expect(await ctx.fs.file('a.txt').text()).to.equal('foo')
-      expect(await ctx.fs.file('other:///a.txt').text()).to.equal('bar')
-    } finally {
-      await fiber.dispose()
-    }
   })
 })

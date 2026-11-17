@@ -1,9 +1,5 @@
 import { AccessMode, createFilter, FsError, FsProvider, Watcher } from '@cordisjs/fs'
-import { Awaitable } from 'cosmokit'
 import { Context } from 'cordis'
-
-/** An operation of `FsProvider` on a location, as passed to `Volume.Options.hook`. */
-export type Operation = 'read' | 'write' | 'access' | 'rename' | 'remove'
 
 interface File {
   type: 'file'
@@ -41,8 +37,6 @@ interface Subscription {
   keep?: (path: string, isDirectory: boolean) => boolean
 }
 
-const CHUNK_SIZE = 64 * 1024
-
 function invalid(url: URL, message: string, cause?: unknown) {
   return new FsError('InvalidPath', url, message, { cause })
 }
@@ -79,10 +73,14 @@ function locate(url: URL): Location {
   }
 }
 
-// The URL of a location as reported by a watch. The characters that the URL
-// parser does not encode, but that end a path or a segment, are encoded.
+// The URL of a location as reported by a watch. The characters that end a path
+// or a segment (`%`, `?`, `#`, `\`), and the controls and the space, which the
+// URL parser removes at the ends of the input or, for a tab or a newline,
+// anywhere, are percent-encoded, as the parser encodes the others of them.
 function format(root: string, names: string[]) {
-  const path = names.map(name => name.replace(/[%?#\\]/g, char => '%' + char.charCodeAt(0).toString(16).toUpperCase()))
+  const path = names.map(name => name.replace(/[\x00-\x20%?#\\]/g, (char) => {
+    return '%' + char.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')
+  }))
   return new URL(root + '/' + path.join('/'))
 }
 
@@ -91,15 +89,18 @@ function startsWith(names: string[], base: string[]) {
   return base.length <= names.length && base.every((name, index) => names[index] === name)
 }
 
+// A copy of `content` with a buffer of its own. `slice()` of a `Buffer`
+// would share the memory of the `Buffer`.
 function toBytes(content: string | Uint8Array) {
-  return typeof content === 'string' ? new TextEncoder().encode(content) : content.slice()
+  return typeof content === 'string' ? new TextEncoder().encode(content) : new Uint8Array(content)
 }
 
 async function collect(body: ReadableStream<Uint8Array>) {
   const chunks: Uint8Array[] = []
   let length = 0
   for await (const chunk of body) {
-    chunks.push(chunk)
+    // copied at once, as the producer may reuse the memory of a chunk
+    chunks.push(new Uint8Array(chunk))
     length += chunk.byteLength
   }
   const content = new Uint8Array(length)
@@ -112,29 +113,29 @@ async function collect(body: ReadableStream<Uint8Array>) {
 }
 
 /**
- * A file system in memory, which can be mounted at any prefix. Each root of a
- * URL, such as `memory://app` or `memory://`, is a directory that always exists.
+ * A file system in memory, mounted at `config.mount`. Each root of a URL, such
+ * as `memory://app` or `memory://`, is a directory that always exists.
  *
- * A write replaces the content of a file at once, after its body is consumed,
- * so a read observes either the previous or the new content. A watch reports a
+ * A read returns the content of the file when it is called, as one chunk. A
+ * write replaces the content of a file at once, after its body is consumed, so
+ * a read observes either the previous or the new content. A watch reports a
  * `change` synchronously with each write and rename that gives content to a
  * file at or below its location.
+ *
+ * A subclass can override the operations, e.g. to inject failures in tests.
  */
-export class Volume implements FsProvider {
+class MemoryFs implements FsProvider {
+  static inject = ['fs']
+
   private _roots = new Map<string, Directory>()
   private _subscriptions = new Set<Subscription>()
 
-  /**
-   * `files` is a tree of initial entries. Each key is a URL reference,
-   * resolved against the directory of its parent; a key of the top level is
-   * an absolute URL. A string or a `Uint8Array` is the content of a file, and
-   * an object is a directory. Missing parent directories are created.
-   */
-  constructor(files: Volume.Tree = {}, public options: Volume.Options = {}) {
-    this._populate(files)
+  constructor(ctx: Context, config: MemoryFs.Config = {}) {
+    this._populate(config.files ?? {})
+    ctx.fs.mount(config.mount ?? 'memory:', this)
   }
 
-  private _populate(tree: Volume.Tree, base?: URL) {
+  private _populate(tree: MemoryFs.Tree, base?: URL) {
     for (const [key, value] of Object.entries(tree)) {
       let url: URL
       try {
@@ -209,35 +210,24 @@ export class Volume implements FsProvider {
     return { parent, name: name! }
   }
 
-  private async _hook(operation: Operation, url: URL) {
-    await this.options.hook?.(operation, url)
-  }
-
   read(url: URL): ReadableStream<Uint8Array> {
-    const chunkSize = this.options.chunkSize ?? CHUNK_SIZE
-    let content: Uint8Array
-    let offset = 0
     return new ReadableStream({
-      start: async () => {
+      // called at once, so that the stream has the content of the file at this call
+      start: (controller) => {
         const location = locate(url)
         if (location.directory) throw new FsError('IsADirectory', url, `is a directory: ${url.href}`)
-        await this._hook('read', url)
         const { entry } = this._find(location)
         if (entry.type === 'directory') throw new FsError('IsADirectory', url, `is a directory: ${url.href}`)
-        content = entry.content
-      },
-      pull: (controller) => {
-        if (offset >= content.byteLength) return controller.close()
         // a copy, so that the reader cannot modify the stored content
-        controller.enqueue(content.slice(offset, offset += chunkSize))
+        if (entry.content.byteLength) controller.enqueue(entry.content.slice())
+        controller.close()
       },
-    }, { highWaterMark: 0 })
+    })
   }
 
   async write(url: URL, body: ReadableStream<Uint8Array>) {
     const location = locate(url)
     if (location.directory) throw new FsError('IsADirectory', url, `is a directory: ${url.href}`)
-    await this._hook('write', url)
     this._target(location)
     // an error of `body` is kept as it is, and leaves the file unchanged
     const content = await collect(body)
@@ -248,15 +238,12 @@ export class Volume implements FsProvider {
   }
 
   async access(url: URL, mode: AccessMode) {
-    const location = locate(url)
-    await this._hook('access', url)
-    this._find(location)
+    this._find(locate(url))
   }
 
   async rename(src: URL, dest: URL) {
     const from = locate(src)
     const to = locate(dest)
-    await this._hook('rename', src)
     const source = this._find(from)
     if (!source.parent) throw new FsError('PermissionDenied', src, `cannot rename the root ${src.href}`)
     const target = this._lookup(to)
@@ -286,7 +273,6 @@ export class Volume implements FsProvider {
 
   async remove(url: URL) {
     const location = locate(url)
-    await this._hook('remove', url)
     const { parent, name, entry } = this._find(location)
     if (!parent) throw new FsError('PermissionDenied', url, `cannot remove the root ${url.href}`)
     if (entry.type === 'directory' && entry.children.size) {
@@ -340,41 +326,22 @@ export class Volume implements FsProvider {
   }
 }
 
-export namespace Volume {
+namespace MemoryFs {
+  /**
+   * A tree of entries. Each key is a URL reference, resolved against the
+   * directory of its parent; a key of the top level is an absolute URL. A
+   * string or a `Uint8Array` is the content of a file, and an object is a
+   * directory. Missing parent directories are created.
+   */
   export interface Tree {
     [key: string]: string | Uint8Array | Tree
   }
 
-  export interface Options {
-    /** the size of the chunks of a read stream, 64 KiB by default */
-    chunkSize?: number
-    /**
-     * Called before each operation with its location, the source for a
-     * rename. An error thrown or a rejection fails the operation with it, so a
-     * test can inject failures and delays.
-     */
-    hook?: (operation: Operation, url: URL) => Awaitable<void>
-  }
-}
-
-/** Mounts a `Volume` at `config.mount`. */
-class MemoryFs {
-  static inject = ['fs']
-
-  public volume: Volume
-
-  constructor(ctx: Context, config: MemoryFs.Config = {}) {
-    this.volume = new Volume(config.files)
-    ctx.fs.mount(config.mount ?? 'memory:', this.volume)
-  }
-}
-
-namespace MemoryFs {
   export interface Config {
     /** a scheme or a URL ending with `/`, `memory:` by default */
     mount?: string
-    /** the initial entries, as `files` of `Volume` */
-    files?: Volume.Tree
+    /** the initial entries */
+    files?: Tree
   }
 }
 
