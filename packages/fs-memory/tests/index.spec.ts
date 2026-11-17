@@ -20,19 +20,19 @@ describe('MemoryFs', () => {
   // a context with `fs` and no provider
   async function context() {
     const ctx = new Context()
-    fibers.push(await ctx.plugin(Fs, { baseUrl: 'memory:///' }))
+    fibers.push(await ctx.use(Fs, { baseUrl: 'memory:///' }))
     return ctx
   }
 
   async function setup(files: MemoryFs.Tree = {}) {
     const ctx = await context()
-    fibers.push(await ctx.plugin(MemoryFs, { files }))
+    fibers.push(await ctx.use(MemoryFs, { files }))
     return ctx
   }
 
   // the state of `MemoryFs` once it has started or failed
   async function start(ctx: Context, config: MemoryFs.Config) {
-    const fiber = ctx.plugin(MemoryFs, config)
+    const fiber = ctx.use(MemoryFs, config)
     fibers.push(fiber)
     await fiber.await().catch(() => {})
     return fiber.state
@@ -41,8 +41,8 @@ describe('MemoryFs', () => {
   describe('mount', () => {
     it('mounts at `memory:` by default, or at `config.mount`', async () => {
       const ctx = await setup({ 'a.txt': 'foo' })
-      fibers.push(await ctx.plugin(MemoryFs, { mount: 'other:', files: { 'a.txt': 'bar' } }))
-      fibers.push(await ctx.plugin(MemoryFs, { mount: 'memory://data', files: { 'a.txt': 'baz' } }))
+      fibers.push(await ctx.use(MemoryFs, { mount: 'other:', files: { 'a.txt': 'bar' } }))
+      fibers.push(await ctx.use(MemoryFs, { mount: 'memory://data', files: { 'a.txt': 'baz' } }))
       expect(await ctx.fs.file('memory:///a.txt').text()).to.equal('foo')
       expect(await ctx.fs.file('other:///a.txt').text()).to.equal('bar')
       expect(await ctx.fs.file('memory://data/a.txt').text()).to.equal('baz')
@@ -51,13 +51,13 @@ describe('MemoryFs', () => {
     it('takes absolute keys for a mount at a scheme whose URLs require a host', async () => {
       const ctx = await setup()
       expect(await start(ctx, { mount: 'https:' })).to.equal(FiberState.ACTIVE)
-      fibers.push(await ctx.plugin(MemoryFs, { mount: 'wss:', files: { 'wss://app/a.txt': 'foo' } }))
+      fibers.push(await ctx.use(MemoryFs, { mount: 'wss:', files: { 'wss://app/a.txt': 'foo' } }))
       expect(await ctx.fs.file('wss://app/a.txt').text()).to.equal('foo')
     })
 
     it('takes absolute keys of any scheme for a mount at the empty string', async () => {
       const ctx = await context()
-      fibers.push(await ctx.plugin(MemoryFs, { mount: '', files: { 'https://app/a.txt': 'foo', 'file:///b.txt': 'bar' } }))
+      fibers.push(await ctx.use(MemoryFs, { mount: '', files: { 'https://app/a.txt': 'foo', 'file:///b.txt': 'bar' } }))
       expect(await ctx.fs.file('https://app/a.txt').text()).to.equal('foo')
       expect(await ctx.fs.file('file:///b.txt').text()).to.equal('bar')
     })

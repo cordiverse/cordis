@@ -37,7 +37,7 @@
   },
   "devDependencies": {
     "@cordisjs/fs": "^2.0.0-rc.0",
-    "@cordisjs/fs-node": "^0.1.0",
+    "@cordisjs/fs-memory": "^0.1.0",
     "@cordisjs/logger-console": "^1.0.1",
     "@cordisjs/server": "^1.7.0",
     "@types/mime-types": "^2.1.4",

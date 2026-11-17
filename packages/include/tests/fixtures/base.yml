@@ -1,8 +1,0 @@
-- id: timer
-  name: '@cordisjs/timer'
-- id: group
-  name: '@cordisjs/group'
-  group: true
-  config:
-    - id: inner
-      name: ./test-component

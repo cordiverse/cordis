@@ -1,6 +1,6 @@
-import { expect, describe, it, beforeAll, afterAll, afterEach } from 'vitest'
-import { writeFile } from 'node:fs/promises'
-import { createRequire, syncBuiltinESMExports } from 'node:module'
+import { expect, describe, it, afterEach } from 'vitest'
+import { FsError } from '@cordisjs/fs'
+import MemoryFs from '@cordisjs/fs-memory'
 import * as yaml from 'yaml'
 import { harness, component } from './utils.ts'
 
@@ -12,39 +12,27 @@ import { harness, component } from './utils.ts'
 const renames = {
   calls: 0,
   failures: 0,
-  code: 'EBUSY',
+  code: 'Busy' as FsError.Code,
   beforeFail: undefined as (() => Promise<void>) | undefined,
 }
 
-// The loader imports the include through Node's own module loader (the tests
-// run with --expose-internals), outside vitest's module graph. Patching the
-// CJS side of the builtin and syncing the ESM bindings reaches every copy.
-const fsp = createRequire(import.meta.url)('node:fs/promises') as typeof import('node:fs/promises')
-const actualRename = fsp.rename
+class FlakyFs extends MemoryFs {
+  async rename(src: URL, dest: URL) {
+    renames.calls++
+    if (renames.failures > 0) {
+      renames.failures--
+      await renames.beforeFail?.()
+      throw new FsError(renames.code, src, `cannot rename ${src.href} to ${dest.href}`)
+    }
+    return super.rename(src, dest)
+  }
+}
 
 describe('Include write', () => {
-  const { setup } = harness()
-
-  beforeAll(() => {
-    fsp.rename = async (from, to) => {
-      renames.calls++
-      if (renames.failures > 0) {
-        renames.failures--
-        await renames.beforeFail?.()
-        throw Object.assign(new Error(`${renames.code}: resource busy`), { code: renames.code })
-      }
-      return actualRename(from, to)
-    }
-    syncBuiltinESMExports()
-  })
-
-  afterAll(() => {
-    fsp.rename = actualRename
-    syncBuiltinESMExports()
-  })
+  const { setup } = harness({ Provider: FlakyFs })
 
   afterEach(() => {
-    Object.assign(renames, { calls: 0, failures: 0, code: 'EBUSY', beforeFail: undefined })
+    Object.assign(renames, { calls: 0, failures: 0, code: 'Busy', beforeFail: undefined })
   })
 
   it('retries a rename that fails transiently', async () => {
@@ -65,7 +53,7 @@ describe('Include write', () => {
     const app = await setup('tmp-write-race.yml', [component('a', 1), component('b', 1)])
     renames.calls = 0
     renames.failures = 1
-    renames.beforeFail = () => writeFile(app.filename, yaml.stringify([component('a', 1), component('b', 2)]))
+    renames.beforeFail = () => app.write(yaml.stringify([component('a', 1), component('b', 2)]))
 
     await app.update('a', { config: { tag: 'a', value: 2 } })
     await app.settle()
@@ -85,7 +73,7 @@ describe('Include write', () => {
     const text = await app.text()
     renames.calls = 0
     renames.failures = 1
-    renames.code = 'ENOSPC'
+    renames.code = 'PermissionDenied'
 
     await app.update('a', { config: { tag: 'a', value: 2 } })
     await app.settle()

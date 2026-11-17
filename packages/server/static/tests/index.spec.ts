@@ -1,11 +1,8 @@
 import { Context } from 'cordis'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { fileURLToPath, pathToFileURL } from 'node:url'
-import { dirname, resolve } from 'node:path'
-import { readFileSync } from 'node:fs'
 import * as http from 'node:http'
-import Fs, { FsError } from '@cordisjs/fs'
-import NodeFs from '@cordisjs/fs-node'
+import Fs from '@cordisjs/fs'
+import MemoryFs from '@cordisjs/fs-memory'
 import Server from '@cordisjs/server'
 import * as Static from '../src/index.ts'
 
@@ -13,18 +10,33 @@ function sleep(ms = 0) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms))
 }
 
-const fixturesDir = resolve(dirname(fileURLToPath(import.meta.url)), 'fixtures')
+const site: MemoryFs.Tree = {
+  '.secret': 'sensitive data\n',
+  'errors/404.html': '<h1>Not Found</h1>\n',
+  'hello.html': '<h1>Hello</h1>\n',
+  'index.html': '<h1>Index</h1>\n',
+  'noext': 'plain text\n',
+  'page': '<h1>Page without extension</h1>\n',
+  'page.html': '<h1>Page with extension</h1>\n',
+  'sub/index.html': '<h1>Sub Index</h1>\n',
+}
 
-async function setup(config: Partial<Static.Config> = {}, fsConfig: Fs.Config = {}) {
+interface Options {
+  /** the entries of `memory:///site/`, `site` by default */
+  files?: MemoryFs.Tree
+  Provider?: typeof MemoryFs
+}
+
+async function setup(config: Partial<Static.Config> = {}, { files = site, Provider = MemoryFs }: Options = {}) {
   const ctx = new Context()
-  await ctx.use(Fs, fsConfig)
-  await ctx.use(NodeFs)
+  await ctx.use(Fs, { baseUrl: 'memory:///' })
+  await ctx.use(Provider, { files: { site: files } })
   await ctx.use(Server, {
     host: '127.0.0.1',
     port: 0,
   })
   await ctx.use(Static, {
-    root: pathToFileURL(fixturesDir).href + '/',
+    root: 'memory:///site/',
     ...config,
   } as Static.Config)
   return { ctx, url: ctx.server.publicUrl }
@@ -41,17 +53,17 @@ describe('@cordisjs/server-static', () => {
 
   describe('root', () => {
     it('should resolve a relative root against the base URL of fs', async () => {
-      ({ ctx, url } = await setup({ root: 'fixtures' }, { baseUrl: new URL('.', import.meta.url).href }))
+      ({ ctx, url } = await setup({ root: 'site' }))
       const res = await fetch(`${url}/hello.html`)
       expect(res.status).to.equal(200)
       expect(await res.text()).to.equal('<h1>Hello</h1>\n')
     })
 
     it('should take a root without a trailing slash as a directory', async () => {
-      ({ ctx, url } = await setup({ root: pathToFileURL(fixturesDir).href }))
+      ({ ctx, url } = await setup({ root: 'memory:///site' }))
       const res = await fetch(`${url}/sub/`)
       expect(res.status).to.equal(200)
-      expect(await res.text()).to.equal(readFileSync(resolve(fixturesDir, 'sub/index.html'), 'utf8'))
+      expect(await res.text()).to.equal('<h1>Sub Index</h1>\n')
     })
   })
 
@@ -271,37 +283,42 @@ describe('@cordisjs/server-static', () => {
     // the number of streams that are neither closed, errored nor cancelled
     let active = 0
 
-    // serves `files` under `memory:/` in chunks of `chunkSize` bytes
-    async function setupMemory(files: Record<string, Uint8Array>, chunkSize: number) {
-      ;({ ctx, url } = await setup({ root: 'memory:/' }))
+    // serves `files` in chunks of `chunkSize` bytes, and counts the active streams
+    async function setupChunked(files: MemoryFs.Tree, chunkSize: number) {
       active = 0
-      ctx.fs.mount('memory:', {
-        read(location) {
-          const content = files[location.pathname.slice(1)]
-          let offset = 0
+      class ChunkedFs extends MemoryFs {
+        read(url: URL) {
+          const reader = super.read(url).getReader()
+          let rest: Uint8Array = new Uint8Array()
           active++
-          return new ReadableStream({
-            pull(controller) {
-              if (!content) {
-                active--
-                return controller.error(new FsError('NotFound', location, `no file at ${location.href}`))
+          return new ReadableStream<Uint8Array>({
+            async pull(controller) {
+              if (!rest.byteLength) {
+                const result = await reader.read().catch((error) => {
+                  active--
+                  throw error
+                })
+                if (result.done) {
+                  active--
+                  return controller.close()
+                }
+                rest = result.value
               }
-              if (offset >= content.length) {
-                active--
-                return controller.close()
-              }
-              controller.enqueue(content.subarray(offset, offset += chunkSize))
+              controller.enqueue(rest.subarray(0, chunkSize))
+              rest = rest.subarray(chunkSize)
             },
-            cancel() {
+            cancel(reason) {
               active--
+              return reader.cancel(reason)
             },
           })
-        },
-      })
+        }
+      }
+      ;({ ctx, url } = await setup({}, { files, Provider: ChunkedFs }))
     }
 
     it('should detect the type of content split into small chunks', async () => {
-      await setupMemory({ image: png }, 8)
+      await setupChunked({ image: png }, 8)
       const res = await fetch(`${url}/image`)
       expect(res.status).to.equal(200)
       expect(res.headers.get('content-type')).to.equal('image/png')
@@ -311,7 +328,7 @@ describe('@cordisjs/server-static', () => {
 
     it('should detect the type of content beyond the first chunk', async () => {
       const archive = zip('data.bin', 192 * 1024)
-      await setupMemory({ archive }, 64 * 1024)
+      await setupChunked({ archive }, 64 * 1024)
       const res = await fetch(`${url}/archive`)
       expect(res.status).to.equal(200)
       expect(res.headers.get('content-type')).to.equal('application/zip')

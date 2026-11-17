@@ -240,9 +240,8 @@ __metadata:
   resolution: "@cordisjs/include@workspace:packages/include"
   dependencies:
     "@cordisjs/fs": "npm:^2.0.0-rc.0"
-    "@cordisjs/fs-node": "npm:^0.1.0"
+    "@cordisjs/fs-memory": "npm:^0.1.0"
     "@cordisjs/loader": "npm:^1.0.0-rc.10"
-    "@cordisjs/logger-console": "npm:^1.0.1"
     cordis: "npm:^4.0.0-rc.13"
     cosmokit: "npm:^1.8.1"
     yaml: "npm:^2.9.1"
@@ -352,7 +351,7 @@ __metadata:
   resolution: "@cordisjs/server-static@workspace:packages/server/static"
   dependencies:
     "@cordisjs/fs": "npm:^2.0.0-rc.0"
-    "@cordisjs/fs-node": "npm:^0.1.0"
+    "@cordisjs/fs-memory": "npm:^0.1.0"
     "@cordisjs/logger-console": "npm:^1.0.1"
     "@cordisjs/server": "npm:^1.7.0"
     "@types/mime-types": "npm:^2.1.4"

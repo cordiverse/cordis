@@ -77,6 +77,7 @@ function locate(url: URL): Location {
 // and the parser removes controls and spaces at the ends of the input, and
 // tabs and newlines anywhere.
 function format(root: string, names: string[]) {
+  // eslint-disable-next-line no-control-regex
   const path = names.map(name => name.replace(/[\x00-\x20%?#\\]/g, (char) => {
     return '%' + char.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')
   }))
