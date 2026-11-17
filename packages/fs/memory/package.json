@@ -1,7 +1,7 @@
 {
-  "name": "@cordisjs/fs",
-  "description": "File system service for Cordis",
-  "version": "2.0.0-rc.0",
+  "name": "@cordisjs/fs-memory",
+  "description": "In-memory file system provider for Cordis",
+  "version": "0.1.0",
   "sideEffects": false,
   "type": "module",
   "main": "lib/index.js",
@@ -14,35 +14,37 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/cordiverse/cordis.git",
-    "directory": "packages/fs"
+    "directory": "packages/fs/memory"
   },
   "bugs": {
     "url": "https://github.com/cordiverse/cordis/issues"
   },
-  "homepage": "https://github.com/cordiverse/cordis",
+  "homepage": "https://cordis.io/",
   "keywords": [
     "cordis",
     "component",
     "fs",
+    "memory",
     "file",
-    "service"
+    "test"
   ],
   "cordis": {
+    "description": {
+      "en": "In-Memory File System",
+      "zh": "内存文件系统"
+    },
     "service": {
-      "implements": [
+      "required": [
         "fs"
       ]
     }
   },
   "peerDependencies": {
+    "@cordisjs/fs": "^2.0.0-rc.0",
     "cordis": "^4.0.0-rc.13"
   },
   "devDependencies": {
-    "@types/picomatch": "^3.0.2",
+    "@cordisjs/fs": "^2.0.0-rc.0",
     "cordis": "^4.0.0-rc.13"
-  },
-  "dependencies": {
-    "cosmokit": "^1.8.1",
-    "picomatch": "^4.0.3"
   }
 }
