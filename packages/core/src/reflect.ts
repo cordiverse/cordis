@@ -222,8 +222,13 @@ export class ReflectService {
       this.ctx[symbols.root][symbols.isolate][name] ??= Symbol(name)
       const key = this.ctx[symbols.isolate][name]
       const impl: Impl = { uid: ++this._implCounter, name, value, ctx: this.ctx, check, isolate: key, dependents: new Set() }
-      if (this.store[key]) {
-        throw new Error(`service "${name}" has been registered at <${this.store[key].ctx.fiber.name}>`)
+      const existing = this.store[key]
+      // A provider that is still unloading keeps its binding in the store for
+      // the dependents that have not released it yet. Those dependents keep the
+      // retired impl in their committed view, so the key is already admissible
+      // for a replacement: retiring and replacing must not fail the newcomer.
+      if (existing && (existing.ctx.fiber === this.ctx.fiber || existing.ctx.fiber.state !== FiberState.UNLOADING)) {
+        throw new Error(`service "${name}" has been registered at <${existing.ctx.fiber.name}>`)
       }
       this.store[key] = impl
       this.ctx.fiber.provisions.add(impl)
