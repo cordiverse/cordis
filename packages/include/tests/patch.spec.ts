@@ -92,6 +92,39 @@ describe('Include patches', () => {
     expect(app.ctx.bail('test/get-extra')).to.equal('extra')
   }, 10000)
 
+  it('should skip an insert whose name does not match the target', async () => {
+    const app = await setup('base.yml', base, {
+      patches: [
+        {
+          id: 'group',
+          name: 'wrong-name',
+          insert: [
+            { name: './extra-component' },
+          ],
+        },
+      ],
+    })
+    // the id names a different entry than the patch expects, so nothing is inserted
+    expect(app.logs('warn').some(line => line.includes('name mismatch'))).to.be.true
+    expect(app.ctx.bail('test/get-extra')).to.be.undefined
+    expect(app.ctx.bail('test/get-value')).to.equal('default')
+  }, 10000)
+
+  it('should insert into a group whose name matches', async () => {
+    const app = await setup('base.yml', base, {
+      patches: [
+        {
+          id: 'group',
+          name: '@cordisjs/group',
+          insert: [
+            { name: './extra-component' },
+          ],
+        },
+      ],
+    })
+    expect(app.ctx.bail('test/get-extra')).to.equal('extra')
+  }, 10000)
+
   it('should warn when inserting into a non-group entry', async () => {
     const app = await setup('base.yml', base, {
       patches: [
