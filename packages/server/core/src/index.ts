@@ -297,13 +297,15 @@ class Server extends Service<Server.Intercept> {
     if (this.config.publicUrl) return this.config.publicUrl + pathPrefix
     const wildcard = ['0.0.0.0', '::']
     const host = wildcard.includes(this.host) ? '127.0.0.1' : this.host
+    // an IPv6 address is bracketed in the authority of a URL
+    const authority = host.includes(':') ? `[${host}]` : host
     let root: string
     if (this.port === 80) {
-      root = `http://${host}`
+      root = `http://${authority}`
     } else if (this.port === 443) {
-      root = `https://${host}`
+      root = `https://${authority}`
     } else {
-      root = `http://${host}:${this.port}`
+      root = `http://${authority}:${this.port}`
     }
     return root + pathPrefix
   }
