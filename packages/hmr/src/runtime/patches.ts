@@ -127,6 +127,13 @@ function setup(paths: Set<string>) {
   const resolveForCJSWithHooks: ResolveForCJSWithHooks | undefined = requireInternal('internal/modules/cjs/loader')?.resolveForCJSWithHooks
   const hooks: unknown = requireInternal('internal/modules/customization_hooks')?.resolveHooks
   const resolveHooks = Array.isArray(hooks) ? hooks as ResolveHook[] : undefined
+  // The options of `_load` are absent or `{ shouldSkipModuleHooks: true }`. The last parameter of
+  // `resolveForCJSWithHooks` is, depending on the version of Node:
+  // - absent, e.g. on Node 22.22, 23 and 24.12;
+  // - a flag tested for truthiness, on Node 22.23;
+  // - options that are destructured, on Node 24.15+ and 26.
+  // Each of them reads the options themselves as skipping the hooks, and `false` as not skipping them.
+  const resolveOptions = (options: any) => options?.shouldSkipModuleHooks ? options : false
   const state: ManifestState = { paths, cache: new Map(), directories: new Map() }
   const original = {
     readPackageJSON: binding.readPackageJSON,
@@ -256,7 +263,7 @@ function setup(paths: Set<string>) {
   const load: Load = function (this: unknown, request, parent, isMain, ...args) {
     if (!parent) return original.load.call(this, request, parent, isMain, ...args)
     const result: Resolution = resolveForCJSWithHooks
-      ? resolveForCJSWithHooks(request, parent, isMain, args[0] ?? {})
+      ? resolveForCJSWithHooks(request, parent, isMain, resolveOptions(args[0]))
       : { filename: (Module as any)._resolveFilename(request, parent, isMain) }
     // a URL is reported by hooks and for `node:` requests
     const target = result.url ?? result.filename
