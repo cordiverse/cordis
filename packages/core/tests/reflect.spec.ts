@@ -1,7 +1,7 @@
 import { expect, describe, it } from 'vitest'
 import { mock } from 'node:test'
 import { types } from 'node:util'
-import { Context, FiberState } from '../src/index.ts'
+import { Context, FiberState, Service } from '../src/index.ts'
 
 describe('Reflect', () => {
   it('Context.is()', () => {
@@ -26,6 +26,37 @@ describe('Reflect', () => {
       expect(() => ctx.provide('foo')).to.throw('service "foo" has been registered at <root>')
       expect(() => ctx.foo = 0).to.not.throw()
     })
+  })
+
+  // `this.ctx` hands out a shadow per access and drops it when the call returns.
+  // The exemption for the root (`!runtime`) also matched a shadow, which has no
+  // runtime either, so the write below used to report success and lose the value.
+  it('a write through a service\'s own ctx is refused, not lost', async () => {
+    class Counter {
+      [Service.tracker] = { property: 'ctx' }
+      count = 0
+      constructor(public ctx: Context) {}
+      declare(v: string) {
+        (this.ctx as any).undeclared = v
+      }
+    }
+
+    const root = new Context()
+    const counter = new Counter(root)
+    root.provide('counter', counter)
+
+    // a field on the service keeps its value
+    ;(root['counter'] as any).count = 42
+    expect(counter.count).to.equal(42)
+
+    // the root keeps its own properties
+    ;(root as any).own = 'kept'
+    expect((root as any).own).to.equal('kept')
+
+    // a shadow is thrown away, so the write must not pretend to work
+    expect(() => (root['counter'] as any).declare('lost')).to.throw(
+      'cannot set property "undeclared" without provide')
+    expect((root as any).undeclared).to.equal(undefined)
   })
 
   it('service injection', async () => {
