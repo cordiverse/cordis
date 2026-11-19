@@ -28,7 +28,12 @@ export function watchPath(watcher: Watcher, filename: string) {
     },
   })
   instance.on('error', error => watcher.emit('error', error))
-  instance.on('change', path => watcher.emit('change', pathToFileURL(resolve(path))))
+  // chokidar reports an entry that became a directory on `change`; `change`
+  // promises a modified file, so the event is dropped here.
+  instance.on('change', (path, stats) => {
+    if (stats?.isDirectory()) return
+    watcher.emit('change', pathToFileURL(resolve(path)))
+  })
   instance.once('ready', () => watcher.emit('ready'))
   // `close()` removes the listeners at once.
   return () => instance.close()
