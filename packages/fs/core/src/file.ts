@@ -62,6 +62,6 @@ export class FileRef {
    * error of the stream rejects the write.
    */
   async write(data: WriteSource): Promise<void> {
-    return this.fs['_provider'](this.url, 'write').write(this.url, toStream(data))
+    return this.fs['_provider'](this.url, 'write').write(this.url, toStream(data), {})
   }
 }

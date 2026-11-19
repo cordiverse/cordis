@@ -592,6 +592,16 @@ export function conformance(name: string, options: ConformanceOptions) {
         await rejects(ctx.fs.copy(url('dir/link'), url('link'), { overwrite: false }), 'AlreadyExists')
       })
 
+      // as above
+      it.skipIf(windows)('copies a file through a dangling link, also with `overwrite: false`', async () => {
+        await write('a.txt', 'foo')
+        await ctx.fs.symlink('target.txt', url('link'))
+        await ctx.fs.copy(url('a.txt'), url('link'), { overwrite: false })
+        expect(await text('target.txt')).to.equal('foo')
+        expect((await ctx.fs.stat(url('link'), { follow: false })).type).to.equal('symlink')
+        await rejects(ctx.fs.copy(url('a.txt'), url('link'), { overwrite: false }), 'AlreadyExists')
+      })
+
       it.skipIf(windows)('copies what a link points to with `dereference`', async () => {
         await write('dir/a.txt', 'foo')
         await ctx.fs.symlink('a.txt', url('dir/link'))

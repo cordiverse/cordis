@@ -596,6 +596,16 @@ describe('Fs', () => {
       expect(target.calls).to.deep.equal([])
     })
 
+    it('does not open the source for a destination that cannot be written', async () => {
+      const ctx = await setup()
+      const source = tree({ '/a.txt': 'foo' })
+      const { write: _, ...target } = tree({}).provider
+      ctx.fs.mount('mem:', source.provider)
+      ctx.fs.mount('other:', target)
+      expect(await code(ctx.fs.copy('mem:///a.txt', 'other:///b.txt'))).to.equal('NotSupported')
+      expect(source.calls).to.deep.equal([])
+    })
+
     it('fails to copy a link to a provider without links before any change', async () => {
       const ctx = await setup()
       const source = tree({ '/src': null, '/src/a.txt': 'foo' }, { symlink: true })

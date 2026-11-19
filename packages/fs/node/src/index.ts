@@ -1,11 +1,11 @@
-import { AccessMode, BaseFs, EntryType, FsError, Stats as FsStats, Watcher } from '@cordisjs/fs'
+import { AccessMode, BaseFs, EntryType, FsError, Stats as FsStats, ProviderWriteOptions, Watcher } from '@cordisjs/fs'
 import { Context } from 'cordis'
 import {
   access, constants, copyFile, FileHandle, lstat, mkdir, open, opendir,
   readlink, rename, rm, rmdir, stat, symlink, unlink,
 } from 'node:fs/promises'
 import type { BigIntStats, Dirent, Stats } from 'node:fs'
-import { dirname, join, parse, resolve } from 'node:path'
+import { dirname, isAbsolute, parse, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Operation, toFsError } from './error.ts'
 import { watchPath } from './watcher.ts'
@@ -76,16 +76,16 @@ async function call<T>(url: URL, operation: Operation, callback: () => Promise<T
   }
 }
 
-function getType(info: Stats | BigIntStats | Dirent): EntryType | undefined {
+function getType(info: BigIntStats | Dirent): EntryType {
   if (info.isFile()) return 'file'
   if (info.isDirectory()) return 'directory'
   if (info.isSymbolicLink()) return 'symlink'
-  if (info.isBlockDevice() || info.isCharacterDevice() || info.isFIFO() || info.isSocket()) return 'other'
+  return 'other'
 }
 
 function toStats(info: BigIntStats): FsStats {
   return {
-    type: getType(info) ?? 'other',
+    type: getType(info),
     size: Number(info.size),
     mtime: info.mtime,
     mode: Number(info.mode & 0o7777n),
@@ -95,6 +95,25 @@ function toStats(info: BigIntStats): FsStats {
 }
 
 const CHUNK_SIZE = 64 * 1024
+
+/** The number of links that a copy follows at its destination, as `SYMLOOP_MAX` of Linux. */
+const MAX_LINKS = 40
+
+/**
+ * The location that a link at `filename` points to, or `undefined` for an
+ * entry that is not a link. A relative target is appended to the directory of
+ * the link as stored, so that the file system resolves its components, a link
+ * before a following `..` included, and keeps a trailing separator.
+ */
+async function followLink(filename: string) {
+  const target = await readlink(filename).catch((error) => {
+    if (error?.code !== 'EINVAL') throw error
+  })
+  if (target === undefined || isAbsolute(target)) return target
+  const directory = dirname(filename)
+  // a root such as `/` already ends with a separator
+  return directory.endsWith(sep) ? directory + target : directory + sep + target
+}
 
 /** The local file system of Node.js. */
 class NodeFs extends BaseFs {
@@ -139,12 +158,15 @@ class NodeFs extends BaseFs {
     })
   }
 
-  async write(url: URL, body: ReadableStream<Uint8Array>) {
+  async write(url: URL, body: ReadableStream<Uint8Array>, options: ProviderWriteOptions = {}) {
+    const { mode } = options
     const handle = await run(url, 'write', (filename) => {
       assertFile(filename, url)
-      return open(filename, 'w')
+      return open(filename, 'w', mode)
     })
     try {
+      // before the content and without the umask, as `copyFile()` gives it
+      if (mode !== undefined) await call(url, 'write', () => handle.chmod(mode))
       // an error of `body` is kept as it is
       for await (const chunk of body) {
         for (let offset = 0; offset < chunk.byteLength;) {
@@ -218,18 +240,8 @@ class NodeFs extends BaseFs {
       while (true) {
         const dirent = await call(url, 'readdir', () => dir.read())
         if (!dirent) return
-        let type = getType(dirent)
-        if (!type) {
-          // the type is not reported by every file system
-          const info = await call(url, 'readdir', () => lstat(join(filename, dirent.name))).catch((error) => {
-            if (error instanceof FsError && error.code === 'NotFound') return
-            throw error
-          })
-          // an entry removed meanwhile is not listed
-          if (!info) continue
-          type = getType(info) ?? 'other'
-        }
-        yield { name: dirent.name, type }
+        // `node:fs` obtains through `lstat()` a type that the file system does not report
+        yield { name: dirent.name, type: getType(dirent) }
       }
     } finally {
       await dir.close().catch(() => {})
@@ -244,13 +256,41 @@ class NodeFs extends BaseFs {
     })
   }
 
-  async copy(src: URL, dest: URL) {
-    const to = toPath(dest)
-    return run(src, 'copy', async (from) => {
-      assertFile(from, src)
-      assertFile(to, dest)
-      await copyFile(from, to)
-    })
+  // `copyFile()` clones the file where the file system supports it, and gives
+  // the destination the permission bits of the source.
+  async copy(src: URL, dest: URL, options: { overwrite: boolean }) {
+    const from = toPath(src)
+    let to = toPath(dest)
+    assertFile(from, src)
+    assertFile(to, dest)
+    const flags = constants.COPYFILE_FICLONE | (options.overwrite ? 0 : constants.COPYFILE_EXCL)
+    for (let count = 0; ; count++) {
+      try {
+        return await copyFile(from, to, flags)
+      } catch (error: any) {
+        let info: Stats | undefined
+        let failure: any
+        try {
+          info = await stat(to)
+        } catch (cause) {
+          failure = cause
+        }
+        // a directory at the destination is reported as `EEXIST` with `COPYFILE_EXCL`, and as `EPERM` on Windows
+        if (info?.isDirectory()) {
+          throw new FsError('IsADirectory', dest, `cannot copy ${src.href} onto the directory ${dest.href}`, { cause: error })
+        }
+        if (error?.code !== 'EEXIST') throw toFsError(error, src, 'copy')
+        // An entry exists, which `stat()` misses only as a dangling link; any
+        // other failure, such as a loop of links, is that of the destination.
+        if (failure && failure.code !== 'ENOENT') throw toFsError(failure, dest, 'copy')
+        // the exclusive creation does not follow a dangling link, which has no content to replace
+        const next = !info && count < MAX_LINKS ? await call(dest, 'copy', () => followLink(to)) : undefined
+        if (next === undefined) {
+          throw new FsError('AlreadyExists', dest, `cannot copy ${src.href} onto the existing ${dest.href}`, { cause: error })
+        }
+        to = next
+      }
+    }
   }
 
   async symlink(target: string, url: URL) {

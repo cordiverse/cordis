@@ -21,7 +21,7 @@ export interface DirEntry {
   name: string
   /** the location of the entry, without a trailing separator, whatever its type */
   url: URL
-  /** the type of the entry itself; a symbolic link is `symlink` */
+  /** the type of the entry itself, not of the target of a link */
   type: EntryType
 }
 
@@ -40,6 +40,12 @@ export interface RemoveOptions {
   recursive?: boolean
   /** A missing location is not an error. */
   force?: boolean
+}
+
+/** The options of `FsProvider.write()`, which `@cordisjs/fs` sets for a copy. */
+export interface ProviderWriteOptions {
+  /** the permission bits of the file, as in the lower 12 bits of a POSIX mode */
+  mode?: number
 }
 
 export interface CopyOptions {

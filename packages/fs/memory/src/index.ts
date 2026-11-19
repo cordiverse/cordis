@@ -1,17 +1,15 @@
-import { AccessMode, createFilter, entryUrl, FsError, FsProvider, Stats, Watcher } from '@cordisjs/fs'
+import { AccessMode, createFilter, FsError, FsProvider, Stats, Watcher } from '@cordisjs/fs'
 import { Context } from 'cordis'
 
 interface File {
   type: 'file'
   content: Uint8Array
-  /** the time of the write that gave the content */
   mtime: Date
 }
 
 interface Directory {
   type: 'directory'
   children: Map<string, Entry>
-  /** the time at which an entry was last added or removed */
   mtime: Date
 }
 
@@ -76,9 +74,16 @@ function locate(url: URL): Location {
   }
 }
 
-// the URL of a location, as reported by a watch
+// The URL of a location, as reported by a watch. A name is percent-encoded
+// where the URL parser would change it: `%`, `?`, `#` and `\` end a segment,
+// and the parser removes controls and spaces at the ends of the input, and
+// tabs and newlines anywhere.
 function format(root: string, names: string[]) {
-  return names.reduce(entryUrl, new URL(root + '/'))
+  // eslint-disable-next-line no-control-regex
+  const path = names.map(name => name.replace(/[\x00-\x20%?#\\]/g, (char) => {
+    return '%' + char.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')
+  }))
+  return new URL(root + '/' + path.join('/'))
 }
 
 function createDirectory(): Directory {
@@ -89,8 +94,8 @@ function createFile(content: Uint8Array): File {
   return { type: 'file', content, mtime: new Date() }
 }
 
-// Adds an entry, or replaces one. The entries of `parent` change unless the
-// content of a file is replaced.
+// Adds or replaces an entry. A file that replaces a file leaves the
+// modification time of `parent` unchanged.
 function place(parent: Directory, name: string, entry: Entry) {
   const previous = parent.children.get(name)
   parent.children.set(name, entry)
@@ -329,7 +334,7 @@ class MemoryFs implements FsProvider {
       }
     }
     unlink(source.parent, source.name!)
-    // a replaced entry is removed from the target directory
+    // unlike a write, a rename that replaces a file changes the entries of the target directory
     target.parent.children.set(target.name!, source.entry)
     target.parent.mtime = new Date()
     this._notifyTree(to.root, to.names, source.entry)
@@ -379,7 +384,7 @@ class MemoryFs implements FsProvider {
     if (!entry) place(parent!, name!, createDirectory())
   }
 
-  async copy(src: URL, dest: URL) {
+  async copy(src: URL, dest: URL, options: { overwrite: boolean }) {
     const from = locate(src)
     const to = locate(dest)
     if (from.directory) throw new FsError('IsADirectory', src, `is a directory: ${src.href}`)
@@ -387,6 +392,9 @@ class MemoryFs implements FsProvider {
     const { entry } = this._find(from)
     if (entry.type === 'directory') throw new FsError('IsADirectory', src, `is a directory: ${src.href}`)
     const { parent, name } = this._target(to)
+    if (!options.overwrite && parent.children.has(name)) {
+      throw new FsError('AlreadyExists', dest, `cannot copy ${src.href} onto the existing ${dest.href}`)
+    }
     // the content is never modified, so it is shared
     place(parent, name, createFile(entry.content))
     this._notify(to.root, to.names, false)

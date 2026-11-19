@@ -201,12 +201,24 @@ describe('MemoryFs', () => {
   })
 
   describe('copy', () => {
+    it('creates the file once for two concurrent copies with `overwrite: false`', async () => {
+      const ctx = await setup({ 'a.txt': 'foo', 'b.txt': 'bar' })
+      const results = await Promise.allSettled([
+        ctx.fs.copy('a.txt', 'c.txt', { overwrite: false }),
+        ctx.fs.copy('b.txt', 'c.txt', { overwrite: false }),
+      ])
+      const created = results.findIndex(result => result.status === 'fulfilled')
+      expect(results.filter(result => result.status === 'fulfilled')).to.have.length(1)
+      expect((results[1 - created] as PromiseRejectedResult).reason).to.have.property('code', 'AlreadyExists')
+      expect(await ctx.fs.file('c.txt').text()).to.equal(['foo', 'bar'][created])
+    })
+
     it('copies between two mounts through their content', async () => {
       const copies: string[] = []
       class RecordingFs extends MemoryFs {
-        async copy(src: URL, dest: URL) {
+        async copy(src: URL, dest: URL, options: { overwrite: boolean }) {
           copies.push(src.href)
-          return super.copy(src, dest)
+          return super.copy(src, dest, options)
         }
       }
       const ctx = await context()

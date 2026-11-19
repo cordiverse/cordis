@@ -1,5 +1,5 @@
 import { Context, Fiber } from 'cordis'
-import { chmodSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -101,6 +101,71 @@ describe('NodeFs', () => {
       expect(stats.mode).to.equal(Number(expected.mode & 0o7777n))
       expect(stats.ino).to.equal(expected.ino)
       expect(stats.dev).to.equal(expected.dev)
+    })
+  })
+
+  describe('copy', () => {
+    // `b/` is a second mount of the same disk, to which a copy is a read and a write
+    async function mountB() {
+      mkdirSync(path('b'))
+      await ctx.use(NodeFs, { mount: pathToFileURL(path('b')).href + '/' })
+    }
+
+    it('creates the file once for two concurrent copies with `overwrite: false`', async () => {
+      writeFileSync(path('a.txt'), 'foo')
+      writeFileSync(path('b.txt'), 'bar')
+      const results = await Promise.allSettled([
+        ctx.fs.copy(url('a.txt'), url('c.txt'), { overwrite: false }),
+        ctx.fs.copy(url('b.txt'), url('c.txt'), { overwrite: false }),
+      ])
+      const created = results.findIndex(result => result.status === 'fulfilled')
+      expect(results.filter(result => result.status === 'fulfilled')).to.have.length(1)
+      expect((results[1 - created] as PromiseRejectedResult).reason).to.have.property('code', 'AlreadyExists')
+      expect(await ctx.fs.file(url('c.txt')).text()).to.equal(['foo', 'bar'][created])
+    })
+
+    // links require a privilege on Windows
+    it.skipIf(process.platform === 'win32')('resolves a dangling link at the destination as the file system does, with `overwrite: false`', async () => {
+      writeFileSync(path('a.txt'), 'foo')
+      mkdirSync(path('real/deep'), { recursive: true })
+      symlinkSync('real/deep', path('shortcut'))
+      // `..` follows the link `shortcut`, and a trailing separator names a directory
+      symlinkSync('shortcut/../created.txt', path('link'))
+      symlinkSync('missing/', path('slash'))
+      await ctx.fs.copy(url('a.txt'), url('link'), { overwrite: false })
+      expect(readFileSync(path('real/created.txt'), 'utf8')).to.equal('foo')
+      expect(existsSync(path('created.txt'))).to.be.false
+      expect(await ctx.fs.copy(url('a.txt'), url('slash'), { overwrite: false }).catch(error => error)).to.be.instanceOf(FsError)
+      expect(existsSync(path('missing'))).to.be.false
+    })
+
+    // as above
+    it.skipIf(process.platform === 'win32')('fails on a loop of links at the destination with the error of the loop', async () => {
+      writeFileSync(path('a.txt'), 'foo')
+      symlinkSync('loop', path('loop'))
+      for (const overwrite of [true, false]) {
+        const error = await ctx.fs.copy(url('a.txt'), url('loop'), { overwrite }).catch(error => error)
+        expect(error).to.be.instanceOf(FsError)
+        expect(error.cause).to.have.property('code', 'ELOOP')
+      }
+    })
+
+    // permission bits do not exist on Windows
+    it.skipIf(process.platform === 'win32')('gives the destination the permission bits of the source, also from another mount', async () => {
+      await mountB()
+      writeFileSync(path('a.sh'), 'foo')
+      chmodSync(path('a.sh'), 0o751)
+      writeFileSync(path('private.txt'), 'bar')
+      chmodSync(path('private.txt'), 0o600)
+      for (const dest of ['dest.sh', 'b/dest.sh']) {
+        writeFileSync(path(dest), '')
+        chmodSync(path(dest), 0o600)
+      }
+      const mode = (name: string) => statSync(path(name)).mode & 0o7777
+      await ctx.fs.copy(url('a.sh'), url('dest.sh'))
+      await ctx.fs.copy(url('a.sh'), url('b/dest.sh'))
+      await ctx.fs.copy(url('private.txt'), url('b/private.txt'))
+      expect([mode('dest.sh'), mode('b/dest.sh'), mode('b/private.txt')]).to.deep.equal([0o751, 0o751, 0o600])
     })
   })
 

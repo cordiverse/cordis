@@ -1,12 +1,12 @@
 import { Context, Service } from 'cordis'
 import { Awaitable } from 'cosmokit'
 import { pathToFileURL } from 'node:url'
-import { CopyOptions, DirEntry, EntryType, entryUrl, MkdirOptions, RemoveOptions, StatOptions, Stats } from './entry.ts'
+import { CopyOptions, DirEntry, EntryType, entryUrl, MkdirOptions, ProviderWriteOptions, RemoveOptions, StatOptions, Stats } from './entry.ts'
 import { FsError } from './error.ts'
 import { FileRef } from './file.ts'
 import { Watcher, WatchOptions } from './watcher.ts'
 
-export * from './entry.ts'
+export type * from './entry.ts'
 export * from './error.ts'
 export * from './file.ts'
 export * from './filter.ts'
@@ -379,14 +379,18 @@ export class Fs extends Service<Fs.Intercept> {
 
   /**
    * Copy a file, or with `recursive` a directory with every entry below it,
-   * also between two mounts. The parent of `dest` is not created, and mode,
+   * also between two mounts. The parent of `dest` is not created. The
+   * permission bits of a file are copied where both providers have them;
    * times and other metadata are not copied.
    *
    * - An existing file at `dest` is replaced, unless `overwrite` is `false`,
-   *   which fails with `AlreadyExists`. A file onto an existing directory fails
-   *   with `IsADirectory`, a directory onto an existing file with
-   *   `NotADirectory`, and a directory onto an existing directory merges the
-   *   entries.
+   *   which fails with `AlreadyExists`. Within a mount whose provider has
+   *   `copy`, it is checked when the file is created; otherwise it is
+   *   checked before the write. A link at `dest` is followed, and a dangling
+   *   link is written through, as it has no content to replace.
+   * - A file onto an existing directory fails with `IsADirectory`, a
+   *   directory onto an existing file with `NotADirectory`, and a directory
+   *   onto an existing directory merges the entries.
    * - A symbolic link is copied as a link with the same target, unless
    *   `dereference` is set, which copies what it points to.
    * - A `dest` at or below `src` fails with `InvalidPath` before any I/O.
@@ -400,16 +404,23 @@ export class Fs extends Service<Fs.Intercept> {
       throw new FsError('InvalidPath', to, `cannot copy ${from.href} to ${to.href} at or below itself`)
     }
     const { recursive = false, overwrite = true, dereference = false } = options
-    const { type } = await this.stat(from, { follow: dereference })
-    await this._copy(from, to, type, { recursive, overwrite, dereference })
+    const stats = await this.stat(from, { follow: dereference })
+    await this._copy(from, to, stats.type, { recursive, overwrite, dereference }, stats)
   }
 
-  private async _copy(from: URL, to: URL, type: EntryType, options: Required<CopyOptions>) {
+  // `stats` of the source, if they have been obtained
+  private async _copy(from: URL, to: URL, type: EntryType, options: Required<CopyOptions>, stats?: Stats) {
     if (type === 'symlink') return this._copyLink(from, to, options)
     if (type === 'directory') return this._copyDirectory(from, to, options)
     if (type !== 'file') {
       throw new FsError('NotSupported', from, `cannot copy ${from.href}, which is neither a file, a directory nor a link`)
     }
+    // the provider checks the destination
+    const mount = this._route(from)
+    if (this._route(to) === mount && mount.provider.copy) {
+      return mount.provider.copy(from, to, { overwrite: options.overwrite })
+    }
+    // a link at `dest` is followed, so that a dangling one is written through
     const existing = await this._statIfExists(to, true)
     if (existing?.type === 'directory') {
       throw new FsError('IsADirectory', to, `cannot copy the file ${from.href} onto the directory ${to.href}`)
@@ -417,16 +428,13 @@ export class Fs extends Service<Fs.Intercept> {
     if (existing && !options.overwrite) {
       throw new FsError('AlreadyExists', to, `cannot copy ${from.href} onto the existing ${to.href}`)
     }
-    const mount = this._route(from)
-    if (this._route(to) === mount && mount.provider.copy) {
-      return mount.provider.copy(from, to)
-    }
-    const source = this._provider(from, 'read').read(from)
+    // checked before the source is opened
     const target = this._provider(to, 'write')
+    const { mode } = stats ?? await this.stat(from)
     // a failure to open the source is reported before the destination is written
-    const body = await primed(source)
+    const body = await primed(this._provider(from, 'read').read(from))
     try {
-      await target.write(to, body)
+      await target.write(to, body, mode === undefined ? {} : { mode })
     } catch (error) {
       await body.cancel(error).catch(() => {})
       throw error
@@ -447,10 +455,8 @@ export class Fs extends Service<Fs.Intercept> {
       throw new FsError('NotADirectory', to, `cannot copy the directory ${from.href} onto the non-directory ${to.href}`)
     }
     for (const { name, url, type } of entries) {
-      const resolved = type === 'symlink' && options.dereference
-        ? (await this.stat(url)).type
-        : type
-      await this._copy(url, entryUrl(to, name), resolved, options)
+      const stats = type === 'symlink' && options.dereference ? await this.stat(url) : undefined
+      await this._copy(url, entryUrl(to, name), stats?.type ?? type, options, stats)
     }
   }
 
@@ -532,9 +538,11 @@ export interface FsProvider {
   read?(url: URL): ReadableStream<Uint8Array>
   /**
    * Replace the content of a file with the data of `body`, creating the file
-   * but not its parent directory. An error of `body` rejects the write.
+   * but not its parent directory. An error of `body` rejects the write. A
+   * provider with permissions gives the file the permission bits `mode`
+   * before its content, if it is set.
    */
-  write?(url: URL, body: ReadableStream<Uint8Array>): Promise<void>
+  write?(url: URL, body: ReadableStream<Uint8Array>, options: ProviderWriteOptions): Promise<void>
   /** Reject when the operation of `mode` is known to be denied. */
   access?(url: URL, mode: AccessMode): Promise<void>
   /** Rename an entry to a location of the same mount. */
@@ -556,11 +564,12 @@ export interface FsProvider {
   /** Create a directory, with the semantics of `Fs.mkdir()`. */
   mkdir?(url: URL, options: Required<MkdirOptions>): Promise<void>
   /**
-   * Copy the content of a file to a location of the same mount, replacing an
-   * existing file there. `@cordisjs/fs` calls it only for a file, after it has
-   * checked the destination.
+   * Copy a file to a location of the same mount, with the semantics of
+   * `Fs.copy()` for a file, and check `overwrite: false` when the file is
+   * created. `@cordisjs/fs` calls it only for a file, and leaves the checks of
+   * the destination to it.
    */
-  copy?(src: URL, dest: URL): Promise<void>
+  copy?(src: URL, dest: URL, options: Required<Pick<CopyOptions, 'overwrite'>>): Promise<void>
   /** Create a symbolic link at `url` that stores `target` as given. */
   symlink?(target: string, url: URL): Promise<void>
   /** Return the target of a symbolic link as stored, and fail with `NotALink` on another entry. */
