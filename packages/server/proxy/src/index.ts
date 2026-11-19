@@ -64,6 +64,8 @@ export function apply(ctx: Context, config: Config) {
       method: req.method as any,
       headers: req.headers,
       data: bodyMethods.has(req.method) ? req.body : undefined,
+      // a redirect is the upstream's answer, which the caller follows by itself
+      redirect: 'manual',
     }) as unknown as Response
     const headers = new Headers(response.headers)
     // undici already decoded the body; these headers no longer match the forwarded bytes.
