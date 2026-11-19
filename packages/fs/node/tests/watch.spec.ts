@@ -81,11 +81,11 @@ describe('Fs', () => {
   }
 
   describe('path', () => {
-    it('watches the local path of a relative reference against the calling context', async () => {
+    it('watches the local path of a relative path against the calling context', async () => {
       const path = write('base with spaces # %/relative.txt')
       const ctx = await setup()
       const seen: string[] = []
-      await watch(ctx, '__fixtures__/base%20with%20spaces%20%23%20%25/relative.txt', (filename) => { seen.push(filename) })
+      await watch(ctx, '__fixtures__/base with spaces # %/relative.txt', (filename) => { seen.push(filename) })
 
       await touch(path, () => seen.length)
       expect([...new Set(seen)]).to.deep.equal([path])

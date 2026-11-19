@@ -52,6 +52,13 @@ describe('Fs', () => {
   }
 
   describe('mount', () => {
+    it('rejects a prefix that is not a location', async () => {
+      const ctx = await setup()
+      for (const prefix of ['mem://bucket/%2F', 'mem://bucket/a?x']) {
+        expect(() => ctx.fs.mount(prefix, fakeProvider())).to.throw(FsError).with.property('code', 'InvalidPath')
+      }
+    })
+
     it('forwards a location to the provider of the longest prefix that contains it', async () => {
       const ctx = await setup()
       const outer = fakeProvider()
@@ -217,10 +224,70 @@ describe('Fs', () => {
   })
 
   describe('resolve', () => {
-    it('resolves a relative reference against the base URL', async () => {
+    it('resolves a path against the base URL', async () => {
       const ctx = await setup('file:///app/')
       expect(ctx.fs.resolve('data/a.txt').href).to.equal('file:///app/data/a.txt')
+      expect(ctx.fs.resolve('./data/../a.txt').href).to.equal('file:///app/a.txt')
       expect(ctx.fs.resolve('/a.txt').href).to.equal('file:///a.txt')
+      expect(ctx.fs.resolve('data/').href).to.equal('file:///app/data/')
+      expect(ctx.fs.resolve('').href).to.equal('file:///app/')
+    })
+
+    it('takes every character of a name in a path literally', async () => {
+      const ctx = await setup('mem://bucket/')
+      expect(ctx.fs.resolve('a#b?c%41 .txt').href).to.equal('mem://bucket/a%23b%3Fc%2541%20.txt')
+      expect(ctx.fs.resolve(' a\tb\n').href).to.equal('mem://bucket/%20a%09b%0A')
+      // a name that looks like a scheme follows `./`
+      expect(ctx.fs.resolve('./ab:c').href).to.equal('mem://bucket/ab:c')
+    })
+
+    it('separates the names of a path with `\\`', async () => {
+      const ctx = await setup('mem://bucket/')
+      expect(ctx.fs.resolve('dir\\a.txt').href).to.equal('mem://bucket/dir/a.txt')
+      expect(ctx.fs.resolve('\\a.txt').href).to.equal('mem://bucket/a.txt')
+    })
+
+    it('takes a drive letter as the first name of an absolute path, on the local host of a file URL', async () => {
+      const ctx = await setup('file://nas/share/app/')
+      expect(ctx.fs.resolve('D:\\data\\a.txt').href).to.equal('file:///D:/data/a.txt')
+      expect(ctx.fs.resolve('D:/data/').href).to.equal('file:///D:/data/')
+      expect(ctx.fs.resolve('/x').href).to.equal('file://nas/x')
+      expect((await setup('C:\\app')).fs.baseUrl?.href).to.equal('file:///C:/app/')
+    })
+
+    it('takes two leading separators and a host as a path on that host', async () => {
+      const ctx = await setup('file:///C:/app/')
+      expect(ctx.fs.resolve('\\\\fileserver\\team\\a.txt').href).to.equal('file://fileserver/team/a.txt')
+      expect(ctx.fs.resolve('//fileserver/team/').href).to.equal('file://fileserver/team/')
+      const memory = await setup('mem://bucket/')
+      expect(memory.fs.resolve('//other/a.txt').href).to.equal('mem://other/a.txt')
+    })
+
+    it('takes each element of an array as a literal name', async () => {
+      const ctx = await setup('mem://bucket/')
+      expect(ctx.fs.resolve(['dir', 'a\\b#1.txt']).href).to.equal('mem://bucket/dir/a%5Cb%231.txt')
+      expect(ctx.fs.resolve(['a.txt'], new URL('mem://bucket/dir')).href).to.equal('mem://bucket/dir/a.txt')
+      for (const names of [[''], ['.'], ['..'], ['a/b']]) {
+        expect(() => ctx.fs.resolve(names)).to.throw(FsError).with.property('code', 'InvalidPath')
+      }
+    })
+
+    // a file URL reads a first segment `C|` as the drive `C:`
+    it('keeps the name `C|` in every segment', async () => {
+      const ctx = await setup('mem://bucket/')
+      expect(decodeURIComponent(ctx.fs.resolve(['C|'], new URL('file:///')).pathname)).to.equal('/C|')
+      expect(ctx.fs.resolve('C|/a', new URL('file:///app/')).href).to.equal('file:///app/C|/a')
+      expect(ctx.fs.resolve('../C|/a', new URL('file:///D:/')).href).to.equal('file:///D:/C|/a')
+      expect(ctx.fs.resolve('C|/a', new URL('mem://bucket/app/')).href).to.equal('mem://bucket/app/C|/a')
+    })
+
+    it('rejects a URL that is not a location, and leaves an opaque URL to its provider', async () => {
+      const ctx = await setup('mem://bucket/')
+      for (const location of ['mem://bucket/a?x', 'mem://bucket/a#x', 'mem://bucket/a%2Fb', 'mem://bucket/100%.txt']) {
+        expect(() => ctx.fs.file(location)).to.throw(FsError).with.property('code', 'InvalidPath')
+        expect(() => ctx.fs.resolve(new URL(location))).to.throw(FsError).with.property('code', 'InvalidPath')
+      }
+      expect(ctx.fs.resolve('data:,a#b').href).to.equal('data:,a#b')
     })
 
     it('takes an absolute URL independently of the base URL', async () => {
@@ -230,24 +297,44 @@ describe('Fs', () => {
       expect(ctx.fs.resolve(url)).to.equal(url)
     })
 
-    it('resolves a relative reference against the working directory by default', async () => {
+    it('resolves a path against the working directory by default', async () => {
       const ctx = await setup()
       expect(ctx.fs.resolve('a.txt').href).to.equal(pathToFileURL(join(process.cwd(), 'a.txt')).href)
     })
 
-    it('requires a base URL on a runtime without a working directory', async () => {
-      const { fiber } = await startWithoutCwd()
-      expect(fiber.state).to.equal(FiberState.FAILED)
-      const { root } = await startWithoutCwd({ baseUrl: 'mem://bucket/' })
-      expect(root.fs.resolve('a.txt').href).to.equal('mem://bucket/a.txt')
+    it('takes only absolute URLs as locations without a base URL', async () => {
+      const { root } = await startWithoutCwd()
+      expect(root.fs.baseUrl).to.be.undefined
+      expect(root.fs.resolve('mem://bucket/a.txt').href).to.equal('mem://bucket/a.txt')
+      for (const path of ['a.txt', ['a.txt']]) {
+        expect(() => root.fs.resolve(path)).to.throw(FsError).with.property('code', 'InvalidPath')
+      }
+      expect(root.intercept('fs', { baseUrl: 'mem://bucket/' }).fs.resolve('a.txt').href).to.equal('mem://bucket/a.txt')
+      expect(() => root.intercept('fs', { baseUrl: 'data/' }).fs.baseUrl).to.throw(TypeError)
     })
 
-    it('rejects a relative base URL of the config', async () => {
-      const root = new Context()
-      const fiber = root.plugin(Fs, { baseUrl: 'data/' })
-      fibers.push(fiber)
-      await fiber.await().catch(() => {})
+    it('fails to start with a path as the base URL on a runtime without a working directory', async () => {
+      const { root } = await startWithoutCwd({ baseUrl: 'mem://bucket/' })
+      expect(root.fs.resolve('a.txt').href).to.equal('mem://bucket/a.txt')
+      const { fiber } = await startWithoutCwd({ baseUrl: 'data/' })
       expect(fiber.state).to.equal(FiberState.FAILED)
+    })
+
+    it('does not read the working directory for an absolute base URL', async () => {
+      vi.spyOn(process, 'cwd').mockImplementation(() => {
+        throw new Error('no working directory')
+      })
+      try {
+        const ctx = await setup('mem://bucket/')
+        expect(ctx.fs.baseUrl?.href).to.equal('mem://bucket/')
+      } finally {
+        vi.restoreAllMocks()
+      }
+    })
+
+    it('resolves a path of the config against the working directory', async () => {
+      const ctx = await setup('data')
+      expect(ctx.fs.baseUrl?.href).to.equal(pathToFileURL(join(process.cwd(), 'data')).href + '/')
     })
 
     it('takes the base URL of the innermost intercept', async () => {
@@ -260,7 +347,7 @@ describe('Fs', () => {
     it('resolves a relative base URL against the outer one', async () => {
       const ctx = await setup('file:///app/')
       const inner = ctx.intercept('fs', { baseUrl: 'data/' }).intercept('fs', { baseUrl: '../logs/' })
-      expect(inner.fs.baseUrl.href).to.equal('file:///app/logs/')
+      expect(inner.fs.baseUrl?.href).to.equal('file:///app/logs/')
       expect(inner.fs.resolve('a.txt').href).to.equal('file:///app/logs/a.txt')
     })
 
@@ -275,20 +362,23 @@ describe('Fs', () => {
     })
 
     it('takes a base URL as a directory without a query or fragment', async () => {
-      const ctx = await setup('file:///app?x')
-      const inner = ctx.intercept('fs', { baseUrl: 'data' }).intercept('fs', { baseUrl: 'logs?x#y' })
-      expect(ctx.fs.baseUrl.href).to.equal('file:///app/')
-      expect(inner.fs.baseUrl.href).to.equal('file:///app/data/logs/')
+      const ctx = await setup('file:///app?x#y')
+      const inner = ctx.intercept('fs', { baseUrl: 'data' })
+      expect(ctx.fs.baseUrl?.href).to.equal('file:///app/')
+      expect(inner.fs.baseUrl?.href).to.equal('file:///app/data/')
     })
 
-    it.runIf(process.platform === 'win32')('takes a drive-letter path as a file path', async () => {
-      const ctx = await setup('C:\\app')
-      expect(ctx.fs.baseUrl.href).to.equal('file:///C:/app/')
-      expect(ctx.fs.resolve('D:\\data\\a.txt').href).to.equal('file:///D:/data/a.txt')
-      expect(ctx.intercept('fs', { baseUrl: 'D:/data' }).fs.baseUrl.href).to.equal('file:///D:/data/')
+    it('rejects a base URL that is not a location', async () => {
+      const root = new Context()
+      const fiber = root.use(Fs, { baseUrl: 'mem://bucket/%2F' })
+      fibers.push(fiber)
+      await fiber.await().catch(() => {})
+      expect(fiber.state).to.equal(FiberState.FAILED)
+      const ctx = await setup('mem://bucket/')
+      expect(() => ctx.intercept('fs', { baseUrl: 'mem://bucket/100%/' }).fs.baseUrl).to.throw(TypeError)
     })
 
-    it('rejects a reference that cannot be parsed with `InvalidPath`', async () => {
+    it('rejects a URL that cannot be parsed with `InvalidPath`', async () => {
       const ctx = await setup('file:///app/')
       expect(() => ctx.fs.resolve('http://[')).to.throw(FsError).with.property('code', 'InvalidPath')
     })

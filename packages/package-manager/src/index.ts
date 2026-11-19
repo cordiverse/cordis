@@ -35,7 +35,8 @@ class PackageManager extends Service {
   }
 
   async* [Service.init]() {
-    const start = fileURLToPath(this.ctx.fs.baseUrl)
+    // Node.js has a working directory, so `baseUrl` is set
+    const start = fileURLToPath(this.ctx.fs.baseUrl!)
     let root = await realpath(start)
     while (!existsSync(join(root, 'package.json'))) {
       const parent = dirname(root)

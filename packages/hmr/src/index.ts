@@ -169,7 +169,8 @@ class Hmr extends Service {
     this._modules = new ModuleCaches(loader)
     ctx.effect(() => activate())
 
-    this.baseDir = fileURLToPath(ctx.fs.baseUrl)
+    // Node.js has a working directory, so `baseUrl` is set
+    this.baseDir = fileURLToPath(ctx.fs.baseUrl!)
 
     this._watch(ctx)
   }

@@ -38,52 +38,20 @@ interface Subscription {
   keep?: (path: string, isDirectory: boolean) => boolean
 }
 
-function invalid(url: URL, message: string, cause?: unknown) {
-  return new FsError('InvalidPath', url, message, { cause })
-}
-
+// The names of a location, which `@cordisjs/fs` has checked to decode.
 function locate(url: URL): Location {
   const { href, protocol, pathname } = url
   // a URL with an opaque path, such as `memory:a.txt`, names no hierarchy
   if (!pathname.startsWith('/') && !href.startsWith(protocol + '//')) {
-    throw invalid(url, `expected a URL with a hierarchical path, got ${JSON.stringify(href)}`)
-  }
-  if (url.search || url.hash || href.endsWith('?') || href.endsWith('#')) {
-    throw invalid(url, `expected a URL without a query or fragment, got ${JSON.stringify(href)}`)
-  }
-  const names: string[] = []
-  // empty segments are removed, as by a POSIX path resolution
-  for (const segment of pathname.split('/')) {
-    if (!segment) continue
-    if (/%2f/i.test(segment)) {
-      throw invalid(url, `expected a URL without an encoded separator, got ${JSON.stringify(href)}`)
-    }
-    let name: string
-    try {
-      name = decodeURIComponent(segment)
-    } catch (error) {
-      throw invalid(url, `invalid percent-encoding in ${JSON.stringify(href)}`, error)
-    }
-    names.push(name)
+    throw new FsError('InvalidPath', url, `expected a URL with a hierarchical path, got ${JSON.stringify(href)}`)
   }
   return {
     url,
     root: href.slice(0, href.length - pathname.length),
-    names,
+    // empty segments are removed, as by a POSIX path resolution
+    names: pathname.split('/').filter(Boolean).map(decodeURIComponent),
     directory: pathname.endsWith('/'),
   }
-}
-
-// The URL of a location, as reported by a watch. A name is percent-encoded
-// where the URL parser would change it: `%`, `?`, `#` and `\` end a segment,
-// and the parser removes controls and spaces at the ends of the input, and
-// tabs and newlines anywhere.
-function format(root: string, names: string[]) {
-  // eslint-disable-next-line no-control-regex
-  const path = names.map(name => name.replace(/[\x00-\x20%?#\\]/g, (char) => {
-    return '%' + char.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')
-  }))
-  return new URL(root + '/' + path.join('/'))
 }
 
 function createDirectory(): Directory {
@@ -188,7 +156,7 @@ class MemoryFs implements FsProvider {
   private _roots = new Map<string, Directory>()
   private _subscriptions = new Set<Subscription>()
 
-  constructor(ctx: Context, config: MemoryFs.Config = {}) {
+  constructor(private ctx: Context, config: MemoryFs.Config = {}) {
     const mount = config.mount ?? 'memory:'
     const scope = toScope(mount)
     this._populate(config.files ?? {}, scope, scope.base)
@@ -199,11 +167,11 @@ class MemoryFs implements FsProvider {
     for (const [key, value] of Object.entries(tree)) {
       let url: URL
       try {
-        url = new URL(key, base)
+        // a path without a base has nothing to be resolved against
+        url = this.ctx.fs.resolve(key, base ?? new URL('about:blank'))
       } catch (error) {
-        // a key with a scheme is parsed as an absolute URL, whatever the base
-        const message = base || /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(key)
-          ? `invalid URL ${JSON.stringify(key)}`
+        const message = base
+          ? `invalid key ${JSON.stringify(key)}`
           : `expected an absolute URL as a key of the top level, as the mount has no base URL, got ${JSON.stringify(key)}`
         throw new TypeError(message, { cause: error })
       }
@@ -440,7 +408,7 @@ class MemoryFs implements FsProvider {
           continue
         }
       }
-      watcher.emit('change', url ??= format(root, names))
+      watcher.emit('change', url ??= this.ctx.fs.resolve(names, new URL(root + '/')))
     }
   }
 }
@@ -450,11 +418,11 @@ namespace MemoryFs {
    * A tree of entries. A string or a `Uint8Array` is the content of a file,
    * and an object is a directory; missing parent directories are created.
    *
-   * Each key is a URL reference, resolved against the directory of its
-   * parent, or at the top level against the mount (`<scheme>:///` for a mount
-   * at a scheme). At the top level of a mount at the empty string, or at a
-   * scheme whose URLs require a host, such as `https:`, a key is an absolute
-   * URL. A key outside the mount fails.
+   * Each key is a location of `Path` in `@cordisjs/fs`, resolved against the
+   * directory of its parent, or at the top level against the mount
+   * (`<scheme>:///` for a mount at a scheme). At the top level of a mount at
+   * the empty string, or at a scheme whose URLs require a host, such as
+   * `https:`, a key is an absolute URL. A key outside the mount fails.
    */
   export interface Tree {
     [key: string]: string | Uint8Array | Tree
