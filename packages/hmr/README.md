@@ -13,7 +13,7 @@ ctx.use(Hmr, { watch: { enabled: true } })
 // reconcile programmatically, e.g. after a package installation
 const result = await ctx.hmr.reconcile(async () => {
   const { added, removed, updated } = await ctx.packageManager.install({ foo: '^2.0.0' })
-  return [...added, ...removed, ...updated].flatMap(({ path, before }) => before ? [path, before.realPath] : [path])
+  return [...added, ...removed, ...updated].flatMap(({ path, before }) => before ? [path, before.realpath] : [path])
 })
 ```
 
