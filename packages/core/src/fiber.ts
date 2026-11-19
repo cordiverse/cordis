@@ -135,6 +135,13 @@ export class Fiber {
   private _activeChains = 0
   private _replayOwed = false
   private _replay: Promise<void> | undefined
+  /** Set while a replay runs. */
+  private _replaying = false
+  /** Commits waiting for the chains to settle, keyed by config. */
+  private _pendingCommits: { key: any; commit: () => void }[] = []
+  private _resolvedConfig: any
+  /** The config the resolved one came from. */
+  private _sourceConfig: any
   private _runner: EffectRunner<string>
   private _store: Dict<Impl> = Object.create(null)
   private _release: (() => void) | undefined
@@ -160,7 +167,9 @@ export class Fiber {
         getOuterStack,
         execute: function (this: Fiber) {
           const { callback } = this.runtime!
-          const config = this._resolve(this.config)
+          // recorded so a commit registered during the first load has a key
+          const config = this._resolvedConfig = this._resolve(this.config)
+          this._sourceConfig = this.config
           if (isConstructor(callback)) {
             // eslint-disable-next-line new-cap
             const instance = new callback(this.ctx, config)
@@ -548,13 +557,28 @@ export class Fiber {
     if (!noSave) fiber.context.emit('internal/commit', fiber, config)
     fiber.config = config
     fiber._error = undefined
+    if (loaded) {
+      fiber._resolvedConfig = resolved
+      fiber._sourceConfig = config
+    }
     const restart = () => fiber.restart()
-    const result = loaded
-      ? fiber.context.waterfall(fiber, 'internal/update', resolved, restart)
-      : restart()
-    // a listener may veto the restart, in which case there is nothing to await
-    if (result === undefined) return
+    // counted before the handlers run
     fiber._activeChains++
+    let result: Awaitable<void>
+    try {
+      result = loaded
+        ? fiber.context.waterfall(fiber, 'internal/update', resolved, restart)
+        : restart()
+    } catch (error) {
+      fiber._activeChains--
+      throw error
+    }
+    // a listener may veto the restart, in which case there is nothing to await
+    if (result === undefined) {
+      fiber._activeChains--
+      fiber._flushCommits()
+      return
+    }
     const task = Promise.resolve(result).then(() => {
       return fiber._settleChains(revision)
     }, (error) => {
@@ -573,8 +597,51 @@ export class Fiber {
     // the stored config moved past this chain
     if (this._updateRevision !== revision) this._replayOwed = true
     // the last chain in flight repairs
-    if (!this._replayOwed || this._activeChains > 0) return
-    return this._replayUpdate()
+    if (this._activeChains > 0) return
+    if (this._replayOwed) return this._replayUpdate()
+    this._flushCommits()
+  }
+
+  /**
+   * Runs `commit` once every update task of this fiber has settled, and only while
+   * `config` is still the latest one. Either the value the handler received or the
+   * one the fiber stores is accepted.
+   */
+  whenStable(config: any, commit: () => void) {
+    // `uid` is cleared when disposal starts
+    if (this.uid === null) return
+    // drop entries for a config the fiber has moved past
+    if (this._pendingCommits.length) {
+      this._pendingCommits = this._pendingCommits.filter((entry) => {
+        return entry.key === this._resolvedConfig || entry.key === this._sourceConfig
+      })
+    }
+    // nothing in flight: settle now
+    if (!this._activeChains && !this._replayOwed && !this._replaying) {
+      return this._commit({ key: config, commit })
+    }
+    // one entry per config; the newest registration wins
+    const same = this._pendingCommits.findIndex((entry) => entry.key === config)
+    if (same >= 0) this._pendingCommits[same] = { key: config, commit }
+    else this._pendingCommits.push({ key: config, commit })
+  }
+
+  private _commit(entry: { key: any; commit: () => void }) {
+    if (this.uid === null) return
+    if (entry.key !== this._resolvedConfig && entry.key !== this._sourceConfig) return
+    try {
+      entry.commit()
+    } catch (error) {
+      this.ctx.logger.error(error)
+    }
+  }
+
+  private _flushCommits() {
+    if (this._activeChains > 0 || this._replayOwed) return
+    const pending = this._pendingCommits
+    if (!pending.length) return
+    this._pendingCommits = []
+    for (const entry of pending) this._commit(entry)
   }
 
   private _replayUpdate(): Awaitable<void> {
@@ -583,21 +650,42 @@ export class Fiber {
     if (this._replay) return this._replay
     this._replayOwed = false
     // unloaded: the pending activation reads the stored config
-    if (this._runner.epoch === INACTIVE) return
+    if (this._runner.epoch === INACTIVE) {
+      if (!this._activeChains) this._flushCommits()
+      return
+    }
     const revision = this._updateRevision
     const resolved = this._resolve(this.config)
+    // a commit registered by the replay waits for the repair
+    this._replaying = true
     // the load has the stored config; only the handlers re-run
-    const result = this.context.waterfall(this, 'internal/update', resolved, () => {})
-    if (result === undefined) return
+    let result: any
+    try {
+      result = this.context.waterfall(this, 'internal/update', resolved, () => {})
+    } catch (error) {
+      this._replay = undefined
+      this._replaying = false
+      throw error
+    }
+    if (result === undefined) {
+      this._replaying = false
+      if (!this._activeChains) this._flushCommits()
+      return
+    }
     const task = Promise.resolve(result).then(() => {
       this._replay = undefined
+      this._replaying = false
       // an update that landed during the replay is owed another one
-      if (this._updateRevision === revision) return
+      if (this._updateRevision === revision) {
+        if (!this._activeChains) this._flushCommits()
+        return
+      }
       this._replayOwed = true
       if (this._activeChains > 0) return
       return this._replayUpdate()
     }, (error) => {
       this._replay = undefined
+      this._replaying = false
       // the repair's failure is recorded on the fiber
       this._error = error
     })
