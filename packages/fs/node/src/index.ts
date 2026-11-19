@@ -1,8 +1,11 @@
-import { AccessMode, BaseFs, FsError, Watcher } from '@cordisjs/fs'
+import { AccessMode, BaseFs, EntryType, FsError, Stats as FsStats, Watcher, WriteOptions } from '@cordisjs/fs'
 import { Context } from 'cordis'
-import { access, constants, FileHandle, lstat, open, rename, rmdir, stat, unlink } from 'node:fs/promises'
-import type { Stats } from 'node:fs'
-import { parse, resolve } from 'node:path'
+import {
+  access, constants, copyFile, FileHandle, lstat, mkdir, open, opendir,
+  readlink, rename, rm, rmdir, stat, symlink, unlink,
+} from 'node:fs/promises'
+import type { BigIntStats, Dirent, Stats } from 'node:fs'
+import { dirname, isAbsolute, parse, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Operation, toFsError } from './error.ts'
 import { watchPath } from './watcher.ts'
@@ -42,7 +45,7 @@ function toEntry(filename: string) {
 }
 
 // A trailing separator requires a directory, which a symbolic link may resolve to.
-async function assertDirectory(entry: string, info: Stats, url: URL) {
+async function assertDirectory(entry: string, info: Stats | BigIntStats, url: URL) {
   const target = info.isSymbolicLink() ? await stat(entry) : info
   if (!target.isDirectory()) {
     throw new FsError('NotADirectory', url, `expected a directory at ${url.href}`)
@@ -73,7 +76,44 @@ async function call<T>(url: URL, operation: Operation, callback: () => Promise<T
   }
 }
 
+function getType(info: BigIntStats | Dirent): EntryType {
+  if (info.isFile()) return 'file'
+  if (info.isDirectory()) return 'directory'
+  if (info.isSymbolicLink()) return 'symlink'
+  return 'other'
+}
+
+function toStats(info: BigIntStats): FsStats {
+  return {
+    type: getType(info),
+    size: Number(info.size),
+    mtime: info.mtime,
+    mode: Number(info.mode & 0o7777n),
+    ino: info.ino,
+    dev: info.dev,
+  }
+}
+
 const CHUNK_SIZE = 64 * 1024
+
+/** The number of links that a copy follows at its destination, as `SYMLOOP_MAX` of Linux. */
+const MAX_LINKS = 40
+
+/**
+ * The location that a link at `filename` points to, or `undefined` for an
+ * entry that is not a link. A relative target is appended to the directory of
+ * the link as stored, so that the file system resolves its components, a link
+ * before a following `..` included, and keeps a trailing separator.
+ */
+async function followLink(filename: string) {
+  const target = await readlink(filename).catch((error) => {
+    if (error?.code !== 'EINVAL') throw error
+  })
+  if (target === undefined || isAbsolute(target)) return target
+  const directory = dirname(filename)
+  // a root such as `/` already ends with a separator
+  return directory.endsWith(sep) ? directory + target : directory + sep + target
+}
 
 /** The local file system of Node.js. */
 class NodeFs extends BaseFs {
@@ -118,12 +158,15 @@ class NodeFs extends BaseFs {
     })
   }
 
-  async write(url: URL, body: ReadableStream<Uint8Array>) {
+  async write(url: URL, body: ReadableStream<Uint8Array>, options: WriteOptions = {}) {
+    const { mode } = options
     const handle = await run(url, 'write', (filename) => {
       assertFile(filename, url)
-      return open(filename, 'w')
+      return open(filename, 'w', mode)
     })
     try {
+      // before the content and without the umask, as `copyFile()` gives it
+      if (mode !== undefined) await call(url, 'write', () => handle.chmod(mode))
       // an error of `body` is kept as it is
       for await (const chunk of body) {
         for (let offset = 0; offset < chunk.byteLength;) {
@@ -159,17 +202,133 @@ class NodeFs extends BaseFs {
     })
   }
 
-  async remove(url: URL) {
+  async remove(url: URL, options: { recursive: boolean }) {
     return run(url, 'remove', async (filename) => {
       // a symbolic link in the last component is removed itself
       const entry = toEntry(filename)
       const info = await lstat(entry)
       if (entry !== filename) await assertDirectory(entry, info, url)
-      if (info.isDirectory()) {
-        await rmdir(entry)
-      } else {
+      if (!info.isDirectory()) {
         await unlink(entry)
+      } else if (options.recursive) {
+        // `rm()` removes the links below the directory without following them
+        await rm(entry, { recursive: true })
+      } else {
+        await rmdir(entry)
       }
+    })
+  }
+
+  async stat(url: URL, options: { follow: boolean }) {
+    return run(url, 'stat', async (filename) => {
+      // `node:fs` on Windows removes a trailing separator
+      const entry = toEntry(filename)
+      if (entry !== filename) {
+        // a trailing separator follows a link in the last component
+        const info = await stat(entry, { bigint: true })
+        await assertDirectory(entry, info, url)
+        return toStats(info)
+      }
+      return toStats(options.follow ? await stat(entry, { bigint: true }) : await lstat(entry, { bigint: true }))
+    })
+  }
+
+  async* readdir(url: URL) {
+    const filename = toPath(url)
+    const dir = await call(url, 'readdir', () => opendir(filename))
+    try {
+      while (true) {
+        const dirent = await call(url, 'readdir', () => dir.read())
+        if (!dirent) return
+        // `node:fs` obtains through `lstat()` a type that the file system does not report
+        yield { name: dirent.name, type: getType(dirent) }
+      }
+    } finally {
+      await dir.close().catch(() => {})
+    }
+  }
+
+  async mkdir(url: URL, options: { recursive: boolean }) {
+    return run(url, 'mkdir', async (filename) => {
+      // An existing directory, also through a link, is not an error of a
+      // recursive creation, while `node:fs` reports an existing file with `EEXIST`.
+      await mkdir(filename, { recursive: options.recursive })
+    })
+  }
+
+  // `copyFile()` clones the file where the file system supports it, and gives
+  // the destination the permission bits of the source.
+  async copy(src: URL, dest: URL, options: { overwrite: boolean }) {
+    const from = toPath(src)
+    let to = toPath(dest)
+    assertFile(from, src)
+    assertFile(to, dest)
+    const flags = constants.COPYFILE_FICLONE | (options.overwrite ? 0 : constants.COPYFILE_EXCL)
+    for (let count = 0; ; count++) {
+      try {
+        return await copyFile(from, to, flags)
+      } catch (error: any) {
+        let info: Stats | undefined
+        let failure: any
+        try {
+          info = await stat(to)
+        } catch (cause) {
+          failure = cause
+        }
+        // a directory at the destination is reported as `EEXIST` with `COPYFILE_EXCL`, and as `EPERM` on Windows
+        if (info?.isDirectory()) {
+          throw new FsError('IsADirectory', dest, `cannot copy ${src.href} onto the directory ${dest.href}`, { cause: error })
+        }
+        if (error?.code !== 'EEXIST') throw toFsError(error, src, 'copy')
+        // An entry exists, which `stat()` misses only as a dangling link; any
+        // other failure, such as a loop of links, is that of the destination.
+        if (failure && failure.code !== 'ENOENT') throw toFsError(failure, dest, 'copy')
+        // the exclusive creation does not follow a dangling link, which has no content to replace
+        const next = !info && count < MAX_LINKS ? await call(dest, 'copy', () => followLink(to)) : undefined
+        if (next === undefined) {
+          throw new FsError('AlreadyExists', dest, `cannot copy ${src.href} onto the existing ${dest.href}`, { cause: error })
+        }
+        to = next
+      }
+    }
+  }
+
+  async symlink(target: string, url: URL) {
+    return run(url, 'symlink', async (filename) => {
+      const entry = toEntry(filename)
+      if (entry !== filename) {
+        // A trailing separator names a directory, which a link is not.
+        // `node:fs` on Windows would remove the separator.
+        await lstat(entry)
+        throw new FsError('AlreadyExists', url, `an entry exists at ${url.href}`)
+      }
+      try {
+        // the type of the link is detected from the target on Windows
+        await symlink(target, entry)
+      } catch (error) {
+        // A link to a directory requires a privilege on Windows, which a
+        // junction does not. A junction stores the absolute target.
+        if (process.platform !== 'win32' || (error as NodeJS.ErrnoException).code !== 'EPERM') throw error
+        const info = await stat(resolve(dirname(entry), target)).catch(() => undefined)
+        if (info?.isDirectory()) return symlink(target, entry, 'junction')
+        // Without the file-link privilege Windows may report EPERM even when the link name is occupied.
+        if (await lstat(entry).catch(() => undefined)) {
+          throw new FsError('AlreadyExists', url, `an entry exists at ${url.href}`, { cause: error })
+        }
+        throw error
+      }
+    })
+  }
+
+  async readlink(url: URL) {
+    return run(url, 'readlink', async (filename) => {
+      const entry = toEntry(filename)
+      if (entry !== filename) {
+        // a trailing separator names the directory that a link resolves to
+        await assertDirectory(entry, await stat(entry), url)
+        throw new FsError('NotALink', url, `expected a symbolic link at ${url.href}`)
+      }
+      return readlink(entry)
     })
   }
 

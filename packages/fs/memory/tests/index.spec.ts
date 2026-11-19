@@ -1,7 +1,15 @@
 import { Context, Fiber, FiberState } from 'cordis'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import Fs, { FsError, WatchOptions } from '@cordisjs/fs'
+import { conformance } from '@cordisjs/fs-conformance'
 import MemoryFs from '../src/index.ts'
+
+conformance('MemoryFs', {
+  async setup(ctx) {
+    await ctx.use(MemoryFs)
+    return new URL('memory://conformance/')
+  },
+})
 
 async function rejects(promise: Promise<unknown>, code: FsError.Code) {
   const error = await promise.then(() => undefined, error => error)
@@ -97,14 +105,6 @@ describe('MemoryFs', () => {
   })
 
   describe('read', () => {
-    it('reads the current content', async () => {
-      const ctx = await setup({ 'a.txt': 'foo' })
-      const file = ctx.fs.file('a.txt')
-      expect(await file.text()).to.equal('foo')
-      await file.write('bar')
-      expect(await file.text()).to.equal('bar')
-    })
-
     it('reads the content of the file when the stream is created', async () => {
       const ctx = await setup({ 'a.txt': 'foo' })
       const stream = ctx.fs.file('a.txt').stream()
@@ -119,48 +119,9 @@ describe('MemoryFs', () => {
       for await (const chunk of ctx.fs.file('a.txt').stream()) chunk.fill(0)
       expect(await ctx.fs.file('a.txt').text()).to.equal('foo')
     })
-
-    it('fails on a missing file with the location', async () => {
-      const ctx = await setup()
-      const file = ctx.fs.file('missing.txt')
-      const error = await rejects(file.text(), 'NotFound')
-      expect(error.url?.href).to.equal(file.url.href)
-    })
-
-    it('fails on a directory', async () => {
-      const ctx = await setup({ 'dir/a.txt': '' })
-      await rejects(ctx.fs.file('dir').text(), 'IsADirectory')
-      await rejects(ctx.fs.file('a.txt/').text(), 'IsADirectory')
-    })
-
-    it('fails below a file', async () => {
-      const ctx = await setup({ 'a.txt': '' })
-      await rejects(ctx.fs.file('a.txt/b.txt').text(), 'NotADirectory')
-    })
   })
 
   describe('write', () => {
-    it('creates a file or replaces its content', async () => {
-      const ctx = await setup()
-      await ctx.fs.file('a.txt').write('foo')
-      expect(await ctx.fs.file('a.txt').text()).to.equal('foo')
-      await ctx.fs.file('a.txt').write(new Uint8Array([0x62]))
-      expect(await ctx.fs.file('a.txt').text()).to.equal('b')
-    })
-
-    it('does not create the parent directory', async () => {
-      const ctx = await setup()
-      await rejects(ctx.fs.file('missing/a.txt').write('foo'), 'NotFound')
-      await rejects(ctx.fs.access('missing', 'write'), 'NotFound')
-    })
-
-    it('fails on a directory', async () => {
-      const ctx = await setup({ 'dir/a.txt': '' })
-      await rejects(ctx.fs.file('dir').write('foo'), 'IsADirectory')
-      await rejects(ctx.fs.file('b.txt/').write('foo'), 'IsADirectory')
-      await rejects(ctx.fs.access('b.txt', 'write'), 'NotFound')
-    })
-
     it('rejects with the error of the stream and keeps the previous content', async () => {
       const ctx = await setup({ 'a.txt': 'foo' })
       const error = new Error('aborted')
@@ -207,84 +168,67 @@ describe('MemoryFs', () => {
     })
   })
 
-  describe('access', () => {
-    it('resolves for an existing entry and rejects a missing one', async () => {
-      const ctx = await setup({ 'dir/a.txt': '' })
-      await ctx.fs.access('dir/a.txt', 'write')
-      await ctx.fs.access('dir/', 'write')
-      await rejects(ctx.fs.access('missing.txt', 'write'), 'NotFound')
-      await rejects(ctx.fs.access('dir/a.txt/', 'write'), 'NotADirectory')
-    })
-  })
-
-  describe('rename', () => {
-    it('replaces an existing file', async () => {
-      const ctx = await setup({ 'a.txt': 'foo', 'b.txt': 'bar' })
-      await ctx.fs.rename('a.txt', 'b.txt')
-      await rejects(ctx.fs.access('a.txt', 'write'), 'NotFound')
-      expect(await ctx.fs.file('b.txt').text()).to.equal('foo')
+  describe('stat', () => {
+    afterEach(() => {
+      vi.useRealTimers()
     })
 
-    it('moves a directory with its entries, and replaces an empty one', async () => {
-      const ctx = await setup({ 'src/a.txt': 'foo', 'dest/': {} })
-      await ctx.fs.rename('src', 'dest/')
-      expect(await ctx.fs.file('dest/a.txt').text()).to.equal('foo')
-      await rejects(ctx.fs.access('src', 'write'), 'NotFound')
-    })
-
-    it('fails on a non-empty directory', async () => {
-      const ctx = await setup({ 'a/': {}, 'b/c.txt': '' })
-      await rejects(ctx.fs.rename('a', 'b'), 'DirectoryNotEmpty')
-      await ctx.fs.access('b/c.txt', 'write')
-    })
-
-    it('fails between a file and a directory', async () => {
-      const ctx = await setup({ 'a.txt': 'foo', 'dir/': {} })
-      await rejects(ctx.fs.rename('a.txt', 'dir'), 'IsADirectory')
-      await rejects(ctx.fs.rename('dir', 'a.txt'), 'NotADirectory')
-      await rejects(ctx.fs.rename('a.txt', 'b/'), 'NotADirectory')
-      expect(await ctx.fs.file('a.txt').text()).to.equal('foo')
-    })
-
-    it('does not move a directory into itself', async () => {
+    it('reports the time of the last write of a file, and of the last change of the entries of a directory', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(1000)
       const ctx = await setup({ 'dir/a.txt': 'foo' })
-      expect(await ctx.fs.rename('dir', 'dir/sub').catch(error => error)).to.be.instanceOf(FsError)
-      expect(await ctx.fs.file('dir/a.txt').text()).to.equal('foo')
-    })
+      const mtime = async (path: string) => (await ctx.fs.stat(path)).mtime.getTime()
 
-    it('fails on a missing source or a missing parent of the destination', async () => {
-      const ctx = await setup({ 'a.txt': 'foo' })
-      await rejects(ctx.fs.rename('missing.txt', 'b.txt'), 'NotFound')
-      await rejects(ctx.fs.rename('a.txt', 'missing/b.txt'), 'NotFound')
-      expect(await ctx.fs.file('a.txt').text()).to.equal('foo')
+      vi.setSystemTime(2000)
+      await ctx.fs.file('dir/a.txt').write('bar')
+      expect(await mtime('dir/a.txt')).to.equal(2000)
+      expect(await mtime('dir')).to.equal(1000)
+
+      vi.setSystemTime(3000)
+      await ctx.fs.file('dir/b.txt').write('')
+      expect(await mtime('dir')).to.equal(3000)
+
+      vi.setSystemTime(4000)
+      await ctx.fs.remove('dir/b.txt')
+      expect(await mtime('dir')).to.equal(4000)
+      expect(await mtime('dir/a.txt')).to.equal(2000)
+
+      vi.setSystemTime(5000)
+      await ctx.fs.copy('dir/a.txt', 'dir/c.txt')
+      expect(await mtime('dir/c.txt')).to.equal(5000)
+      expect(await mtime('dir')).to.equal(5000)
     })
   })
 
-  describe('remove', () => {
-    it('removes a file or an empty directory', async () => {
-      const ctx = await setup({ 'a.txt': '', 'dir/': {} })
-      await ctx.fs.remove('a.txt')
-      await ctx.fs.remove('dir')
-      await rejects(ctx.fs.access('a.txt', 'write'), 'NotFound')
-      await rejects(ctx.fs.access('dir', 'write'), 'NotFound')
+  describe('copy', () => {
+    it('creates the file once for two concurrent copies with `overwrite: false`', async () => {
+      const ctx = await setup({ 'a.txt': 'foo', 'b.txt': 'bar' })
+      const results = await Promise.allSettled([
+        ctx.fs.copy('a.txt', 'c.txt', { overwrite: false }),
+        ctx.fs.copy('b.txt', 'c.txt', { overwrite: false }),
+      ])
+      const created = results.findIndex(result => result.status === 'fulfilled')
+      expect(results.filter(result => result.status === 'fulfilled')).to.have.length(1)
+      expect((results[1 - created] as PromiseRejectedResult).reason).to.have.property('code', 'AlreadyExists')
+      expect(await ctx.fs.file('c.txt').text()).to.equal(['foo', 'bar'][created])
     })
 
-    it('fails on a non-empty directory', async () => {
-      const ctx = await setup({ 'dir/a.txt': '' })
-      await rejects(ctx.fs.remove('dir'), 'DirectoryNotEmpty')
-      await ctx.fs.access('dir/a.txt', 'write')
-    })
+    it('copies between two mounts through their content', async () => {
+      const copies: string[] = []
+      class RecordingFs extends MemoryFs {
+        async copy(src: URL, dest: URL, options: { overwrite: boolean }) {
+          copies.push(src.href)
+          return super.copy(src, dest, options)
+        }
+      }
+      const ctx = await context()
+      fibers.push(await ctx.use(RecordingFs, { mount: 'memory://one/', files: { 'src/a.txt': 'foo', 'src/sub/b.txt': 'bar' } }))
+      fibers.push(await ctx.use(RecordingFs, { mount: 'memory://two/' }))
 
-    it('requires a directory for a trailing separator', async () => {
-      const ctx = await setup({ 'a.txt': '' })
-      await rejects(ctx.fs.remove('a.txt/'), 'NotADirectory')
-      await ctx.fs.access('a.txt', 'write')
-    })
-
-    it('fails on a missing location unless forced', async () => {
-      const ctx = await setup()
-      await rejects(ctx.fs.remove('missing.txt'), 'NotFound')
-      await ctx.fs.remove('missing.txt', { force: true })
+      await ctx.fs.copy('memory://one/src', 'memory://two/dest', { recursive: true })
+      expect(await ctx.fs.file('memory://two/dest/a.txt').text()).to.equal('foo')
+      expect(await ctx.fs.file('memory://two/dest/sub/b.txt').text()).to.equal('bar')
+      expect(copies).to.deep.equal([])
     })
   })
 

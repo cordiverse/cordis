@@ -1,10 +1,12 @@
 import { Context, Service } from 'cordis'
 import { Awaitable } from 'cosmokit'
 import { pathToFileURL } from 'node:url'
+import { CopyOptions, DirEntry, EntryType, entryUrl, MkdirOptions, RemoveOptions, StatOptions, Stats, WriteOptions } from './entry.ts'
 import { FsError } from './error.ts'
-import { FileRef } from './file.ts'
+import { DirEntryRef, EntryRef, FileRef } from './file.ts'
 import { Watcher, WatchOptions } from './watcher.ts'
 
+export type * from './entry.ts'
 export * from './error.ts'
 export * from './file.ts'
 export * from './filter.ts'
@@ -31,11 +33,6 @@ interface Connection {
 export type AccessMode = 'write'
 
 const accessModes: readonly string[] = ['write'] satisfies AccessMode[]
-
-export interface RemoveOptions {
-  /** A missing location is not an error. */
-  force?: boolean
-}
 
 function normalizePrefix(prefix: string | URL) {
   if (prefix === '') return ''
@@ -74,6 +71,39 @@ function toDirectory(url: URL, input: string) {
   url.search = ''
   url.hash = ''
   return url
+}
+
+// the URL without its query, its fragment and its trailing separators
+function toKey(url: URL) {
+  return url.href.slice(0, url.href.length - url.hash.length - url.search.length).replace(/\/+$/, '')
+}
+
+// whether `url` is `base` or lies below it, compared by the URLs alone
+function contains(base: URL, url: URL) {
+  const prefix = toKey(base)
+  const key = toKey(url)
+  return key === prefix || key.startsWith(prefix + '/')
+}
+
+// A stream of the same chunks as `stream`, whose first chunk has been read,
+// so that a failure to open the source is reported before it is consumed.
+async function primed(stream: ReadableStream<Uint8Array>) {
+  const reader = stream.getReader()
+  const first = await reader.read()
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      if (first.done) return controller.close()
+      controller.enqueue(first.value)
+    },
+    async pull(controller) {
+      const { done, value } = await reader.read()
+      if (done) return controller.close()
+      controller.enqueue(value)
+    },
+    cancel(reason) {
+      return reader.cancel(reason)
+    },
+  }, { highWaterMark: 0 })
 }
 
 /**
@@ -262,15 +292,199 @@ export class Fs extends Service<Fs.Intercept> {
   }
 
   /**
-   * Remove a file or an empty directory. A symbolic link is removed itself,
-   * also when named with a trailing separator, and its target is not touched.
+   * Remove a file or an empty directory, or with `recursive` a directory with
+   * every entry below it. A symbolic link is removed itself, also when named
+   * with a trailing separator or with `recursive`, and its target is not
+   * touched. With `force`, a missing location is not an error.
    */
   async remove(path: string | URL, options: RemoveOptions = {}): Promise<void> {
     const url = this.resolve(path)
     try {
-      await this._provider(url, 'remove').remove(url)
+      await this._provider(url, 'remove').remove(url, { recursive: !!options.recursive })
     } catch (error) {
       if (options.force && error instanceof FsError && error.code === 'NotFound') return
+      throw error
+    }
+  }
+
+  /**
+   * Report the metadata of an entry. A symbolic link is followed unless
+   * `follow` is `false`, which reports the link itself. A trailing separator
+   * requires a directory, and follows a link in the last component also with
+   * `follow: false`. A missing location fails with `NotFound`.
+   */
+  async stat(path: string | URL, options: StatOptions = {}): Promise<Stats> {
+    const url = this.resolve(path)
+    return this._provider(url, 'stat').stat(url, { follow: options.follow ?? true })
+  }
+
+  /**
+   * Resolve to `false` where `stat()` fails with `NotFound` or
+   * `NotADirectory`, to `true` where it succeeds, and reject with any other
+   * error of `stat()`.
+   */
+  async exists(path: string | URL): Promise<boolean> {
+    try {
+      await this.stat(path)
+      return true
+    } catch (error) {
+      if (error instanceof FsError && (error.code === 'NotFound' || error.code === 'NotADirectory')) return false
+      throw error
+    }
+  }
+
+  /**
+   * List the entries of a directory in an unspecified order. Entries added or
+   * removed during the iteration may or may not be listed. A failure,
+   * including a missing location or a non-directory, is thrown from the
+   * iteration.
+   */
+  async* readdir(path: string | URL): AsyncIterable<DirEntryRef> {
+    const url = this.resolve(path)
+    for await (const { name, type } of this._provider(url, 'readdir').readdir(url)) {
+      const location = entryUrl(url, name)
+      const entry = type === 'file' ? new FileRef(this, location) : new EntryRef(this, location)
+      yield Object.defineProperty(entry, 'type', { value: type, enumerable: true }) as DirEntryRef
+    }
+  }
+
+  /**
+   * Create a directory whose parent exists. An existing entry fails with
+   * `AlreadyExists`, and a missing parent with `NotFound`. With `recursive`,
+   * missing parents are created and an existing directory, also through a
+   * link, is not an error; an existing non-directory still fails with
+   * `AlreadyExists`.
+   */
+  async mkdir(path: string | URL, options: MkdirOptions = {}): Promise<void> {
+    const url = this.resolve(path)
+    return this._provider(url, 'mkdir').mkdir(url, { recursive: !!options.recursive })
+  }
+
+  /**
+   * Create a symbolic link at `path` that stores `target` as given. A relative
+   * target is relative to the directory of the link. An existing entry at
+   * `path` fails with `AlreadyExists`.
+   */
+  async symlink(target: string, path: string | URL): Promise<void> {
+    if (typeof target !== 'string') {
+      throw new TypeError(`expected the target of a link as a string, got ${typeof target}`)
+    }
+    const url = this.resolve(path)
+    return this._provider(url, 'symlink').symlink(target, url)
+  }
+
+  /** Return the target of a symbolic link as stored. An entry of another type fails with `NotALink`. */
+  async readlink(path: string | URL): Promise<string> {
+    const url = this.resolve(path)
+    return this._provider(url, 'readlink').readlink(url)
+  }
+
+  /**
+   * Copy a file, or with `recursive` a directory with every entry below it,
+   * also between two mounts. The parent of `dest` is not created. The
+   * permission bits of a file are copied where both providers have them;
+   * times and other metadata are not copied.
+   *
+   * - An existing file at `dest` is replaced, unless `overwrite` is `false`,
+   *   which fails with `AlreadyExists`. Within a mount whose provider has
+   *   `copy`, it is checked when the file is created; otherwise it is
+   *   checked before the write. A link at `dest` is followed, and a dangling
+   *   link is written through, as it has no content to replace.
+   * - A file onto an existing directory fails with `IsADirectory`, a
+   *   directory onto an existing file with `NotADirectory`, and a directory
+   *   onto an existing directory merges the entries.
+   * - A symbolic link is copied as a link with the same target, unless
+   *   `dereference` is set, which copies what it points to.
+   * - A `dest` at or below `src` fails with `InvalidPath` before any I/O.
+   *
+   * A failure stops the copy, and keeps what has been copied before it.
+   */
+  async copy(src: string | URL, dest: string | URL, options: CopyOptions = {}): Promise<void> {
+    const from = this.resolve(src)
+    const to = this.resolve(dest)
+    if (contains(from, to)) {
+      throw new FsError('InvalidPath', to, `cannot copy ${from.href} to ${to.href} at or below itself`)
+    }
+    const { recursive = false, overwrite = true, dereference = false } = options
+    const stats = await this.stat(from, { follow: dereference })
+    await this._copy(from, to, stats.type, { recursive, overwrite, dereference }, stats)
+  }
+
+  // `stats` of the source, if they have been obtained
+  private async _copy(from: URL, to: URL, type: EntryType, options: Required<CopyOptions>, stats?: Stats) {
+    if (type === 'symlink') return this._copyLink(from, to, options)
+    if (type === 'directory') return this._copyDirectory(from, to, options)
+    if (type !== 'file') {
+      throw new FsError('NotSupported', from, `cannot copy ${from.href}, which is neither a file, a directory nor a link`)
+    }
+    // the provider checks the destination
+    const mount = this._route(from)
+    if (this._route(to) === mount && mount.provider.copy) {
+      return mount.provider.copy(from, to, { overwrite: options.overwrite })
+    }
+    // a link at `dest` is followed, so that a dangling one is written through
+    const existing = await this._statIfExists(to, true)
+    if (existing?.type === 'directory') {
+      throw new FsError('IsADirectory', to, `cannot copy the file ${from.href} onto the directory ${to.href}`)
+    }
+    if (existing && !options.overwrite) {
+      throw new FsError('AlreadyExists', to, `cannot copy ${from.href} onto the existing ${to.href}`)
+    }
+    // checked before the source is opened
+    const target = this._provider(to, 'write')
+    const { mode } = stats ?? await this.stat(from)
+    // a failure to open the source is reported before the destination is written
+    const body = await primed(this._provider(from, 'read').read(from))
+    try {
+      await target.write(to, body, mode === undefined ? {} : { mode })
+    } catch (error) {
+      await body.cancel(error).catch(() => {})
+      throw error
+    }
+  }
+
+  private async _copyDirectory(from: URL, to: URL, options: Required<CopyOptions>) {
+    if (!options.recursive) {
+      throw new FsError('IsADirectory', from, `cannot copy the directory ${from.href} without \`recursive\``)
+    }
+    // listed before the destination is created
+    const entries: DirEntryRef[] = []
+    for await (const entry of this.readdir(from)) entries.push(entry)
+    const existing = await this._statIfExists(to, true)
+    if (!existing) {
+      await this.mkdir(to)
+    } else if (existing.type !== 'directory') {
+      throw new FsError('NotADirectory', to, `cannot copy the directory ${from.href} onto the non-directory ${to.href}`)
+    }
+    for (const { name, url, type } of entries) {
+      const stats = type === 'symlink' && options.dereference ? await this.stat(url) : undefined
+      await this._copy(url, entryUrl(to, name), stats?.type ?? type, options, stats)
+    }
+  }
+
+  private async _copyLink(from: URL, to: URL, options: Required<CopyOptions>) {
+    // checked before the destination is changed
+    const provider = this._provider(to, 'symlink')
+    const target = await this.readlink(from)
+    const existing = await this._statIfExists(to, false)
+    if (existing?.type === 'directory') {
+      throw new FsError('IsADirectory', to, `cannot copy the link ${from.href} onto the directory ${to.href}`)
+    }
+    if (existing) {
+      if (!options.overwrite) {
+        throw new FsError('AlreadyExists', to, `cannot copy ${from.href} onto the existing ${to.href}`)
+      }
+      await this.remove(to)
+    }
+    await provider.symlink(target, to)
+  }
+
+  // the metadata of `url`, or `undefined` for a missing location
+  private async _statIfExists(url: URL, follow: boolean) {
+    try {
+      return await this.stat(url, { follow })
+    } catch (error) {
+      if (error instanceof FsError && error.code === 'NotFound') return
       throw error
     }
   }
@@ -310,7 +524,9 @@ export namespace Fs {
   }
 }
 
-type Operation = 'read' | 'write' | 'access' | 'rename' | 'remove'
+type Operation =
+  | 'read' | 'write' | 'access' | 'rename' | 'remove'
+  | 'stat' | 'readdir' | 'mkdir' | 'copy' | 'symlink' | 'readlink'
 
 /**
  * A provider of the locations below its mount. An operation fails with an
@@ -324,15 +540,42 @@ export interface FsProvider {
   read?(url: URL): ReadableStream<Uint8Array>
   /**
    * Replace the content of a file with the data of `body`, creating the file
-   * but not its parent directory. An error of `body` rejects the write.
+   * but not its parent directory. An error of `body` rejects the write. A
+   * provider with permissions gives the file the permission bits `mode`
+   * before its content, if it is set.
    */
-  write?(url: URL, body: ReadableStream<Uint8Array>): Promise<void>
+  write?(url: URL, body: ReadableStream<Uint8Array>, options: WriteOptions): Promise<void>
   /** Reject when the operation of `mode` is known to be denied. */
   access?(url: URL, mode: AccessMode): Promise<void>
   /** Rename an entry to a location of the same mount. */
   rename?(src: URL, dest: URL): Promise<void>
-  /** Remove a file or an empty directory, and fail with `NotFound` on a missing location. */
-  remove?(url: URL): Promise<void>
+  /**
+   * Remove a file, an empty directory, or with `recursive` a directory with
+   * every entry below it, and fail with `NotFound` on a missing location. A
+   * symbolic link in the last component is removed itself, also when named
+   * with a trailing separator.
+   */
+  remove?(url: URL, options: Required<Omit<RemoveOptions, 'force'>>): Promise<void>
+  /** Report the metadata of an entry, with the semantics of `Fs.stat()`. */
+  stat?(url: URL, options: Required<StatOptions>): Promise<Stats>
+  /**
+   * List the names and the types of the entries of a directory, from which
+   * `@cordisjs/fs` builds their locations. A failure is thrown from the iteration.
+   */
+  readdir?(url: URL): AsyncIterable<DirEntry>
+  /** Create a directory, with the semantics of `Fs.mkdir()`. */
+  mkdir?(url: URL, options: Required<MkdirOptions>): Promise<void>
+  /**
+   * Copy a file to a location of the same mount, with the semantics of
+   * `Fs.copy()` for a file, and check `overwrite: false` when the file is
+   * created. `@cordisjs/fs` calls it only for a file, and leaves the checks of
+   * the destination to it.
+   */
+  copy?(src: URL, dest: URL, options: Required<Pick<CopyOptions, 'overwrite'>>): Promise<void>
+  /** Create a symbolic link at `url` that stores `target` as given. */
+  symlink?(target: string, url: URL): Promise<void>
+  /** Return the target of a symbolic link as stored, and fail with `NotALink` on another entry. */
+  readlink?(url: URL): Promise<string>
   /**
    * Start serving `watcher`, and return a function that disposes it. The
    * provider reports through `watcher.emit()`, with a `ready` once the initial

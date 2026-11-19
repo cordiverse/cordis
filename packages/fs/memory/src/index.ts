@@ -1,14 +1,16 @@
-import { AccessMode, createFilter, FsError, FsProvider, Watcher } from '@cordisjs/fs'
+import { AccessMode, createFilter, FsError, FsProvider, Stats, Watcher } from '@cordisjs/fs'
 import { Context } from 'cordis'
 
 interface File {
   type: 'file'
   content: Uint8Array
+  mtime: Date
 }
 
 interface Directory {
   type: 'directory'
   children: Map<string, Entry>
+  mtime: Date
 }
 
 type Entry = File | Directory
@@ -84,6 +86,27 @@ function format(root: string, names: string[]) {
   return new URL(root + '/' + path.join('/'))
 }
 
+function createDirectory(): Directory {
+  return { type: 'directory', children: new Map(), mtime: new Date() }
+}
+
+function createFile(content: Uint8Array): File {
+  return { type: 'file', content, mtime: new Date() }
+}
+
+// Adds or replaces an entry. A file that replaces a file leaves the
+// modification time of `parent` unchanged.
+function place(parent: Directory, name: string, entry: Entry) {
+  const previous = parent.children.get(name)
+  parent.children.set(name, entry)
+  if (previous?.type !== 'file' || entry.type !== 'file') parent.mtime = new Date()
+}
+
+function unlink(parent: Directory, name: string) {
+  parent.children.delete(name)
+  parent.mtime = new Date()
+}
+
 // the locations that a mount serves, as `ctx.fs.mount()` routes them
 interface Scope {
   /**
@@ -150,8 +173,12 @@ async function collect(body: ReadableStream<Uint8Array>) {
  * A read returns the content of the file when it is called, as one chunk. A
  * write replaces the content of a file at once, after its body is consumed, so
  * a read observes either the previous or the new content. A watch reports a
- * `change` synchronously with each write and rename that gives content to a
- * file at or below its location.
+ * `change` synchronously with each write, copy and rename that gives content
+ * to a file at or below its location.
+ *
+ * The modification time of a file is that of the write or the copy that gave
+ * its content, and that of a directory is the last time an entry was added to
+ * or removed from it. The file system has no symbolic links.
  *
  * A subclass can override the operations, e.g. to inject failures in tests.
  */
@@ -189,13 +216,13 @@ class MemoryFs implements FsProvider {
         if (location.directory || !parent || entry?.type === 'directory') {
           throw new FsError('IsADirectory', url, `expected a file at ${url.href}`)
         }
-        parent.children.set(name!, { type: 'file', content: toBytes(value) })
+        parent.children.set(name!, createFile(toBytes(value)))
       } else {
         if (!url.pathname.endsWith('/')) url.pathname += '/'
         const location = locate(url)
         const { parent, name, entry } = this._lookup(location, true)
         if (entry?.type === 'file') throw new FsError('NotADirectory', url, `expected a directory at ${url.href}`)
-        if (!entry) parent!.children.set(name!, { type: 'directory', children: new Map() })
+        if (!entry) parent!.children.set(name!, createDirectory())
         this._populate(value, scope, url)
       }
     }
@@ -209,7 +236,7 @@ class MemoryFs implements FsProvider {
   private _lookup(location: Location, create = false): Lookup {
     let root = this._roots.get(location.root)
     if (!root) {
-      root = { type: 'directory', children: new Map() }
+      root = createDirectory()
       this._roots.set(location.root, root)
     }
     let directory: Directory = root
@@ -218,8 +245,8 @@ class MemoryFs implements FsProvider {
     for (const name of names.slice(0, -1)) {
       let entry = directory.children.get(name)
       if (!entry && create) {
-        entry = { type: 'directory', children: new Map() }
-        directory.children.set(name, entry)
+        entry = createDirectory()
+        place(directory, name, entry)
       }
       if (!entry) throw new FsError('NotFound', url, `no such file or directory: ${url.href}`)
       if (entry.type === 'file') throw new FsError('NotADirectory', url, `not a directory: ${url.href}`)
@@ -273,7 +300,7 @@ class MemoryFs implements FsProvider {
     const content = await collect(body)
     // the entries may have changed while `body` was consumed
     const { parent, name } = this._target(location)
-    parent.children.set(name, { type: 'file', content })
+    place(parent, name, createFile(content))
     this._notify(location.root, location.names, false)
   }
 
@@ -306,19 +333,71 @@ class MemoryFs implements FsProvider {
         throw new FsError('DirectoryNotEmpty', dest, `directory not empty: ${dest.href}`)
       }
     }
-    source.parent.children.delete(source.name!)
+    unlink(source.parent, source.name!)
+    // unlike a write, a rename that replaces a file changes the entries of the target directory
     target.parent.children.set(target.name!, source.entry)
+    target.parent.mtime = new Date()
     this._notifyTree(to.root, to.names, source.entry)
   }
 
-  async remove(url: URL) {
+  async remove(url: URL, options: { recursive: boolean }) {
     const location = locate(url)
     const { parent, name, entry } = this._find(location)
     if (!parent) throw new FsError('PermissionDenied', url, `cannot remove the root ${url.href}`)
-    if (entry.type === 'directory' && entry.children.size) {
+    if (entry.type === 'directory' && entry.children.size && !options.recursive) {
       throw new FsError('DirectoryNotEmpty', url, `directory not empty: ${url.href}`)
     }
-    parent.children.delete(name!)
+    unlink(parent, name!)
+  }
+
+  async stat(url: URL, options: { follow: boolean }): Promise<Stats> {
+    const location = locate(url)
+    const { entry } = this._find(location)
+    return {
+      type: entry.type,
+      size: entry.type === 'file' ? entry.content.byteLength : 0,
+      mtime: new Date(entry.mtime),
+    }
+  }
+
+  async* readdir(url: URL) {
+    const location = locate(url)
+    const { entry } = this._find(location)
+    if (entry.type !== 'directory') throw new FsError('NotADirectory', url, `not a directory: ${url.href}`)
+    // the entries at the start of the iteration
+    for (const [name, child] of [...entry.children]) {
+      yield { name, type: child.type }
+    }
+  }
+
+  async mkdir(url: URL, options: { recursive: boolean }) {
+    const location = locate(url)
+    if (!options.recursive) {
+      const { parent, name, entry } = this._lookup(location)
+      if (entry) throw new FsError('AlreadyExists', url, `file already exists: ${url.href}`)
+      place(parent!, name!, createDirectory())
+      return
+    }
+    // `_lookup()` creates the missing parent directories
+    const { parent, name, entry } = this._lookup(location, true)
+    if (entry?.type === 'file') throw new FsError('AlreadyExists', url, `file already exists: ${url.href}`)
+    if (!entry) place(parent!, name!, createDirectory())
+  }
+
+  async copy(src: URL, dest: URL, options: { overwrite: boolean }) {
+    const from = locate(src)
+    const to = locate(dest)
+    if (from.directory) throw new FsError('IsADirectory', src, `is a directory: ${src.href}`)
+    if (to.directory) throw new FsError('IsADirectory', dest, `is a directory: ${dest.href}`)
+    const { entry } = this._find(from)
+    if (entry.type === 'directory') throw new FsError('IsADirectory', src, `is a directory: ${src.href}`)
+    const { parent, name } = this._target(to)
+    if (!options.overwrite && parent.children.has(name)) {
+      throw new FsError('AlreadyExists', dest, `cannot copy ${src.href} onto the existing ${dest.href}`)
+    }
+    // the content is never modified, so it is shared
+    place(parent, name, createFile(entry.content))
+    this._notify(to.root, to.names, false)
   }
 
   watch(watcher: Watcher) {
