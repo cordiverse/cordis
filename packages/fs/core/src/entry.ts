@@ -16,15 +16,6 @@ export interface Stats {
   dev?: bigint
 }
 
-/** An entry of a directory, as listed by `readdir()`. */
-export interface DirEntry {
-  name: string
-  /** the location of the entry, without a trailing separator, whatever its type */
-  url: URL
-  /** the type of the entry itself, not of the target of a link */
-  type: EntryType
-}
-
 export interface StatOptions {
   /** `false` reports a symbolic link itself, as `lstat` does; `true` by default */
   follow?: boolean
@@ -42,9 +33,18 @@ export interface RemoveOptions {
   force?: boolean
 }
 
-/** The options of `FsProvider.write()`, which `@cordisjs/fs` sets for a copy. */
-export interface ProviderWriteOptions {
-  /** the permission bits of the file, as in the lower 12 bits of a POSIX mode */
+/** An entry of a directory, as a provider lists it. */
+export interface DirEntry {
+  name: string
+  /** the type of the entry itself, not of the target of a link */
+  type: EntryType
+}
+
+export interface WriteOptions {
+  /**
+   * The permission bits that the file is given before its content, as in the
+   * lower 12 bits of a POSIX mode, where the provider has permissions.
+   */
   mode?: number
 }
 

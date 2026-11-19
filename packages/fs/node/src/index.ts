@@ -1,4 +1,4 @@
-import { AccessMode, BaseFs, EntryType, FsError, Stats as FsStats, ProviderWriteOptions, Watcher } from '@cordisjs/fs'
+import { AccessMode, BaseFs, EntryType, FsError, Stats as FsStats, Watcher, WriteOptions } from '@cordisjs/fs'
 import { Context } from 'cordis'
 import {
   access, constants, copyFile, FileHandle, lstat, mkdir, open, opendir,
@@ -158,7 +158,7 @@ class NodeFs extends BaseFs {
     })
   }
 
-  async write(url: URL, body: ReadableStream<Uint8Array>, options: ProviderWriteOptions = {}) {
+  async write(url: URL, body: ReadableStream<Uint8Array>, options: WriteOptions = {}) {
     const { mode } = options
     const handle = await run(url, 'write', (filename) => {
       assertFile(filename, url)

@@ -2,7 +2,7 @@ import { Context, Fiber, FiberState } from 'cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import Fs, { BaseFs, FsError, FsProvider, Watcher } from '../src/index.ts'
+import Fs, { BaseFs, DirEntryRef, FileRef, FsError, FsProvider, Watcher } from '../src/index.ts'
 
 interface FakeWatch {
   watcher: Watcher
@@ -491,6 +491,25 @@ describe('Fs', () => {
         decoded.push(decodeURIComponent(url.pathname.slice('/dir/'.length)))
       }
       expect(decoded).to.deep.equal(names)
+    })
+
+    it('lists a file as a reference to it, and another entry as a reference with its type', async () => {
+      const ctx = await setup()
+      ctx.fs.mount('mem:', {
+        async* readdir() {
+          yield { name: 'a #.txt', type: 'file' }
+          yield { name: 'dir', type: 'directory' }
+          yield { name: 'link', type: 'symlink' }
+        },
+        read: () => new Blob(['foo']).stream(),
+      })
+      const entries: DirEntryRef[] = []
+      for await (const entry of ctx.fs.readdir('mem://bucket/')) entries.push(entry)
+      expect(entries.map(({ name, type }) => [name, type])).to.deep.equal([['a #.txt', 'file'], ['dir', 'directory'], ['link', 'symlink']])
+      const [file, ...others] = entries
+      expect(file).to.be.instanceOf(FileRef)
+      if (file.type === 'file') expect(await file.text()).to.equal('foo')
+      for (const entry of others) expect(entry).not.to.be.instanceOf(FileRef)
     })
 
     it('throws a failure from the iteration', async () => {

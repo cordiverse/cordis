@@ -75,6 +75,16 @@ describe('NodeFs', () => {
       expect(count()).to.equal(before)
     })
 
+    // permission bits do not exist on Windows
+    it.skipIf(process.platform === 'win32')('gives a new or an existing file the permission bits of `mode`', async () => {
+      writeFileSync(path('b.sh'), '')
+      chmodSync(path('b.sh'), 0o600)
+      await ctx.fs.file(url('a.sh')).write('foo', { mode: 0o751 })
+      await ctx.fs.file(url('b.sh')).write('bar', { mode: 0o751 })
+      expect([statSync(path('a.sh')).mode & 0o7777, statSync(path('b.sh')).mode & 0o7777]).to.deep.equal([0o751, 0o751])
+      expect(readFileSync(path('b.sh'), 'utf8')).to.equal('bar')
+    })
+
     it('fails with the error of `node:fs` as the cause', async () => {
       const error = await rejects(ctx.fs.file(url('missing.txt')).text(), 'NotFound')
       expect(error.cause).to.be.instanceOf(Error)

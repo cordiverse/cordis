@@ -1,9 +1,9 @@
 import { Context, Service } from 'cordis'
 import { Awaitable } from 'cosmokit'
 import { pathToFileURL } from 'node:url'
-import { CopyOptions, DirEntry, EntryType, entryUrl, MkdirOptions, ProviderWriteOptions, RemoveOptions, StatOptions, Stats } from './entry.ts'
+import { CopyOptions, DirEntry, EntryType, entryUrl, MkdirOptions, RemoveOptions, StatOptions, Stats, WriteOptions } from './entry.ts'
 import { FsError } from './error.ts'
-import { FileRef } from './file.ts'
+import { DirEntryRef, EntryRef, FileRef } from './file.ts'
 import { Watcher, WatchOptions } from './watcher.ts'
 
 export type * from './entry.ts'
@@ -339,10 +339,12 @@ export class Fs extends Service<Fs.Intercept> {
    * including a missing location or a non-directory, is thrown from the
    * iteration.
    */
-  async* readdir(path: string | URL): AsyncIterable<DirEntry> {
+  async* readdir(path: string | URL): AsyncIterable<DirEntryRef> {
     const url = this.resolve(path)
     for await (const { name, type } of this._provider(url, 'readdir').readdir(url)) {
-      yield { name, type, url: entryUrl(url, name) }
+      const location = entryUrl(url, name)
+      const entry = type === 'file' ? new FileRef(this, location) : new EntryRef(this, location)
+      yield Object.defineProperty(entry, 'type', { value: type, enumerable: true }) as DirEntryRef
     }
   }
 
@@ -446,7 +448,7 @@ export class Fs extends Service<Fs.Intercept> {
       throw new FsError('IsADirectory', from, `cannot copy the directory ${from.href} without \`recursive\``)
     }
     // listed before the destination is created
-    const entries: DirEntry[] = []
+    const entries: DirEntryRef[] = []
     for await (const entry of this.readdir(from)) entries.push(entry)
     const existing = await this._statIfExists(to, true)
     if (!existing) {
@@ -542,7 +544,7 @@ export interface FsProvider {
    * provider with permissions gives the file the permission bits `mode`
    * before its content, if it is set.
    */
-  write?(url: URL, body: ReadableStream<Uint8Array>, options: ProviderWriteOptions): Promise<void>
+  write?(url: URL, body: ReadableStream<Uint8Array>, options: WriteOptions): Promise<void>
   /** Reject when the operation of `mode` is known to be denied. */
   access?(url: URL, mode: AccessMode): Promise<void>
   /** Rename an entry to a location of the same mount. */
@@ -560,7 +562,7 @@ export interface FsProvider {
    * List the names and the types of the entries of a directory, from which
    * `@cordisjs/fs` builds their locations. A failure is thrown from the iteration.
    */
-  readdir?(url: URL): AsyncIterable<Omit<DirEntry, 'url'>>
+  readdir?(url: URL): AsyncIterable<DirEntry>
   /** Create a directory, with the semantics of `Fs.mkdir()`. */
   mkdir?(url: URL, options: Required<MkdirOptions>): Promise<void>
   /**

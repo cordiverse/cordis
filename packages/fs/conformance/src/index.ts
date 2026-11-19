@@ -1,4 +1,4 @@
-import Fs, { DirEntry, EntryType, FsError } from '@cordisjs/fs'
+import Fs, { DirEntryRef, EntryType, FsError } from '@cordisjs/fs'
 import { Context, Fiber } from 'cordis'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
@@ -68,7 +68,7 @@ export function conformance(name: string, options: ConformanceOptions) {
     }
 
     async function list(path: string) {
-      const entries: DirEntry[] = []
+      const entries: DirEntryRef[] = []
       for await (const entry of ctx.fs.readdir(url(path))) entries.push(entry)
       return entries
     }
