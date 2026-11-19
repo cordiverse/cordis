@@ -18,6 +18,10 @@ export function watchPath(watcher: Watcher, filename: string) {
     ignored: (path, stats) => {
       path = resolve(path)
       if (path === root) return false
+      // An entry that is neither a file, a directory nor a symbolic link, such as
+      // a FIFO, is not watched: chokidar opens an entry to watch it, and on macOS
+      // an open of a FIFO without a writer blocks the process.
+      if (stats && !stats.isFile() && !stats.isDirectory() && !stats.isSymbolicLink()) return true
       if (isFile) return path !== filename
       if (!keep) return false
       // Without the stats, or with the `lstat()` of a symbolic link, the type

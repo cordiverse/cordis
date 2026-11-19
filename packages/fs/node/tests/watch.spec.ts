@@ -1,5 +1,6 @@
 import { Context, Fiber } from 'cordis'
-import { mkdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { closeSync, constants, mkdirSync, openSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { basename, dirname, isAbsolute, resolve } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { FSWatcher } from 'chokidar'
@@ -301,6 +302,60 @@ describe('Fs', () => {
       await new Promise(r => setTimeout(r, 200))
       expect(seen).to.deep.equal([])
     }, 15000)
+
+    // A FIFO is held open for reading and writing, so that no open of it blocks:
+    // a watch on it would then report the writes, instead of blocking the process
+    // on macOS.
+    describe.runIf(process.platform !== 'win32')('FIFO', () => {
+      const fds: number[] = []
+
+      function fifo(name: string) {
+        const path = resolve(fixture, name)
+        mkdirSync(dirname(path), { recursive: true })
+        execFileSync('mkfifo', [path])
+        fds.push(openSync(path, constants.O_RDWR | constants.O_NONBLOCK))
+        return path
+      }
+
+      afterEach(() => {
+        for (const fd of fds.splice(0)) closeSync(fd)
+      })
+
+      it('does not watch a FIFO below the watched directory', async () => {
+        const early = fifo('fifo/early')
+        const control = write('fifo/control.txt')
+        const ctx = await setup()
+        const seen: string[] = []
+        await watch(ctx, resolve(fixture, 'fifo'), (filename) => { seen.push(filename) })
+
+        // a file created after a FIFO is found by a scan that also finds the FIFO
+        const late = fifo('fifo/late')
+        const later = write('fifo/later.txt')
+        await touch(later, () => seen.includes(later))
+
+        await touch([early, late, control], () => seen.filter(path => path === control).length >= 3)
+        expect(seen).to.not.include(early)
+        expect(seen).to.not.include(late)
+      }, 20000)
+
+      it('does not watch a named FIFO until a file replaces it', async () => {
+        const path = fifo('fifo-named/pipe')
+        const control = write('fifo-named/control.txt')
+        const ctx = await setup()
+        const seen: string[] = []
+        const controls: string[] = []
+        await watch(ctx, path, (filename) => { seen.push(filename) })
+        await watch(ctx, control, (filename) => { controls.push(filename) })
+
+        await touch([path, control], () => controls.length >= 3)
+        expect(seen).to.deep.equal([])
+
+        rmSync(path)
+        write('fifo-named/pipe')
+        await touch(path, () => seen.length)
+        expect([...new Set(seen)]).to.deep.equal([path])
+      }, 20000)
+    })
 
     it('rejects a `filter` entry leading outside the watched directory', async () => {
       const ctx = await setup()
