@@ -533,20 +533,27 @@ export class Fiber {
     await fiber.await()
   }
 
-  update(config: any, noSave = false): Awaitable<void> {
+  update(config: any, noSave = false): Promise<void> {
     const fiber = this.ctx.fiber
-    fiber.assertActive()
-    const loaded = fiber._runner.epoch !== INACTIVE
-    const resolved = loaded ? fiber._resolve(config) : undefined
-    if (!noSave) fiber.context.emit('internal/commit', fiber, config)
-    fiber.config = config
-    fiber._error = undefined
-    const restart = () => fiber.restart()
-    const result = loaded
-      ? fiber.context.waterfall(fiber, 'internal/update', resolved, restart)
-      : restart()
-    // a listener may veto the restart, in which case there is nothing to await
-    if (result === undefined) return
+    let result: any
+    try {
+      fiber.assertActive()
+      const loaded = fiber._runner.epoch !== INACTIVE
+      const resolved = loaded ? fiber._resolve(config) : undefined
+      if (!noSave) fiber.context.emit('internal/commit', fiber, config)
+      fiber.config = config
+      fiber._error = undefined
+      const restart = () => fiber.restart()
+      result = loaded
+        ? fiber.context.waterfall(fiber, 'internal/update', resolved, restart)
+        : restart()
+    } catch (cause) {
+      // inactive fiber, invalid config, a throwing commit or update listener: all
+      // four become rejections, so a caller never needs both `try/catch` and `.catch()`
+      result = Promise.reject(cause)
+    }
+    // a listener may veto the restart, in which case nothing is awaited -- but the
+    // result is still a promise, so `.catch()` works whether or not anything ran
     const task = Promise.resolve(result)
     // the failure is already reported by the fiber, so mark it handled here:
     // a caller that drops the result cannot turn it into an unhandled
