@@ -18,6 +18,14 @@ export function watchPath(watcher: Watcher, filename: string) {
     ignored: (path, stats) => {
       path = resolve(path)
       if (path === root) return false
+      // A FIFO, a socket or a device is not a file to watch: chokidar opens each entry
+      // before watching it, and an open of a FIFO with no writer blocks for good.
+      // `ignored` runs before that call, and before the `filter` below, which a caller
+      // may not set at all.
+      //
+      // This covers the walk and every rescan. An entry replaced by one of these is not
+      // covered: `_handleFile` re-watches an inode change without consulting `ignored`.
+      if (stats && !stats.isFile() && !stats.isDirectory() && !stats.isSymbolicLink()) return true
       if (isFile) return path !== filename
       if (!keep) return false
       // Without the stats, or with the `lstat()` of a symbolic link, the type
