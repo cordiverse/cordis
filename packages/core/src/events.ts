@@ -212,6 +212,7 @@ export interface Events {
   'internal/replace'(fiber: Fiber): void
   'internal/status'(fiber: Fiber, oldValue: FiberState): void
   'internal/service'(this: Context, name: string, value: any): void
+  // A listener may be run again for the same stored config.
   'internal/update'(this: Fiber, resolvedConfig: any, next: () => Awaitable<void>): Awaitable<void>
   'internal/commit'(fiber: Fiber, originalConfig: any): void
   'internal/config'(fiber: Fiber, next: () => any): any
