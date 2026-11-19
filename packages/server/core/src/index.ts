@@ -26,6 +26,16 @@ export namespace Route {
   export interface Options {}
 }
 
+// Whether the request target is correctly percent-encoded, so that the route decoder can decode it.
+function isEncoded(path: string) {
+  try {
+    decodeURI(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
 export abstract class Route {
   regexp: RegExp
   keys?: Keys
@@ -158,7 +168,11 @@ class Server extends Service<Server.Intercept> {
         this.ctx.logger?.('server:response').debug('%C %s %s %s', req.method, req.url, res.status, res.statusText)
       })
       try {
-        await this.ctx.waterfall(this, 'server/request', req, res, async () => {})
+        if (isEncoded(req.path)) {
+          await this.ctx.waterfall(this, 'server/request', req, res, async () => {})
+        } else {
+          res.status = 400
+        }
       } catch (error) {
         if (error instanceof ValidationError) {
           if (!res.claimed) {
@@ -227,6 +241,11 @@ class Server extends Service<Server.Intercept> {
 
     this._http.on('upgrade', async (_req, socket, head) => {
       const req = new Request(_req)
+      if (!isEncoded(req.path)) {
+        socket.write('HTTP/1.1 400 Bad Request\r\n\r\n')
+        socket.destroy()
+        return
+      }
       this.ctx.logger?.('server:ws').debug('upgrade %s', req.path)
       await this.ctx.waterfall(this, 'server/upgrade', req, async () => {
         for (const route of this.wsRoutes) {

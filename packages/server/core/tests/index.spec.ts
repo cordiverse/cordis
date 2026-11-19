@@ -1,10 +1,42 @@
 import { Context } from 'cordis'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import * as http from 'node:http'
 import { WebSocket } from 'ws'
 import Server from '../src/index.ts'
 
 function sleep(ms = 0) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms))
+}
+
+// sends a request target as it is, which `fetch` would normalize or reject
+function rawRequest(url: string, path: string, method = 'GET'): Promise<{ status: number, headers: http.IncomingHttpHeaders }> {
+  const { hostname, port } = new URL(url)
+  return new Promise((resolve, reject) => {
+    const req = http.request({ hostname, port, path, method }, (res) => {
+      res.resume()
+      res.on('end', () => resolve({ status: res.statusCode!, headers: res.headers }))
+    })
+    req.on('error', reject)
+    req.end()
+  })
+}
+
+// sends an upgrade request and reads the status line of the answer as it is
+function rawUpgrade(url: string, path: string): Promise<number> {
+  const { hostname, port } = new URL(url)
+  return new Promise((resolve, reject) => {
+    const req = http.request({
+      hostname,
+      port,
+      path,
+      headers: { connection: 'Upgrade', upgrade: 'websocket' },
+    }, (res) => {
+      res.resume()
+      res.on('end', () => resolve(res.statusCode!))
+    })
+    req.on('error', reject)
+    req.end()
+  })
 }
 
 async function setup(config: Partial<Server.Config> = {}) {
@@ -643,6 +675,26 @@ describe('@cordisjs/server', () => {
 
       const res = await fetch(`${url}/error`)
       expect(res.status).to.equal(500)
+    })
+
+    it('should answer a malformed percent-encoded path with 400', async () => {
+      ctx.server.get('/files/:name', async (req, res, next) => {
+        res.body = req.params.name
+      })
+      await sleep()
+
+      expect((await rawRequest(url, '/files/%')).status).to.equal(400)
+      expect((await rawRequest(url, '/files/%zz')).status).to.equal(400)
+    })
+
+    it('should answer a malformed percent-encoded path of an upgrade with 400', async () => {
+      ctx.server.ws('/ws/:name', async (req, accept) => {
+        await accept()
+      })
+      await sleep()
+
+      expect(await rawUpgrade(url, '/ws/%')).to.equal(400)
+      expect(await rawUpgrade(url, '/ws/%zz')).to.equal(400)
     })
 
     it('should not override status if already set before throw', async () => {
