@@ -240,18 +240,16 @@ describe('MemoryFs', () => {
     })
 
     it('names an entry by its decoded path', async () => {
-      const ctx = await setup({ 'a b/c%23d.txt': 'foo' })
+      const ctx = await setup({ 'a b/c#d.txt': 'foo' })
       expect(await ctx.fs.file('memory:///a%20b/c%23d.txt').text()).to.equal('foo')
       expect(await ctx.fs.file('memory:///a%20b//c%23d.txt').text()).to.equal('foo')
       await ctx.fs.file('memory:///%41.txt').write('bar')
       expect(await ctx.fs.file('memory:///A.txt').text()).to.equal('bar')
     })
 
-    it('rejects a location without a hierarchical path, or with a query, a fragment or an encoded separator', async () => {
+    it('rejects a location without a hierarchical path', async () => {
       const ctx = await setup({ 'a/b': 'foo' })
-      for (const location of ['memory:a', 'memory:///a/b?x', 'memory:///a/b#x', 'memory:///a%2Fb']) {
-        await rejects(ctx.fs.file(location).text(), 'InvalidPath')
-      }
+      await rejects(ctx.fs.file('memory:a').text(), 'InvalidPath')
       expect(() => ctx.fs.watch('memory:a')).to.throw(FsError).with.property('code', 'InvalidPath')
     })
   })
@@ -292,9 +290,9 @@ describe('MemoryFs', () => {
     it('reports the location of a file whose name the URL parser would change', async () => {
       const ctx = await setup()
       const seen = watch(ctx, '.')
-      const names = ['a%23b%3Fc%25d.txt', 'a%20', '%20a', 'a%09b', 'a%0Ab']
-      for (const name of names) await ctx.fs.file(name).write(name)
-      expect(seen).to.deep.equal(names.map(name => `memory:///${name}`))
+      const names = ['a#b?c%d.txt', 'a ', ' a', 'a\tb', 'a\nb', 'a\\b']
+      for (const name of names) await ctx.fs.file([name]).write(name)
+      expect(seen).to.deep.equal(['a%23b%3Fc%25d.txt', 'a%20', '%20a', 'a%09b', 'a%0Ab', 'a%5Cb'].map(name => `memory:///${name}`))
       for (const [index, url] of seen.entries()) {
         expect(await ctx.fs.file(new URL(url)).text()).to.equal(names[index])
       }

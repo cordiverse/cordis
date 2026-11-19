@@ -1,15 +1,17 @@
 import { Context, Service } from 'cordis'
 import { Awaitable } from 'cosmokit'
 import { pathToFileURL } from 'node:url'
-import { CopyOptions, DirEntry, EntryType, entryUrl, MkdirOptions, RemoveOptions, StatOptions, Stats, WriteOptions } from './entry.ts'
+import { CopyOptions, DirEntry, EntryType, MkdirOptions, RemoveOptions, StatOptions, Stats, WriteOptions } from './entry.ts'
 import { FsError } from './error.ts'
 import { DirEntryRef, EntryRef, FileRef } from './file.ts'
+import { assertLocation, isUrl, Path, resolvePath } from './path.ts'
 import { Watcher, WatchOptions } from './watcher.ts'
 
 export type * from './entry.ts'
 export * from './error.ts'
 export * from './file.ts'
 export * from './filter.ts'
+export type * from './path.ts'
 export * from './watcher.ts'
 
 declare module 'cordis' {
@@ -39,38 +41,32 @@ function normalizePrefix(prefix: string | URL) {
   if (typeof prefix === 'string' && /^[a-zA-Z][a-zA-Z\d+.-]*:$/.test(prefix)) {
     return prefix.toLowerCase()
   }
-  const { href } = new URL(prefix)
-  return href.endsWith('/') ? href : href + '/'
-}
-
-// A Windows drive-letter path, e.g. `C:\app` or `C:/app`.
-const driveLetter = /^[A-Za-z]:[\\/]/
-
-// On Windows, a drive-letter path is a file path, which `new URL()` would read
-// as a URL of the scheme `c:`.
-function toReference(path: string) {
-  if (typeof process === 'undefined' || process.platform !== 'win32' || !driveLetter.test(path)) return path
-  return pathToFileURL(path).href
+  const url = new URL(prefix)
+  assertLocation(url)
+  return url.href.endsWith('/') ? url.href : url.href + '/'
 }
 
 // the working directory as a URL, on a runtime that has one
 function getWorkingDirectory() {
   if (typeof process === 'undefined') return
-  return pathToFileURL(process.cwd()).href
+  return pathToFileURL(process.cwd() + '/')
 }
 
 // A base URL names a directory, and has no query or fragment. A URL with an
-// opaque path, such as `mem:bucket/`, cannot resolve a relative reference.
-function toDirectory(url: URL, input: string) {
+// opaque path, such as `mem:bucket/`, cannot resolve a path.
+function toBaseUrl(input: string, base: URL | undefined) {
+  let url: URL
   try {
+    url = resolvePath(input, base)
     new URL('.', url)
+    if (!url.pathname.endsWith('/')) url.pathname += '/'
+    url.search = ''
+    url.hash = ''
+    assertLocation(url)
   } catch (error) {
-    throw new TypeError(`expected a base URL without an opaque path, got ${JSON.stringify(input)}`, { cause: error })
+    throw new TypeError(`invalid base URL ${JSON.stringify(input)}`, { cause: error })
   }
-  if (!url.pathname.endsWith('/')) url.pathname += '/'
-  url.search = ''
-  url.hash = ''
-  return url
+  return url.href
 }
 
 // the URL without its query, its fragment and its trailing separators
@@ -114,44 +110,34 @@ export class Fs extends Service<Fs.Intercept> {
   private _mounts = new Map<string, Mount>()
   /** the connection that serves each watch, if any */
   private _watchers = new Map<Watcher, Connection | undefined>()
-  public config: Required<Fs.Config>
+  public config: Fs.Config
 
   constructor(ctx: Context, config: Fs.Config = {}) {
     super(ctx, 'fs')
-    const baseUrl = config.baseUrl ?? getWorkingDirectory()
-    if (baseUrl === undefined) {
-      throw new TypeError('expected `baseUrl` on a runtime without a working directory')
-    }
-    let url: URL
-    try {
-      url = new URL(toReference(baseUrl))
-    } catch (error) {
-      throw new TypeError(`expected an absolute base URL, got ${JSON.stringify(baseUrl)}`, { cause: error })
-    }
-    this.config = { ...config, baseUrl: toDirectory(url, baseUrl).href }
+    // the working directory is the default, and the base URL of a path
+    const { baseUrl } = config
+    const cwd = baseUrl === undefined || !isUrl(baseUrl) ? getWorkingDirectory() : undefined
+    const value = baseUrl ?? cwd?.href
+    this.config = { ...config, baseUrl: value === undefined ? undefined : toBaseUrl(value, cwd) }
   }
 
   /**
-   * The base URL of relative references, which names a directory: its path
-   * ends with `/`, and it has no query or fragment. The `baseUrl` of the
-   * config is followed by that of each intercept, from the outermost to the
-   * innermost, which is resolved against the result of the preceding ones.
+   * The base URL of paths, which names a directory: its path ends with `/`,
+   * and it has no query or fragment. The `baseUrl` of the config is followed
+   * by that of each intercept, from the outermost to the innermost, which is
+   * resolved against the result of the preceding ones. Without a base URL,
+   * only absolute URLs are locations.
    */
-  get baseUrl(): URL {
-    return new URL(this[Service.resolveIntercept]().baseUrl!)
+  get baseUrl(): URL | undefined {
+    const { baseUrl } = this[Service.resolveIntercept]()
+    return baseUrl === undefined ? undefined : new URL(baseUrl)
   }
 
   [Service.mergeIntercept](...values: Fs.Intercept[]): Fs.Intercept {
     let baseUrl = this.config.baseUrl
     for (const value of values) {
       if (value?.baseUrl === undefined) continue
-      let url: URL
-      try {
-        url = new URL(toReference(value.baseUrl), baseUrl)
-      } catch (error) {
-        throw new TypeError(`invalid base URL ${JSON.stringify(value.baseUrl)}`, { cause: error })
-      }
-      baseUrl = toDirectory(url, value.baseUrl).href
+      baseUrl = toBaseUrl(value.baseUrl, baseUrl === undefined ? undefined : new URL(baseUrl))
     }
     return { ...Object.assign({}, ...values), baseUrl }
   }
@@ -184,18 +170,17 @@ export class Fs extends Service<Fs.Intercept> {
   }
 
   /**
-   * Resolve a URL reference against `baseUrl`. On Windows, a drive-letter
-   * path, such as `C:\app`, is taken as a file path. A reference that cannot be
-   * parsed throws an `FsError` with the code `InvalidPath`.
+   * Resolve a location, as `Path` describes it, against `base`, which names a
+   * directory and defaults to `baseUrl`. A location that cannot be resolved,
+   * such as a path without a base URL, or a URL with a hierarchical path and a
+   * query, a fragment, an encoded `/` or an invalid percent-encoding, throws an
+   * `FsError` with the code `InvalidPath`. A URL with an opaque path, such as a
+   * `data:` URL, is left to its provider.
    */
-  resolve(path: string | URL): URL {
-    if (path instanceof URL) return path
-    const base = this.baseUrl
-    try {
-      return new URL(toReference(path), base)
-    } catch (error) {
-      throw new FsError('InvalidPath', undefined, `invalid URL ${JSON.stringify(path)}`, { cause: error })
-    }
+  resolve(path: Path, base = this.baseUrl): URL {
+    const url = resolvePath(path, base)
+    assertLocation(url)
+    return url
   }
 
   private _match(url: URL): Mount | undefined {
@@ -259,7 +244,7 @@ export class Fs extends Service<Fs.Intercept> {
   }
 
   /** Create a reference to a file. The location is resolved now, and routed at each operation. */
-  file(path: string | URL): FileRef {
+  file(path: Path): FileRef {
     return new FileRef(this, this.resolve(path))
   }
 
@@ -267,7 +252,7 @@ export class Fs extends Service<Fs.Intercept> {
    * Resolve unless the operation is known to be denied: a missing location
    * rejects with `NotFound`, and a denial by the storage with `PermissionDenied`.
    */
-  async access(path: string | URL, mode: AccessMode): Promise<void> {
+  async access(path: Path, mode: AccessMode): Promise<void> {
     // checked here, so that a provider receives only the modes it is declared to receive
     if (!accessModes.includes(mode)) {
       throw new TypeError(`expected an access mode of ${accessModes.map(mode => JSON.stringify(mode)).join(', ')}, got ${JSON.stringify(mode)}`)
@@ -281,7 +266,7 @@ export class Fs extends Service<Fs.Intercept> {
    * directory fails with `DirectoryNotEmpty`. Locations of two different
    * mounts fail with `CrossesDevices`.
    */
-  async rename(src: string | URL, dest: string | URL): Promise<void> {
+  async rename(src: Path, dest: Path): Promise<void> {
     const from = this.resolve(src)
     const to = this.resolve(dest)
     const mount = this._route(from)
@@ -297,7 +282,7 @@ export class Fs extends Service<Fs.Intercept> {
    * with a trailing separator or with `recursive`, and its target is not
    * touched. With `force`, a missing location is not an error.
    */
-  async remove(path: string | URL, options: RemoveOptions = {}): Promise<void> {
+  async remove(path: Path, options: RemoveOptions = {}): Promise<void> {
     const url = this.resolve(path)
     try {
       await this._provider(url, 'remove').remove(url, { recursive: !!options.recursive })
@@ -313,7 +298,7 @@ export class Fs extends Service<Fs.Intercept> {
    * requires a directory, and follows a link in the last component also with
    * `follow: false`. A missing location fails with `NotFound`.
    */
-  async stat(path: string | URL, options: StatOptions = {}): Promise<Stats> {
+  async stat(path: Path, options: StatOptions = {}): Promise<Stats> {
     const url = this.resolve(path)
     return this._provider(url, 'stat').stat(url, { follow: options.follow ?? true })
   }
@@ -323,7 +308,7 @@ export class Fs extends Service<Fs.Intercept> {
    * `NotADirectory`, to `true` where it succeeds, and reject with any other
    * error of `stat()`.
    */
-  async exists(path: string | URL): Promise<boolean> {
+  async exists(path: Path): Promise<boolean> {
     try {
       await this.stat(path)
       return true
@@ -339,10 +324,10 @@ export class Fs extends Service<Fs.Intercept> {
    * including a missing location or a non-directory, is thrown from the
    * iteration.
    */
-  async* readdir(path: string | URL): AsyncIterable<DirEntryRef> {
+  async* readdir(path: Path): AsyncIterable<DirEntryRef> {
     const url = this.resolve(path)
     for await (const { name, type } of this._provider(url, 'readdir').readdir(url)) {
-      const location = entryUrl(url, name)
+      const location = resolvePath([name], url)
       const entry = type === 'file' ? new FileRef(this, location) : new EntryRef(this, location)
       yield Object.defineProperty(entry, 'type', { value: type, enumerable: true }) as DirEntryRef
     }
@@ -355,7 +340,7 @@ export class Fs extends Service<Fs.Intercept> {
    * link, is not an error; an existing non-directory still fails with
    * `AlreadyExists`.
    */
-  async mkdir(path: string | URL, options: MkdirOptions = {}): Promise<void> {
+  async mkdir(path: Path, options: MkdirOptions = {}): Promise<void> {
     const url = this.resolve(path)
     return this._provider(url, 'mkdir').mkdir(url, { recursive: !!options.recursive })
   }
@@ -365,7 +350,7 @@ export class Fs extends Service<Fs.Intercept> {
    * target is relative to the directory of the link. An existing entry at
    * `path` fails with `AlreadyExists`.
    */
-  async symlink(target: string, path: string | URL): Promise<void> {
+  async symlink(target: string, path: Path): Promise<void> {
     if (typeof target !== 'string') {
       throw new TypeError(`expected the target of a link as a string, got ${typeof target}`)
     }
@@ -374,7 +359,7 @@ export class Fs extends Service<Fs.Intercept> {
   }
 
   /** Return the target of a symbolic link as stored. An entry of another type fails with `NotALink`. */
-  async readlink(path: string | URL): Promise<string> {
+  async readlink(path: Path): Promise<string> {
     const url = this.resolve(path)
     return this._provider(url, 'readlink').readlink(url)
   }
@@ -399,7 +384,7 @@ export class Fs extends Service<Fs.Intercept> {
    *
    * A failure stops the copy, and keeps what has been copied before it.
    */
-  async copy(src: string | URL, dest: string | URL, options: CopyOptions = {}): Promise<void> {
+  async copy(src: Path, dest: Path, options: CopyOptions = {}): Promise<void> {
     const from = this.resolve(src)
     const to = this.resolve(dest)
     if (contains(from, to)) {
@@ -458,7 +443,7 @@ export class Fs extends Service<Fs.Intercept> {
     }
     for (const { name, url, type } of entries) {
       const stats = type === 'symlink' && options.dereference ? await this.stat(url) : undefined
-      await this._copy(url, entryUrl(to, name), stats?.type ?? type, options, stats)
+      await this._copy(url, resolvePath([name], to), stats?.type ?? type, options, stats)
     }
   }
 
@@ -490,7 +475,7 @@ export class Fs extends Service<Fs.Intercept> {
   }
 
   /** Watch a file or a directory. The watch ends with the calling fiber. */
-  watch(path: string | URL, options: WatchOptions = {}): Watcher {
+  watch(path: Path, options: WatchOptions = {}): Watcher {
     const url = this.resolve(path)
     const mount = this._route(url)
     return new Watcher(this.ctx, url, options, (watcher) => {
@@ -507,18 +492,20 @@ export class Fs extends Service<Fs.Intercept> {
 export namespace Fs {
   export interface Intercept {
     /**
-     * The base URL of relative references, which names a directory. A
-     * relative value is resolved against the base URL of the outer context.
-     * On Windows, a drive-letter path, such as `C:\app`, is taken as a file path.
+     * The directory against which paths are resolved, as a path or an
+     * absolute URL in a string of `Path`. A path is resolved against the base
+     * URL of the outer context.
      */
     baseUrl?: string
   }
 
   export interface Config {
     /**
-     * The base URL of relative references, which is absolute and names a
-     * directory. On Windows, a drive-letter path, such as `C:\app`, is taken as
-     * a file path. Defaults to the working directory.
+     * The directory against which paths are resolved, as a path or an
+     * absolute URL in a string of `Path`. A path is resolved against the
+     * working directory, which is also the default. On a runtime without
+     * one, it is an absolute URL or absent, and without it only absolute URLs
+     * are locations.
      */
     baseUrl?: string
   }

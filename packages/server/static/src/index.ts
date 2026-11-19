@@ -57,7 +57,8 @@ function getStatus(error?: FsError): [status: number, statusText: string] {
 
 export function apply(ctx: Context, config: Config) {
   // the root as a base URL of `ctx.fs`, which names the directory that contains every location served
-  const root = ctx.intercept('fs', { baseUrl: config.root }).fs.baseUrl
+  // set by the intercept, which fails on a path without an outer base URL
+  const root = ctx.intercept('fs', { baseUrl: config.root }).fs.baseUrl!
   const isExcluded = config.exclude.length ? picomatch(config.exclude, { dot: true }) : () => false
 
   // The location of a path under the root, or `undefined` outside of it. The

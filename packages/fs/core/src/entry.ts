@@ -56,23 +56,3 @@ export interface CopyOptions {
   /** The entries that symbolic links point to are copied instead of the links. */
   dereference?: boolean
 }
-
-/**
- * The location of the entry `name` of the directory at `directory`, without a
- * trailing separator. The query and the fragment of `directory` are removed.
- * The characters of `name` that the URL parser would change are
- * percent-encoded: `%`, `?`, `#` and `\` end a segment, and the parser removes
- * controls and spaces at the ends of the input, and tabs and newlines
- * anywhere. A name such as `a:b` is not read as a scheme.
- */
-export function entryUrl(directory: URL, name: string): URL {
-  const base = new URL(directory)
-  base.search = ''
-  base.hash = ''
-  if (!base.pathname.endsWith('/')) base.pathname += '/'
-  // eslint-disable-next-line no-control-regex
-  const encoded = name.replace(/[\x00-\x20%?#\\]/g, (char) => {
-    return '%' + char.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')
-  })
-  return new URL('./' + encoded, base)
-}
