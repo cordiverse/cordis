@@ -4,6 +4,19 @@ import { Entry, EntryOptions } from './entry.ts'
 import { EntryTree } from './tree.ts'
 import { EntryValidationError, formatIssues, formatLocation, Issue, relocate, validateOptions } from './utils.ts'
 
+/** The ids that appear more than once in one config list. */
+function repeatedIds(config: EntryOptions[]): Set<string | symbol> {
+  const seen = new Set<string | symbol>()
+  const repeated = new Set<string | symbol>()
+  for (const options of config) {
+    const id = options?.id
+    if (id === undefined) continue
+    if (seen.has(id)) repeated.add(id)
+    else seen.add(id)
+  }
+  return repeated
+}
+
 export class EntryGroup {
   static readonly key = Symbol.for('cordis.group')
 
@@ -78,6 +91,15 @@ export class EntryGroup {
   async update(config: EntryOptions[]) {
     const oldConfig = this.data as EntryOptions[]
     this.data = config
+    const repeated = repeatedIds(config)
+    // A duplicate is a property of the config, not of this reload: `update` runs on
+    // every edit, and an unchanged duplicate would otherwise print a line per edit.
+    // An id that stops being repeated drops out of `before`, so a later one is news.
+    const before = repeatedIds(oldConfig)
+    for (const id of repeated) {
+      if (before.has(id)) continue
+      this.ctx.logger.error('duplicate entry id %C, only the last one takes effect', id)
+    }
     const oldMap = Object.fromEntries(oldConfig.map(options => [options?.id, options]))
     // non-objects are rejected by `create`
     const newMap = Object.fromEntries(config.map(options => [options?.id ?? Symbol('anonymous'), options]))
