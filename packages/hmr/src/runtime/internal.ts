@@ -95,6 +95,8 @@ export type ModuleRequestType = unknown // internal symbols
  * - getModuleJobForImport removed → getOrCreateModuleJob(parentURL, request, requestType)
  * - resolve removed (became private #resolve) → resolveSync(parentURL, request)
  * - Parameter order reversed for resolveSync, request object { specifier, attributes }
+ * - `import()` gained `phase` and `isEntryPoint`, `register()` gained `isInternal`
+ * - `load()` takes a `url` where v1 took a `specifier`
  * - LoadCache became typed Map<url, { [type]: ModuleJob }> with delete only setting undefined
  */
 export interface ModuleLoaderV2 {

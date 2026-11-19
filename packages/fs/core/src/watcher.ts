@@ -5,7 +5,11 @@ export type WatchFilter = string[] | ((path: string, isDirectory: boolean) => bo
 
 export interface WatchOptions {
   /**
-   * Decides which entries below a watched directory are kept.
+   * Decides which entries below a watched directory are kept. An array holds
+   * glob patterns, matched by `@cordisjs/fs-node` against the path relative to
+   * the watched directory with `/` as the separator. The last pattern that
+   * matches an entry or one of its ancestors decides, and a pattern starting
+   * with `!` means the entry is not kept.
    */
   filter?: WatchFilter
 }
@@ -13,7 +17,10 @@ export interface WatchOptions {
 export interface WatchEvents {
   /** A file at or below the watched location is modified. */
   change(url: URL): Awaitable<void>
-  /** The initial scan is done. A listener added afterwards is called at once. */
+  /**
+   * The initial scan is done. A listener added afterwards is called on the next
+   * microtask, not on the line that adds it.
+   */
   ready(): Awaitable<void>
   /** An error is logged as a warning without a listener. */
   error(error: unknown): Awaitable<void>

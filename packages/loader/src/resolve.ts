@@ -24,14 +24,15 @@ const RENAME_BACKOFF = 20
 
 /**
  * On Windows a rename over a file that another process holds open fails with
- * one of these; the lock is normally gone within milliseconds.
+ * one of these; the lock is normally gone within milliseconds. The loop waits
+ * `RENAME_BACKOFF` × 1..10 in total, 1.1 s.
  */
 function isTransientRenameError(error: unknown) {
   const code = (error as NodeJS.ErrnoException | undefined)?.code
   return code === 'EACCES' || code === 'EPERM' || code === 'EBUSY'
 }
 
-/** Nearest ancestor of `dir` that owns a `package.json`, if any. */
+/** The nearest directory at or above `dir` that owns a `package.json`, if any. */
 function findScope(dir: string) {
   while (true) {
     if (existsSync(join(dir, 'package.json'))) return dir

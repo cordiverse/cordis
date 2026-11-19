@@ -33,9 +33,9 @@ function isSorted(keys: string[]) {
 
 /**
  * Apply the changes to a manifest object. A dependency is updated in every
- * field that declares it, and is added to `dependencies` otherwise. A
- * removed dependency is removed from every field. A field whose keys were
- * sorted stays sorted.
+ * field of `FIELDS` that declares it — `peerDependencies` is not one of them —
+ * and is added to `dependencies` otherwise. A removed dependency is removed
+ * from every field of `FIELDS`. A field whose keys were sorted stays sorted.
  */
 export function applyChanges(manifest: any, changes: [string, string | null][]) {
   const sorted = new Set(FIELDS.filter(field => manifest[field] && isSorted(Object.keys(manifest[field]))))

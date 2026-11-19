@@ -99,7 +99,7 @@ export class ConfigFileError extends Error {
   }
 }
 
-/** The file changed under us between the pre-check and the rename. */
+/** The file changed or disappeared between the pre-check and the rename. */
 class StaleWriteError extends Error {
   name = 'StaleWriteError'
 }
@@ -119,8 +119,8 @@ const RENAME_BACKOFF = 20
 /**
  * On Windows a rename over a file that another process holds open (typically
  * an antivirus scanning what we just wrote) fails as busy; the lock is
- * normally gone within milliseconds. A bounded retry is cheap enough to apply
- * on every platform.
+ * normally gone within milliseconds. The loop waits `RENAME_BACKOFF` × 1..10 in
+ * total, 1.1 s, so the retry is bounded on every platform.
  */
 function isTransientRenameError(error: unknown) {
   return error instanceof FsError && error.code === 'Busy'
@@ -446,8 +446,10 @@ export class Include extends EntryTree {
         throw new ConfigFileError('parse', this.filename, undefined, [{ message, location }])
       }
     }
-    // An empty or truncated file (routine mid-edit) parses to `undefined`, so
-    // every non-array shape is rejected here as one "invalid file" signal.
+    // A file that is empty, `null` or truncated mid-edit arrives here as
+    // something that is not an array -- `toJS()` answers `null` for the first
+    // two and a partial document for the third -- so every non-array shape is
+    // rejected as one "invalid file" signal.
     if (!Array.isArray(data)) {
       const message = 'config file must be a top-level array'
       const { document, lines } = syntax ?? parseSyntax(content)

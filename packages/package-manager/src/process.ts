@@ -31,7 +31,8 @@ export function createEnv(base: Env = process.env): Env {
     ?.split(delimiter)
     .filter(dir => dir !== berryBin && !isBerryBin(dir))
     .join(delimiter)
-  // Corepack would otherwise wait for a confirmation to download the declared version.
+  // Corepack waits for an answer only when stdin is a TTY and `CI` is unset;
+  // `run()` spawns with `stdio: ['ignore', ...]`, so nothing is asked there.
   env.COREPACK_ENABLE_DOWNLOAD_PROMPT = '0'
   return env
 }
@@ -175,7 +176,8 @@ export function run(file: string, args: string[], options: RunOptions): Promise<
 
     child.on('error', (error) => {
       failure ??= error
-      // a process that could not be spawned emits no `close`
+      // a process that could not be spawned emits `error` and then `close`, so
+      // settling here is what makes the failure prompt rather than next-tick
       if (child.pid === undefined) {
         clearTimeout(timer)
         signal?.removeEventListener('abort', onAbort)

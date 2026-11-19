@@ -12,8 +12,9 @@ export type AgentName = 'npm' | 'pnpm' | 'yarn'
 export type AgentKind = 'npm' | 'pnpm' | 'yarn-classic' | 'yarn-berry'
 /**
  * The layout of `node_modules`. A hoisted layout installs packages in place,
- * while an isolated layout installs every package in a store entry and links
- * it into the `node_modules` folders from which it is resolved.
+ * while an isolated layout installs a registry package in a store entry and
+ * links it into the `node_modules` folders from which it is resolved. A `link:`,
+ * `portal:` or workspace package resolves to its own directory either way.
  */
 export type AgentLayout = 'hoisted' | 'isolated'
 
@@ -41,7 +42,7 @@ export interface Adapter {
    * restored after a failed installation, as is `package.json`.
    */
   lockfiles: string[]
-  /** the other files of the project root that are restored after a failed installation */
+  /** other files restored after a failed installation, as paths relative to the project root */
   restoredFiles: string[]
   /** Detect the layout, and reject an unsupported one before the project is modified. */
   detectLayout(info: Omit<AgentInfo, 'layout'>, root: string, env: Env, manifest: any): Promise<Layout>

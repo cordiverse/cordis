@@ -29,7 +29,8 @@ export function apply(ctx: Context, config: Config = {}) {
     }
 
     if (tokens.length === 0) {
-      // No input: show root command help if root exists with subcommands
+      // No input: show the root command's help when it has subcommands and takes no
+      // required argument; the bare `--help` branch below checks only that a root exists
       const root = cli._aliases['']
       if (root) {
         const subs = getSubcommands(cli, '')
@@ -103,7 +104,8 @@ function getSubcommands(cli: Cli, parentName: string, showHidden = false): { com
   const subs: { command: Command; name: string }[] = []
   const seen = new Set<Command>()
   if (parentName === '') {
-    // Root command: direct children are all top-level commands (no dots in name)
+    // Root command: keep the top-level ones — `cli._commands` holds every registered
+    // command, and a name with a dot in it belongs to a nested command below one
     for (const cmd of cli._commands) {
       if (seen.has(cmd)) continue
       const name = Object.keys(cmd._aliases)[0]
