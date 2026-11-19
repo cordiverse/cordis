@@ -20,6 +20,7 @@ conformance('NodeFs', {
   async teardown() {
     rmSync(resolve(root, '__conformance__'), { recursive: true, force: true })
   },
+  windows: process.platform === 'win32',
   capabilities: { symlink: true },
 })
 

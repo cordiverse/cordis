@@ -7,6 +7,8 @@ export interface ConformanceOptions {
   setup(ctx: Context): Promise<URL>
   /** optional cleanup after each test */
   teardown?(): Promise<void>
+  /** whether the provider uses the native Windows file system */
+  windows?: boolean
   capabilities?: Capabilities
 }
 
@@ -15,12 +17,10 @@ export interface Capabilities {
   symlink?: boolean
 }
 
-const windows = process.platform === 'win32'
-
-async function rejects(promise: Promise<unknown>, code: FsError.Code) {
+async function rejects(promise: Promise<unknown>, ...codes: FsError.Code[]) {
   const error = await promise.then(() => undefined, error => error)
   expect(error).to.be.instanceOf(FsError)
-  expect(error.code).to.equal(code)
+  expect(error.code).to.be.oneOf(codes)
   return error as FsError
 }
 
@@ -31,6 +31,9 @@ async function rejects(promise: Promise<unknown>, code: FsError.Code) {
  */
 export function conformance(name: string, options: ConformanceOptions) {
   const symlinks = !!options.capabilities?.symlink
+  const windows = options.windows
+  // Windows may report a missing path when an intermediate component is a file.
+  const belowFile: FsError.Code[] = windows ? ['NotADirectory', 'NotFound'] : ['NotADirectory']
 
   describe(name, () => {
     let fiber: Fiber | undefined
@@ -132,7 +135,7 @@ export function conformance(name: string, options: ConformanceOptions) {
 
       it('fails to read below a file', async () => {
         await write('a.txt')
-        await rejects(ctx.fs.file(url('a.txt/b.txt')).text(), 'NotADirectory')
+        await rejects(ctx.fs.file(url('a.txt/b.txt')).text(), ...belowFile)
       })
     })
 
@@ -172,10 +175,10 @@ export function conformance(name: string, options: ConformanceOptions) {
         await rejects(ctx.fs.stat(url('missing/a.txt')), 'NotFound')
       })
 
-      it('requires a directory for a trailing separator', async () => {
+      it('requires a directory before a trailing separator or a child name', async () => {
         await write('a.txt')
         await rejects(ctx.fs.stat(url('a.txt/')), 'NotADirectory')
-        await rejects(ctx.fs.stat(url('a.txt/b.txt')), 'NotADirectory')
+        await rejects(ctx.fs.stat(url('a.txt/b.txt')), ...belowFile)
       })
     })
 
@@ -278,7 +281,17 @@ export function conformance(name: string, options: ConformanceOptions) {
         expect(await text('b.txt')).to.equal('foo')
       })
 
-      it('moves a directory with its entries, and replaces an empty one', async () => {
+      it('moves a directory with its entries', async () => {
+        await write('src/a.txt', 'foo')
+        await ctx.fs.rename(url('src'), url('dest/'))
+        expect(await text('dest/a.txt')).to.equal('foo')
+        expect(await ctx.fs.exists(url('src'))).to.equal(false)
+      })
+
+      // Windows renames a directory only to a missing location, and reports a
+      // directory as the target as `EPERM`, which is classified as `Busy`
+      // without further I/O
+      it.skipIf(windows)('replaces an empty directory', async () => {
         await write('src/a.txt', 'foo')
         await ctx.fs.mkdir(url('dest'))
         await ctx.fs.rename(url('src'), url('dest/'))
@@ -286,8 +299,7 @@ export function conformance(name: string, options: ConformanceOptions) {
         expect(await ctx.fs.exists(url('src'))).to.equal(false)
       })
 
-      // Windows reports a directory as the target of a rename as `EPERM`, which
-      // is classified as `Busy` without further I/O
+      // as above
       it.skipIf(windows)('fails on a non-empty directory', async () => {
         await ctx.fs.mkdir(url('a'))
         await write('b/c.txt')
@@ -480,6 +492,7 @@ export function conformance(name: string, options: ConformanceOptions) {
         await rejects(ctx.fs.symlink('dir', url('a.txt')), 'AlreadyExists')
         await rejects(ctx.fs.symlink('a.txt', url('dir')), 'AlreadyExists')
         expect(await text('a.txt')).to.equal('foo')
+        expect((await ctx.fs.stat(url('dir'), { follow: false })).type).to.equal('directory')
       })
 
       it('fails to read a location that is not a link', async () => {

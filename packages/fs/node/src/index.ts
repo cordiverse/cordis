@@ -310,8 +310,12 @@ class NodeFs extends BaseFs {
         // junction does not. A junction stores the absolute target.
         if (process.platform !== 'win32' || (error as NodeJS.ErrnoException).code !== 'EPERM') throw error
         const info = await stat(resolve(dirname(entry), target)).catch(() => undefined)
-        if (!info?.isDirectory()) throw error
-        await symlink(target, entry, 'junction')
+        if (info?.isDirectory()) return symlink(target, entry, 'junction')
+        // Without the file-link privilege Windows may report EPERM even when the link name is occupied.
+        if (await lstat(entry).catch(() => undefined)) {
+          throw new FsError('AlreadyExists', url, `an entry exists at ${url.href}`, { cause: error })
+        }
+        throw error
       }
     })
   }
