@@ -64,7 +64,7 @@ export class Watcher {
     if (name === 'ready' && this._ready) {
       // asynchronously, as a listener added before the scan is done
       queueMicrotask(() => {
-        if (!hook.removed) this._call(listener, [])
+        if (!hook.removed && !this._closed) this._call(listener, [])
       })
     }
     return () => {

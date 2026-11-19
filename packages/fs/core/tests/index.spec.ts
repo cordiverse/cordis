@@ -474,6 +474,20 @@ describe('Fs', () => {
     })
   })
 
+  it('does not call a queued ready listener after the watch ends', async () => {
+    const ctx = await setup()
+    const provider = fakeProvider()
+    ctx.fs.mount('mem:', provider)
+    const watcher = ctx.fs.watch('mem://a.txt')
+    const ready = vi.fn()
+    watcher.emit('ready')
+    watcher.on('ready', ready)
+
+    await watcher.dispose()
+    await new Promise(resolve => setImmediate(resolve))
+    expect(ready).not.toHaveBeenCalled()
+  })
+
   it('recognizes an `FsError` from another copy of the package', () => {
     const error = Object.assign(new Error(), { [Symbol.for('cordis.fs.error')]: true })
     expect(error).to.be.instanceOf(FsError)
