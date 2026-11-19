@@ -18,7 +18,7 @@ interface Captured {
 
 /** The resolution caches that {@link invalidateResolution} can clear in this thread. */
 export interface ResolutionSupport {
-  /** Whether the realpath caches of ESM and CJS are cleared; for ESM, on Node 24.16+ and 26.1+. */
+  /** Whether the realpath caches of ESM and CJS are cleared; for ESM, on Node 22.23.3+, 24.16+ and 26.1+. */
   realpath: boolean
 }
 

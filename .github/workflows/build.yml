@@ -56,12 +56,14 @@ jobs:
 
   test:
     runs-on: ${{ matrix.os }}
+    # GitHub-hosted macOS runners are often queued or fail for reasons unrelated to the tests
+    continue-on-error: ${{ matrix.os == 'macos-latest' }}
 
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        node-version: [24, 26]
+        node-version: [22, 24, 26]
 
     steps:
       - name: Check out

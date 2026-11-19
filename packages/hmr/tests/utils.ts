@@ -6,10 +6,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import { afterAll, beforeAll } from 'vitest'
 
-/** Node 24.16+ and 26.1+ pass the ESM realpath cache to `fs.realpathSync`. */
+/** Node 22.23.3+, 24.16+ and 26.1+ pass the ESM realpath cache to `fs.realpathSync`. */
 export const realpathESM = (() => {
-  const [major, minor] = process.versions.node.split('.').map(Number)
+  const [major, minor, patch] = process.versions.node.split('.').map(Number)
   return major > 26 || major === 26 && minor >= 1 || major === 24 && minor >= 16
+    || major === 22 && (minor > 23 || minor === 23 && patch >= 3)
 })()
 
 interface RunOptions {
