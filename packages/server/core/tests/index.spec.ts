@@ -458,6 +458,27 @@ describe('@cordisjs/server', () => {
     })
   })
 
+  describe('response form data', () => {
+    beforeEach(async () => {
+      ({ ctx, url } = await setup())
+    })
+
+    it('should serialize a form data body with the boundary of its content type', async () => {
+      ctx.server.get('/form', async (req, res, next) => {
+        const data = new FormData()
+        data.append('name', 'value')
+        res.formData(data)
+      })
+      await sleep()
+
+      const res = await fetch(`${url}/form`)
+      expect(res.status).to.equal(200)
+      expect(res.headers.get('content-type')).to.match(/^multipart\/form-data; boundary=/)
+      const data = await res.formData()
+      expect(data.get('name')).to.equal('value')
+    })
+  })
+
   describe('response headers', () => {
     beforeEach(async () => {
       ({ ctx, url } = await setup())

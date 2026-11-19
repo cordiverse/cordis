@@ -160,7 +160,9 @@ export class Response {
     for (const [k, v] of tmp.headers) {
       if (!this.headers.has(k)) this.headers.set(k, v)
     }
-    this._bodyInit = input
+    // `_end()` must send the body that matches the copied content type: a multipart
+    // boundary is generated per serialization, so a FormData would get another one
+    this._bodyInit = tmp.body
     this._claimed = true
     return this
   }
