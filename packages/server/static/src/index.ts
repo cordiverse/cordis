@@ -135,14 +135,14 @@ export function apply(ctx: Context, config: Config) {
     return new Response(body, { status: 200, statusText: 'OK', headers })
   }
 
-  // A file and its alternatives with the configured extensions. The error is
-  // that of the file itself, and absent if it is excluded.
+  // A file and its alternatives with the configured extensions, which apply to
+  // a missing file but not to a directory. The error is that of the file
+  // itself, and absent if it is excluded.
   async function tryFile(url: URL): Promise<Response | FsError | undefined> {
     let result: Response | FsError | undefined
     if (!isExcluded(relativePath(url))) {
       result = await read(url, config.disposition)
       if (result instanceof Response) return result
-      // a directory is not a missing file, so the extensions do not apply
       if (result?.code === 'IsADirectory') return result
     }
     for (const ext of config.extensions) {
