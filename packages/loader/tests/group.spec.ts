@@ -1,6 +1,6 @@
 import { Mock, mock } from 'node:test'
 import { expect, describe, it, beforeAll, beforeEach } from 'vitest'
-import { Context } from 'cordis'
+import { Context, FiberState, Service } from 'cordis'
 import MockLoader, { sleep } from './utils.ts'
 
 describe('Group: basic support', () => {
@@ -165,6 +165,83 @@ describe('Group: transfer', () => {
     expect(foo.mock.calls).to.have.length(1)
     expect(dispose.mock.calls).to.have.length(0)
     expect([...loader.entries()]).to.have.length(4)
+  })
+
+  // the cases below start from a loader of their own
+  async function setup(options: object = {}) {
+    const root = new Context()
+    await root.use(MockLoader)
+    const loader = root.loader as any as MockLoader
+    const dispose = mock.fn()
+    const foo = loader.mock('foo', () => dispose)
+    loader.mock('settings', class extends Service {
+      constructor(ctx: Context) {
+        super(ctx, 'settings')
+      }
+    })
+    await loader.read([
+      { id: 'settings', name: 'settings' },
+      { id: 'a', name: '@cordisjs/group', group: true, config: [{ id: 'x', name: 'foo', ...options }] },
+      { id: 'b', name: '@cordisjs/group', group: true, config: [] },
+    ])
+    const { outerFiber, innerFiber } = loader.store['x']!
+    loader.changes = []
+    const expectKept = () => {
+      const entry = loader.store['x']!
+      for (const [fiber, expected] of [[entry.outerFiber, outerFiber], [entry.innerFiber, innerFiber]]) {
+        expect(fiber?.uid).to.equal(expected?.uid)
+        if (expected) expect(expected.state).to.equal(FiberState.ACTIVE)
+      }
+      expect(dispose.mock.calls).to.have.length(0)
+      expect(entry.options.disabled).to.be.undefined
+    }
+    return { root, loader, foo, dispose, innerFiber, expectKept }
+  }
+
+  it.each([{}, { inject: ['settings'] }])('keeps an entry transferred out of a removed group (%o)', async (options) => {
+    const { loader, dispose, expectKept } = await setup(options)
+    loader.update('x', {}, 'b')
+    loader.remove('a')
+    await loader.await()
+    expectKept()
+    expect(loader.changes.every(change => !change.options?.disabled)).to.be.true
+
+    // the target group owns the entry now
+    loader.remove('b')
+    await sleep()
+    expect(dispose.mock.calls).to.have.length(1)
+  })
+
+  it('keeps an entry transferred by a config file out of a removed group', async () => {
+    const { loader, expectKept } = await setup()
+    await loader.read([
+      { id: 'settings', name: 'settings' },
+      { id: 'b', name: '@cordisjs/group', group: true, config: [{ id: 'x', name: 'foo' }] },
+    ])
+    await loader.await()
+    expectKept()
+  })
+
+  it('leaves nothing to a former group after the entry disposes itself', async () => {
+    const { loader, innerFiber } = await setup()
+    const effects = (id: string) => loader.expectFiber(id).getEffects().length
+    const before = [effects('a'), effects('b')]
+    await loader.update('x', {}, 'b')
+    await loader.update('x', {}, 'a')
+    await innerFiber!.dispose()
+    expect(loader.store['x']!.options.disabled).to.be.true
+    expect([effects('a'), effects('b')]).to.deep.equal([before[0] - 1, before[1]])
+  })
+
+  it('transfers an entry into a group that is being rebuilt', async () => {
+    const { root, loader, foo, dispose } = await setup()
+    loader.update('b', { inject: ['settings', 'missing'] })
+    await loader.update('x', {}, 'b')
+    await loader.await()
+    // the entry is disposed once, with the group that holds it, and leaves no fiber behind
+    await loader.ctx.fiber.dispose()
+    expect(dispose.mock.calls).to.have.length(1)
+    expect(root.registry.get(foo)?.fibers.length ?? 0).to.equal(0)
   })
 })
 

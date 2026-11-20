@@ -511,7 +511,7 @@ describe('Loader: entry evaluation context', () => {
     expect(worker.mock.calls).to.have.length(1)
   })
 
-  it.each(['disabled', 'inject'])('re-evaluates %s in the new parent context after a move', async (field) => {
+  it.each(['disabled', 'inject'])('re-evaluates %s in the new parent context after a transfer', async (field) => {
     const child: any = { id: 'worker', name: 'worker' }
     if (field === 'disabled') {
       child.disabled = { __jsExpr: '!env.enabled' }

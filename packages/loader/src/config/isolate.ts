@@ -47,7 +47,7 @@ function within(table: Dict<symbol> | null, boundary: Dict<symbol>, name: string
 
 /**
  * Apply the isolation of an entry to its context. `next` reloads the entry
- * in the new isolation, after which the impls that move with the entry are
+ * in the new isolation, after which the impls that go with the entry are
  * transferred and the affected fibers are notified.
  */
 export async function patchIsolate(entry: Entry, next: () => Promise<void>) {
@@ -101,7 +101,7 @@ export async function patchIsolate(entry: Entry, next: () => Promise<void>) {
   }
 
   // step 6: reflect notify
-  // The fibers on each side of the move are notified from a context that
+  // The fibers on each side of the transfer are notified from a context that
   // resolves the names to that side, which reports the service of that side.
   // The entry's isolate map is swapped in place, so `oldMap` is still the
   // boundary; a context is affected if it lies on the other side of it.

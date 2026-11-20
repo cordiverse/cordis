@@ -70,6 +70,12 @@ export class Entry {
   _disposing = false
   _verdict?: boolean
   private _intercept: Dict = Object.create(null)
+  /**
+   * The registration of the outermost fiber of the entry on the fiber that
+   * disposes it with its own unload, i.e. the fiber of the group that holds
+   * the entry.
+   */
+  private _holder?: { fiber: Fiber; owner: Fiber; release: () => void }
 
   constructor(public loader: Loader) {
     this.ctx = loader.ctx.extend({ [Entry.key]: this })
@@ -192,6 +198,7 @@ export class Entry {
     await patchIsolate(this, async () => {
       Object.setPrototypeOf(this.ctx, this.parent.ctx)
       Object.setPrototypeOf(this._intercept, this.parent.ctx[Context.intercept])
+      if (this._holder) this._hold(this._holder.fiber)
 
       if (this.outerFiber) {
         if (this.outerFiber.state !== FiberState.ACTIVE) return
@@ -286,6 +293,40 @@ export class Entry {
     }
   }
 
+  /**
+   * Register the outermost fiber of the entry on the fiber of the group that
+   * holds the entry, which then disposes the entry with its own unload. Called
+   * when the fiber is created, and when the entry is transferred to another group.
+   */
+  private _hold(fiber: Fiber) {
+    const owner = this.ctx.fiber
+    const previous = this._holder
+    if (previous?.owner === owner) return
+    // An unloading group cannot take the entry over, and removes its members
+    // when it stops. Until then, the former group keeps the registration.
+    if (owner.uid === null) return
+    const holder = { fiber, owner, release: undefined! as () => void }
+    holder.release = owner.effect(() => () => {
+      // a former group may have taken the disposer before the entry was transferred out of it
+      if (this._holder === holder) return fiber.dispose()
+    }, 'entry')
+    if (previous) {
+      previous.owner.leak(previous.release)
+    } else {
+      owner.leak(fiber.dispose)
+    }
+    this._holder = holder
+  }
+
+  /** Called when a fiber of the entry starts to be disposed, for whatever reason. */
+  private _release(fiber: Fiber) {
+    const holder = this._holder
+    if (holder?.fiber.ctx.fiber !== fiber) return
+    // e.g. a component that disposes itself: its group no longer disposes it
+    holder.owner.leak(holder.release)
+    this._holder = undefined
+  }
+
   getLocation(path: PropertyKey[] = []) {
     return this.parent.tree.getLocation(this.options.id, path)
   }
@@ -366,9 +407,14 @@ export class Entry {
     if (!this._registered() || this._blocked()) return
     this._initTask = undefined
     if (this._hasOuter()) {
+      const entry = this
       this.outerFiber = this.ctx.registry.use({ ...outer, inject: this.inject }, undefined, {
         getOuterStack: this.getOuterStack,
+        dispose() {
+          entry._release(this)
+        },
       })
+      this._hold(this.outerFiber)
     } else {
       this._start(this.ctx, exports.component)
     }
@@ -407,9 +453,11 @@ export class Entry {
         entry.parent.tree.commit({ id: entry.options.id, group: entry.parent, options: entry.options, legacy })
       },
       dispose() {
+        entry._release(this)
         entry._onDispose(this)
       },
     })
+    if (ctx === this.ctx) this._hold(this.innerFiber)
   }
 
   /** Called when the inner fiber starts to be disposed. */

@@ -23,7 +23,7 @@ export class EntryGroup {
     if (issues.length) throw this._reject(options as EntryOptions, issues)
     const id = this.tree.ensureId(options)
     const entry: Entry = this.tree.store[id] ??= new Entry(this.ctx.loader)
-    // Entry may be moved from another group,
+    // Entry may be transferred from another group,
     // so we need to update the parent reference.
     entry.parent = this
     // Use `create: true` to replace existing entry.options.
@@ -62,7 +62,7 @@ export class EntryGroup {
 
   remove(id: string, isDispose = false) {
     const entry = this.tree.store[id]
-    // an entry that another group already adopted (a file-driven move) belongs
+    // an entry that another group already adopted (a file-driven transfer) belongs
     // to that group now
     if (!entry || entry.parent !== this) return
     // Unregister before disposing: the `dispose` callback of the entry fiber
