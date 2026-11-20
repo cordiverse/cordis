@@ -26,7 +26,7 @@ export namespace Route {
   export interface Options {}
 }
 
-// Whether the request target is correctly percent-encoded, so that the route decoder can decode it.
+// The server accepts paths whose percent escapes are well-formed and encode valid UTF-8.
 function isEncoded(path: string) {
   try {
     decodeURI(path)
@@ -70,11 +70,17 @@ export abstract class Route {
     let params: any
     if (this.keys) {
       params = {}
-      this.keys.forEach(({ name }, index) => {
-        if (capture[index + 1] === undefined) return
-        // a path is percent-encoded, in which `+` stands for itself rather than a space
-        params[name] = decodeURIComponent(capture[index + 1])
-      })
+      for (const [index, { name }] of this.keys.entries()) {
+        const value = capture[index + 1]
+        if (value === undefined) continue
+        try {
+          params[name] = decodeURIComponent(value)
+        } catch {
+          // A route literal can split a percent escape or a UTF-8 sequence
+          // at the capture boundary, so the route does not match the request.
+          return
+        }
+      }
     } else {
       params = capture
     }

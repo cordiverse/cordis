@@ -8,29 +8,11 @@ function sleep(ms = 0) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms))
 }
 
-// sends a request target as it is, which `fetch` would normalize or reject
+// Send the request target verbatim.
 function rawRequest(url: string, path: string): Promise<number> {
   const { hostname, port } = new URL(url)
   return new Promise((resolve, reject) => {
     const req = http.request({ hostname, port, path }, (res) => {
-      res.resume()
-      res.on('end', () => resolve(res.statusCode!))
-    })
-    req.on('error', reject)
-    req.end()
-  })
-}
-
-// sends an upgrade request and reads the status line of the answer as it is
-function rawUpgrade(url: string, path: string): Promise<number> {
-  const { hostname, port } = new URL(url)
-  return new Promise((resolve, reject) => {
-    const req = http.request({
-      hostname,
-      port,
-      path,
-      headers: { connection: 'Upgrade', upgrade: 'websocket' },
-    }, (res) => {
       res.resume()
       res.on('end', () => resolve(res.statusCode!))
     })
@@ -153,6 +135,20 @@ describe('@cordisjs/server', () => {
       const res = await fetch(`${url}/files/a+b`)
       expect(res.status).to.equal(200)
       expect(await res.text()).to.equal('a+b')
+    })
+
+    it('should try the next route when a capture splits an encoded character', async () => {
+      // The encoded spelling of é ends in 9, which also starts the first route's literal suffix.
+      ctx.server.get('/files/:"name"9.txt', async (_req, res) => {
+        res.body = 'numbered file'
+      })
+      ctx.server.get('/files/:name', async (req, res) => {
+        res.body = req.params.name
+      })
+      await sleep()
+
+      const res = await fetch(`${url}/files/café.txt`)
+      expect(await res.text()).to.equal('café.txt')
     })
 
     it('should handle wildcard path params', async () => {
@@ -685,16 +681,7 @@ describe('@cordisjs/server', () => {
 
       expect(await rawRequest(url, '/files/%')).to.equal(400)
       expect(await rawRequest(url, '/files/%zz')).to.equal(400)
-    })
-
-    it('should answer a malformed percent-encoded path of an upgrade with 400', async () => {
-      ctx.server.ws('/ws/:name', async (req, accept) => {
-        await accept()
-      })
-      await sleep()
-
-      expect(await rawUpgrade(url, '/ws/%')).to.equal(400)
-      expect(await rawUpgrade(url, '/ws/%zz')).to.equal(400)
+      expect(await rawRequest(url, '/missing/%FF')).to.equal(400)
     })
 
     it('should not override status if already set before throw', async () => {
@@ -725,16 +712,17 @@ describe('@cordisjs/server', () => {
 
     function connectRaw(path: string): Promise<{ statusCode: number }> {
       const wsUrl = url.replace('http', 'ws') + path
-      return new Promise((resolve) => {
+      return new Promise((resolve, reject) => {
         const ws = new WebSocket(wsUrl)
         ws.on('open', () => {
           ws.close()
           resolve({ statusCode: 101 })
         })
         ws.on('unexpected-response', (_req, res) => {
+          res.resume()
           resolve({ statusCode: res.statusCode! })
         })
-        ws.on('error', () => {})
+        ws.on('error', reject)
       })
     }
 
@@ -750,6 +738,14 @@ describe('@cordisjs/server', () => {
     it('should return 404 for unmatched ws route', async () => {
       const { statusCode } = await connectRaw('/no-such-ws')
       expect(statusCode).to.equal(404)
+    })
+
+    it('should answer a malformed percent-encoded path of an upgrade with 400', async () => {
+      ctx.server.ws('/ws/:name')
+      await sleep()
+
+      expect((await connectRaw('/ws/%')).statusCode).to.equal(400)
+      expect((await connectRaw('/ws/%zz')).statusCode).to.equal(400)
     })
 
     it('should track clients and clean up on close', async () => {
