@@ -140,18 +140,7 @@ describe('@cordisjs/server', () => {
       })
       await sleep()
 
-      const res = await fetch(`${url}/search?q=hello`)
-      expect(res.status).to.equal(200)
-      expect(await res.text()).to.equal('hello')
-    })
-
-    it('should keep question marks inside query string', async () => {
-      ctx.server.get('/search', async (req, res, next) => {
-        res.body = req.query.get('next') ?? ''
-      })
-      await sleep()
-
-      const res = await fetch(`${url}/search?next=/a?b=1`)
+      const res = await fetch(`${url}/search?q=/a?b=1`)
       expect(res.status).to.equal(200)
       expect(await res.text()).to.equal('/a?b=1')
     })
