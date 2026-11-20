@@ -1,4 +1,4 @@
-import { AccessMode, createFilter, FsError, FsProvider, Stats, Watcher } from '@cordisjs/fs'
+import { AccessMode, createFilter, FsError, FsProvider, ReadOptions, Stats, Watcher } from '@cordisjs/fs'
 import { Context } from 'cordis'
 
 interface File {
@@ -153,6 +153,8 @@ async function collect(body: ReadableStream<Uint8Array>) {
 class MemoryFs implements FsProvider {
   static inject = ['fs']
 
+  readonly capabilities: FsProvider.Capabilities = { range: 'signed' }
+
   private _roots = new Map<string, Directory>()
   private _subscriptions = new Set<Subscription>()
 
@@ -245,7 +247,7 @@ class MemoryFs implements FsProvider {
     return { parent, name: name! }
   }
 
-  read(url: URL): ReadableStream<Uint8Array> {
+  read(url: URL, options: ReadOptions = {}): ReadableStream<Uint8Array> {
     return new ReadableStream({
       // called synchronously, so that the stream has the content at the time of the call
       start: (controller) => {
@@ -253,8 +255,9 @@ class MemoryFs implements FsProvider {
         if (location.directory) throw new FsError('IsADirectory', url, `is a directory: ${url.href}`)
         const { entry } = this._find(location)
         if (entry.type === 'directory') throw new FsError('IsADirectory', url, `is a directory: ${url.href}`)
-        // a copy, so that the reader cannot modify the stored content
-        if (entry.content.byteLength) controller.enqueue(entry.content.slice())
+        // A typed array slice also copies the bytes, so the reader cannot modify the stored content.
+        const bytes = entry.content.slice(options.start, options.end)
+        if (bytes.length) controller.enqueue(bytes)
         controller.close()
       },
     })

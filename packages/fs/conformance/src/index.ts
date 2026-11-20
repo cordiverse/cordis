@@ -634,6 +634,62 @@ export function conformance(name: string, options: ConformanceOptions) {
       })
     })
 
+    describe('slice', () => {
+      const content = '0123456789'
+
+      it('reads a range with the semantics of `Blob.slice()`', async () => {
+        await write('a.txt', content)
+        const file = ctx.fs.file(url('a.txt'))
+        const blob = new Blob([content])
+        const ranges: [number?, number?][] = [
+          [], [2], [2, 5], [-3], [-5, -2], [3, -2], [-20, 2], [8, -5], [5, 2], [20], [0, 20], [10],
+          [2 ** 53], [0, 2 ** 60], [-(2 ** 60)],
+        ]
+        for (const [start, end] of ranges) {
+          expect(await file.slice(start, end).text(), `slice(${start}, ${end})`).to.equal(await blob.slice(start, end).text())
+        }
+      })
+
+      it('reads a slice of a slice relative to the slice', async () => {
+        await write('a.txt', content)
+        const file = ctx.fs.file(url('a.txt'))
+        const blob = new Blob([content])
+        const ranges: [number?, number?][][] = [
+          [[2, 8], [1, 3]], [[-6], [-3, -1]], [[2], [-3]], [[1, -1], [2, 100]], [[5, 2], [0, 1]], [[1], [1], [1, 3]],
+          [[Number.MAX_SAFE_INTEGER], [1]],
+        ]
+        for (const chain of ranges) {
+          const [slice, expected] = chain.reduce(([slice, expected], [start, end]) => {
+            return [slice.slice(start, end), expected.slice(start, end)] as const
+          }, [file, blob] as const)
+          expect(await slice.text(), JSON.stringify(chain)).to.equal(await expected.text())
+        }
+      })
+
+      it('reads a range of a content of several chunks', async () => {
+        const bytes = new Uint8Array(200 * 1024).map((_, index) => index % 251)
+        await write('a.bin', bytes)
+        const file = ctx.fs.file(url('a.bin'))
+        expect(await file.slice(70000, 140000).bytes()).to.deep.equal(bytes.slice(70000, 140000))
+        expect(await file.slice(-70000).bytes()).to.deep.equal(bytes.slice(-70000))
+      })
+
+      it('fails to read a slice of a missing file or of a directory, also if it is empty', async () => {
+        await ctx.fs.mkdir(url('dir'))
+        for (const [start, end] of [[1, 2], [0, 0], [-2]]) {
+          await rejects(ctx.fs.file(url('missing.txt')).slice(start, end).text(), 'NotFound')
+          await rejects(ctx.fs.file(url('dir')).slice(start, end).text(), 'IsADirectory')
+        }
+      })
+
+      it('rejects a write to a slice with a `TypeError`', async () => {
+        await write('a.txt', content)
+        const error = await ctx.fs.file(url('a.txt')).slice(1).write('foo').catch(error => error)
+        expect(error).to.be.instanceOf(TypeError)
+        expect(await text('a.txt')).to.equal(content)
+      })
+    })
+
     describe('location', () => {
       it('does not apply an operation on a directory location to a file', async () => {
         await write('a.txt', 'foo')

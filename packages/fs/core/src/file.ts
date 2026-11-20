@@ -1,12 +1,37 @@
 import type { EntryType, WriteOptions } from './entry.ts'
 import type { Fs } from './index.ts'
+import { appendSlice } from './slice.ts'
 
 /** The data accepted by `FileRef.write()`. A string is encoded as UTF-8. */
 export type WriteSource = string | ArrayBuffer | ArrayBufferView<ArrayBuffer> | Blob | ReadableStream<Uint8Array>
 
+/** The options of a read, as a provider receives them. */
+export interface ReadOptions {
+  /**
+   * The first byte of the range, `0` by default. As in `Blob.slice()`, a
+   * negative value counts from the end, and the range is clamped to the size.
+   */
+  start?: number
+  /** The end of the range, exclusive, with the semantics of `start`; the size by default. */
+  end?: number
+}
+
 function toStream(data: WriteSource): ReadableStream<Uint8Array> {
   if (data instanceof ReadableStream) return data
   return new Blob([data]).stream()
+}
+
+// Converts a number as `[Clamp] long long`, as the bounds of `Blob.slice()`.
+function toIndex(value: unknown, name: string) {
+  if (value === undefined) return
+  if (typeof value !== 'number') {
+    throw new TypeError(`expected \`${name}\` as a number, got ${typeof value}`)
+  }
+  if (Number.isNaN(value)) return 0
+  const x = Math.min(Math.max(value, -Number.MAX_SAFE_INTEGER), Number.MAX_SAFE_INTEGER)
+  const rounded = Math.round(x)
+  // `Math.round()` rounds a tie up, and `+ 0` turns `-0` into `0`
+  return (rounded - x === 0.5 && rounded % 2 ? rounded - 1 : rounded) + 0
 }
 
 /** A reference to an entry. Creating it performs no I/O. */
@@ -20,14 +45,30 @@ export class EntryRef {
   }
 }
 
-/** A reference to a file. Creating it performs no I/O. */
+/** A reference to a file, or to a range of its content. Creating it performs no I/O. */
 export class FileRef extends EntryRef {
+  // `_slices` is absent for a reference not created by `slice()`
+  constructor(fs: Fs, url: URL, private _slices?: readonly ReadOptions[]) {
+    super(fs, url)
+  }
+
+  /**
+   * Returns a reference to a range of the content, with the semantics of
+   * `Blob.slice()`, relative to this reference. The range is resolved at each
+   * read. Writing to a slice rejects with a `TypeError`.
+   */
+  slice(start?: number, end?: number): FileRef {
+    const from = toIndex(start, 'start') ?? 0
+    const to = toIndex(end, 'end')
+    return new FileRef(this.fs, this.url, appendSlice(this._slices ?? [], from, to))
+  }
+
   /**
    * Returns a stream of the current content. A failure of the provider,
-   * including a missing file, errors the stream.
+   * including a missing file, errors the stream. The consumer owns each chunk.
    */
   stream(): ReadableStream<Uint8Array> {
-    return this.fs['_provider'](this.url, 'read').read(this.url)
+    return this.fs['_read'](this.url, this._slices ?? [])
   }
 
   /** Reads the current content. */
@@ -38,9 +79,13 @@ export class FileRef extends EntryRef {
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
-      // copied at once, as the provider may reuse the memory of a chunk
-      chunks.push(new Uint8Array(value))
+      chunks.push(value)
       length += value.byteLength
+    }
+    // a chunk that spans its whole buffer is returned without a copy
+    if (chunks.length === 1) {
+      const { buffer, byteOffset } = chunks[0]
+      if (buffer instanceof ArrayBuffer && byteOffset === 0 && buffer.byteLength === length) return new Uint8Array(buffer)
     }
     const result = new Uint8Array(length)
     let offset = 0
@@ -72,6 +117,9 @@ export class FileRef extends EntryRef {
    * error of the stream rejects the write.
    */
   async write(data: WriteSource, options: WriteOptions = {}): Promise<void> {
+    if (this._slices) {
+      throw new TypeError(`cannot write a slice of ${this.url.href}`)
+    }
     return this.fs['_provider'](this.url, 'write').write(this.url, toStream(data), options)
   }
 }

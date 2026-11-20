@@ -1,7 +1,9 @@
-import { AccessMode, BaseFs, EntryType, FsError, Stats as FsStats, Watcher, WriteOptions } from '@cordisjs/fs'
+import {
+  AccessMode, BaseFs, EntryType, FsError, FsProvider, Stats as FsStats, ReadOptions, Watcher, WriteOptions,
+} from '@cordisjs/fs'
 import { Context } from 'cordis'
 import {
-  access, constants, copyFile, FileHandle, lstat, mkdir, open, opendir,
+  access, constants, copyFile, lstat, mkdir, open, opendir,
   readlink, rename, rm, rmdir, stat, symlink, unlink,
 } from 'node:fs/promises'
 import type { BigIntStats, Dirent, Stats } from 'node:fs'
@@ -117,34 +119,60 @@ async function followLink(filename: string) {
 
 /** The local file system of Node.js. */
 class NodeFs extends BaseFs {
+  readonly capabilities: FsProvider.Capabilities = { range: 'unsigned' }
+
   constructor(ctx: Context, config: NodeFs.Config = {}) {
     super(ctx, { mount: config.mount ?? 'file:' })
   }
 
-  read(url: URL): ReadableStream<Uint8Array> {
+  read(url: URL, { start = 0, end = Infinity }: ReadOptions = {}): ReadableStream<Uint8Array> {
     const filename = toPath(url)
-    // `cancel()` may be called before the file is opened, so it waits for the
-    // opening instead of reading a handle assigned by `start()`
-    let opening: Promise<FileHandle>
+    const opening = call(url, 'read', () => {
+      assertFile(filename, url)
+      return open(filename, 'r')
+    })
     let closing: Promise<void> | undefined
     const close = () => closing ??= opening.then(
       handle => call(url, 'read', () => handle.close()),
       () => {},
     )
+    let offset = 0
+    let positioned = false
     return new ReadableStream({
-      start: async () => {
-        opening = call(url, 'read', () => {
-          assertFile(filename, url)
-          return open(filename, 'r')
-        })
-        await opening
+      async start(controller) {
+        const handle = await opening
+        if (start === 0 && end > 0) return
+        try {
+          // Empty ranges still reject directories. A nonzero start seeks in a
+          // regular file and skips bytes sequentially in a FIFO.
+          const info = await call(url, 'read', () => handle.stat())
+          if (info.isDirectory()) throw new FsError('IsADirectory', url, `is a directory: ${url.href}`)
+          if (end <= start) {
+            await close()
+            controller.close()
+          } else if (info.isFile()) {
+            positioned = true
+            offset = start
+          }
+        } catch (error) {
+          await close().catch(() => {})
+          throw error
+        }
       },
-      pull: async (controller) => {
+      async pull(controller) {
         try {
           const handle = await opening
-          const buffer = new Uint8Array(CHUNK_SIZE)
-          const { bytesRead } = await call(url, 'read', () => handle.read(buffer, 0, CHUNK_SIZE, null))
-          if (bytesRead) return controller.enqueue(buffer.subarray(0, bytesRead))
+          while (offset < end) {
+            const buffer = new Uint8Array(Math.min(CHUNK_SIZE, end - offset))
+            const { bytesRead } = await call(url, 'read', () => handle.read(buffer, 0, buffer.length, positioned ? offset : null))
+            if (!bytesRead) break
+            const from = Math.max(0, start - offset)
+            offset += bytesRead
+            if (from < bytesRead) {
+              controller.enqueue(buffer.subarray(from, bytesRead))
+              if (offset < end) return
+            }
+          }
           await close()
           controller.close()
         } catch (error) {
@@ -152,10 +180,8 @@ class NodeFs extends BaseFs {
           throw error
         }
       },
-      cancel: async () => {
-        await close()
-      },
-    })
+      cancel: close,
+    }, { highWaterMark: 0 })
   }
 
   async write(url: URL, body: ReadableStream<Uint8Array>, options: WriteOptions = {}) {

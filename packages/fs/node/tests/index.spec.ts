@@ -1,5 +1,10 @@
 import { Context, Fiber } from 'cordis'
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import {
+  chmodSync, closeSync, constants, existsSync, mkdirSync, openSync, readdirSync,
+  readFileSync, readSync, rmSync, statSync, symlinkSync, writeFileSync, writeSync,
+} from 'node:fs'
+import { writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -101,6 +106,63 @@ describe('NodeFs', () => {
       } finally {
         chmodSync(path('a.txt'), 0o644)
       }
+    })
+  })
+
+  describe.runIf(process.platform !== 'win32')('FIFO', () => {
+    it('reads a FIFO', async () => {
+      execFileSync('mkfifo', [path('fifo')])
+      const reading = ctx.fs.file(url('fifo')).text()
+      await writeFile(path('fifo'), 'foo')
+      expect(await reading).to.equal('foo')
+    })
+
+    it('reads no more of a FIFO than a bounded range', async () => {
+      execFileSync('mkfifo', [path('fifo')])
+      const fd = openSync(path('fifo'), constants.O_RDWR | constants.O_NONBLOCK)
+      try {
+        writeSync(fd, 'abcdef')
+        expect(await ctx.fs.file(url('fifo')).slice(0, 2).text()).to.equal('ab')
+        expect(await ctx.fs.file(url('fifo')).slice(1, 2).text()).to.equal('d')
+        expect(await ctx.fs.file(url('fifo')).slice(4, 4).text()).to.equal('')
+        expect(await ctx.fs.file(url('fifo')).slice(-1).slice(1).text()).to.equal('')
+        const buffer = Buffer.alloc(8)
+        expect(buffer.subarray(0, readSync(fd, buffer)).toString()).to.equal('ef')
+      } finally {
+        closeSync(fd)
+      }
+    })
+
+    it('finishes bounded results with negative bounds while the FIFO writer is still open', async ({ onTestFinished }) => {
+      execFileSync('mkfifo', [path('fifo')])
+      const fd = openSync(path('fifo'), constants.O_RDWR | constants.O_NONBLOCK)
+      onTestFinished(() => closeSync(fd))
+      writeSync(fd, 'abc')
+      expect(await ctx.fs.file(url('fifo')).slice(0, -1).slice(0, 2).text()).to.equal('ab')
+      writeSync(fd, 'abcdefgh')
+      expect(await ctx.fs.file(url('fifo')).slice(-2, 3).text()).to.equal('')
+    })
+
+    it('reads a range of a FIFO', async () => {
+      execFileSync('mkfifo', [path('fifo')])
+      for (const [start, end, expected] of [[0, 2, 'ab'], [1, undefined, 'bc'], [-2, undefined, 'bc'], [1, -1, 'b']] as const) {
+        const reading = ctx.fs.file(url('fifo')).slice(start, end).text()
+        await writeFile(path('fifo'), 'abc')
+        expect(await reading, `slice(${start}, ${end})`).to.equal(expected)
+      }
+    })
+  })
+
+  describe('read', () => {
+    // the content read depends on whether the first read precedes the growth
+    it('reads no more than a range of a file that grows after it is opened', async () => {
+      writeFileSync(path('a.txt'), 'abc')
+      const reader = ctx.fs.file(url('a.txt')).slice(10, 11).stream().getReader()
+      await new Promise(resolve => setTimeout(resolve, 20))
+      writeFileSync(path('a.txt'), 'abcdefghijklm')
+      const chunks: Uint8Array[] = []
+      for (let result; !(result = await reader.read()).done;) chunks.push(result.value)
+      expect(['', 'k']).to.include(Buffer.concat(chunks).toString())
     })
   })
 

@@ -3,7 +3,8 @@ import { Awaitable } from 'cosmokit'
 import { pathToFileURL } from 'node:url'
 import { CopyOptions, DirEntry, EntryType, MkdirOptions, RemoveOptions, StatOptions, Stats, WriteOptions } from './entry.ts'
 import { FsError } from './error.ts'
-import { DirEntryRef, EntryRef, FileRef } from './file.ts'
+import { DirEntryRef, EntryRef, FileRef, ReadOptions } from './file.ts'
+import { resolveSlices, sliceStream } from './slice.ts'
 import { assertLocation, isUrl, Path, resolvePath } from './path.ts'
 import { Watcher, WatchOptions } from './watcher.ts'
 
@@ -79,6 +80,39 @@ function contains(base: URL, url: URL) {
   const prefix = toKey(base)
   const key = toKey(url)
   return key === prefix || key.startsWith(prefix + '/')
+}
+
+async function fileSize(stat: () => Promise<Stats>) {
+  try {
+    const stats = await stat()
+    if (stats.type === 'file' && Number.isSafeInteger(stats.size) && stats.size >= 0) return stats.size
+  } catch {
+    // The read can still proceed without metadata.
+  }
+}
+
+// Opens the read with the file size when available. Cancelling during stat leaves the source unopened.
+function readAfterStat(stat: () => Promise<Stats>, open: (size?: number) => ReadableStream<Uint8Array>) {
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
+  let cancelled = false
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const size = await fileSize(stat)
+      if (cancelled) return
+      reader = open(size).getReader()
+      reader.closed.catch(error => controller.error(error))
+    },
+    async pull(controller) {
+      const { done, value } = await reader!.read()
+      if (cancelled) return
+      if (done) controller.close()
+      else controller.enqueue(value)
+    },
+    cancel(reason) {
+      cancelled = true
+      return reader?.cancel(reason)
+    },
+  }, { highWaterMark: 0 })
 }
 
 // A stream of the same chunks as `stream`, whose first chunk has been read,
@@ -246,6 +280,29 @@ export class Fs extends Service<Fs.Intercept> {
   /** Create a reference to a file. The location is resolved now, and routed at each operation. */
   file(path: Path): FileRef {
     return new FileRef(this, this.resolve(path))
+  }
+
+  // 1. Without slices or the range capability, the chain is applied to a whole read.
+  // 2. A single slice with accepted bounds is read as a range, without `stat()`.
+  // 3. Otherwise, a size from `stat()` resolves the chain to one range. Without
+  //    a size, the first slice is read as a range if its bounds are accepted,
+  //    and the rest of the chain is applied to the stream.
+  private _read(url: URL, slices: readonly ReadOptions[]): ReadableStream<Uint8Array> {
+    const provider = this._provider(url, 'read')
+    const range = provider.capabilities?.range
+    if (!range || !slices.length) return slices.reduce(sliceStream, provider.read(url, {}))
+
+    const [first, ...rest] = slices
+    const canReadFirst = range === 'signed' || (first.start ?? 0) >= 0 && (first.end ?? 0) >= 0
+    if (canReadFirst && !rest.length) return provider.read(url, { ...first })
+
+    const fallback = () => canReadFirst
+      ? rest.reduce(sliceStream, provider.read(url, { ...first }))
+      : slices.reduce(sliceStream, provider.read(url, {}))
+    if (!provider.stat) return fallback()
+    return readAfterStat(() => provider.stat!(url, { follow: true }), size => size === undefined
+      ? fallback()
+      : provider.read(url, resolveSlices(slices, size)))
   }
 
   /**
@@ -419,7 +476,7 @@ export class Fs extends Service<Fs.Intercept> {
     const target = this._provider(to, 'write')
     const { mode } = stats ?? await this.stat(from)
     // a failure to open the source is reported before the destination is written
-    const body = await primed(this._provider(from, 'read').read(from))
+    const body = await primed(this._provider(from, 'read').read(from, {}))
     try {
       await target.write(to, body, mode === undefined ? {} : { mode })
     } catch (error) {
@@ -520,11 +577,16 @@ type Operation =
  * `FsError`; a missing method makes it fail with `NotSupported`.
  */
 export interface FsProvider {
+  /** The behaviors that the provider implements itself, for every location of the mount. */
+  readonly capabilities?: FsProvider.Capabilities
   /**
    * Return a stream of the content of a file. A failure, including a missing
-   * file, errors the stream.
+   * file, errors the stream. The consumer owns each chunk once it is
+   * enqueued, and the provider does not modify it afterwards. The range
+   * capability determines which bounds may occur in `options`. A provider
+   * without it receives empty options.
    */
-  read?(url: URL): ReadableStream<Uint8Array>
+  read?(url: URL, options: ReadOptions): ReadableStream<Uint8Array>
   /**
    * Replace the content of a file with the data of `body`, creating the file
    * but not its parent directory. An error of `body` rejects the write. A
@@ -569,6 +631,14 @@ export interface FsProvider {
    * scan is done, and reports nothing once the returned function is called.
    */
   watch?(watcher: Watcher): () => Awaitable<void>
+}
+
+export namespace FsProvider {
+  /** The capabilities of a provider; an absent key is not declared. */
+  export interface Capabilities {
+    /** `unsigned` accepts omitted or non-negative bounds, and `signed` every bound. */
+    range?: 'unsigned' | 'signed'
+  }
 }
 
 export interface BaseFs extends FsProvider {}

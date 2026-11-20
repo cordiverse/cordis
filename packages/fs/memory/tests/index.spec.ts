@@ -11,6 +11,18 @@ conformance('MemoryFs', {
   },
 })
 
+// a provider that declares no capabilities, on which `@cordisjs/fs` composes ranges
+class PlainFs extends MemoryFs {
+  readonly capabilities = {}
+}
+
+conformance('MemoryFs without capabilities', {
+  async setup(ctx) {
+    await ctx.use(PlainFs)
+    return new URL('memory://conformance/')
+  },
+})
+
 async function rejects(promise: Promise<unknown>, code: FsError.Code) {
   const error = await promise.then(() => undefined, error => error)
   expect(error).to.be.instanceOf(FsError)
