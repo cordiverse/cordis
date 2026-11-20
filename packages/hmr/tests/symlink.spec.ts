@@ -33,12 +33,8 @@ describe('Hmr watch and symlinks', () => {
   function link(test: TestContext, target: string, path: string) {
     try {
       symlinkSync(target, path, 'dir')
-      return true
     } catch (error) {
-      if (process.platform === 'win32') {
-        test.skip('symlinks are unavailable')
-        return false
-      }
+      if (process.platform === 'win32') test.skip('symlinks are unavailable')
       throw error
     }
   }
@@ -58,7 +54,7 @@ describe('Hmr watch and symlinks', () => {
     dir = mkdtempSync(join(tmpdir(), 'cordis-hmr-symlink-base-'))
     const real = join(dir, 'real')
     mkdirSync(real)
-    if (!link(test, real, join(dir, 'link'))) return
+    link(test, real, join(dir, 'link'))
     writeFileSync(join(real, 'plugin.ts'), plugin('v1'))
 
     await setup(pathToFileURL(join(dir, 'link') + '/').href, './plugin.ts')
@@ -72,7 +68,7 @@ describe('Hmr watch and symlinks', () => {
     dir = mkdtempSync(join(tmpdir(), 'cordis-hmr-symlink-dir-'))
     const target = join(dir, 'target')
     mkdirSync(target)
-    if (!link(test, target, join(dir, 'sub'))) return
+    link(test, target, join(dir, 'sub'))
     writeFileSync(join(target, 'plugin.ts'), plugin('v1'))
 
     await setup(pathToFileURL(dir + '/').href, './sub/plugin.ts', ['sub'])
