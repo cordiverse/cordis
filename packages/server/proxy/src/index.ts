@@ -34,6 +34,22 @@ function encodeSegment(segment: string) {
 
 export const inject = ['http', 'server']
 
+// The headers that describe the connection to the caller rather than the request.
+// The upstream client refuses to forward a body it receives as a stream under
+// `transfer-encoding`, and it frames the body itself, so these are dropped.
+const hopByHop = new Set([
+  'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
+  'te', 'trailer', 'transfer-encoding', 'upgrade',
+])
+
+function forwardHeaders(headers: Headers) {
+  const result = new Headers()
+  for (const [key, value] of headers) {
+    if (!hopByHop.has(key.toLowerCase())) result.append(key, value)
+  }
+  return result
+}
+
 export function apply(ctx: Context, config: Config) {
   // the target as a directory, so that the paths of requests are resolved under it
   const target = new URL(config.target)
@@ -62,7 +78,7 @@ export function apply(ctx: Context, config: Config) {
     ctx.logger?.debug('%s %s -> %s', req.method, req.url, url.href)
     const response = await ctx.http(url.href, {
       method: req.method as any,
-      headers: req.headers,
+      headers: forwardHeaders(req.headers),
       data: bodyMethods.has(req.method) ? req.body : undefined,
     }) as unknown as Response
     const headers = new Headers(response.headers)

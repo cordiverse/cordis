@@ -1,5 +1,6 @@
 import { Context } from 'cordis'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import * as http from 'node:http'
 import HTTP from '@cordisjs/http'
 import LoggerConsole from '@cordisjs/logger-console'
 import Server from '@cordisjs/server'
@@ -7,6 +8,24 @@ import * as Proxy from '../src/index.ts'
 
 function sleep(ms = 0) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms))
+}
+
+// sends a request with chunks of a body, so that it has no `content-length`
+function sendChunked(url: string, path: string, chunks: string[]): Promise<{ status: number, body: string }> {
+  const { hostname, port } = new URL(url)
+  return new Promise((resolve, reject) => {
+    const req = http.request({
+      hostname, port, path, method: 'POST',
+      headers: { 'transfer-encoding': 'chunked' },
+    }, (res) => {
+      const parts: Buffer[] = []
+      res.on('data', (chunk) => parts.push(chunk))
+      res.on('end', () => resolve({ status: res.statusCode!, body: Buffer.concat(parts).toString() }))
+    })
+    req.on('error', reject)
+    for (const chunk of chunks) req.write(chunk)
+    req.end()
+  })
 }
 
 describe('@cordisjs/server-proxy', () => {
@@ -122,6 +141,17 @@ describe('@cordisjs/server-proxy', () => {
       })
       expect(res.status).to.equal(200)
       expect(await res.json()).to.deep.equal({ foo: 'bar' })
+    })
+
+    it('should forward a chunked request body', async () => {
+      upstream.server.post('/upload', async (req, res, next) => {
+        res.body = await req.text()
+      })
+      await sleep()
+
+      const res = await sendChunked(proxyUrl, '/upload', ['hello', ' ', 'world'])
+      expect(res.status).to.equal(200)
+      expect(res.body).to.equal('hello world')
     })
   })
 
