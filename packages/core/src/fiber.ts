@@ -381,9 +381,20 @@ export class Fiber {
     return FiberState.PENDING
   }
 
-  private _updateState(callback: () => void | FiberState) {
+  /**
+   * `started` is the work the callback set in motion. Announcing the state runs
+   * listeners, and a listener that throws would leave that work unhandled: the fiber
+   * holds it in `inertia`, so the rejection would end the process under Node's
+   * default policy. Marking it handled keeps the failure on the fiber, where
+   * `dispose()` and a later `update()` already look for it.
+   */
+  private _updateState(callback: (() => void | FiberState) | FiberState | undefined, started?: Promise<void>) {
     const oldState = this.state
-    this.state = callback() ?? this._getState()
+    const next = typeof callback === 'function' ? callback() : callback
+    this.state = next ?? this._getState()
+    // before the early return below, so that guard can never be the reason a
+    // rejection stays unhandled
+    started?.catch(() => {})
     if (oldState === this.state) return
     // FIXME internal/fiber-info
     this.context.emit('internal/status', this, oldState)
@@ -448,15 +459,15 @@ export class Fiber {
     if (this._error) return
     this._runner.epoch = epoch
     if (this.inertia) return
-    this._updateState(() => {
-      if (epoch !== INACTIVE && oldEpoch === INACTIVE) {
-        this.inertia = this._reload()
-        return FiberState.LOADING
-      } else {
-        this.inertia = this._unload()
-        return FiberState.UNLOADING
-      }
-    })
+    // started before the state is announced, so that `inertia` holds the promise by
+    // the time `_updateState` emits and a throwing listener cannot leave it unobserved
+    const started = epoch !== INACTIVE && oldEpoch === INACTIVE
+      ? this._reload()
+      : this._unload()
+    this.inertia = started
+    this._updateState(epoch !== INACTIVE && oldEpoch === INACTIVE
+      ? FiberState.LOADING
+      : FiberState.UNLOADING, started)
   }
 
   private async _reload() {
@@ -480,14 +491,9 @@ export class Fiber {
         this._runner.epoch = INACTIVE
       }
     }
-    this._updateState(() => {
-      if (this._runner.epoch === oldEpoch) {
-        this.inertia = undefined
-      } else {
-        this.inertia = this._unload()
-        return FiberState.UNLOADING
-      }
-    })
+    const started = this._runner.epoch === oldEpoch ? undefined : this._unload()
+    this.inertia = started
+    this._updateState(started ? FiberState.UNLOADING : undefined, started)
   }
 
   private async _unload() {
@@ -519,14 +525,9 @@ export class Fiber {
       impl.ctx.fiber._release?.()
     }
     this.committed = undefined
-    this._updateState(() => {
-      if (this._runner.epoch === INACTIVE) {
-        this.inertia = undefined
-      } else {
-        this.inertia = this._reload()
-        return FiberState.LOADING
-      }
-    })
+    const started = this._runner.epoch === INACTIVE ? undefined : this._reload()
+    this.inertia = started
+    this._updateState(started ? FiberState.LOADING : undefined, started)
   }
 
   async await() {
