@@ -816,6 +816,17 @@ describe('Fs', () => {
       expect(written).to.deep.equal(Array(5).fill(bytes))
     })
 
+    it('rejects a write of a slice, also of the whole content', async () => {
+      const ctx = await setup()
+      const { written, provider } = memory(new Uint8Array(), 1)
+      ctx.fs.mount('mem:', provider)
+      const file = ctx.fs.file('mem://a.txt')
+      for (const slice of [file.slice(), file.slice(0), file.slice(1)]) {
+        expect(await slice.write('foo').catch(error => error)).to.be.instanceOf(TypeError)
+      }
+      expect(written).to.deep.equal([])
+    })
+
     it('rejects a read with the error of the stream', async () => {
       const ctx = await setup()
       const error = new FsError('NotFound', new URL('mem://a.txt'), 'missing')
@@ -838,6 +849,350 @@ describe('Fs', () => {
     await watcher.dispose()
     await new Promise(resolve => setImmediate(resolve))
     expect(ready).not.toHaveBeenCalled()
+  })
+
+  describe('provider ranges', () => {
+    // a provider of one file, which records the options of its reads
+    function single(capabilities: FsProvider.Capabilities) {
+      const options: object[] = []
+      const provider: FsProvider = {
+        capabilities,
+        read(url, value) {
+          options.push(value)
+          return new Blob(['0123456789']).slice(value.start, value.end).stream()
+        },
+      }
+      return { options, provider }
+    }
+
+    it.each(['unsigned', 'signed'] as const)('forwards supported bounds without stat (%s)', async (range) => {
+      const ctx = await setup()
+      const { options, provider } = single({ range })
+      const stat = vi.fn(async () => ({ type: 'file' as const, size: 10, mtime: new Date(0) }))
+      ctx.fs.mount('mem:', { ...provider, stat })
+      const file = ctx.fs.file('mem://a.txt')
+      const start = range === 'signed' ? -3 : 3
+      await file.text()
+      await file.slice(start, 8).text()
+      expect(options).to.deep.equal([{}, { start, end: 8 }])
+      expect(stat).not.toHaveBeenCalled()
+    })
+
+    it.each(['unsigned', 'signed'] as const)('resolves a slice chain to one range using the file size (%s)', async (range) => {
+      const ctx = await setup()
+      const { options, provider } = single({ range })
+      ctx.fs.mount('mem:', {
+        ...provider,
+        stat: async () => ({ type: 'file', size: 10, mtime: new Date(0) }),
+      })
+      const file = ctx.fs.file('mem://a.txt')
+      expect(await file.slice(1).slice(-1).text()).to.equal('9')
+      expect(await file.slice(7, 20).slice(-2, -1).text()).to.equal('8')
+      expect(options).to.deep.equal([{ start: 9, end: 10 }, { start: 8, end: 9 }])
+    })
+
+    it('resolves a single negative bound for an unsigned provider', async () => {
+      const ctx = await setup()
+      const { options, provider } = single({ range: 'unsigned' })
+      ctx.fs.mount('mem:', {
+        ...provider,
+        stat: async () => ({ type: 'file', size: 10, mtime: new Date(0) }),
+      })
+      expect(await ctx.fs.file('mem://a.txt').slice(-3, 9).text()).to.equal('78')
+      expect(options).to.deep.equal([{ start: 7, end: 9 }])
+    })
+
+    it('merges a slice into the preceding one where the two select the range of one slice', async () => {
+      const ctx = await setup()
+      const { options, provider } = single({ range: 'signed' })
+      ctx.fs.mount('mem:', provider)
+      const file = ctx.fs.file('mem://a.txt')
+      const pairs: [FileRef, FileRef][] = [
+        [file.slice().slice(-1), file.slice(-1)],
+        [file.slice(-3).slice(0), file.slice(-3)],
+        [file.slice(2, 8).slice(1, 3), file.slice(3, 5)],
+        [file.slice(-5).slice(-2), file.slice(-2)],
+        [file.slice(-2).slice(-5), file.slice(-2)],
+        [file.slice(1, -1).slice(2, -3), file.slice(3, -4)],
+        [file.slice(1).slice(0, -2), file.slice(1, -2)],
+      ]
+      for (const [chain, one] of pairs) {
+        options.length = 0
+        expect(await chain.text()).to.equal(await one.text())
+        expect(options[0]).to.deep.equal(options[1])
+      }
+    })
+
+    it('reads sequentially without querying metadata when the provider declares no range capability', async () => {
+      const ctx = await setup()
+      const { options, provider } = single({})
+      const stat = vi.fn(async () => { throw new Error('unexpected stat') })
+      ctx.fs.mount('mem:', { ...provider, stat })
+      expect(await ctx.fs.file('mem://a.txt').slice(-3, 9).text()).to.equal('78')
+      expect(options).to.deep.equal([{}])
+      expect(stat).not.toHaveBeenCalled()
+    })
+
+    it.each(['unsigned', 'signed'] as const)('uses only supported bounds when stat fails (%s)', async (range) => {
+      const ctx = await setup()
+      const { options, provider } = single({ range })
+      ctx.fs.mount('mem:', {
+        ...provider,
+        async stat() { throw new Error('metadata unavailable') },
+      })
+      const file = ctx.fs.file('mem://a.txt')
+      expect(await file.slice(-3).slice(1, 2).text()).to.equal('8')
+      expect(await file.slice(1).slice(-1).text()).to.equal('9')
+      expect(options).to.deep.equal([range === 'signed' ? { start: -3 } : {}, { start: 1 }])
+    })
+
+    it('propagates a read error after an unsuccessful stat', async () => {
+      const ctx = await setup()
+      const failure = new Error('open failed')
+      ctx.fs.mount('mem:', {
+        capabilities: { range: 'unsigned' },
+        async stat() { throw new Error('metadata unavailable') },
+        read: () => new ReadableStream({ start: controller => controller.error(failure) }),
+      })
+      const reader = ctx.fs.file('mem://a.txt').slice(1).slice(-1).stream().getReader()
+      expect(await reader.read().catch(error => error)).to.equal(failure)
+    })
+
+    it('leaves the source unopened when cancelled during stat', async () => {
+      const ctx = await setup()
+      const { options, provider } = single({ range: 'unsigned' })
+      const pending = Promise.withResolvers<void>()
+      ctx.fs.mount('mem:', {
+        ...provider,
+        async stat() {
+          await pending.promise
+          return { type: 'file', size: 10, mtime: new Date(0) }
+        },
+      })
+      const reader = ctx.fs.file('mem://a.txt').slice(-1).stream().getReader()
+      const reading = reader.read()
+      await reader.cancel()
+      pending.resolve()
+      await reading
+      await new Promise(resolve => setImmediate(resolve))
+      expect(options).to.deep.equal([])
+    })
+  })
+
+  describe('range', () => {
+    it('cuts a range with a negative bound from the whole content without `stat`', async () => {
+      const ctx = await setup()
+      ctx.fs.mount('mem:', { read: () => new Blob(['0123456789']).stream() })
+      const file = ctx.fs.file('mem://a.txt')
+      expect(await file.slice(-3).text()).to.equal('789')
+      expect(await file.slice(2, -2).slice(-3, -1).text()).to.equal('56')
+      expect(await file.slice(2, 5).text()).to.equal('234')
+    })
+
+    it('keeps the content of a provider that reuses the memory of its chunks', async () => {
+      const ctx = await setup()
+      ctx.fs.mount('mem:', {
+        read() {
+          const buffer = new Uint8Array(1)
+          let count = 0
+          return new ReadableStream({
+            pull(controller) {
+              if (count === 3) return controller.close()
+              buffer[0] = ++count
+              controller.enqueue(buffer)
+            },
+          }, { highWaterMark: 0 })
+        },
+      })
+      expect(await ctx.fs.file('mem://a.bin').slice(-2).bytes()).to.deep.equal(new Uint8Array([2, 3]))
+    })
+
+    it('stops reading the source at the end of a range', async () => {
+      const ctx = await setup()
+      let pulls = 0
+      ctx.fs.mount('mem:', {
+        read: () => new ReadableStream({
+          pull(controller) {
+            pulls++
+            controller.enqueue(new Uint8Array(4).fill(pulls))
+          },
+        }, { highWaterMark: 0 }),
+      })
+      expect(await ctx.fs.file('mem://a.bin').slice(2, 6).bytes()).to.deep.equal(new Uint8Array([1, 1, 2, 2]))
+      expect(pulls).to.equal(2)
+    })
+
+    it('cancels the source of a range cancelled at once', async () => {
+      const ctx = await setup()
+      const cancel = vi.fn()
+      const source = new ReadableStream({ cancel })
+      ctx.fs.mount('mem:', { read: () => source })
+      await ctx.fs.file('mem://a.txt').slice(1, 2).stream().cancel('reason')
+      expect(cancel).toHaveBeenCalledWith('reason')
+    })
+
+    it('applies the remaining slices to the range returned by the provider', async () => {
+      const ctx = await setup()
+      const options: object[] = []
+      ctx.fs.mount('mem:', {
+        capabilities: { range: 'signed' },
+        read(url, value) {
+          options.push(value)
+          return new Blob(['0123']).slice(value.start, value.end).stream()
+        },
+      })
+      expect(await ctx.fs.file('mem://a.txt').slice(0, 4).slice(-1).text()).to.equal('3')
+      expect(await ctx.fs.file('mem://a.txt').slice(-3).slice(0, 2).text()).to.equal('12')
+      expect(options).to.deep.equal([{ end: 4 }, { start: -3 }])
+    })
+
+    it('keeps only the bytes of a negative slice of a range read by the provider', async () => {
+      const ctx = await setup()
+      const content = new Uint8Array(1 << 20).fill(1)
+      ctx.fs.mount('mem:', {
+        capabilities: { range: 'signed' },
+        read: (url, { start, end }) => new Blob([content.subarray(start, end)]).stream(),
+      })
+      const reader = ctx.fs.file('mem://a.bin').slice(0, 1 << 20).slice(-1).stream().getReader()
+      const { value } = await reader.read()
+      expect(value).to.deep.equal(new Uint8Array([1]))
+      expect(value!.buffer.byteLength).to.equal(1)
+    })
+
+    it('ends a slice of a range read by the provider at its end', async () => {
+      const ctx = await setup()
+      ctx.fs.mount('mem:', {
+        capabilities: { range: 'signed' },
+        read: url => new ReadableStream({
+          start: controller => controller.enqueue(new TextEncoder().encode('a')),
+          pull: controller => controller.error(new FsError('Unknown', url, 'Unknown')),
+        }),
+      })
+      expect(await ctx.fs.file('mem://a.txt').slice(-1000).slice(0, 1).text()).to.equal('a')
+    })
+
+    it('emits bytes before EOF when only the end is relative to EOF', async () => {
+      const ctx = await setup()
+      ctx.fs.mount('mem:', {
+        read() {
+          const chunks = ['ab', 'cde']
+          return new ReadableStream({
+            pull(controller) {
+              const chunk = chunks.shift()
+              if (chunk === undefined) throw new Error('read past the required bytes')
+              controller.enqueue(new TextEncoder().encode(chunk))
+            },
+          }, { highWaterMark: 0 })
+        },
+      })
+      const file = ctx.fs.file('mem://a.txt')
+      expect(await file.slice(0, -3).slice(0, 2).text()).to.equal('ab')
+    })
+
+    it('preserves pending bytes when a consumer transfers an emitted chunk', async () => {
+      const ctx = await setup()
+      ctx.fs.mount('mem:', {
+        read: () => new ReadableStream({
+          start(controller) {
+            for (const chunk of ['abc', 'de', 'fgh']) controller.enqueue(new TextEncoder().encode(chunk))
+            controller.close()
+          },
+        }),
+      })
+      const reader = ctx.fs.file('mem://a.txt').slice(0, -3).stream().getReader()
+      let text = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        text += new TextDecoder().decode(value)
+        structuredClone(value, { transfer: [value.buffer] })
+      }
+      expect(text).to.equal('abcde')
+    })
+
+    it('keeps the last chunk of a range when the source is cancelled', async () => {
+      const ctx = await setup()
+      ctx.fs.mount('mem:', {
+        read() {
+          const buffer = Buffer.from('abc')
+          return new ReadableStream({
+            pull: controller => controller.enqueue(buffer),
+            cancel: () => void buffer.fill(0),
+          }, { highWaterMark: 0 })
+        },
+      })
+      expect(await ctx.fs.file('mem://a.txt').slice(0, 2).text()).to.equal('ab')
+    })
+
+    it('ends a range once it is known to be empty, after the first read', async () => {
+      const ctx = await setup()
+      ctx.fs.mount('mem:', {
+        read: url => new ReadableStream({
+          start: controller => controller.enqueue(new Uint8Array(5)),
+          pull: controller => controller.error(new FsError('Unknown', url, 'Unknown')),
+        }),
+      })
+      for (const [start, end] of [[4, 4], [6, 2], [-2, -2], [-1, 0], [-2, 3]]) {
+        expect(await ctx.fs.file('mem://a.txt').slice(start, end).text(), `slice(${start}, ${end})`).to.equal('')
+      }
+      expect(await ctx.fs.file('mem://a.txt').slice(1).slice(-2, -2).text()).to.equal('')
+    })
+
+    it('cancels the source of a range with a negative bound without `stat`', async () => {
+      const ctx = await setup()
+      const cancel = vi.fn()
+      ctx.fs.mount('mem:', {
+        read: () => new ReadableStream({
+          async pull(controller) {
+            await new Promise(resolve => setTimeout(resolve, 1))
+            controller.enqueue(new Uint8Array(4))
+          },
+          cancel,
+        }, { highWaterMark: 0 }),
+      })
+      const reader = ctx.fs.file('mem://a.bin').slice(-4).stream().getReader()
+      const reading = reader.read()
+      await new Promise(resolve => setTimeout(resolve, 10))
+      await reader.cancel('reason')
+      await reading
+      expect(cancel).toHaveBeenCalledWith('reason')
+    })
+
+    it('reports a failure of the first read of an empty range', async () => {
+      const ctx = await setup()
+      ctx.fs.mount('mem:', {
+        read: url => new ReadableStream({
+          pull: controller => controller.error(new FsError('NotFound', url, 'NotFound')),
+        }),
+      })
+      expect(await code(ctx.fs.file('mem://a.txt').slice(0, 0).text())).to.equal('NotFound')
+    })
+
+    it('ends a range without waiting for the cancellation of the source', async () => {
+      const ctx = await setup()
+      const [branch] = new Blob(['0123456789']).stream().tee()
+      ctx.fs.mount('mem:', { read: () => branch })
+      expect(await ctx.fs.file('mem://a.txt').slice(0, 1).text()).to.equal('0')
+    })
+
+    it('converts the bounds as `[Clamp] long long`', async () => {
+      const ctx = await setup()
+      ctx.fs.mount('mem:', { read: () => new Blob(['0123456789']).stream() })
+      const file = ctx.fs.file('mem://a.txt')
+      const ranges: [number, number?, string?][] = [
+        [0, Infinity, '0123456789'], [Infinity, undefined, ''], [-Infinity, undefined, '0123456789'],
+        [NaN, 3, '012'], [1.5, undefined, '23456789'], [2.5, undefined, '23456789'],
+        [-1.5, undefined, '89'], [0.5, 3.5, '0123'], [-0.5, undefined, '0123456789'],
+      ]
+      for (const [start, end, expected] of ranges) {
+        expect(await file.slice(start, end).text(), `slice(${start}, ${end})`).to.equal(expected)
+      }
+    })
+
+    it('rejects a bound that is not a number with a `TypeError`', async () => {
+      const ctx = await setup()
+      expect(() => ctx.fs.file('mem://a.txt').slice('1' as any)).to.throw(TypeError)
+    })
   })
 
   it('recognizes an `FsError` from another copy of the package', () => {
