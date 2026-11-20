@@ -68,30 +68,19 @@ interface Chunk {
   next?: Chunk
 }
 
-// Each chunk from these streams has independent storage, including after the next read or cancellation.
-export const streamsWithOwnedChunks = new WeakSet<ReadableStream<Uint8Array>>()
-
-export function snapshotChunk(source: ReadableStream<Uint8Array>, bytes: Uint8Array) {
-  return streamsWithOwnedChunks.has(source) ? bytes : new Uint8Array(bytes)
-}
-
-// Bytes retained across reads. The provider may reuse its chunk on the next read.
+// Bytes retained across reads. A retained byte is copied, so that an emitted
+// chunk shares no buffer with it, and a small range does not keep a large chunk.
 class ByteQueue {
   private first?: Chunk
   private last?: Chunk
   length = 0
-
-  constructor(private source: ReadableStream<Uint8Array>) {}
 
   // Keeps the last capacity bytes and releases the older bytes in order.
   retainLast(bytes: Uint8Array, capacity: number, output?: ReadableStreamDefaultController<Uint8Array>) {
     const excess = Math.max(0, this.length + bytes.length - capacity)
     const prefix = Math.max(0, excess - this.length)
     this.drain(excess, output)
-    if (prefix && output) {
-      const view = prefix === bytes.length ? bytes : bytes.subarray(0, prefix)
-      output.enqueue(snapshotChunk(this.source, view))
-    }
+    if (prefix) output?.enqueue(prefix === bytes.length ? bytes : bytes.subarray(0, prefix))
     if (prefix < bytes.length) {
       const chunk = { bytes: new Uint8Array(bytes.subarray(prefix)) }
       if (this.last) this.last.next = chunk
@@ -108,7 +97,7 @@ class ByteQueue {
       const { bytes, next } = this.first
       const length = Math.min(count, bytes.length)
       if (length < bytes.length) {
-        // The consumer owns the emitted buffer. Keep the pending bytes independent.
+        // a copy, as the consumer owns an emitted chunk
         controller?.enqueue(bytes.slice(0, length))
         this.first.bytes = bytes.subarray(length)
       } else {
@@ -125,13 +114,13 @@ class ByteQueue {
 /** Applies one Blob-style slice to a sequential stream. */
 export function sliceStream(source: ReadableStream<Uint8Array>, { start = 0, end }: ReadOptions): ReadableStream<Uint8Array> {
   const reader = source.getReader()
-  const tail = new ByteQueue(source)
+  const tail = new ByteQueue()
   const absoluteEnd = end !== undefined && end >= 0 ? end : Infinity
   // With a negative start and a positive end the range becomes empty at end - start.
   const limit = absoluteEnd - Math.min(start, 0)
   let size = 0
   let cancelled = false
-  const stream = new ReadableStream<Uint8Array>({
+  return new ReadableStream<Uint8Array>({
     async pull(controller) {
       while (true) {
         // Even an empty slice observes a failure to open or read the source.
@@ -167,6 +156,4 @@ export function sliceStream(source: ReadableStream<Uint8Array>, { start = 0, end
       return reader.cancel(reason)
     },
   }, { highWaterMark: 0 })
-  streamsWithOwnedChunks.add(stream)
-  return stream
 }

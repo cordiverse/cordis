@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url'
 import { CopyOptions, DirEntry, EntryType, MkdirOptions, RemoveOptions, StatOptions, Stats, WriteOptions } from './entry.ts'
 import { FsError } from './error.ts'
 import { DirEntryRef, EntryRef, FileRef, ReadOptions } from './file.ts'
-import { resolveSlices, sliceStream, streamsWithOwnedChunks } from './slice.ts'
+import { resolveSlices, sliceStream } from './slice.ts'
 import { assertLocation, isUrl, Path, resolvePath } from './path.ts'
 import { Watcher, WatchOptions } from './watcher.ts'
 
@@ -95,13 +95,11 @@ async function fileSize(stat: () => Promise<Stats>) {
 function readAfterStat(stat: () => Promise<Stats>, open: (size?: number) => ReadableStream<Uint8Array>) {
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
   let cancelled = false
-  const stream = new ReadableStream<Uint8Array>({
+  return new ReadableStream<Uint8Array>({
     async start(controller) {
       const size = await fileSize(stat)
       if (cancelled) return
-      const source = open(size)
-      if (streamsWithOwnedChunks.has(source)) streamsWithOwnedChunks.add(stream)
-      reader = source.getReader()
+      reader = open(size).getReader()
       reader.closed.catch(error => controller.error(error))
     },
     async pull(controller) {
@@ -115,7 +113,6 @@ function readAfterStat(stat: () => Promise<Stats>, open: (size?: number) => Read
       return reader?.cancel(reason)
     },
   }, { highWaterMark: 0 })
-  return stream
 }
 
 // A stream of the same chunks as `stream`, whose first chunk has been read,
@@ -584,8 +581,10 @@ export interface FsProvider {
   readonly capabilities?: FsProvider.Capabilities
   /**
    * Return a stream of the content of a file. A failure, including a missing
-   * file, errors the stream. The range capability determines which bounds
-   * may occur in `options`. A provider without it receives empty options.
+   * file, errors the stream. The consumer owns each chunk once it is
+   * enqueued, and the provider does not modify it afterwards. The range
+   * capability determines which bounds may occur in `options`. A provider
+   * without it receives empty options.
    */
   read?(url: URL, options: ReadOptions): ReadableStream<Uint8Array>
   /**

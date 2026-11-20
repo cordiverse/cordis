@@ -1,6 +1,6 @@
 import type { EntryType, WriteOptions } from './entry.ts'
 import type { Fs } from './index.ts'
-import { appendSlice, snapshotChunk } from './slice.ts'
+import { appendSlice } from './slice.ts'
 
 /** The data accepted by `FileRef.write()`. A string is encoded as UTF-8. */
 export type WriteSource = string | ArrayBuffer | ArrayBufferView<ArrayBuffer> | Blob | ReadableStream<Uint8Array>
@@ -65,7 +65,7 @@ export class FileRef extends EntryRef {
 
   /**
    * Returns a stream of the current content. A failure of the provider,
-   * including a missing file, errors the stream.
+   * including a missing file, errors the stream. The consumer owns each chunk.
    */
   stream(): ReadableStream<Uint8Array> {
     return this.fs['_read'](this.url, this._slices ?? [])
@@ -75,14 +75,14 @@ export class FileRef extends EntryRef {
   async bytes(): Promise<Uint8Array<ArrayBuffer>> {
     const chunks: Uint8Array[] = []
     let length = 0
-    const stream = this.stream()
-    const reader = stream.getReader()
+    const reader = this.stream().getReader()
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
-      chunks.push(snapshotChunk(stream, value))
+      chunks.push(value)
       length += value.byteLength
     }
+    // a chunk that spans its whole buffer is returned without a copy
     if (chunks.length === 1) {
       const { buffer, byteOffset } = chunks[0]
       if (buffer instanceof ArrayBuffer && byteOffset === 0 && buffer.byteLength === length) return new Uint8Array(buffer)

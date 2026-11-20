@@ -783,24 +783,6 @@ describe('Fs', () => {
       expect(await new Response(file.stream()).text()).to.equal(json)
     })
 
-    it('keeps each chunk read when the provider reuses its memory', async () => {
-      const ctx = await setup()
-      ctx.fs.mount('mem:', {
-        read() {
-          const chunk = new Uint8Array(1)
-          const values = [...'ABC']
-          return new ReadableStream<Uint8Array>({
-            pull(controller) {
-              if (!values.length) return controller.close()
-              chunk[0] = values.shift()!.charCodeAt(0)
-              controller.enqueue(chunk)
-            },
-          }, { highWaterMark: 0 })
-        },
-      })
-      expect(await ctx.fs.file('mem://a.txt').text()).to.equal('ABC')
-    })
-
     it('writes each kind of data as a stream', async () => {
       const ctx = await setup()
       const { written, provider } = memory(new Uint8Array(), 1)
@@ -1011,47 +993,6 @@ describe('Fs', () => {
       }
     })
 
-    it('emits stable chunks when the provider reuses its buffer on the next read', async () => {
-      const ctx = await setup()
-      ctx.fs.mount('mem:', {
-        read() {
-          const buffer = new Uint8Array(2)
-          let chunk = 0
-          return new ReadableStream({
-            pull(controller) {
-              if (chunk === 4) return controller.close()
-              buffer.fill(++chunk)
-              controller.enqueue(buffer)
-            },
-          }, { highWaterMark: 0 })
-        },
-      })
-      const file = ctx.fs.file('mem://a.bin')
-      const content = Uint8Array.of(1, 1, 2, 2, 3, 3, 4, 4)
-      for (const end of [undefined, 6, -1]) {
-        const response = new Response(file.slice(1, end).stream())
-        expect(new Uint8Array(await response.arrayBuffer())).to.deep.equal(content.slice(1, end))
-      }
-    })
-
-    it('keeps the content of a provider that reuses the memory of its chunks', async () => {
-      const ctx = await setup()
-      ctx.fs.mount('mem:', {
-        read() {
-          const buffer = new Uint8Array(1)
-          let count = 0
-          return new ReadableStream({
-            pull(controller) {
-              if (count === 3) return controller.close()
-              buffer[0] = ++count
-              controller.enqueue(buffer)
-            },
-          }, { highWaterMark: 0 })
-        },
-      })
-      expect(await ctx.fs.file('mem://a.bin').slice(-2).bytes()).to.deep.equal(new Uint8Array([2, 3]))
-    })
-
     it('stops reading the source at the end of a range', async () => {
       const ctx = await setup()
       let pulls = 0
@@ -1153,20 +1094,6 @@ describe('Fs', () => {
         structuredClone(value, { transfer: [value.buffer] })
       }
       expect(text).to.equal('abcde')
-    })
-
-    it('keeps the last chunk of a range when the source is cancelled', async () => {
-      const ctx = await setup()
-      ctx.fs.mount('mem:', {
-        read() {
-          const buffer = Buffer.from('abc')
-          return new ReadableStream({
-            pull: controller => controller.enqueue(buffer),
-            cancel: () => void buffer.fill(0),
-          }, { highWaterMark: 0 })
-        },
-      })
-      expect(await ctx.fs.file('mem://a.txt').slice(0, 2).text()).to.equal('ab')
     })
 
     it('ends a range once it is known to be empty, after the first read', async () => {
