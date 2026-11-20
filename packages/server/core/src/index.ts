@@ -26,6 +26,16 @@ export namespace Route {
   export interface Options {}
 }
 
+// The server accepts paths whose percent escapes are well-formed and encode valid UTF-8.
+function isEncoded(path: string) {
+  try {
+    decodeURI(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
 export abstract class Route {
   regexp: RegExp
   keys?: Keys
@@ -60,11 +70,17 @@ export abstract class Route {
     let params: any
     if (this.keys) {
       params = {}
-      this.keys.forEach(({ name }, index) => {
-        if (capture[index + 1] === undefined) return
-        // a path is percent-encoded, in which `+` stands for itself rather than a space
-        params[name] = decodeURIComponent(capture[index + 1])
-      })
+      for (const [index, { name }] of this.keys.entries()) {
+        const value = capture[index + 1]
+        if (value === undefined) continue
+        try {
+          params[name] = decodeURIComponent(value)
+        } catch {
+          // A route literal can split a percent escape or a UTF-8 sequence
+          // at the capture boundary, so the route does not match the request.
+          return
+        }
+      }
     } else {
       params = capture
     }
@@ -158,7 +174,11 @@ class Server extends Service<Server.Intercept> {
         this.ctx.logger?.('server:response').debug('%C %s %s %s', req.method, req.url, res.status, res.statusText)
       })
       try {
-        await this.ctx.waterfall(this, 'server/request', req, res, async () => {})
+        if (isEncoded(req.path)) {
+          await this.ctx.waterfall(this, 'server/request', req, res, async () => {})
+        } else {
+          res.status = 400
+        }
       } catch (error) {
         if (error instanceof ValidationError) {
           if (!res.claimed) {
@@ -227,6 +247,11 @@ class Server extends Service<Server.Intercept> {
 
     this._http.on('upgrade', async (_req, socket, head) => {
       const req = new Request(_req)
+      if (!isEncoded(req.path)) {
+        socket.write('HTTP/1.1 400 Bad Request\r\n\r\n')
+        socket.destroy()
+        return
+      }
       this.ctx.logger?.('server:ws').debug('upgrade %s', req.path)
       await this.ctx.waterfall(this, 'server/upgrade', req, async () => {
         for (const route of this.wsRoutes) {
