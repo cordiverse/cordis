@@ -298,7 +298,7 @@ describe('Include source locations', () => {
   it('leaves a config passed at runtime unlocated', async () => {
     const app = await start('tmp-location-runtime.yml', '- id: a\n  name: ./schema-component\n  config:\n    port: 80\n')
     const fiber = app.include().store['a']!.innerFiber!
-    expect(() => fiber.update({ port: 'runtime' })).toThrow(/^invalid config:\n {2}- port must be a number \(at port\)$/)
+    await expect(fiber.update({ port: 'runtime' })).rejects.toThrow(/^invalid config:\n {2}- port must be a number \(at port\)$/)
   }, 10000)
 
   it('leaves entries outside any file untraced', async () => {
