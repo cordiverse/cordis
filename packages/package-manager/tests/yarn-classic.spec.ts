@@ -1,8 +1,26 @@
+import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { readYarnClassicState } from '../src/readers/yarn-classic.ts'
 import { diffState } from '../src/state.ts'
 import { createProject } from './utils.ts'
+
+// `chmod` cannot produce `EACCES` portably, so the listing is failed instead: same folder
+// name, only while the flag is set.
+const failing = vi.hoisted(() => ({ readdir: false, folder: 'node_modules' }))
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return {
+    ...actual,
+    readdir: async (path: any, options: any) => {
+      if (failing.readdir && String(path).split(/[\\/]/).pop() === failing.folder) {
+        throw Object.assign(new Error('EACCES: permission denied, scandir'), { code: 'EACCES' })
+      }
+      return actual.readdir(path, options)
+    },
+  }
+})
 
 describe('yarn classic', () => {
   function bundle(version: string) {
@@ -68,5 +86,71 @@ describe('yarn classic', () => {
     const state = await readYarnClassicState(dir)
     expect(state.size).to.equal(3)
     expect(diffState(dir, state, state).updated).to.deep.equal([])
+  })
+
+  // A project with a readme but no install state: what `readText` would call "does not exist".
+  function emptyProject(folder: string, extra: Record<string, unknown> = {}) {
+    return createProject({
+      'node_modules/.yarn-integrity': { modulesFolders: [folder], lockfileEntries: {} },
+      ...extra,
+    })
+  }
+
+  it('treats a folder that is not there as nothing installed', async () => {
+    const state = await readYarnClassicState(emptyProject('absent'))
+    expect(state.size, 'nothing is installed, and that is an answer').to.equal(0)
+  })
+
+  it('treats a path below a file as nothing installed', async () => {
+    const state = await readYarnClassicState(emptyProject('a-file', { 'a-file': 'not a directory' }))
+    expect(state.size).to.equal(0)
+  })
+
+  // A folder that can be traversed but not listed (POSIX `--x`; a locked directory on Windows).
+  // It reads as empty before this change, so `diffState` reports everything under it removed.
+  it('does not read an unreadable folder as nothing installed', async () => {
+    const dir = createProject(bundle('1.0.0'))
+    const before = await readYarnClassicState(dir)
+    expect(before.size, 'the device can read a project it is allowed to read').to.be.greaterThan(0)
+
+    failing.readdir = true
+    try {
+      await expect(readYarnClassicState(dir)).rejects.toThrow(/EACCES/)
+    } finally {
+      failing.readdir = false
+    }
+  })
+
+  // A zero-byte manifest is a package that is there and broken. Skipping it reads like "not a
+  // package", and `diffState` then reports it removed -- measured: the state drops the package.
+  it('does not read an empty manifest as a folder that is not a package', async () => {
+    const dir = createProject({
+      'node_modules/.yarn-integrity': { modulesFolders: ['node_modules'], lockfileEntries: {} },
+      'node_modules/alpha/package.json': { name: 'alpha', version: '1.0.0' },
+    })
+    expect((await readYarnClassicState(dir)).size, 'the device can read it while it is valid').to.equal(1)
+
+    writeFileSync(join(dir, 'node_modules/alpha/package.json'), '')
+    await expect(readYarnClassicState(dir)).rejects.toThrow()
+  })
+
+  // The scope folder is the second `readdir`. Fixing only the first leaves this one answering
+  // "empty", which drops every package under the scope.
+  it('does not read an unreadable scope folder as nothing installed', async () => {
+    const dir = createProject({
+      'node_modules/.yarn-integrity': { modulesFolders: ['node_modules'], lockfileEntries: {} },
+      'node_modules/@scope/alpha/package.json': { name: '@scope/alpha', version: '1.0.0' },
+    })
+    const readable = await readYarnClassicState(dir)
+    expect(readable.size, 'the device can read a project it is allowed to read').to.equal(1)
+
+    failing.readdir = true
+    failing.folder = '@scope'
+    try {
+      await expect(readYarnClassicState(dir)).rejects.toThrow(/EACCES/)
+    } finally {
+      failing.readdir = false
+      failing.folder = 'node_modules'
+    }
   })
 })
