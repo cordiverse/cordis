@@ -538,7 +538,7 @@ describe('Service Isolation: transfer', () => {
 })
 
 describe('Service Isolation: migration', () => {
-  it('keeps the committed views of a parent and a pinned child across a realm move', async () => {
+  it('keeps the committed views of a parent and a pinned child across a realm transfer', async () => {
     const root = new Context()
     await root.use(MockLoader)
     const loader = root.loader as MockLoader
@@ -566,7 +566,7 @@ describe('Service Isolation: migration', () => {
     await sleep()
     expect(loads).to.deep.equal(['child:a'])
 
-    // the loader moves the isolation of the parent before unloading it, while
+    // the loader transfers the isolation of the parent before unloading it, while
     // the old activation still tears down against the view committed in realm a
     await loader.update(id, { isolate: { bar: 'b' } })
     await sleep()

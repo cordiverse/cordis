@@ -171,7 +171,7 @@ export function applyJournal(
     if (record.parent !== undefined && flat.parent !== record.parent) {
       detach(data, id)
       if (!place(data, flat.options, record.parent, record.position)) {
-        warn('cannot move entry %C: group %C not found', id, record.parent)
+        warn('cannot transfer entry %C: group %C not found', id, record.parent)
         place(data, flat.options, flat.parent, flat.position)
       }
     }
@@ -230,11 +230,11 @@ export function reconcile(
       delete record.changes[key]
     }
     if (record.parent !== undefined && b && t.parent !== b.parent && t.parent !== record.parent) {
-      conflicts.push({ id, reason: 'moved both in file and at runtime' })
+      conflicts.push({ id, reason: 'transferred both in file and at runtime' })
       record.parent = undefined
     }
-    const moved = record.parent !== undefined && record.parent !== t.parent
-    if (!Object.keys(record.changes).length && !moved) {
+    const transferred = record.parent !== undefined && record.parent !== t.parent
+    if (!Object.keys(record.changes).length && !transferred) {
       journal.delete(id)
     }
   }

@@ -56,9 +56,9 @@ export class ModuleNotFoundError extends Error {
  * - `options` absent: the entry was removed from `group`.
  * - `legacy` absent: the entry was created in `group`.
  * - both present: the entry was updated and now lives in `group`; `from` is
- *   the group it left if the update moved it within the same tree.
+ *   the group it left if the update transferred it within the same tree.
  *
- * A move into another tree is reported as a removal to the source tree and a
+ * A transfer into another tree is reported as a removal to the source tree and a
  * creation to the target tree.
  */
 export interface EntryChange {
@@ -165,17 +165,17 @@ export abstract class EntryTree {
     if (issues.length) throw new EntryValidationError(issues)
     if (parent !== undefined) {
       const target = this.resolveGroup(parent)
-      const moved = target.tree === source.tree ? [] : members(entry)
-      for (const member of moved) {
+      const transferred = target.tree === source.tree ? [] : members(entry)
+      for (const member of transferred) {
         const { id } = member.options
         if (target.tree.store[id]) throw new Error(`entry ${id} already exists in the target tree`)
       }
       source.unlink(entry.options)
       target.data.splice(position ?? Infinity, 0, entry.options)
       entry.parent = target
-      // The target tree owns the moved entries from now on, so that it adopts
+      // The target tree owns the transferred entries from now on, so that it adopts
       // them instead of creating new ones when it reconciles its source.
-      for (const member of moved) {
+      for (const member of transferred) {
         delete source.tree.store[member.options.id]
         target.tree.store[member.options.id] = member
         if (member.subgroup?.tree === source.tree) member.subgroup.tree = target.tree
@@ -185,7 +185,7 @@ export abstract class EntryTree {
     // change is fully visible to `commit()` once the call returns.
     const task = entry.update(options, false, true)
     if (entry.parent.tree !== source.tree) {
-      // a move across trees removes the entry from the source tree and
+      // a transfer across trees removes the entry from the source tree and
       // creates it in the target tree
       source.tree.commit({ id: legacy.id, group: source, legacy })
       entry.parent.tree.commit({ id: legacy.id, group: entry.parent, options: entry.options })

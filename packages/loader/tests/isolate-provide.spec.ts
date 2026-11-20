@@ -67,7 +67,7 @@ describe('Service Isolation: provide migration', () => {
     await root.fiber.dispose()
   })
 
-  it('reloads a self-provider after an isolate-only move', async () => {
+  it('reloads a self-provider after an isolate-only transfer', async () => {
     let calls = 0
     let duringReload: Slot[] | undefined
     const { root, loader } = await boot({
@@ -123,11 +123,11 @@ describe('Service Isolation: provide migration', () => {
 
     await loader.update(id, { isolate: { svc: true } })
     expect(calls).to.equal(1)
-    const moved = slots(root, 'svc')
-    expect(moved).to.have.length(1)
-    expect(moved[0]!.impl).to.equal(before[0]!.impl)
-    expect(moved[0]!.key).to.not.equal(before[0]!.key)
-    expect(moved[0]!.description).to.equal(`svc#${loader.store[id]!.options.id}`)
+    const transferred = slots(root, 'svc')
+    expect(transferred).to.have.length(1)
+    expect(transferred[0]!.impl).to.equal(before[0]!.impl)
+    expect(transferred[0]!.key).to.not.equal(before[0]!.key)
+    expect(transferred[0]!.description).to.equal(`svc#${loader.store[id]!.options.id}`)
     expect(root.reflect.store[before[0]!.key]).to.be.undefined
 
     const otherId = await loader.create({ name: 'other' })
@@ -141,7 +141,7 @@ describe('Service Isolation: provide migration', () => {
     expect(left.some(slot => slot.impl === other!.impl)).to.equal(true)
   })
 
-  it('retains a moved provider until its consumers finish cleanup', async () => {
+  it('retains a transferred provider until its consumers finish cleanup', async () => {
     const gate = Promise.withResolvers<void>()
     const timeline: string[] = []
     const { root, loader } = await boot({
@@ -154,14 +154,14 @@ describe('Service Isolation: provide migration', () => {
         timeline.push(`read: ${ctx.svc.tag}`)
       }, { inject: ['svc'] }),
     })
-    const id = await loader.create({ name: 'provider', config: { tag: 'moved' } })
+    const id = await loader.create({ name: 'provider', config: { tag: 'transferred' } })
     const provider = await started(loader, id)
     const original = slots(root, 'svc')[0]!
     const uid = original.impl.uid
     await loader.update(id, { isolate: { svc: 'B' } })
-    const moved = slots(root, 'svc')[0]!
-    expect(moved.impl).to.equal(original.impl)
-    expect(moved.impl.uid).to.equal(uid)
+    const transferred = slots(root, 'svc')[0]!
+    expect(transferred.impl).to.equal(original.impl)
+    expect(transferred.impl.uid).to.equal(uid)
 
     const otherId = await loader.create({ name: 'provider', config: { tag: 'other' } })
     await started(loader, otherId)
@@ -177,14 +177,14 @@ describe('Service Isolation: provide migration', () => {
     await task
     await loader.await()
     expect(duringCleanup).to.deep.equal([])
-    expect(timeline).to.deep.equal(['read: moved', 'closed: moved'])
-    expect(root.reflect.store[moved.key]).to.be.undefined
+    expect(timeline).to.deep.equal(['read: transferred', 'closed: transferred'])
+    expect(root.reflect.store[transferred.key]).to.be.undefined
     expect(root.reflect.store[other.key]).to.equal(other.impl)
     expect(loader.expectFiber(consumerId).state).to.equal(FiberState.PENDING)
     await root.fiber.dispose()
   })
 
-  it('keeps impls on intermediate symbols across repeated moves', async () => {
+  it('keeps impls on intermediate symbols across repeated transfers', async () => {
     let calls = 0
     const { root, loader } = await boot({
       prov: (ctx) => {
@@ -243,42 +243,42 @@ describe('Service Isolation: provide migration', () => {
     expect(left.some(slot => slot.impl === onA!.impl)).to.equal(true)
   })
 
-  it('does not delete another realm when one impl moves', async () => {
+  it('does not delete another realm when one impl is transferred', async () => {
     let calls = 0
     const { root, loader } = await boot({
       stay: (ctx) => {
         ctx.provide('svc', { tag: 'stay' })
       },
-      move: (ctx) => {
+      transfer: (ctx) => {
         calls++
-        ctx.provide('svc', { tag: 'move' })
+        ctx.provide('svc', { tag: 'transfer' })
       },
     })
 
     const stayId = await loader.create({ name: 'stay', isolate: { svc: 'stay' } })
-    const moveId = await loader.create({ name: 'move', isolate: { svc: 'from' } })
+    const transferId = await loader.create({ name: 'transfer', isolate: { svc: 'from' } })
     await started(loader, stayId)
-    await started(loader, moveId)
+    await started(loader, transferId)
     const stay = slots(root, 'svc').find(slot => slot.tag === 'stay')!
-    const move = slots(root, 'svc').find(slot => slot.tag === 'move')!
+    const transfer = slots(root, 'svc').find(slot => slot.tag === 'transfer')!
     expect(stay.key).to.equal(accessGlobal('svc', 'stay'))
-    expect(move.key).to.equal(accessGlobal('svc', 'from'))
+    expect(transfer.key).to.equal(accessGlobal('svc', 'from'))
 
-    await loader.update(moveId, { isolate: { svc: 'to' } })
+    await loader.update(transferId, { isolate: { svc: 'to' } })
     expect(calls).to.equal(1)
-    const moved = slots(root, 'svc').find(slot => slot.impl === move.impl)
+    const transferred = slots(root, 'svc').find(slot => slot.impl === transfer.impl)
     const stayAfter = slots(root, 'svc').find(slot => slot.impl === stay.impl)
-    expect(moved?.key).to.equal(accessGlobal('svc', 'to'))
-    expect(moved?.key).to.not.equal(move.key)
+    expect(transferred?.key).to.equal(accessGlobal('svc', 'to'))
+    expect(transferred?.key).to.not.equal(transfer.key)
     expect(stayAfter?.key).to.equal(stay.key)
 
-    await loader.store[moveId]!.innerFiber!.dispose()
+    await loader.store[transferId]!.innerFiber!.dispose()
     const left = slots(root, 'svc')
     expect(left.some(slot => slot.impl === stay.impl)).to.equal(true)
-    expect(left.some(slot => slot.impl === move.impl)).to.equal(false)
+    expect(left.some(slot => slot.impl === transfer.impl)).to.equal(false)
   })
 
-  it('reports the service of each realm when a provider moves', async () => {
+  it('reports the service of each realm when a provider is transferred', async () => {
     const { root, loader } = await boot({
       prov: (ctx) => {
         ctx.provide('svc', { tag: 'prov' })
@@ -301,7 +301,7 @@ describe('Service Isolation: provide migration', () => {
     expect(inside).to.deep.equal(['prov'])
   })
 
-  it('keeps a provider pinned by an isolated context when its entry moves', async () => {
+  it('keeps a provider pinned by an isolated context when its entry is transferred', async () => {
     let inner!: Fiber
     const consumer = Object.assign((ctx: Context) => {
       inner = ctx.fiber
@@ -329,7 +329,7 @@ describe('Service Isolation: provide migration', () => {
     expect(loader.expectFiber(outerId).state).to.equal(FiberState.PENDING)
   })
 
-  it.each(['fiber', 'provide'])('notifies the retained realm on %s disposal after a blocked move', async (mode) => {
+  it.each(['fiber', 'provide'])('notifies the retained realm on %s disposal after a blocked transfer', async (mode) => {
     const gate = Promise.withResolvers<void>()
     const disposers: Record<string, () => void> = {}
     const consumers: Record<string, Context> = {}

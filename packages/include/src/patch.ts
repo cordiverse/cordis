@@ -190,7 +190,7 @@ export function routeJournal(journal: Journal, data: EntryOptions[], patches: Pa
   let { index } = applyPatches(data, patches)
   let patched = false
 
-  // entries that move, appear or go away change the owners of later records
+  // entries that are transferred, created or removed change the owners of later records
   const reindex = () => {
     index = applyPatches(data, patches).index
   }
@@ -247,7 +247,7 @@ export function routeJournal(journal: Journal, data: EntryOptions[], patches: Pa
 
     // an entry at the top of a patch list belongs to the group the patch targets
     if (record.parent !== undefined && (current.parent ?? base) !== record.parent) {
-      // moving across owners: carry the full options over
+      // transferred across owners: carry the full options over
       detach(list, id)
       patched ||= embedded
       applyChanges(current.options, record.changes)

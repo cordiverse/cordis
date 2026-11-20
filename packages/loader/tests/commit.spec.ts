@@ -52,7 +52,7 @@ describe('EntryTree.commit: change reports', () => {
     expect(change.options).to.equal(loader.store[id]!.options)
   })
 
-  it('move reports the target group', async () => {
+  it('transfer reports the target group', async () => {
     await loader.update(id, {}, group)
 
     expect(loader.changes).to.have.length(1)
@@ -62,7 +62,7 @@ describe('EntryTree.commit: change reports', () => {
     expect(change.options).to.deep.equal(change.legacy)
   })
 
-  it('update in place does not report a move', async () => {
+  it('update in place does not report a transfer', async () => {
     await loader.update(id, { config: { a: 4 } })
 
     expect(loader.changes).to.have.length(1)
@@ -122,7 +122,7 @@ describe('EntryTree.commit: change reports', () => {
   })
 })
 
-describe('EntryGroup.remove: file-driven moves', () => {
+describe('EntryGroup.remove: file-driven transfers', () => {
   const root = new Context()
   const dispose = mock.fn()
 
@@ -155,7 +155,7 @@ describe('EntryGroup.remove: file-driven moves', () => {
   })
 })
 
-describe('EntryTree.update: cross-tree moves', () => {
+describe('EntryTree.update: cross-tree transfers', () => {
   const root = new Context()
   const changes: EntryChange[] = []
 
@@ -247,7 +247,7 @@ describe('EntryTree.update: cross-tree moves', () => {
     expect(running()).to.equal(0)
   })
 
-  it('transfers the members of a moved group', async () => {
+  it('transfers the members of a transferred group', async () => {
     const { id: tree, subtree } = await setup()
     const group = await loader.create({
       name: '@cordisjs/group',
@@ -273,7 +273,7 @@ describe('EntryTree.update: cross-tree moves', () => {
     expect(running()).to.equal(0)
   })
 
-  it('rejects a move onto an id that the target tree already uses', async () => {
+  it('rejects a transfer onto an id that the target tree already uses', async () => {
     const { id: tree, subtree } = await setup()
     const id = await loader.create({ id: 'g', name: 'foo' })
     await loader.await()

@@ -132,8 +132,8 @@ describe('Include sync', () => {
     expect(errors[0]).toMatch(/config/)
   }, 10000)
 
-  it('combines a move in the file with an edit at runtime', async () => {
-    const app = await setup('tmp-sync-move.yml', [component('a', 1), group('g', [])])
+  it('combines a transfer in the file with an edit at runtime', async () => {
+    const app = await setup('tmp-sync-transfer.yml', [component('a', 1), group('g', [])])
 
     await app.write(yaml.stringify([group('g', [component('a', 1)])]))
     await app.update('a', { config: { tag: 'a', value: 2 } })
@@ -376,9 +376,9 @@ describe('Include sync', () => {
     }, 10000)
   })
 
-  it('routes an edit to an entry whose group moved in the same batch', async () => {
-    const inner = 'tmp-sync-inner-batch-move.yml'
-    const app = await setup('tmp-sync-outer-batch-move.yml', [{
+  it('routes an edit to an entry whose group was transferred in the same batch', async () => {
+    const inner = 'tmp-sync-inner-batch-transfer.yml'
+    const app = await setup('tmp-sync-outer-batch-transfer.yml', [{
       id: 'inc',
       name: '@cordisjs/include',
       config: {
@@ -598,9 +598,9 @@ describe('Include sync', () => {
     expect((await app.read())[0].config.value).toBe(2)
   }, 10000)
 
-  it('moves an entry into another include as a single instance', async () => {
-    const app = await setup('tmp-sync-move-source.yml', [component('m', 1)])
-    const target = 'tmp-sync-move-target.yml'
+  it('transfers an entry into another include as a single instance', async () => {
+    const app = await setup('tmp-sync-transfer-source.yml', [component('m', 1)])
+    const target = 'tmp-sync-transfer-target.yml'
     await app.write(yaml.stringify([group('g', [])]), target)
     const targetId = await app.ctx.loader.create({
       name: '@cordisjs/include',

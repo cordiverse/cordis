@@ -70,7 +70,7 @@ export interface Impl {
   release?: () => void
   value?: any
   check?: () => boolean
-  // Actual isolation symbol; may differ from the provider context after a blocked move.
+  // Actual isolation symbol; may differ from the provider context after a blocked transfer.
   isolate: symbol
 }
 
