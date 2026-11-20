@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url'
 import { CopyOptions, DirEntry, EntryType, MkdirOptions, RemoveOptions, StatOptions, Stats, WriteOptions } from './entry.ts'
 import { FsError } from './error.ts'
 import { DirEntryRef, EntryRef, FileRef, ReadOptions } from './file.ts'
-import { resolveSlices, sliceStream } from './slice.ts'
+import { resolveSlices, sliceStream, streamsWithOwnedChunks } from './slice.ts'
 import { assertLocation, isUrl, Path, resolvePath } from './path.ts'
 import { Watcher, WatchOptions } from './watcher.ts'
 
@@ -82,21 +82,26 @@ function contains(base: URL, url: URL) {
   return key === prefix || key.startsWith(prefix + '/')
 }
 
+async function fileSize(stat: () => Promise<Stats>) {
+  try {
+    const stats = await stat()
+    if (stats.type === 'file' && Number.isSafeInteger(stats.size) && stats.size >= 0) return stats.size
+  } catch {
+    // The read can still proceed without metadata.
+  }
+}
+
 // Opens the read with the file size when available. Cancelling during stat leaves the source unopened.
 function readAfterStat(stat: () => Promise<Stats>, open: (size?: number) => ReadableStream<Uint8Array>) {
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
   let cancelled = false
-  return new ReadableStream<Uint8Array>({
+  const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      let size: number | undefined
-      try {
-        const stats = await stat()
-        if (stats.type === 'file' && Number.isSafeInteger(stats.size) && stats.size >= 0) size = stats.size
-      } catch {
-        // The read can still proceed without metadata.
-      }
+      const size = await fileSize(stat)
       if (cancelled) return
-      reader = open(size).getReader()
+      const source = open(size)
+      if (streamsWithOwnedChunks.has(source)) streamsWithOwnedChunks.add(stream)
+      reader = source.getReader()
       reader.closed.catch(error => controller.error(error))
     },
     async pull(controller) {
@@ -110,6 +115,7 @@ function readAfterStat(stat: () => Promise<Stats>, open: (size?: number) => Read
       return reader?.cancel(reason)
     },
   }, { highWaterMark: 0 })
+  return stream
 }
 
 // A stream of the same chunks as `stream`, whose first chunk has been read,

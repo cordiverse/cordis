@@ -989,6 +989,51 @@ describe('Fs', () => {
       expect(await file.slice(2, 5).text()).to.equal('234')
     })
 
+    it('counts bytes beyond an absolute end when the start is relative to EOF', async () => {
+      const ctx = await setup()
+      let content = ''
+      ctx.fs.mount('mem:', {
+        read: () => new ReadableStream({
+          start(controller) {
+            const bytes = new TextEncoder().encode(content)
+            for (let i = 0; i < bytes.length; i += 3) controller.enqueue(bytes.subarray(i, i + 3))
+            controller.close()
+          },
+        }),
+      })
+      const file = ctx.fs.file('mem://a.txt')
+      for (const input of ['a', 'abcd', 'abcde', 'abcdef', 'abcdefgh']) {
+        content = input
+        for (const [start, end] of [[-4, 2], [-2, 5]]) {
+          const bytes = await file.slice(start, end).arrayBuffer()
+          expect(new TextDecoder().decode(bytes)).to.equal(content.slice(start, end))
+        }
+      }
+    })
+
+    it('emits stable chunks when the provider reuses its buffer on the next read', async () => {
+      const ctx = await setup()
+      ctx.fs.mount('mem:', {
+        read() {
+          const buffer = new Uint8Array(2)
+          let chunk = 0
+          return new ReadableStream({
+            pull(controller) {
+              if (chunk === 4) return controller.close()
+              buffer.fill(++chunk)
+              controller.enqueue(buffer)
+            },
+          }, { highWaterMark: 0 })
+        },
+      })
+      const file = ctx.fs.file('mem://a.bin')
+      const content = Uint8Array.of(1, 1, 2, 2, 3, 3, 4, 4)
+      for (const end of [undefined, 6, -1]) {
+        const response = new Response(file.slice(1, end).stream())
+        expect(new Uint8Array(await response.arrayBuffer())).to.deep.equal(content.slice(1, end))
+      }
+    })
+
     it('keeps the content of a provider that reuses the memory of its chunks', async () => {
       const ctx = await setup()
       ctx.fs.mount('mem:', {

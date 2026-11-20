@@ -68,18 +68,30 @@ interface Chunk {
   next?: Chunk
 }
 
+// Each chunk from these streams has independent storage, including after the next read or cancellation.
+export const streamsWithOwnedChunks = new WeakSet<ReadableStream<Uint8Array>>()
+
+export function snapshotChunk(source: ReadableStream<Uint8Array>, bytes: Uint8Array) {
+  return streamsWithOwnedChunks.has(source) ? bytes : new Uint8Array(bytes)
+}
+
 // Bytes retained across reads. The provider may reuse its chunk on the next read.
 class ByteQueue {
   private first?: Chunk
   private last?: Chunk
   length = 0
 
+  constructor(private source: ReadableStream<Uint8Array>) {}
+
   // Keeps the last capacity bytes and releases the older bytes in order.
   retainLast(bytes: Uint8Array, capacity: number, output?: ReadableStreamDefaultController<Uint8Array>) {
     const excess = Math.max(0, this.length + bytes.length - capacity)
     const prefix = Math.max(0, excess - this.length)
     this.drain(excess, output)
-    if (prefix) output?.enqueue(new Uint8Array(bytes.subarray(0, prefix)))
+    if (prefix && output) {
+      const view = prefix === bytes.length ? bytes : bytes.subarray(0, prefix)
+      output.enqueue(snapshotChunk(this.source, view))
+    }
     if (prefix < bytes.length) {
       const chunk = { bytes: new Uint8Array(bytes.subarray(prefix)) }
       if (this.last) this.last.next = chunk
@@ -113,14 +125,13 @@ class ByteQueue {
 /** Applies one Blob-style slice to a sequential stream. */
 export function sliceStream(source: ReadableStream<Uint8Array>, { start = 0, end }: ReadOptions): ReadableStream<Uint8Array> {
   const reader = source.getReader()
-  const tail = new ByteQueue()
-  // A negative start selects from the tail. A negative end delays the output by that many bytes.
-  const keep = start < 0 ? -start : Math.max(0, -(end ?? 0))
+  const tail = new ByteQueue(source)
+  const absoluteEnd = end !== undefined && end >= 0 ? end : Infinity
   // With a negative start and a positive end the range becomes empty at end - start.
-  const limit = end === undefined || end < 0 ? Infinity : end - Math.min(start, 0)
+  const limit = absoluteEnd - Math.min(start, 0)
   let size = 0
   let cancelled = false
-  return new ReadableStream({
+  const stream = new ReadableStream<Uint8Array>({
     async pull(controller) {
       while (true) {
         // Even an empty slice observes a failure to open or read the source.
@@ -128,8 +139,7 @@ export function sliceStream(source: ReadableStream<Uint8Array>, { start = 0, end
         if (cancelled) return
         if (done) {
           if (start < 0) {
-            const to = end === undefined ? size : end < 0 ? size + end : Math.min(size, end)
-            tail.drain(to - (size - tail.length), controller)
+            tail.drain(offset(end ?? size, size) - offset(start, size), controller)
           }
           return controller.close()
         }
@@ -137,9 +147,13 @@ export function sliceStream(source: ReadableStream<Uint8Array>, { start = 0, end
         const position = size
         size += value.length
         const from = Math.max(0, start - position)
-        const to = start >= 0 ? Math.min(value.length, limit - position) : value.length
+        const to = Math.min(size, absoluteEnd)
+        const bytes = !from && to === size ? value : value.subarray(from, Math.max(0, to - position))
+        // With a negative start, only [offset(start, size), to) can still contribute.
+        // Bytes past a non-negative end count towards size and shorten that interval.
+        const keep = start < 0 ? Math.max(0, to - offset(start, size)) : Math.max(0, -(end ?? 0))
         const output = start >= 0 ? controller : undefined
-        const released = tail.retainLast(value.subarray(from, to), keep, output)
+        const released = tail.retainLast(bytes, keep, output)
         if (size >= limit) {
           controller.close()
           reader.cancel().catch(() => {})
@@ -153,4 +167,6 @@ export function sliceStream(source: ReadableStream<Uint8Array>, { start = 0, end
       return reader.cancel(reason)
     },
   }, { highWaterMark: 0 })
+  streamsWithOwnedChunks.add(stream)
+  return stream
 }
