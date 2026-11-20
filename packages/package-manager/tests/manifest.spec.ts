@@ -8,7 +8,7 @@ describe('manifest', () => {
     expect(manifest).to.deep.equal({ dependencies: { a: '1', c: '1' }, devDependencies: { b: '2' } })
   })
 
-  it('removes a dependency from every field', () => {
+  it('removes a dependency from dependencies, devDependencies and optionalDependencies, and leaves peerDependencies alone', () => {
     const manifest = { dependencies: { a: '1' }, optionalDependencies: { a: '1' }, peerDependencies: { a: '1' } }
     applyChanges(manifest, [['a', null]])
     expect(manifest).to.deep.equal({ dependencies: {}, optionalDependencies: {}, peerDependencies: { a: '1' } })

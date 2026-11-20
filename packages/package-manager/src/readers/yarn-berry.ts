@@ -74,7 +74,9 @@ interface YarnPackagePaths {
  * data of the pnpm linker is recorded:
  *
  * - by yarn 4, in `linkersCustomData` under `{"name":"PnpmLinker","version":3}`;
- * - by yarn 3.2 and later, in `installersCustomData` under `{"name":"PnpmInstaller","version":2}`.
+ * - by yarn 3.2 and 3.x, in `installersCustomData` under
+ *   `{"name":"PnpmInstaller","version":2}` — yarn 4 keeps the same two keys in the
+ *   first shape, so the version decides which field to read, not "3.2 and later".
  */
 interface YarnInstallState {
   linkersCustomData?: Map<string, { pathsByLocator: Map<string, YarnPackagePaths> }>
@@ -96,6 +98,9 @@ const PNPM_INSTALLER_KEY = JSON.stringify({ name: 'PnpmInstaller', version: 2 })
  *   dependencies into `<entry>/node_modules`;
  * - yarn 3 installs the package at `<entry>/node_modules/<name>` and links
  *   its dependencies into the `node_modules` folder of the package.
+ *
+ * Neither key present throws: the file then names a linker this package does not
+ * read, and the error lists the keys it did find.
  */
 function readPnpmLinkerData(data: YarnInstallState, installStatePath: string) {
   const linker = data.linkersCustomData?.get(PNPM_LINKER_KEY)
@@ -129,8 +134,10 @@ function stringifyIdent(ident: YarnIdent) {
 /**
  * Read the install state of the pnpm linker from the install state file,
  * which records the location of every package. Yarn serializes the file with
- * `v8.serialize()` of the Node.js that runs it. The installed packages are
- * read only for the real directory and the manifest of a local target.
+ * `v8.serialize()` of the Node.js that runs it. The real directory is read for a
+ * `SOFT` package only, since a store entry is one already; the manifest is read
+ * for every package whose reference is not `npm:`, which covers a local
+ * directory and also a `patch:` that keeps its own `package.json`.
  */
 export async function readYarnBerryIsolatedState(root: string, installStatePath: string): Promise<InstallState> {
   const realRoot = await realpath(root).catch(() => resolve(root))

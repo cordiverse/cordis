@@ -126,8 +126,8 @@ export function detach(data: EntryOptions[], id: string) {
 
 /**
  * Insert `options` under `parent` (a group id, or `null` for the root) at
- * `position`, clamped to the group's length. Returns false when the parent
- * group does not exist.
+ * `position`, clamped to the group's length. Returns false when `parent` names
+ * no entry, or names one that is not a group.
  */
 export function place(data: EntryOptions[], options: EntryOptions, parent: string | null, position: number) {
   let list = data

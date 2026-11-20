@@ -6,8 +6,9 @@ import { InstallState, nameOf, PackageState, splitName } from '../state.ts'
 
 /**
  * A string of a yarn classic lockfile. Yarn quotes a string that contains
- * whitespace, a comma, a colon, a quote, a bracket or a backslash with
- * `JSON.stringify()`, so that an unquoted string contains none of them.
+ * whitespace, a comma, a colon, a quote, a bracket or a backslash — and one that
+ * does not start with a letter, such as `@scope/name` — with `JSON.stringify()`,
+ * so that an unquoted string starts with a letter and contains none of them.
  */
 const LOCKFILE_STRING = /"(?:[^"\\]|\\.)*"|[^\s",:[\]\\]+/g
 

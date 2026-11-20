@@ -103,8 +103,10 @@ async function primed(stream: ReadableStream<Uint8Array>) {
 }
 
 /**
- * The file system service, which forwards each operation to the provider
- * mounted at its location.
+ * The file system service, which routes each operation to the provider mounted
+ * at its location. A location no mount covers fails with `NoProvider`, and one
+ * whose provider lacks the operation with `NotSupported`. `mount()` records a
+ * provider and re-routes the existing watches; `resolve()` only parses.
  */
 export class Fs extends Service<Fs.Intercept> {
   private _mounts = new Map<string, Mount>()
@@ -151,8 +153,13 @@ export class Fs extends Service<Fs.Intercept> {
    * with the calling fiber.
    *
    * Every watch follows the routing: a change of the mounts moves it to the
-   * provider its location goes to, and a watch without a provider is resumed
-   * once one is mounted. Changes while a watch has no provider are not reported.
+   * provider its location goes to, and an existing watch whose provider goes away
+   * is suspended until another one covers it. Changes while it is suspended are
+   * not reported.
+   *
+   * This is about watches that already exist. `watch()` needs a provider at the
+   * moment it is called and throws `NoProvider` otherwise, so a watch cannot be
+   * created first and mounted later.
    */
   mount(prefix: string | URL, provider: FsProvider) {
     const key = normalizePrefix(prefix)
@@ -251,6 +258,9 @@ export class Fs extends Service<Fs.Intercept> {
   /**
    * Resolve unless the operation is known to be denied: a missing location
    * rejects with `NotFound`, and a denial by the storage with `PermissionDenied`.
+   * A mode this package does not declare throws `TypeError` before the location
+   * is even resolved, and a provider without `access()` rejects with
+   * `NotSupported`.
    */
   async access(path: Path, mode: AccessMode): Promise<void> {
     // checked here, so that a provider receives only the modes it is declared to receive

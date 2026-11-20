@@ -57,10 +57,10 @@ export interface Resolution {
  * spelled through links:
  *
  * - the entries of the ESM resolve cache that a change below `paths` can
- *   affect are removed: those whose result or parent lies below one of
- *   `paths`, and those that resolve a package name from below a directory
- *   that one of `paths` adds it to as `node_modules/<name>`. A manifest stands
- *   for its directory;
+ *   affect are removed: those whose result is not a string or lies below one of
+ *   `paths`, those whose parent lies below one of `paths`, and those that
+ *   resolve a package name from below a directory that one of `paths` adds it
+ *   to as `node_modules/<name>`. A manifest stands for its directory;
  * - the CJS path cache and the realpath caches are cleared as a whole;
  * - a manifest at or below one of `paths`, as spelled or at the real path of
  *   its directory, is read from disk from now on, through the replacements of
@@ -69,7 +69,8 @@ export interface Resolution {
  * The entries kept in the resolve cache record the requests that resolved to
  * each module; the removed ones are returned, so that a module can be
  * imported again through the requests that resolved to it, and so that they
- * can be put back through {@link restoreResolutions}.
+ * can be put back through {@link restoreResolutions}. An entry removed because
+ * its result is not a string is not returned: its request is not known.
  */
 export function invalidateResolution(paths: Iterable<string>): Resolution[] {
   const list = [...paths]
