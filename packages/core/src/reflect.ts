@@ -142,7 +142,9 @@ export class ReflectService {
       const error = createAccessError(`cannot set property "${prop}" without provide`)
       const def = target.reflect.props[prop]
       if (!def) {
-        if (!ctx.fiber.runtime) return Reflect.set(target, prop, value, ctx)
+        // the exemption is for the root, which keeps its own properties; a shadow
+        // is dropped when the call returns, so a write into it would be lost
+        if (!ctx.fiber.runtime && !ctx[symbols.shadow]) return Reflect.set(target, prop, value, ctx)
         throw enhanceAccessError(error)
       }
 
