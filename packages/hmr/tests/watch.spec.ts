@@ -2,7 +2,7 @@ import { Context, Fiber } from 'cordis'
 import Loader from '@cordisjs/loader'
 import Fs, { WatchOptions } from '@cordisjs/fs'
 import NodeFs from '@cordisjs/fs-node'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, resolve, sep } from 'node:path'
 import { format } from 'node:util'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -298,6 +298,22 @@ export const apply = ctx => ctx.on('hmr-watch/shadow', () => value)
     change(resolve(dir, 'index.mjs'))
     await reloaded
     expect(ctx.bail('hmr-watch/shadow' as any)).to.equal('nested')
+  })
+
+  it('reconciles a change reported below a symbolic link at its real path', async () => {
+    await setup()
+    const real = resolve(fixtureDir, 'link-target')
+    const link = resolve(fixtureDir, 'link')
+    mkdirSync(real, { recursive: true })
+    // a junction needs no privilege on Windows
+    symlinkSync(real, link, process.platform === 'win32' ? 'junction' : 'dir')
+    await load('link/plugin.ts', component('link', 'v1'))
+
+    const reloaded = nextReload()
+    writeFileSync(resolve(real, 'plugin.ts'), component('link', 'v2'))
+    change(resolve(link, 'plugin.ts'))
+    await reloaded
+    expect(ctx.bail('hmr-watch/link' as any)).to.equal('v2')
   })
 
   it('only reports a change to a host module', async () => {
