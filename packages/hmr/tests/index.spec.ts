@@ -182,8 +182,8 @@ describe('HMR', () => {
     })
 
     it('should keep a single nested entry when its host reloads too', async () => {
-      const stats = (globalThis as any).__hmrTest
       await waitFor(() => ctx.bail('hmr-test/get-nested') === 'tree-v1')
+      const stats = (globalThis as any).__hmrTest
 
       // one change, two entries in the batch: the tree host and the entry
       // nested two fiber levels below it
@@ -199,8 +199,8 @@ describe('HMR', () => {
     }, 15000)
 
     it('should keep a single nested entry across a batch queued behind a stalled host', async () => {
-      const stats = (globalThis as any).__hmrTest
       await waitFor(() => ctx.bail('hmr-test/get-nested') === 'tree-v1')
+      const stats = (globalThis as any).__hmrTest
 
       // batch 1: the host registers its subtree and then stalls inside init,
       // which defers its own unload and keeps the intermediate fiber active
@@ -246,8 +246,8 @@ describe('HMR', () => {
     })
 
     it('should not start the new instance before the old one released', async () => {
-      const stats = (globalThis as any).__hmrTest
       await waitFor(() => ctx.bail('hmr-test/get-slow') === 'drain-v1')
+      const stats = (globalThis as any).__hmrTest
       const overlaps = stats.slowOverlaps ?? 0
 
       drainDep.modify(c => c.replace("version = 'drain-v1'", "version = 'drain-v2'"))
@@ -258,8 +258,8 @@ describe('HMR', () => {
     }, 15000)
 
     it('should not delay an unrelated component behind a slow one', async () => {
-      const stats = (globalThis as any).__hmrTest
       await waitFor(() => ctx.bail('hmr-test/get-fast') === 'drain-v1')
+      const stats = (globalThis as any).__hmrTest
 
       drainDep.modify(c => c.replace("version = 'drain-v1'", "version = 'drain-v3'"))
       const reloaded = ctx.hmr.reconcile(() => [drainDep.path])
@@ -297,9 +297,9 @@ describe('HMR', () => {
     })
 
     it('should rebuild every fiber, each keeping its own config', async () => {
-      const stats = (globalThis as any).__hmrTest
       // both entries resolve to the same file, so one runtime holds two fibers
       await waitFor(() => ctx.bail('hmr-test/get-multi', 'a') === 'multi-v1')
+      const stats = (globalThis as any).__hmrTest
       expect(ctx.bail('hmr-test/get-multi', 'b')).to.equal('multi-v1')
 
       stats.multiApplies = []
