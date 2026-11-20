@@ -52,6 +52,15 @@ describe('env', () => {
     expect(ctx.get('env')).to.include({ CORDIS_ENV_A: 'process', CORDIS_ENV_B: 'env' })
   })
 
+  it('takes a variable of the process environment of an empty value over the files', async () => {
+    const ctx = await setup({
+      '.env': 'CORDIS_ENV_A=env\nCORDIS_ENV_B=env\n',
+    })
+    stub('CORDIS_ENV_A', '')
+    fibers.push(await ctx.plugin(env))
+    expect(ctx.get('env')).to.include({ CORDIS_ENV_A: '', CORDIS_ENV_B: 'env' })
+  })
+
   it('does not modify the process environment', async () => {
     const ctx = await setup({
       '.env': 'CORDIS_ENV_A=env\nCORDIS_ENV_B=env\n',
