@@ -195,7 +195,8 @@ class Server extends Service<Server.Intercept> {
         res.body = response.body
         res.status = response.status
         for (const [key, value] of response.headers) {
-          res.headers.set(key, value)
+          // a header may have several values, such as `set-cookie`
+          res.headers.append(key, value)
         }
       }
 
