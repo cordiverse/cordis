@@ -14,11 +14,13 @@ export function getInternalLoader(): InternalLoader | undefined {
   const require = createRequire(import.meta.url)
   const id = 'internal/modules/esm/loader'
   let internal: any
-  if (process.execArgv.includes('--expose-internals')) {
-    try {
-      internal = require(id)
-    } catch {}
-  }
+  // `require` is what answers this question; asking `execArgv` first is a
+  // prediction, and a prediction can only match the spellings it knows. Node
+  // accepts `_` for `-` in every flag, so `--expose_internals` exposes the
+  // module while a check for `--expose-internals` says it does not.
+  try {
+    internal = require(id)
+  } catch {}
   if (!internal) {
     try {
       internal = require('node-addon-require-builtin').requireBuiltin(id)
