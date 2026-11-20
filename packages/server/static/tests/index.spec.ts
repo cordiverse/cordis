@@ -105,6 +105,19 @@ describe('@cordisjs/server-static', () => {
       expect(await res.text()).to.equal('<h1>Hello</h1>\n')
     })
 
+    it('should redirect a directory before trying an extension that is a file', async () => {
+      ({ ctx, url } = await setup({ extensions: ['.html'] }, { files: { ...site, 'sub.html': 'SUB FILE' } }))
+      const res = await fetch(`${url}/sub`, { redirect: 'manual' })
+      expect(res.status).to.equal(301)
+      expect(res.headers.get('location')).to.equal('/sub/')
+    })
+
+    it('should not try extensions for a directory when redirect is disabled', async () => {
+      ({ ctx, url } = await setup({ extensions: ['.html'], redirect: false }, { files: { ...site, 'sub.html': 'SUB FILE' } }))
+      const res = await fetch(`${url}/sub`, { redirect: 'manual' })
+      expect(res.status).to.equal(404)
+    })
+
     it('should prefer exact file over extension fallback', async () => {
       ({ ctx, url } = await setup({ extensions: ['.html'] }))
       const res = await fetch(`${url}/page`)
