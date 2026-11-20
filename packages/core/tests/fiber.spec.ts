@@ -472,3 +472,31 @@ describe('Fiber: config validation', () => {
     ])
   })
 })
+
+describe('fiber.leak()', () => {
+  it('leaves a disposer to the fiber that takes it over', async () => {
+    const root = new Context()
+    const source = await root.use(() => {})
+    const target = await root.use(() => {})
+    const dispose = mock.fn()
+    const child = source.ctx.effect(() => dispose)
+    expect(source.leak(child)).to.be.true
+    target.ctx.effect(() => child)
+
+    await source.dispose()
+    expect(dispose.mock.calls).to.have.length(0)
+    await target.dispose()
+    expect(dispose.mock.calls).to.have.length(1)
+  })
+
+  it('does not leak a disposer of another fiber', async () => {
+    const root = new Context()
+    const source = await root.use(() => {})
+    const other = await root.use(() => {})
+    const dispose = mock.fn()
+    const child = source.ctx.effect(() => dispose)
+    expect(other.leak(child)).to.be.false
+    await source.dispose()
+    expect(dispose.mock.calls).to.have.length(1)
+  })
+})

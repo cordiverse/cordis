@@ -230,6 +230,15 @@ export class Fiber {
     }
   }
 
+  /**
+   * Stop disposing `dispose` with this fiber, so that the caller becomes
+   * responsible for calling it.
+   * @returns whether `dispose` was registered on this fiber
+   */
+  leak(dispose: Disposable) {
+    return this.ctx.fiber._disposables.delete(dispose)
+  }
+
   get name() {
     let fiber: Fiber = this
     do {
