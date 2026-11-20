@@ -140,9 +140,9 @@ describe('@cordisjs/server', () => {
       })
       await sleep()
 
-      const res = await fetch(`${url}/search?q=hello`)
+      const res = await fetch(`${url}/search?q=/a?b=1`)
       expect(res.status).to.equal(200)
-      expect(await res.text()).to.equal('hello')
+      expect(await res.text()).to.equal('/a?b=1')
     })
 
     it('should not leak query string into path params', async () => {
