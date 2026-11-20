@@ -190,16 +190,18 @@ export class Http extends Service<Http.Intercept> {
       }
     } catch {}
 
+    // a method is written in upper case, as the intercepts read it, e.g. to
+    // reject a non-GET request to a `file:` or `data:` URL
     for (const method of ['get', 'delete'] as const) {
       defineProperty(Http.prototype, method, async function (this: Http, url: string | URL, config?: Http.Config) {
-        const response = await this(url, { method, validateStatus, ...config })
+        const response = await this(url, { method: method.toUpperCase(), validateStatus, ...config })
         return this._decode(response)
       })
     }
 
     for (const method of ['patch', 'post', 'put'] as const) {
       defineProperty(Http.prototype, method, async function (this: Http, url: string | URL, data?: any, config?: Http.Config) {
-        const response = await this(url, { method, data, validateStatus, ...config })
+        const response = await this(url, { method: method.toUpperCase(), data, validateStatus, ...config })
         return this._decode(response)
       })
     }
