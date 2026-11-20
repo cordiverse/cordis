@@ -9,12 +9,12 @@ function sleep(ms = 0) {
 }
 
 // sends a request target as it is, which `fetch` would normalize or reject
-function rawRequest(url: string, path: string, method = 'GET'): Promise<{ status: number, headers: http.IncomingHttpHeaders }> {
+function rawRequest(url: string, path: string): Promise<number> {
   const { hostname, port } = new URL(url)
   return new Promise((resolve, reject) => {
-    const req = http.request({ hostname, port, path, method }, (res) => {
+    const req = http.request({ hostname, port, path }, (res) => {
       res.resume()
-      res.on('end', () => resolve({ status: res.statusCode!, headers: res.headers }))
+      res.on('end', () => resolve(res.statusCode!))
     })
     req.on('error', reject)
     req.end()
@@ -683,8 +683,8 @@ describe('@cordisjs/server', () => {
       })
       await sleep()
 
-      expect((await rawRequest(url, '/files/%')).status).to.equal(400)
-      expect((await rawRequest(url, '/files/%zz')).status).to.equal(400)
+      expect(await rawRequest(url, '/files/%')).to.equal(400)
+      expect(await rawRequest(url, '/files/%zz')).to.equal(400)
     })
 
     it('should answer a malformed percent-encoded path of an upgrade with 400', async () => {
