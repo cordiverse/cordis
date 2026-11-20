@@ -591,6 +591,36 @@ describe('@cordisjs/server', () => {
     })
   })
 
+  describe('failing body stream', () => {
+    beforeEach(async () => {
+      ({ ctx, url } = await setup())
+    })
+
+    it('should close the connection when the body stream fails', async () => {
+      ctx.server.get('/failing', async (req, res, next) => {
+        res.body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new Uint8Array([65]))
+            setTimeout(() => controller.error(new Error('boom')), 10)
+          },
+        })
+      })
+      await sleep()
+
+      let kind: 'fetch' | 'body' = 'fetch'
+      try {
+        const res = await fetch(`${url}/failing`)
+        try {
+          await res.text()
+        } catch {
+          kind = 'body'
+        }
+      } catch {}
+      // the truncated response must not be reported as a complete one
+      expect(kind).to.equal('body')
+    }, 10000)
+  })
+
   describe('route disposal', () => {
     beforeEach(async () => {
       ({ ctx, url } = await setup())
