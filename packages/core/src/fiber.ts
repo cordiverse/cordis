@@ -112,6 +112,15 @@ export namespace CordisError {
 
 const INACTIVE = '__INACTIVE__'
 
+export namespace Fiber {
+  export interface Options {
+    getOuterStack?: (this: void) => string[]
+    config?: (this: Fiber, config: any, resolve: (config: any) => any) => any
+    commit?: (this: Fiber, config: any) => void
+    dispose?: (this: Fiber) => void
+  }
+}
+
 export class Fiber {
   public uid: number | null
   public readonly ctx: Context
@@ -139,8 +148,9 @@ export class Fiber {
     public config: any,
     public inject: Dict<any>,
     public runtime: Component.Runtime | null,
-    getOuterStack: () => string[],
+    private readonly options: Fiber.Options = {},
   ) {
+    const getOuterStack = options.getOuterStack ?? (() => [])
     const collect = (dispose: Disposable) => {
       this._disposables.push(dispose)
     }
@@ -186,6 +196,7 @@ export class Fiber {
         return async () => {
           this.uid = null
           this.context.emit('internal/plugin', this)
+          this.options.dispose?.call(this)
           const runtime = this.runtime!
           this._remove!()
           if (!runtime.fibers.length) {
@@ -234,7 +245,8 @@ export class Fiber {
   }
 
   private _resolve(config: any) {
-    return this.context.waterfall('internal/config', this, () => config)
+    const resolve = (config: any) => this.context.waterfall('internal/config', this, () => config)
+    return this.options.config ? this.options.config.call(this, config, resolve) : resolve(config)
   }
 
   private _execute<T>(runner: EffectRunner<T>) {
@@ -538,7 +550,7 @@ export class Fiber {
     fiber.assertActive()
     const loaded = fiber._runner.epoch !== INACTIVE
     const resolved = loaded ? fiber._resolve(config) : undefined
-    if (!noSave) fiber.context.emit('internal/commit', fiber, config)
+    if (!noSave) fiber.options.commit?.call(fiber, config)
     fiber.config = config
     fiber._error = undefined
     const restart = () => fiber.restart()

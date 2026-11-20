@@ -213,7 +213,6 @@ export interface Events {
   'internal/status'(fiber: Fiber, oldValue: FiberState): void
   'internal/service'(this: Context, name: string, value: any): void
   'internal/update'(this: Fiber, resolvedConfig: any, next: () => Awaitable<void>): Awaitable<void>
-  'internal/commit'(fiber: Fiber, originalConfig: any): void
   'internal/config'(fiber: Fiber, next: () => any): any
   'internal/get'(ctx: Context, name: string, error: Error, next: () => any): any
   'internal/set'(ctx: Context, name: string, value: any, error: Error, next: () => boolean): boolean

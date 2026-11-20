@@ -1,5 +1,6 @@
 import { expect, describe, it, afterEach } from 'vitest'
 import { AccessMode, FsError } from '@cordisjs/fs'
+import { Entry } from '@cordisjs/loader'
 import MemoryFs from '@cordisjs/fs-memory'
 import * as yaml from 'yaml'
 import Include from '../src/index.ts'
@@ -435,16 +436,16 @@ describe('Include sync', () => {
       shape(),
     ]))
 
-    const includeId = app.include().ctx.fiber.entry!.options.id
+    const includeId = app.include().ctx[Entry.key]!.options.id
     const tagged = Object.values(app.include().store).filter(entry => entry.options.config?.tag === 'x')
-    const root = tagged.find(entry => entry.parent.ctx.fiber.entry!.options.id === includeId)
-    const nested = tagged.find(entry => entry.parent.ctx.fiber.entry!.options.id !== includeId)
+    const root = tagged.find(entry => entry.parent.ctx[Entry.key]!.options.id === includeId)
+    const nested = tagged.find(entry => entry.parent.ctx[Entry.key]!.options.id !== includeId)
     expect(root).toBeTruthy()
     expect(nested).toBeTruthy()
     expect(root).not.toBe(nested)
     const rootId = root!.options.id
     const nestedId = nested!.options.id
-    expect(nested!.parent.ctx.fiber.entry!.options.id).toBe(
+    expect(nested!.parent.ctx[Entry.key]!.options.id).toBe(
       Object.values(app.include().store).find(entry => entry.options.group)!.options.id,
     )
     const applies = applied.filter(tag => tag === 'x').length
@@ -465,11 +466,11 @@ describe('Include sync', () => {
     const anonGroup = { name: '@cordisjs/group', group: true, config: [child] }
     const app = await setup('tmp-sync-anon-neighbor.yml', yaml.stringify([anonGroup, component('b', 1)]))
 
-    const includeId = app.include().ctx.fiber.entry!.options.id
+    const includeId = app.include().ctx[Entry.key]!.options.id
     const groupEntry = Object.values(app.include().store).find(entry => entry.options.group)
     const childEntry = Object.values(app.include().store).find(entry => entry.options.config?.tag === 'child')
-    expect(groupEntry?.parent.ctx.fiber.entry!.options.id).toBe(includeId)
-    expect(childEntry?.parent.ctx.fiber.entry!.options.id).toBe(groupEntry!.options.id)
+    expect(groupEntry?.parent.ctx[Entry.key]!.options.id).toBe(includeId)
+    expect(childEntry?.parent.ctx[Entry.key]!.options.id).toBe(groupEntry!.options.id)
     const groupId = groupEntry!.options.id
     const childId = childEntry!.options.id
     const childApplies = applied.filter(tag => tag === 'child').length
@@ -482,7 +483,7 @@ describe('Include sync', () => {
     expect(app.include().store[childId]).toBe(childEntry)
     expect(groupEntry!.options.id).toBe(groupId)
     expect(childEntry!.options.id).toBe(childId)
-    expect(childEntry!.parent.ctx.fiber.entry!.options.id).toBe(groupId)
+    expect(childEntry!.parent.ctx[Entry.key]!.options.id).toBe(groupId)
     expect(applied.filter(tag => tag === 'child')).toHaveLength(childApplies)
   }, 10000)
 

@@ -231,11 +231,13 @@ export class RegistryService {
   }
 
   /** @deprecated Use `registry.use()` instead. */
-  plugin(component: Component, config?: any, getOuterStack = buildOuterStack()) {
-    return this.use(component, config, getOuterStack)
+  plugin(component: Component, config?: any, options: Fiber.Options = {}) {
+    const getOuterStack = options.getOuterStack ?? buildOuterStack()
+    return this.use(component, config, { ...options, getOuterStack })
   }
 
-  use(component: Component, config?: any, getOuterStack = buildOuterStack()) {
+  use(component: Component, config?: any, options: Fiber.Options = {}) {
+    const getOuterStack = options.getOuterStack ?? buildOuterStack()
     // check if it's a valid component
     const forwarded = this._forward(component)
     if (!forwarded) throw new Error('invalid component, expect function or object with an "apply" method, received ' + typeof component)
@@ -243,7 +245,7 @@ export class RegistryService {
 
     const [callback, target] = forwarded
     const runtime = this._internal.get(callback) ?? this._create(callback, target)
-    const fiber = new Fiber(this.ctx, config, Inject.resolve(target.inject), runtime, getOuterStack)
+    const fiber = new Fiber(this.ctx, config, Inject.resolve(target.inject), runtime, { ...options, getOuterStack })
     const wrapped = Object.create(fiber) as Fiber & PromiseLike<Fiber>
     wrapped.then = (onFulfilled, onRejected) => {
       return fiber.await().then(onFulfilled, onRejected)

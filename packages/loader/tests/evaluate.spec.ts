@@ -56,8 +56,7 @@ describe('Loader: entry evaluation context', () => {
     expect(entry.innerFiber!.parent.fiber.uid).to.equal(entry.outerFiber!.uid)
     expect(Object.keys(entry.outerFiber!.inject)).to.deep.equal(['settings'])
     expect(Object.keys(entry.innerFiber!.inject)).to.deep.equal([])
-    expect(entry.outerFiber!.entry === undefined).to.be.true
-    expect(entry.innerFiber!.entry === entry).to.be.true
+    expect(entry.innerFiber!.ctx[Entry.key]).to.equal(entry)
   })
 
   it('evaluates disabled with the entry inject', async () => {
@@ -464,7 +463,7 @@ describe('Loader: entry evaluation context', () => {
     const release = Promise.withResolvers<void>()
     let disabledDuringUnload: boolean | undefined
     loader.mock('held', (ctx: Context) => () => {
-      disabledDuringUnload = ctx.fiber.entry!.disabled
+      disabledDuringUnload = ctx[Entry.key]!.disabled
       entered.resolve()
       return release.promise
     })
@@ -475,6 +474,8 @@ describe('Loader: entry evaluation context', () => {
     const outer = entry.outerFiber
     try {
       loader.remove('settings')
+      // the verdict expires as soon as the outer fiber starts to unload
+      expect(entry.disabled).to.equal(true)
       await entered.promise
       expect(entry.disabled).to.equal(true)
       expect(disabledDuringUnload).to.equal(true)
