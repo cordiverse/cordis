@@ -169,6 +169,26 @@ describe('Fs', () => {
       expect([...new Set(seen)]).to.deep.equal([path])
     }, 15000)
 
+    it('does not report a directory as the modified file it replaced', async () => {
+      const path = write('kind/entry.txt')
+      const ctx = await setup()
+      const seen: string[] = []
+      await watch(ctx, resolve(fixture, 'kind'), (filename) => { seen.push(filename) })
+
+      // control: a write to the file is reported, so a later silence means
+      // something
+      await touch(path, () => seen.length > 0)
+      expect(seen).to.deep.equal([path])
+
+      // both acts land inside one chokidar batch, which is the case that reports
+      // the entry under `change` with the stats of a directory
+      rmSync(path)
+      mkdirSync(path, { recursive: true })
+      await new Promise<void>((r) => setTimeout(r, 600))
+
+      expect(seen, 'a directory is not a modified file').to.deep.equal([path])
+    }, 15000)
+
     it('applies `filter` to each watch on its own', async () => {
       const kept = write('filtered/kept.txt')
       const claimed = write('filtered/.claimed.yml')
