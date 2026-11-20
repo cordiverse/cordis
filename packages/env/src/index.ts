@@ -51,11 +51,11 @@ export async function apply(ctx: Context, config: Config = {}) {
     if (content !== undefined) Object.assign(merged, parse(content))
   }
 
-  // a variable of the process environment takes precedence over the files
+  // A variable of the process environment, including one of an empty value,
+  // takes precedence over the files. `dotenv-expand` respects only a truthy
+  // one, so the process environment is assigned once more after the expansion.
   const env: Record<string, string | undefined> = { ...process.env }
   expand({ parsed: merged, processEnv: env as Record<string, string> })
-  // `dotenv-expand` lets only a truthy variable of the process environment win,
-  // while `dotenv` treats a variable of an empty value as set as well
   Object.assign(env, process.env)
 
   if (config.populate) {
