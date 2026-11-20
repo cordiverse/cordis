@@ -61,6 +61,41 @@ describe('@cordisjs/server', () => {
       expect(await res.text()).to.equal('world')
     })
 
+    it('should serve a HEAD request with the GET route', async () => {
+      let called = 0
+      ctx.server.get('/resource', async (req, res, next) => {
+        called++
+        res.body = 'body'
+      })
+      await sleep()
+
+      const res = await fetch(`${url}/resource`, { method: 'HEAD' })
+      expect(res.status).to.equal(200)
+      expect(await res.text()).to.equal('')
+      expect(called).to.equal(1)
+    })
+
+    it('should prefer an explicit HEAD route over the GET route', async () => {
+      let getCalls = 0
+      let headCalls = 0
+      ctx.server.get('/preferred', async (req, res, next) => {
+        getCalls++
+        res.body = 'from get'
+      })
+      ctx.server.head('/preferred', async (req, res, next) => {
+        headCalls++
+        res.headers.set('x-head', '1')
+        res.body = 'from head'
+      })
+      await sleep()
+
+      const res = await fetch(`${url}/preferred`, { method: 'HEAD' })
+      expect(res.status).to.equal(200)
+      expect(res.headers.get('x-head')).to.equal('1')
+      expect(headCalls).to.equal(1)
+      expect(getCalls).to.equal(0)
+    })
+
     it('should handle POST route', async () => {
       ctx.server.post('/echo', async (req, res, next) => {
         const text = await req.text()
@@ -199,7 +234,7 @@ describe('@cordisjs/server', () => {
 
       const res = await fetch(`${url}/only-get`, { method: 'POST' })
       expect(res.status).to.equal(405)
-      expect(res.headers.get('allow')).to.equal('get')
+      expect(res.headers.get('allow')).to.equal('get, head')
     })
 
     it('should treat all() as wildcard method in Allow header', async () => {
