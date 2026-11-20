@@ -135,6 +135,14 @@ function toPath(url: string) {
   if (url.startsWith('file:')) return fileURLToPath(url)
 }
 
+function canonical(path: string) {
+  try {
+    return realpathSync(path)
+  } catch {
+    return path
+  }
+}
+
 class Hmr extends Service {
   static inject = ['fs']
 
@@ -223,7 +231,8 @@ class Hmr extends Service {
     ctx.fs.watch(pathToFileURL(this.baseDir), { filter: files }).on('change', (url) => {
       const filename = fileURLToPath(url)
       this.ctx.logger.debug('change detected at %C', relative(this.baseDir, filename))
-      stashed.add(filename)
+      // module URLs are real paths, while the watcher reports the spelling it was given
+      stashed.add(canonical(filename))
       clearTimeout(timer)
       timer = setTimeout(() => flushing = flushing.then(flush), debounce)
     })
