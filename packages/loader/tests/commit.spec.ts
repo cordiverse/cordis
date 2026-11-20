@@ -325,3 +325,39 @@ describe('EntryTree disposal', () => {
     await fiber.dispose()
   })
 })
+
+describe('Loader.showLog: reloads', () => {
+  async function setup() {
+    const root = new Context()
+    await root.use(MockLoader)
+    const loader = root.loader as any as MockLoader
+    loader.enableLogs = true
+    const logs: any[][] = []
+    root.logger.exporter({
+      colors: 0,
+      levels: { default: 3 },
+      export: message => message.name === 'loader' && logs.push(message.args.slice(1)),
+    })
+    // the names of the reloaded components
+    const reloads = () => logs.filter(([type]) => type === 'reload').map(([, name]) => name)
+    return { loader, reloads }
+  }
+
+  it('logs a config change from outside the component', async () => {
+    const { loader, reloads } = await setup()
+    loader.mock('foo', () => {})
+    const id = await loader.create({ name: 'foo', config: { a: 1 } })
+    await loader.await()
+    await loader.update(id, { config: { a: 2 } })
+    expect(reloads()).to.deep.equal(['foo'])
+  })
+
+  it('does not log an update by the component itself', async () => {
+    const { loader, reloads } = await setup()
+    loader.mock('foo', () => {})
+    const id = await loader.create({ name: 'foo', config: { a: 1 } })
+    await loader.await()
+    await loader.expectFiber(id).update({ a: 2 })
+    expect(reloads()).to.deep.equal([])
+  })
+})

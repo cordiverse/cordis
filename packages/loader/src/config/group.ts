@@ -10,7 +10,7 @@ export class EntryGroup {
   public data: EntryOptions[] = []
 
   constructor(public ctx: Context, public tree: EntryTree) {
-    const entry = ctx.fiber.entry
+    const entry = ctx[Entry.key]
     if (entry) entry.subgroup = this
   }
 
@@ -34,7 +34,7 @@ export class EntryGroup {
   getOuterStack(id: string): string[] {
     const location = this.tree.getLocation(id, [])
     const frames = location ? [`    at ${id} (${formatLocation(location)})`] : []
-    return [...frames, ...this.ctx.fiber.entry?.getOuterStack() ?? []]
+    return [...frames, ...this.ctx[Entry.key]?.getOuterStack() ?? []]
   }
 
   private _reject(options: EntryOptions, issues: Issue[]) {
@@ -65,7 +65,7 @@ export class EntryGroup {
     // an entry that another group already adopted (a file-driven move) belongs
     // to that group now
     if (!entry || entry.parent !== this) return
-    // Unregister before disposing: the loader's `internal/plugin` handler
+    // Unregister before disposing: the `dispose` callback of the entry fiber
     // distinguishes "removed by the loader" from "disposed itself" by checking
     // whether the entry is still in the store.
     delete this.tree.store[id]
@@ -107,7 +107,7 @@ export class Group extends EntryGroup {
   static readonly [EntryGroup.key] = true
 
   constructor(public ctx: Context, public config: EntryOptions[]) {
-    super(ctx, ctx.fiber.entry!.parent.tree)
+    super(ctx, ctx[Entry.key]!.parent.tree)
     ctx.on('internal/update', config => this.update(config))
   }
 

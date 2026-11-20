@@ -80,7 +80,7 @@ export abstract class EntryTree {
   constructor(ctx: Context) {
     this.ctx = ctx
     this.root = new EntryGroup(this.ctx, this)
-    const entry = this.ctx.fiber.entry
+    const entry = this.ctx[Entry.key]
     if (entry) entry.subtree = this
   }
 

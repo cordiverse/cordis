@@ -37,17 +37,20 @@ function sortKeys<T extends {}>(object: T, prepend = ['id', 'name'], append = ['
 const outer = {
   name: 'loader:outer',
   async* apply(ctx: Context) {
-    const entry: Entry = ctx[Entry.key]
+    const entry = ctx[Entry.key]!
     // re-imported so that a module reloaded by HMR in between is used
     const exports = await entry._import()
-    // stops here if a dependency was lost during the import
-    yield () => {}
+    // stops here if a dependency was lost during the import; the verdict was
+    // evaluated with the services of this fiber, so it expires with them
+    yield () => {
+      if (entry.outerFiber?.ctx.fiber === ctx.fiber) entry._verdict = undefined
+    }
     if (exports) entry._start(ctx, exports.component)
   },
 }
 
 export class Entry {
-  static readonly key = Symbol.for('cordis.entry')
+  static readonly key: unique symbol = Symbol.for('cordis.entry')
 
   static isOuter(fiber: Fiber) {
     return fiber.runtime?.callback === outer.apply
@@ -88,12 +91,9 @@ export class Entry {
     return this.ctx
   }
 
-  get id() {
-    let id = this.options.id
-    if (this.parent.tree.ctx.fiber.entry) {
-      id = this.parent.tree.ctx.fiber.entry.id + EntryTree.sep + id
-    }
-    return id
+  get id(): string {
+    const owner = this.parent.tree.ctx[Entry.key]
+    return owner ? owner.id + EntryTree.sep + this.options.id : this.options.id
   }
 
   // undefined while the outer fiber is pending
@@ -115,14 +115,23 @@ export class Entry {
   get disabled() {
     // group is always enabled
     if (this.options.group) return false
-    return this._verdict !== false || this._parentDisabled()
+    return !this._enabled() || this._parentDisabled()
+  }
+
+  /**
+   * Whether the verdict enables the entry. A verdict evaluated with the services
+   * of the outer fiber does not hold once the fiber starts to unload, e.g. on
+   * a dependency loss; the verdict itself is cleared when the unload finishes.
+   */
+  private _enabled() {
+    return this._verdict === false && this.outerFiber?.state !== FiberState.UNLOADING
   }
 
   private _parentDisabled() {
-    let entry = this.parent.ctx.fiber.entry
+    let entry = this.parent.ctx[Entry.key]
     while (entry) {
-      if (entry._verdict !== false) return true
-      entry = entry.parent.ctx.fiber.entry
+      if (!entry._enabled()) return true
+      entry = entry.parent.ctx[Entry.key]
     }
     return false
   }
@@ -205,6 +214,12 @@ export class Entry {
       return
     }
     if (diff.includes('config') || this.options.group) {
+      // a component that hosts entries, such as a group or an include,
+      // leaves the reports to its entries
+      const { prototype } = this.innerFiber!.runtime!.callback
+      if (!(prototype instanceof EntryGroup || prototype instanceof EntryTree)) {
+        this.loader.showLog(this, 'reload')
+      }
       await this.innerFiber!.update(this.options.config, true)
     }
   }
@@ -351,7 +366,9 @@ export class Entry {
     if (!this._registered() || this._blocked()) return
     this._initTask = undefined
     if (this._hasOuter()) {
-      this.outerFiber = this.ctx.registry.use({ ...outer, inject: this.inject }, undefined, this.getOuterStack)
+      this.outerFiber = this.ctx.registry.use({ ...outer, inject: this.inject }, undefined, {
+        getOuterStack: this.getOuterStack,
+      })
     } else {
       this._start(this.ctx, exports.component)
     }
@@ -368,6 +385,57 @@ export class Entry {
     if (this.disabled || !this._applyIntercept(ctx)) return
     this.loader.showLog(this, 'apply')
     const innerContext = ctx.extend({ [Context.intercept]: this._intercept })
-    this.innerFiber = innerContext.registry.use(component, this.options.config, this.getOuterStack)
+    const entry = this
+    this.innerFiber = innerContext.registry.use(component, this.options.config, {
+      getOuterStack: this.getOuterStack,
+      config(config, resolve) {
+        try {
+          // a group's config is the entry list itself, which the loader mutates
+          // in place and identifies by reference
+          if (this.runtime!.callback[EntryGroup.key]) return resolve(config)
+          return resolve(interpolate(this.ctx, config, entry.trace, ['config']))
+        } catch (error) {
+          // a config passed in at runtime is not written anywhere yet
+          if (ValidationError.is(error) && config === entry.options.config) entry.traceValidation(error)
+          throw error
+        }
+      },
+      commit(config) {
+        const unparse = this.runtime?.Config?.['simplify']
+        const legacy = { ...entry.options }
+        entry.options.config = unparse ? unparse(config) : config
+        entry.parent.tree.commit({ id: entry.options.id, group: entry.parent, options: entry.options, legacy })
+      },
+      dispose() {
+        entry._onDispose(this)
+      },
+    })
+  }
+
+  /** Called when the inner fiber starts to be disposed. */
+  private _onDispose(fiber: Fiber) {
+    // case 1: the tree of the entry is being disposed
+    if (!this.parent.tree.ctx.fiber.uid) return
+
+    this.loader.showLog(this, 'unload')
+
+    // case 2: the parent of the entry is being unloaded, which takes the entry
+    // with it (the parent may still be registered, e.g. when it has lost a dependency)
+    if (fiber.parent.fiber.state === FiberState.UNLOADING) return
+
+    // case 3: the entry is being removed (`EntryGroup.remove` unregisters it
+    // before disposing the fiber)
+    if (!this._registered()) return
+
+    // case 4: the fiber is disposed through `entry.dispose()`, e.g. on a config
+    // file update, an ancestor group being disabled, or a rebuild
+    if (this._disposing) return
+
+    // otherwise, the component disposes itself: disable the entry
+    const legacy = { ...this.options }
+    this.options.disabled = true
+    this._verdict = true
+    this.parent.tree.commit({ id: this.options.id, group: this.parent, options: this.options, legacy })
+    if (this.outerFiber) this.dispose()
   }
 }

@@ -295,7 +295,7 @@ export class Include extends EntryTree {
     super(ctx.intercept('fs', { baseUrl: new URL('.', url).href }))
     this.filename = filename
     this.url = url
-    this.enableLogs = config.enableLogs ?? ctx.fiber.entry?.parent.tree.enableLogs ?? false
+    this.enableLogs = config.enableLogs ?? ctx[Entry.key]?.parent.tree.enableLogs ?? false
     const ext = extname(this.filename)
     if (!types[ext]) {
       throw new Error(`extension "${ext}" not supported`)
@@ -374,7 +374,7 @@ export class Include extends EntryTree {
   /** Called synchronously by the loader once a tree-side change is in place. */
   commit(change: EntryChange) {
     this.context.emit('loader/config-update')
-    const parent = change.group === this.root ? null : change.group.ctx.fiber.entry!.options.id
+    const parent = change.group === this.root ? null : change.group.ctx[Entry.key]!.options.id
     record(this.journal, change, parent)
     this.dirtyWrite = true
     this._drain()
@@ -514,7 +514,7 @@ export class Include extends EntryTree {
       // Take the new patches now so that the tree scheduled below already
       // reflects them; the round trip through the parent only persists them.
       this.config = { ...this.config, patches }
-      if (this.ctx.fiber.entry) {
+      if (this.ctx[Entry.key]) {
         // Not awaited: the returned promise is the tree reconciliation, and
         // the drain loop must not block on fibers.
         try {
@@ -624,7 +624,7 @@ export class Include extends EntryTree {
     if (path.length && record && String(path[0]) in record.changes) return
 
     const owner = path.length ? this.index.key(id, String(path[0])) : this.index.entry(id)
-    const { entry } = this.ctx.fiber
+    const entry = this.ctx[Entry.key]
     if (owner.type === 'patch') {
       if (!entry) return
       return { entry, path: ['config', 'patches', owner.index, ...path] }

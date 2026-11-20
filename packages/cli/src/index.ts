@@ -125,7 +125,7 @@ export class Cli extends Service {
 
     help.apply(ctx)
 
-    if (ctx.fiber.entry) {
+    if (ctx[Symbol.for('cordis.entry')]) {
       ctx.inject({
         loader: { await: true },
       }, () => this.executeArgv())
