@@ -202,6 +202,83 @@ describe('Effects', () => {
     expect(seq).to.deep.equal([1, 3, 5, 6, 4, 2])
   }))
 
+  it('repeated dispose waits for the pending teardown', withTimers(async (root) => {
+    const seq: number[] = []
+    const dispose = root.effect(() => async () => {
+      await sleep(100)
+      seq.push(1)
+    })
+    dispose()
+    const disposing = Promise.resolve(dispose()).then(() => seq.push(2))
+    await vi.advanceTimersByTimeAsync(100)
+    await disposing
+    expect(seq).to.deep.equal([1, 2])
+  }))
+
+  it('repeated async dispose waits for the pending teardown', withTimers(async (root) => {
+    const seq: number[] = []
+    const dispose = root.effect(async () => {
+      await sleep(100)
+      return async () => {
+        await sleep(100)
+        seq.push(1)
+      }
+    })
+    const [dispose2] = await Promise.all([dispose, vi.advanceTimersByTimeAsync(100)])
+    dispose2()
+    const disposing = Promise.resolve(dispose()).then(() => seq.push(2))
+    await vi.advanceTimersByTimeAsync(100)
+    await disposing
+    expect(seq).to.deep.equal([1, 2])
+    expect(root.fiber.getEffects()).to.deep.equal([])
+  }))
+
+  it('dispose during a failing setup waits for the rollback', withTimers(async (root) => {
+    const seq: number[] = []
+    const dispose = root.effect(async function* () {
+      yield async () => {
+        await sleep(100)
+        seq.push(1)
+      }
+      await sleep(100)
+      throw new Error('test')
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    const disposing = Promise.resolve(dispose()).catch(() => {}).then(() => seq.push(2))
+    await vi.advanceTimersByTimeAsync(200)
+    await disposing
+    expect(seq).to.deep.equal([1, 2])
+    expect(root.fiber.getEffects()).to.deep.equal([])
+  }))
+
+  it.each(['sync', 'async'])('dispose during a failing setup keeps the setup error when the %s rollback fails', (kind) => withTimers(async (root) => {
+    const error = mock.fn()
+    ;(root.logger as any).error = error
+    const dispose = root.effect(async function* () {
+      yield kind === 'sync' ? () => {
+        throw new Error('rollback')
+      } : async () => {
+        throw new Error('rollback')
+      }
+      await sleep(100)
+      throw new Error('setup')
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    const disposing = Promise.resolve(dispose()).then(() => {}, (reason) => reason)
+    await vi.advanceTimersByTimeAsync(100)
+    expect(await disposing).to.have.property('message', 'setup')
+    expect(error.mock.calls.map(({ arguments: [reason] }) => reason.message)).to.include('rollback')
+  })())
+
+  it('removes an effect whose cleanup throws', () => {
+    const root = new Context()
+    const dispose = root.effect(() => () => {
+      throw new Error('test')
+    })
+    expect(() => dispose()).to.throw('test')
+    expect(root.fiber.getEffects()).to.deep.equal([])
+  })
+
   it('return with error', async () => {
     const root = new Context()
     const seq: number[] = []
@@ -256,6 +333,7 @@ describe('Effects', () => {
     }
     expect(caught).to.be.instanceOf(Error)
     expect(seq).to.deep.equal([1])
+    expect(root.fiber.getEffects()).to.deep.equal([])
   })
 
   it('async yield invalid effect', async () => {
