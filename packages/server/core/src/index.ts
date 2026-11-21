@@ -215,7 +215,13 @@ class Server extends Service<Server.Intercept> {
         res.body = response.body
         res.status = response.status
         for (const [key, value] of response.headers) {
-          res.headers.set(key, value)
+          if (key === 'set-cookie') {
+            // `set-cookie` may occur several times and is never combined, so keep every value
+            res.headers.append(key, value)
+          } else {
+            // any other field is already combined by `Headers`, and replaces the existing one
+            res.headers.set(key, value)
+          }
         }
       }
 
