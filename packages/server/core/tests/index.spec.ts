@@ -75,6 +75,70 @@ describe('@cordisjs/server', () => {
       expect(await res.text()).to.equal('world')
     })
 
+    it('should serve a HEAD request with the GET route', async () => {
+      let called = 0
+      ctx.server.get('/resource', async (req, res, next) => {
+        called++
+        res.headers.set('x-from', 'get')
+        res.body = 'body'
+      })
+      await sleep()
+
+      const res = await fetch(`${url}/resource`, { method: 'HEAD' })
+      expect(res.status).to.equal(200)
+      expect(res.headers.get('x-from')).to.equal('get')
+      expect(called).to.equal(1)
+    })
+
+    it('should prefer an explicit HEAD route over the GET route', async () => {
+      let getCalls = 0
+      let headCalls = 0
+      ctx.server.get('/preferred', async (req, res, next) => {
+        getCalls++
+        res.headers.set('x-from', 'get')
+        res.body = 'from get'
+      })
+      ctx.server.head('/preferred', async (req, res, next) => {
+        headCalls++
+        res.headers.set('x-from', 'head')
+        res.body = 'from head'
+      })
+      await sleep()
+
+      const headRes = await fetch(`${url}/preferred`, { method: 'HEAD' })
+      expect(headRes.status).to.equal(200)
+      expect(headRes.headers.get('x-from')).to.equal('head')
+      expect(headCalls).to.equal(1)
+      expect(getCalls).to.equal(0)
+
+      const getRes = await fetch(`${url}/preferred`)
+      expect(getRes.status).to.equal(200)
+      expect(getRes.headers.get('x-from')).to.equal('get')
+      expect(await getRes.text()).to.equal('from get')
+      expect(getCalls).to.equal(1)
+    })
+
+    it('should serve GET and HEAD with the same handler when a GET route precedes an all route', async () => {
+      ctx.server.get('/x', async (req, res, next) => {
+        res.headers.set('x-from', 'get')
+        res.body = 'from get'
+      })
+      ctx.server.all('{/*path}', async (req, res, next) => {
+        res.headers.set('x-from', 'all')
+        res.body = 'from all'
+      })
+      await sleep()
+
+      const getRes = await fetch(`${url}/x`)
+      expect(getRes.status).to.equal(200)
+      expect(getRes.headers.get('x-from')).to.equal('get')
+      expect(await getRes.text()).to.equal('from get')
+
+      const headRes = await fetch(`${url}/x`, { method: 'HEAD' })
+      expect(headRes.status).to.equal(200)
+      expect(headRes.headers.get('x-from')).to.equal('get')
+    })
+
     it('should handle POST route', async () => {
       ctx.server.post('/echo', async (req, res, next) => {
         const text = await req.text()
@@ -227,7 +291,7 @@ describe('@cordisjs/server', () => {
 
       const res = await fetch(`${url}/only-get`, { method: 'POST' })
       expect(res.status).to.equal(405)
-      expect(res.headers.get('allow')).to.equal('get')
+      expect(res.headers.get('allow')).to.equal('get, head')
     })
 
     it('should treat all() as wildcard method in Allow header', async () => {
