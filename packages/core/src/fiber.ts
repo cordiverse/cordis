@@ -138,6 +138,12 @@ export class Fiber {
 
   private _error: any
   private _revision = 0
+  /** Bumped by every update. */
+  private _updateRevision = 0
+  /** Chains in flight, and whether a replay is owed. */
+  private _activeChains = 0
+  private _replayOwed = false
+  private _replay: Promise<void> | undefined
   private _runner: EffectRunner<string>
   private _store: Dict<Impl> = Object.create(null)
   private _release: (() => void) | undefined
@@ -557,6 +563,7 @@ export class Fiber {
   update(config: any, noSave = false): Awaitable<void> {
     const fiber = this.ctx.fiber
     fiber.assertActive()
+    const revision = ++fiber._updateRevision
     const loaded = fiber._runner.epoch !== INACTIVE
     const resolved = loaded ? fiber._resolve(config) : undefined
     if (!noSave) fiber.options.commit?.call(fiber, config)
@@ -568,11 +575,56 @@ export class Fiber {
       : restart()
     // a listener may veto the restart, in which case there is nothing to await
     if (result === undefined) return
-    const task = Promise.resolve(result)
-    // the failure is already reported by the fiber, so mark it handled here:
-    // a caller that drops the result cannot turn it into an unhandled
-    // rejection, while `await update()` still observes it
+    fiber._activeChains++
+    const task = Promise.resolve(result).then(() => {
+      return fiber._settleChains(revision)
+    }, (error) => {
+      // the chain settles before its error reaches the caller
+      return Promise.resolve(fiber._settleChains(revision)).then(() => {
+        throw error
+      })
+    })
+    // a dropped result is not an unhandled rejection
     task.catch(() => {})
+    return task
+  }
+
+  private _settleChains(revision: number): Awaitable<void> {
+    this._activeChains--
+    // the stored config moved past this chain
+    if (this._updateRevision !== revision) this._replayOwed = true
+    // the last chain in flight repairs
+    if (!this._replayOwed || this._activeChains > 0) return
+    return this._replayUpdate()
+  }
+
+  private _replayUpdate(): Awaitable<void> {
+    if (this.state === FiberState.DISPOSED) return
+    // one replay at a time
+    if (this._replay) return this._replay
+    this._replayOwed = false
+    // unloaded: the pending activation reads the stored config
+    if (this._runner.epoch === INACTIVE) return
+    const revision = this._updateRevision
+    const resolved = this._resolve(this.config)
+    // the load has the stored config; only the handlers re-run
+    const result = this.context.waterfall(this, 'internal/update', resolved, () => {})
+    if (result === undefined) return
+    const task = Promise.resolve(result).then(() => {
+      this._replay = undefined
+      // an update that landed during the replay is owed another one
+      if (this._updateRevision === revision) return
+      this._replayOwed = true
+      if (this._activeChains > 0) return
+      return this._replayUpdate()
+    }, (error) => {
+      this._replay = undefined
+      // the repair's failure is recorded on the fiber
+      this._error = error
+    })
+    // a dropped result is not an unhandled rejection
+    task.catch(() => {})
+    this._replay = task
     return task
   }
 }
