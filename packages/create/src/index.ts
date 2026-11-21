@@ -1,6 +1,6 @@
 import { access, copyFile, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { execSync } from 'node:child_process'
-import { basename, join, relative } from 'node:path'
+import { basename, join, relative, resolve } from 'node:path'
 import { Readable } from 'node:stream'
 import * as tar from 'tar'
 import * as yaml from 'js-yaml'
@@ -379,7 +379,7 @@ class Scaffold {
     console.log()
 
     const name = await this.getName()
-    rootDir = join(cwd, name)
+    rootDir = resolve(cwd, name)
     project = basename(rootDir)
 
     await this.prepare()
