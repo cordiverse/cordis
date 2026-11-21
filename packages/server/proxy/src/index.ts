@@ -34,6 +34,38 @@ function encodeSegment(segment: string) {
 
 export const inject = ['http', 'server']
 
+// The fixed hop-by-hop fields of RFC 9110 §7.6.1: they describe the connection
+// to the caller rather than the request, and an intermediary must remove them.
+// Each field named by `Connection` is removed as well.
+const hopByHop = new Set([
+  'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
+  'te', 'trailer', 'transfer-encoding', 'upgrade',
+])
+
+// The upstream client (undici) refuses `expect` in the request headers with
+// `expect header not supported`, which would answer the request with 500. It
+// frames the body itself, so it refuses `transfer-encoding` however the body is
+// given, and also refuses `keep-alive` and `upgrade`; those are hop-by-hop
+// above. It accepts `connection` and `te`, but RFC 9110 still requires an
+// intermediary to remove them.
+const refused = new Set(['expect'])
+
+function forwardHeaders(headers: Headers) {
+  // RFC 9110 §7.6.1: the fields named by `Connection` only apply to this
+  // connection, so they are dropped along with the hop-by-hop fields.
+  const dropped = new Set([...hopByHop, ...refused])
+  for (const [key, value] of headers) {
+    if (key.toLowerCase() !== 'connection') continue
+    for (const field of value.split(',')) dropped.add(field.trim().toLowerCase())
+  }
+
+  const result = new Headers()
+  for (const [key, value] of headers) {
+    if (!dropped.has(key.toLowerCase())) result.append(key, value)
+  }
+  return result
+}
+
 export function apply(ctx: Context, config: Config) {
   // the target as a directory, so that the paths of requests are resolved under it
   const target = new URL(config.target)
@@ -62,7 +94,7 @@ export function apply(ctx: Context, config: Config) {
     ctx.logger?.debug('%s %s -> %s', req.method, req.url, url.href)
     const response = await ctx.http(url.href, {
       method: req.method as any,
-      headers: req.headers,
+      headers: forwardHeaders(req.headers),
       data: bodyMethods.has(req.method) ? req.body : undefined,
     }) as unknown as Response
     const headers = new Headers(response.headers)

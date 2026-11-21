@@ -1,5 +1,6 @@
 import { Context } from 'cordis'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import * as http from 'node:http'
 import HTTP from '@cordisjs/http'
 import LoggerConsole from '@cordisjs/logger-console'
 import Server from '@cordisjs/server'
@@ -7,6 +8,47 @@ import * as Proxy from '../src/index.ts'
 
 function sleep(ms = 0) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms))
+}
+
+// sends a request with chunks of a body, so that it has no `content-length`
+function sendChunked(url: string, path: string, chunks: string[]): Promise<{ status: number, body: string }> {
+  const { hostname, port } = new URL(url)
+  return new Promise((resolve, reject) => {
+    const req = http.request({
+      hostname, port, path, method: 'POST',
+      headers: { 'transfer-encoding': 'chunked' },
+    }, (res) => {
+      const parts: Buffer[] = []
+      res.on('data', (chunk) => parts.push(chunk))
+      res.on('end', () => resolve({ status: res.statusCode!, body: Buffer.concat(parts).toString() }))
+    })
+    req.on('error', reject)
+    for (const chunk of chunks) req.write(chunk)
+    req.end()
+  })
+}
+
+// sends a request with headers that `fetch()` refuses to set, such as `expect`
+// and `connection`
+function sendRequest(url: string, path: string, options: {
+  method?: string
+  headers?: http.OutgoingHttpHeaders
+  body?: string
+} = {}): Promise<{ status: number, body: string }> {
+  const { hostname, port } = new URL(url)
+  return new Promise((resolve, reject) => {
+    const req = http.request({
+      hostname, port, path,
+      method: options.method ?? 'GET',
+      headers: options.headers,
+    }, (res) => {
+      const parts: Buffer[] = []
+      res.on('data', (chunk) => parts.push(chunk))
+      res.on('end', () => resolve({ status: res.statusCode!, body: Buffer.concat(parts).toString() }))
+    })
+    req.on('error', reject)
+    req.end(options.body)
+  })
 }
 
 describe('@cordisjs/server-proxy', () => {
@@ -122,6 +164,60 @@ describe('@cordisjs/server-proxy', () => {
       })
       expect(res.status).to.equal(200)
       expect(await res.json()).to.deep.equal({ foo: 'bar' })
+    })
+
+    it('should forward a chunked request body', async () => {
+      upstream.server.post('/upload', async (req, res, next) => {
+        res.body = await req.text()
+      })
+      await sleep()
+
+      const res = await sendChunked(proxyUrl, '/upload', ['hello', ' ', 'world'])
+      expect(res.status).to.equal(200)
+      expect(res.body).to.equal('hello world')
+    })
+  })
+
+  describe('hop-by-hop headers', () => {
+    it('should drop `expect` instead of answering 500', async () => {
+      let received: { expect: string | null, body: string } | undefined
+      upstream.server.post('/echo', async (req, res) => {
+        received = { expect: req.headers.get('expect'), body: await req.text() }
+        res.body = 'ok'
+      })
+      await sleep()
+
+      const res = await sendRequest(proxyUrl, '/echo', {
+        method: 'POST',
+        headers: { expect: '100-continue' },
+        body: 'hello proxy',
+      })
+      expect(res.status).to.equal(200)
+      // the request reached the upstream, with its body and without `expect`
+      expect(received).to.deep.equal({ expect: null, body: 'hello proxy' })
+    })
+
+    it('should drop the headers named by `connection`', async () => {
+      let received: { 'x-hop': string | null, 'x-kept': string | null } | undefined
+      upstream.server.post('/echo', async (req, res) => {
+        received = {
+          'x-hop': req.headers.get('x-hop'),
+          'x-kept': req.headers.get('x-kept'),
+        }
+        res.body = 'ok'
+      })
+      await sleep()
+
+      const res = await sendRequest(proxyUrl, '/echo', {
+        method: 'POST',
+        headers: {
+          connection: 'keep-alive, X-Hop',
+          'x-hop': '1',
+          'x-kept': '2',
+        },
+      })
+      expect(res.status).to.equal(200)
+      expect(received).to.deep.equal({ 'x-hop': null, 'x-kept': '2' })
     })
   })
 
