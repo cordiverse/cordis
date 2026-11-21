@@ -144,7 +144,16 @@ export abstract class EntryTree {
     const issues = validateOptions(options, EntryTree.sep, true)
     if (issues.length) throw new EntryValidationError(issues)
     const id = group.tree.ensureId(options)
-    group.data.splice(position, 0, options as EntryOptions)
+    // `group.create()` below reuses the entry with this id and replaces its options,
+    // so appending a second options object would leave `group.data` one longer than
+    // the store. The existing one is replaced in place, at its position.
+    const existing = group.data.findIndex((entry) => entry.id === id)
+    if (existing >= 0) {
+      this.ctx.logger.error('duplicate entry id %C, the existing entry is updated instead', id)
+      group.data.splice(existing, 1, options as EntryOptions)
+    } else {
+      group.data.splice(position, 0, options as EntryOptions)
+    }
     group.tree.commit({ id, group, options: options as EntryOptions })
     return group.create(options)
   }
