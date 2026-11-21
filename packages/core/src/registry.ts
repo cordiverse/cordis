@@ -29,7 +29,12 @@ export function Inject<K extends InjectKey>(name: K, config?: Context[K] extends
         const property = this[symbols.tracker]?.property
         ;(this[symbols.initHooks] ??= []).push(() => {
           (this.ctx as Context).inject(inject, (ctx) => {
-            return value.call(property ? withProps(this, { [property]: ctx }) : this)
+            if (!property) return value.call(this)
+            // `Object.prototype` members would shadow the service; the bag replaces
+            // only the tracker's `ctx`, so it must not inherit from `Object`.
+            const bag = Object.create(null)
+            bag[property] = ctx
+            return value.call(withProps(this, bag))
           })
         })
       })
