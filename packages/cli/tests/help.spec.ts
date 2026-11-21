@@ -147,6 +147,18 @@ describe('subcommands', () => {
     test.dispose()
   })
 
+  it('should resolve a nested command from separate arguments', async () => {
+    const parent = ctx.cli.command('help-nest', 'Parent command')
+    const child = ctx.cli.command('help-nest.build', 'Build the nested thing')
+    const input = new Input.String('help help-nest build')
+    const result = await ctx.cli.execute(input)
+    expect(result).to.be.a('string')
+    expect(result).to.include('help-nest build')
+    expect(result).to.include('Build the nested thing')
+    parent.dispose()
+    child.dispose()
+  })
+
   it('should show description in command list', async () => {
     const cmd = ctx.cli.command('described-cmd', 'A very useful command')
     const input = new Input.String('help')
