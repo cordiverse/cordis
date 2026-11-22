@@ -153,7 +153,7 @@ async function collect(body: ReadableStream<Uint8Array>) {
 class MemoryFs implements FsProvider {
   static inject = ['fs']
 
-  readonly capabilities: FsProvider.Capabilities = { range: 'signed', atomic: true }
+  readonly capabilities: FsProvider.Capabilities = { range: 'signed', atomic: true, exclusive: true }
 
   private _roots = new Map<string, Directory>()
   private _subscriptions = new Set<Subscription>()

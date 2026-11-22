@@ -121,11 +121,13 @@ export class FileRef extends EntryRef {
    *
    * - `mode`: the permission bits of the file, where the provider has them.
    * - `exclusive`: an existing file fails with `AlreadyExists`, checked when
-   *   the file is created.
+   *   the file is created. It requires a provider with the capability
+   *   `exclusive`.
    * - `atomic`: a reader observes either the previous or the complete new
    *   content, and an existing file keeps its permission bits unless `mode`
-   *   is given. Together with `exclusive`, it requires a provider with the
-   *   capability `atomic`.
+   *   is given. It requires a provider with the capability `atomic`; without
+   *   `exclusive`, also one with the capability `exclusive`, `rename()` and
+   *   `remove()`.
    *
    * With `exclusive` or `atomic`, a link that leads into another mount fails
    * with `CrossesDevices`.

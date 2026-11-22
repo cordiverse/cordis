@@ -6,7 +6,7 @@ import { FsError } from './error.ts'
 import { DirEntryRef, EntryRef, FileRef, ReadOptions } from './file.ts'
 import { resolveSlices, sliceStream } from './slice.ts'
 import { assertLocation, isHierarchical, isUrl, Path, resolvePath } from './path.ts'
-import { Attempts, createTemporary, fileTarget, reserveFile } from './write.ts'
+import { createTemporary, fileTarget, reserveFile } from './write.ts'
 import { Watcher, WatchOptions } from './watcher.ts'
 
 export type * from './entry.ts'
@@ -339,7 +339,9 @@ export class Fs extends Service<Fs.Intercept> {
   // of the other branch finishes.
   private async _write(url: URL, data: Blob | ReadableStream<Uint8Array>, options: WriteOptions): Promise<void> {
     try {
-      await this._writeFile(url, options, data instanceof Blob && 'write', async (mount, dest, options) => {
+      // checked before the destination is resolved
+      this._provider(url, 'write')
+      await this._writeFile(url, options, data instanceof Blob, async (mount, dest, options) => {
         const body = data instanceof Blob ? data.stream() : data
         try {
           await this._provider(dest, 'write', mount).write(dest, body, options)
@@ -356,24 +358,25 @@ export class Fs extends Service<Fs.Intercept> {
 
   // A write or a file copy to `url`, which `transfer` performs at a location
   // of the mount of `url`. A `retryable` transfer can be performed again, and
-  // transfers the same content each time; a `copy` by the provider, which may
-  // not create a file exclusively, also after an empty temporary file is
-  // created. Without the capability `atomic`, an atomic write transfers the
-  // content to an exclusively created temporary file beside the destination,
-  // and renames it over the destination. A transfer that is not retryable
-  // goes to an empty temporary file created before, which is removed on a
-  // failure. A name is retried once for the whole operation.
+  // transfers the same content each time. Without the capability `atomic`,
+  // an atomic write transfers the content to an exclusively created temporary
+  // file beside the destination, and renames it over the destination. A
+  // transfer that is not retryable goes to an empty temporary file created
+  // before. The temporary file is removed on a failure.
   private async _writeFile(
-    url: URL, options: WriteOptions, retryable: 'write' | 'copy' | false,
+    url: URL, options: WriteOptions, retryable: boolean,
     transfer: (mount: Mount, dest: URL, options: WriteOptions) => Promise<void>,
   ) {
     const mount = this._route(url)
     const { provider } = mount
     const { atomic, exclusive, mode } = options
     const forwarded: WriteOptions = mode === undefined ? {} : { mode }
+    if (exclusive && !provider.capabilities?.exclusive) {
+      throw new FsError('NotSupported', url, `the provider mounted at ${mount.prefix} does not create a file exclusively`)
+    }
     if (exclusive) forwarded.exclusive = true
     const staged = !!atomic && !provider.capabilities?.atomic
-    if (staged && (exclusive || !provider.rename)) {
+    if (staged && (exclusive || !provider.capabilities?.exclusive || !provider.rename || !provider.remove)) {
       throw new FsError('NotSupported', url, `cannot atomically ${exclusive ? 'create' : 'replace'} a file at ${url.href}`)
     }
     if (atomic && !staged) forwarded.atomic = true
@@ -388,42 +391,33 @@ export class Fs extends Service<Fs.Intercept> {
     if (!staged) return transfer(mount, dest, forwarded)
     if (stats && stats.type !== 'file') throw new FsError('NotSupported', url, `cannot replace a ${stats.type} at ${dest.href}`)
     if (stats && provider.access) await provider.access(dest, 'write')
-    const attempts: Attempts = {}
-    let temporary: URL | undefined
+    // `rename()` and `remove()` are checked above
+    const staging = provider as FsProvider & Required<Pick<FsProvider, 'rename' | 'remove'>>
+    let temporary: URL
     if (retryable) {
       const finalMode = mode ?? stats?.mode
-      let attempted: URL | undefined
-      try {
-        // the provider removes a file that it creates exclusively and then fails to write
-        temporary = await createTemporary(dest, owns, (url) => {
-          attempted = url
-          return transfer(mount, url, finalMode === undefined ? { exclusive: true } : { mode: finalMode, exclusive: true })
-        }, attempts)
-      } catch (error) {
-        // only an exclusive copy to the temporary file that the provider does not support
-        const exclusiveCopy = retryable === 'copy' && provider.write && isCode(error, 'NotSupported')
-        if (!exclusiveCopy || (error as FsError).url?.href !== attempted?.href) throw error
-      }
-    }
-    // content that is transferred after an empty temporary file is created
-    const reserved = !temporary
-    if (!temporary) {
-      const reservation = await reserveFile(dest, this._provider(dest, 'write', mount), owns, mode ?? stats?.mode, attempts)
+      // the provider removes a file that it creates exclusively and then fails to write
+      temporary = await createTemporary(dest, owns, (url) => {
+        return transfer(mount, url, finalMode === undefined ? { exclusive: true } : { mode: finalMode, exclusive: true })
+      })
+    } else {
+      const writer = this._provider(dest, 'write', mount) as typeof staging & Required<Pick<FsProvider, 'write'>>
+      const reservation = await reserveFile(dest, writer, owns, mode ?? stats?.mode)
       temporary = reservation.url
       if (reservation.mode !== undefined) forwarded.mode = reservation.mode
     }
     try {
-      if (reserved) await transfer(mount, temporary, forwarded)
+      if (!retryable) await transfer(mount, temporary, forwarded)
       for (let retries = 0; ; retries++) {
         try {
-          return await provider.rename!(temporary, dest)
+          return await staging.rename(temporary, dest)
         } catch (error) {
           if (retries >= RENAME_RETRIES || !isCode(error, 'Busy')) throw error
         }
         await sleep(RENAME_BACKOFF * (retries + 1))
       }
     } catch (error) {
-      await provider.remove?.(temporary, { recursive: false }).catch(() => {})
+      await staging.remove(temporary, { recursive: false }).catch(() => {})
       throw error
     }
   }
@@ -590,7 +584,12 @@ export class Fs extends Service<Fs.Intercept> {
     }
     const source = this._route(from)
     // a copy by the provider reads the source again for each attempt
-    const retryable = this._route(to) === source && !!source.provider.copy && 'copy'
+    const retryable = this._route(to) === source && !!source.provider.copy
+    if (!retryable) {
+      // checked before any change of the destination
+      this._provider(from, 'read', source)
+      this._provider(to, 'write')
+    }
     await this._writeFile(to, { ...options, mode: stats?.mode }, retryable, async (mount, dest, writeOptions) => {
       const { mode: destinationMode, ...transfer } = writeOptions
       if (mount === source && mount.provider.copy) {
@@ -716,10 +715,10 @@ export interface FsProvider {
    *
    * - `mode`: a provider with permissions gives the file these permission
    *   bits before its content.
-   * - `exclusive`: create the file only where no entry exists, a dangling link
-   *   included, and fail with `AlreadyExists` otherwise; remove the created
-   *   file if the write then fails. A provider that cannot create a file
-   *   exclusively fails with `NotSupported`.
+   * - `exclusive`: received only with the capability `exclusive`. Create the
+   *   file only where no entry exists, a dangling link included, and fail
+   *   with `AlreadyExists` otherwise; remove the created file if the write
+   *   then fails.
    * - `atomic`: received only with the capability `atomic`.
    */
   write?(url: URL, body: ReadableStream<Uint8Array>, options: WriteOptions): Promise<void>
@@ -780,6 +779,8 @@ export namespace FsProvider {
     range?: 'unsigned' | 'signed'
     /** `write()` and `copy()` replace a file at once, and receive `atomic`. */
     atomic?: boolean
+    /** `write()` and `copy()` create a file exclusively, and receive `exclusive`. */
+    exclusive?: boolean
   }
 }
 

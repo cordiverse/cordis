@@ -25,8 +25,8 @@ function temporaryUrl(url: URL, occupied?: URL): URL {
   }
 }
 
-/** The attempts of an operation to create a temporary file, which retries an occupied name once. */
-export interface Attempts {
+// The attempts of an operation to create a temporary file, which retries an occupied name once.
+interface Attempts {
   retried?: boolean
 }
 
@@ -57,16 +57,18 @@ export async function createTemporary(
 // be read again is transferred into it, and returns it with the mode to give
 // the content. A known mode is given by the transfer, so the empty file is private.
 export async function reserveFile(
-  dest: URL, provider: FsProvider & Required<Pick<FsProvider, 'write'>>,
-  owns: (url: URL) => boolean, mode: number | undefined, attempts: Attempts,
+  dest: URL, provider: FsProvider & Required<Pick<FsProvider, 'write' | 'remove'>>,
+  owns: (url: URL) => boolean, mode?: number,
 ) {
+  const attempts: Attempts = {}
   const empty = (privateFile: boolean) => (url: URL) => provider.write(url, new Blob([]).stream(),
     privateFile ? { exclusive: true, mode: 0o600 } : { exclusive: true })
   let url = await createTemporary(dest, owns, empty(mode !== undefined), attempts)
-  if (mode !== undefined || !provider.stat || !provider.remove) return { url, mode }
+  if (mode !== undefined || !provider.stat) return { url, mode }
 
-  // A default mode such as 0444 permits creation but prevents reopening.
-  // Save it for publication and claim a writable reservation for the transfer.
+  // A default mode such as 0444 permits the creation, but not another opening
+  // for the transfer. It is given to the content, and the empty file is
+  // created again as a private one.
   const stats = await provider.stat(url, { follow: false }).catch(() => undefined)
   if (stats?.mode === undefined || (stats.mode & 0o200)) return { url, mode }
   try {
@@ -100,9 +102,9 @@ async function lstat(url: URL, provider: FsProvider): Promise<Stats | undefined>
  * The file that a write to `url` gives content to, with its metadata if it
  * exists. With `realpath()`, the provider resolves the links, also a dangling
  * one in the last component; without it, `url` is the file. The file has to
- * be a location of the same mount. A link in a parent directory can lead out
- * of the mount unless it is the only mount and at the empty prefix, so that
- * the whole location is then resolved, and otherwise the last component only.
+ * be a location of the same mount. Unless the mount is the only one and at
+ * the empty prefix, a link in a parent directory may lead out of it, so that
+ * the whole location is resolved; otherwise, only the last component is.
  * A file to be `staged`, with a temporary file beside it, has to be at a
  * location with a hierarchical path.
  */

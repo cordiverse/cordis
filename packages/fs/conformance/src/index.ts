@@ -15,6 +15,10 @@ export interface ConformanceOptions {
 export interface Capabilities {
   /** whether the provider supports symbolic links; without them, `symlink()` and `readlink()` fail with `NotSupported` */
   symlink?: boolean
+  /** whether the provider declares the capability `exclusive` */
+  exclusive?: boolean
+  /** whether a file can be written atomically, by the provider or composed by `@cordisjs/fs` */
+  atomic?: boolean
 }
 
 async function rejects(promise: Promise<unknown>, ...codes: FsError.Code[]) {
@@ -31,6 +35,8 @@ async function rejects(promise: Promise<unknown>, ...codes: FsError.Code[]) {
  */
 export function conformance(name: string, options: ConformanceOptions) {
   const symlinks = !!options.capabilities?.symlink
+  const exclusive = !!options.capabilities?.exclusive
+  const atomic = !!options.capabilities?.atomic
   const windows = options.windows
   // Windows may report a missing path when an intermediate component is a file.
   const belowFile: FsError.Code[] = windows ? ['NotADirectory', 'NotFound'] : ['NotADirectory']
@@ -98,7 +104,7 @@ export function conformance(name: string, options: ConformanceOptions) {
         expect(await ctx.fs.file(url('b.bin')).bytes()).to.deep.equal(content)
       })
 
-      it('allows one exclusive creator across write and copy', async () => {
+      it.runIf(exclusive)('allows one exclusive creator across write and copy', async () => {
         await write('src', 'copy')
         const dest = ctx.fs.file(url('dest'))
         const results = await Promise.allSettled([
@@ -152,7 +158,7 @@ export function conformance(name: string, options: ConformanceOptions) {
       })
     })
 
-    describe('atomic write', () => {
+    describe.runIf(atomic)('atomic write', () => {
       function atomic(path: string, data: string | ReadableStream<Uint8Array>) {
         return ctx.fs.file(url(path)).write(data, { atomic: true })
       }
@@ -166,7 +172,7 @@ export function conformance(name: string, options: ConformanceOptions) {
         expect(await names('')).to.deep.equal([['a.txt', 'file'], ['b.txt', 'file']])
       })
 
-      it('exposes the previous content until the complete stream is published', async () => {
+      it('keeps the previous content readable until the stream ends', async () => {
         await write('a', 'old')
         const consumed = Promise.withResolvers<void>()
         const finish = Promise.withResolvers<void>()
@@ -511,7 +517,7 @@ export function conformance(name: string, options: ConformanceOptions) {
         expect(await text('a.txt')).to.equal('bar')
       })
 
-      it('keeps an existing file with `exclusive: true`', async () => {
+      it.runIf(exclusive)('keeps an existing file with `exclusive: true`', async () => {
         await write('a.txt', 'foo')
         await write('b.txt', 'bar')
         await rejects(ctx.fs.copy(url('a.txt'), url('b.txt'), { exclusive: true }), 'AlreadyExists')
@@ -545,7 +551,7 @@ export function conformance(name: string, options: ConformanceOptions) {
         expect(await text('dest/sub/c.txt')).to.equal('baz')
       })
 
-      it('keeps the existing files of a merge with `exclusive: true`', async () => {
+      it.runIf(exclusive)('keeps the existing files of a merge with `exclusive: true`', async () => {
         await write('src/a.txt', 'foo')
         await write('dest/a.txt', 'old')
         await rejects(ctx.fs.copy(url('src'), url('dest'), { recursive: true, exclusive: true }), 'AlreadyExists')
@@ -720,7 +726,7 @@ export function conformance(name: string, options: ConformanceOptions) {
       })
 
       // as above
-      it.skipIf(windows)('exclusively creates the file named by a dangling destination link', async () => {
+      it.runIf(exclusive && !windows)('exclusively creates the file named by a dangling destination link', async () => {
         await ctx.fs.symlink('missing', url('link'))
         const entry = ctx.fs.file(url('link'))
         await entry.write('first', { exclusive: true })
@@ -729,7 +735,7 @@ export function conformance(name: string, options: ConformanceOptions) {
         expect(await ctx.fs.readlink(url('link'))).to.equal('missing')
       })
 
-      it.skipIf(windows)('copies a file through a dangling link, also with `exclusive: true`', async () => {
+      it.runIf(exclusive && !windows)('copies a file through a dangling link, also with `exclusive: true`', async () => {
         await write('a.txt', 'foo')
         await ctx.fs.symlink('target.txt', url('link'))
         await ctx.fs.copy(url('a.txt'), url('link'), { exclusive: true })

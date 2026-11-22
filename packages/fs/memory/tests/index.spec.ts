@@ -9,18 +9,20 @@ conformance('MemoryFs', {
     await ctx.use(MemoryFs)
     return new URL('memory://conformance/')
   },
+  capabilities: { exclusive: true, atomic: true },
 })
 
-// a provider that declares no capabilities, on which `@cordisjs/fs` composes ranges and atomic writes
+// a provider that declares only `exclusive`, on which `@cordisjs/fs` composes ranges and atomic writes
 class PlainFs extends MemoryFs {
-  readonly capabilities = {}
+  readonly capabilities = { exclusive: true }
 }
 
-conformance('MemoryFs without capabilities', {
+conformance('MemoryFs with composed ranges and atomic writes', {
   async setup(ctx) {
     await ctx.use(PlainFs)
     return new URL('memory://conformance/')
   },
+  capabilities: { exclusive: true, atomic: true },
 })
 
 async function rejects(promise: Promise<unknown>, code: FsError.Code) {

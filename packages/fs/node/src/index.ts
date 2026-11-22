@@ -126,7 +126,7 @@ const MAX_LINKS = 40
 
 /** The local file system of Node.js. */
 class NodeFs extends BaseFs {
-  readonly capabilities: FsProvider.Capabilities = { range: 'unsigned' }
+  readonly capabilities: FsProvider.Capabilities = { range: 'unsigned', exclusive: true }
 
   constructor(ctx: Context, config: NodeFs.Config = {}) {
     super(ctx, { mount: config.mount ?? 'file:' })

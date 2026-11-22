@@ -26,7 +26,7 @@ conformance('NodeFs', {
     rmSync(resolve(root, '__conformance__'), { recursive: true, force: true })
   },
   windows: process.platform === 'win32',
-  capabilities: { symlink: true },
+  capabilities: { symlink: true, exclusive: true, atomic: true },
 })
 
 const fixture = resolve(root, '__file__')
@@ -116,7 +116,7 @@ describe('NodeFs', () => {
       expect(readFileSync(path('dest'), 'utf8')).to.equal('concurrent')
     })
 
-    it('cleans up a failed staged disk write while another tee branch is open', async () => {
+    it('removes the temporary file of a failed write while another branch of a tee is open', async () => {
       const handle = await open(path('dest'), 'w')
       await handle.writeFile('old')
       await handle.close()
@@ -152,7 +152,7 @@ describe('NodeFs', () => {
       expect(readdirSync(fixture)).to.deep.equal(['dest'])
     })
 
-    it('removes a reserved file when the source itself reports AlreadyExists', async () => {
+    it('removes the temporary file when the stream reports `AlreadyExists`', async () => {
       writeFileSync(path('dest'), 'old')
       const failure = new FsError('AlreadyExists', url('source'), 'source failed')
       const body = new ReadableStream<Uint8Array>({ start(controller) { controller.error(failure) } })
@@ -161,7 +161,7 @@ describe('NodeFs', () => {
       expect(readFileSync(path('dest'), 'utf8')).to.equal('old')
     })
 
-    it.skipIf(process.platform === 'win32')('keeps a replacement published while an exclusive write was consuming its source', async () => {
+    it.skipIf(process.platform === 'win32')('keeps a file that replaces the one an exclusive write created while it reads its source', async () => {
       const file = ctx.fs.file(url('dest'))
       const failure = new Error('source failed')
       const body = new ReadableStream<Uint8Array>({
@@ -174,7 +174,7 @@ describe('NodeFs', () => {
       expect(await file.text()).to.equal('replacement')
     })
 
-    it('rejects exclusive atomic publication before writing or copying', async () => {
+    it('fails with `NotSupported` on `atomic` with `exclusive` before writing or copying', async () => {
       const dest = ctx.fs.file(url('dest'))
       const options = { atomic: true, exclusive: true }
       writeFileSync(path('src'), 'source')
@@ -185,7 +185,7 @@ describe('NodeFs', () => {
       expect(readdirSync(fixture)).to.deep.equal(['src'])
     })
 
-    it.skipIf(process.platform === 'win32')('publishes writes and copies after a staging name collides with a dangling link', async () => {
+    it.skipIf(process.platform === 'win32')('writes and copies atomically after the name of a temporary file collides with a dangling link', async () => {
       writeFileSync(path('src'), 'source')
       writeFileSync(path('dest'), 'old')
       symlinkSync('foreign', path('.cordis-000000000000.tmp'))
@@ -203,7 +203,7 @@ describe('NodeFs', () => {
     })
 
     // POSIX resolves `..` after the preceding link, and Windows before it
-    it('publishes through a link whose target traverses another link before ".." as the system does', async () => {
+    it('writes through a link whose target traverses another link before ".." as the system does', async () => {
       mkdirSync(path('real/deep'), { recursive: true })
       symlinkSync(['real', 'deep'].join(sep), path('shortcut'), 'dir')
       // the target as stored, which `join()` would normalize to `target`
@@ -286,7 +286,7 @@ describe('NodeFs', () => {
       expect(existsSync(path('dest'))).to.be.false
     })
 
-    it.skipIf(process.platform === 'win32')('publishes a new read-only file with explicit or default permissions', async () => {
+    it.skipIf(process.platform === 'win32')('writes a new read-only file atomically, with explicit or default permissions', async () => {
       const previous = process.umask(0o222)
       try {
         await ctx.fs.file(url('default')).write('data', { atomic: true })
@@ -300,30 +300,6 @@ describe('NodeFs', () => {
       }
     })
 
-    // permission bits do not exist on Windows
-    it.skipIf(process.platform === 'win32')('keeps the permission bits of an existing file unless `mode` is given', async () => {
-      writeFileSync(path('a.sh'), '')
-      writeFileSync(path('b.sh'), '')
-      chmodSync(path('a.sh'), 0o751)
-      chmodSync(path('b.sh'), 0o600)
-      await ctx.fs.file(url('a.sh')).write('foo', { atomic: true })
-      await ctx.fs.file(url('b.sh')).write('bar', { atomic: true, mode: 0o751 })
-      expect([statSync(path('a.sh')).mode & 0o7777, statSync(path('b.sh')).mode & 0o7777]).to.deep.equal([0o751, 0o751])
-      expect(readFileSync(path('a.sh'), 'utf8')).to.equal('foo')
-    })
-
-    // the superuser may write to any file
-    it.skipIf(process.getuid?.() === 0)('fails on a read-only file, as a plain write does', async () => {
-      writeFileSync(path('a.txt'), 'foo')
-      chmodSync(path('a.txt'), 0o444)
-      try {
-        await rejects(ctx.fs.file(url('a.txt')).write('bar', { atomic: true }), 'PermissionDenied')
-        expect(readFileSync(path('a.txt'), 'utf8')).to.equal('foo')
-        expect(readdirSync(fixture)).to.deep.equal(['a.txt'])
-      } finally {
-        chmodSync(path('a.txt'), 0o644)
-      }
-    })
   })
 
   describe('access', () => {
@@ -408,7 +384,7 @@ describe('NodeFs', () => {
   })
 
   describe('copy', () => {
-    it.skipIf(process.platform === 'win32')('treats a dangling link as occupied for literal provider creation', async () => {
+    it.skipIf(process.platform === 'win32')('fails to create a file exclusively at a dangling link, which the provider does not follow', async () => {
       const provider = new NodeFs(ctx, { mount: url('.').href + '/' })
       writeFileSync(path('src'), 'data')
       symlinkSync('missing', path('link'))
