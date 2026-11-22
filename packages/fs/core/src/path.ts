@@ -141,3 +141,9 @@ export function assertLocation(url: URL) {
     }
   }
 }
+
+// Whether `url` has a hierarchical path, in which a trailing separator names a
+// directory. At a location without one, it may be a part of the name.
+export function isHierarchical(url: URL) {
+  return URL.canParse('.', url)
+}

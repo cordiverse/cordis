@@ -2,7 +2,7 @@ import { Context, Fiber, FiberState } from 'cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import Fs, { BaseFs, DirEntryRef, FileRef, FsError, FsProvider, Watcher } from '../src/index.ts'
+import Fs, { BaseFs, DirEntryRef, FileRef, FsError, FsProvider, Watcher, WriteOptions } from '../src/index.ts'
 
 interface FakeWatch {
   watcher: Watcher
@@ -622,6 +622,7 @@ describe('Fs', () => {
       const find = (url: URL) => url.pathname.replace(/\/+$/, '')
       const missing = (url: URL) => new FsError('NotFound', url, 'NotFound')
       const provider: FsProvider = {
+        capabilities: { exclusive: true },
         async stat(url, { follow }) {
           const path = find(url)
           if (path in links) {
@@ -678,6 +679,20 @@ describe('Fs', () => {
       expect(calls).to.deep.equal(['mkdir /dest', 'copy /src/a.txt /dest/a.txt'])
     })
 
+    it('copies a location without a hierarchical path to another key that extends it', async () => {
+      const ctx = await setup()
+      const written: string[] = []
+      ctx.fs.mount('doc:', {
+        async stat(url) { return { type: 'file', size: 6, mtime: new Date(0) } },
+        read: () => new Blob(['source']).stream(),
+        async write(url) { written.push(url.href) },
+      })
+      await ctx.fs.copy('doc:entry', 'doc:entry/')
+      await ctx.fs.copy('doc:entry', 'doc:entry/child')
+      expect(written).to.deep.equal(['doc:entry/', 'doc:entry/child'])
+      expect(await code(ctx.fs.copy('doc:entry', 'doc:entry'))).to.equal('InvalidPath')
+    })
+
     it('copies a file between two mounts through a read and a write', async () => {
       const ctx = await setup()
       const source = tree({ '/a.txt': 'foo' }, { copy: true })
@@ -687,6 +702,80 @@ describe('Fs', () => {
       await ctx.fs.copy('mem:///a.txt', 'other:///b.txt')
       expect(target.entries['/b.txt']).to.equal('foo')
       expect([...source.calls, ...target.calls]).to.deep.equal(['read /a.txt', 'write /b.txt'])
+    })
+
+    it('rejects a known occupied exclusive destination before opening the source', async () => {
+      const ctx = await setup()
+      const source = tree({ '/file': 'new' })
+      const target = tree({ '/file': 'old' })
+      target.links['/link'] = 'file'
+      const write = vi.fn(async (url: URL) => { throw new FsError('AlreadyExists', url, 'occupied') })
+      ctx.fs.mount('src:', source.provider)
+      const realpath = async (url: URL) => new URL(url.href.replace(/\/link$/, '/file'))
+      ctx.fs.mount('dest:', { ...target.provider, write, realpath })
+      expect(await code(ctx.fs.copy('src:///file', 'dest:///link', { exclusive: true }))).to.equal('AlreadyExists')
+      expect(source.calls).to.deep.equal([])
+      expect(write).not.toHaveBeenCalled()
+    })
+
+    it('copies through the provider, natively atomic or to a temporary file, without `write()`', async () => {
+      const ctx = await setup()
+      for (const atomic of [false, true]) {
+        const scheme = atomic ? 'native:' : 'staged:'
+        const target = tree({ '/a': 'new', '/b': 'old' }, { copy: true })
+        ctx.fs.mount(scheme, {
+          stat: target.provider.stat, capabilities: { atomic, exclusive: true },
+          async copy(src, dest, options) {
+            if (atomic) expect(options.atomic).to.equal(true)
+            else expect(target.entries['/b']).to.equal('old')
+            await target.provider.copy!(src, dest, options)
+          },
+          async rename(src, dest) {
+            target.entries[dest.pathname] = target.entries[src.pathname]
+            delete target.entries[src.pathname]
+          },
+          async remove(url) { delete target.entries[url.pathname] },
+        })
+        await ctx.fs.copy(scheme + '///a', scheme + '///b', { atomic: true })
+        expect(target.entries).to.deep.equal({ '/a': 'new', '/b': 'new' })
+      }
+    })
+
+    it('streams cross-mount copies with the destination write guarantees', async () => {
+      const ctx = await setup()
+      const source = tree({ '/a': 'data' }, { copy: true })
+      ctx.fs.mount('src:', source.provider)
+      const received: string[] = []
+      ctx.fs.mount('dest:', {
+        capabilities: { atomic: true, exclusive: true },
+        async write(url, body, options) {
+          expect(options).to.include({ atomic: true, exclusive: true })
+          received.push(await new Response(body).text())
+        },
+      })
+      await ctx.fs.copy('src:///a', 'dest:///b', { atomic: true, exclusive: true })
+      expect(received).to.deep.equal(['data'])
+    })
+
+    it('releases the source reader when a cross-mount copy fails after opening a tee branch', async () => {
+      const ctx = await setup()
+      const [stream, sibling] = new ReadableStream<Uint8Array>({
+        start(controller) { controller.enqueue(new Uint8Array([1])) },
+      }).tee()
+      ctx.fs.mount('src:', {
+        stat: async () => ({ type: 'file', size: 1, mtime: new Date(0) }),
+        read: () => stream,
+      })
+      ctx.fs.mount('dest:', {
+        async write(url) { throw new FsError('PermissionDenied', url, 'denied') },
+      })
+      const copy = code(ctx.fs.copy('src:///file', 'dest:///file'))
+      try {
+        expect(await copy).to.equal('PermissionDenied')
+        expect(stream.locked).to.equal(false)
+      } finally {
+        await sibling.cancel()
+      }
     })
 
     it('does not write the destination when the source cannot be read', async () => {
@@ -831,6 +920,443 @@ describe('Fs', () => {
     await watcher.dispose()
     await new Promise(resolve => setImmediate(resolve))
     expect(ready).not.toHaveBeenCalled()
+  })
+
+  describe('atomic write', () => {
+    // a provider of one directory that records the writes and the renames, and
+    // fails the first renames with the given errors
+    function directory(overrides?: Partial<FsProvider>, failures: FsError[] = []) {
+      const files = new Map<string, string>()
+      const calls: [string, ...unknown[]][] = []
+      const provider: FsProvider = {
+        async write(url, body, options) {
+          calls.push(['write', url.href, options])
+          files.set(url.href, await new Response(body).text())
+        },
+        async rename(src, dest) {
+          calls.push(['rename', src.href, dest.href])
+          const failure = failures.shift()
+          if (failure) throw failure
+          files.set(dest.href, files.get(src.href)!)
+          files.delete(src.href)
+        },
+        async remove(url) {
+          calls.push(['remove', url.href])
+          if (!files.delete(url.href)) throw new FsError('NotFound', url, 'missing')
+        },
+        ...overrides,
+        capabilities: { exclusive: true, ...overrides?.capabilities },
+      }
+      return { files, calls, provider }
+    }
+
+    const busy = () => new FsError('Busy', new URL('mem://vol/dir/a.txt'), 'busy')
+
+    it('forwards `atomic` only to a provider that declares `atomic`', async () => {
+      const ctx = await setup()
+      const { calls, provider } = directory({ capabilities: { atomic: true } })
+      ctx.fs.mount('mem:', provider)
+      await ctx.fs.file('mem://vol/dir/a.txt').write('foo', { atomic: true, mode: 0o600 })
+      await ctx.fs.file('mem://vol/dir/a.txt').write('bar', { atomic: false })
+      expect(calls).to.deep.equal([
+        ['write', 'mem://vol/dir/a.txt', { exclusive: false, atomic: true, mode: 0o600 }],
+        ['write', 'mem://vol/dir/a.txt', { exclusive: false, atomic: false }],
+      ])
+    })
+
+    it('writes a temporary file in the same directory and renames it over the target', async () => {
+      const ctx = await setup()
+      const { files, calls, provider } = directory()
+      ctx.fs.mount('mem:', provider)
+      await ctx.fs.file('mem://vol/dir/a.txt').write('foo', { atomic: true })
+      expect([...files]).to.deep.equal([['mem://vol/dir/a.txt', 'foo']])
+      const [[, temporary, options]] = calls
+      expect(options).to.include({ exclusive: true })
+      expect(calls.at(-1)).to.deep.equal(['rename', temporary, 'mem://vol/dir/a.txt'])
+      const url = new URL(temporary as string)
+      expect(new URL('./', url).href).to.equal('mem://vol/dir/')
+    })
+
+    it('creates the temporary file with content that can be read again in one write, also after a collision', async () => {
+      const ctx = await setup()
+      const { files, calls, provider } = directory()
+      const write = provider.write!
+      const read: string[] = []
+      provider.write = async (url, body, options) => {
+        if (read.length) return write(url, body, options)
+        // the first attempt reads the whole content before it finds the name occupied
+        read.push(await new Response(body).text())
+        files.set(url.href, 'occupied')
+        throw new FsError('AlreadyExists', url, 'occupied')
+      }
+      ctx.fs.mount('mem:', provider)
+      await ctx.fs.file('mem://vol/dir/a.txt').write('foo', { atomic: true })
+      expect(read).to.deep.equal(['foo'])
+      expect([...files.values()]).to.deep.equal(['occupied', 'foo'])
+      // no empty file precedes the content
+      expect(calls.map(([name]) => name)).to.deep.equal(['write', 'rename'])
+      expect(calls[0][2]).to.include({ exclusive: true })
+    })
+
+    it('checks the operations of a copy between two mounts before any change of the destination', async () => {
+      const ctx = await setup()
+      ctx.fs.mount('src:', { stat: async () => ({ type: 'file', size: 4, mtime: new Date(0) }) })
+      const { calls, provider } = directory({ stat: async url => { throw new FsError('NotFound', url, 'missing') } })
+      ctx.fs.mount('mem:', provider)
+      for (const atomic of [false, true]) {
+        expect(await code(ctx.fs.copy('src:///a', 'mem://vol/dir/b', { atomic }))).to.equal('NotSupported')
+      }
+      expect(calls).to.deep.equal([])
+    })
+
+    it('retries only an `AlreadyExists` of the temporary file itself', async () => {
+      const ctx = await setup()
+      const failure = new FsError('AlreadyExists', new URL('mem://vol/dir/a'), 'of the source')
+      const copy = vi.fn(async () => { throw failure })
+      const { calls, provider } = directory({ copy, stat: async () => ({ type: 'file', size: 0, mtime: new Date(0) }) })
+      ctx.fs.mount('mem:', provider)
+      expect(await ctx.fs.copy('mem://vol/dir/a', 'mem://vol/dir/b', { atomic: true }).catch(error => error)).to.equal(failure)
+      expect(copy).toHaveBeenCalledOnce()
+      expect(calls).to.deep.equal([])
+    })
+
+    it('shares the retry of an occupied name between the two creations of an empty temporary file', async () => {
+      const ctx = await setup()
+      let creations = 0
+      const { files, provider } = directory({
+        async stat(url) {
+          if (!files.has(url.href)) throw new FsError('NotFound', url, 'missing')
+          return { type: 'file', size: 0, mtime: new Date(0), mode: 0o444 }
+        },
+      })
+      const write = provider.write!
+      provider.write = async (url, body, options) => {
+        // the first creation of each of the two attempts finds its name occupied
+        if (options.exclusive && ++creations % 2) throw new FsError('AlreadyExists', url, 'occupied')
+        return write(url, body, options)
+      }
+      ctx.fs.mount('mem:', provider)
+      expect(await code(ctx.fs.file('mem://vol/dir/a').write(new Blob(['data']).stream(), { atomic: true }))).to.equal('AlreadyExists')
+      expect(creations).to.equal(3)
+    })
+
+    it('cancels the stream of a blob read by a failed attempt', async () => {
+      const ctx = await setup()
+      const streams: ReadableStream<Uint8Array>[] = []
+      const stream = Blob.prototype.stream
+      vi.spyOn(Blob.prototype, 'stream').mockImplementation(function (this: Blob) {
+        const result = stream.call(this)
+        streams.push(result)
+        return result
+      })
+      const failure = new FsError('Unknown', new URL('mem://vol/dir/a'), 'failed')
+      ctx.fs.mount('mem:', {
+        async write(url, body) {
+          const reader = body.getReader()
+          await reader.read()
+          reader.releaseLock()
+          throw failure
+        },
+      })
+      try {
+        // a blob of two parts, which a stream reads as two chunks
+        const data = new Blob([new Uint8Array(4), new Uint8Array(4)])
+        expect(await ctx.fs.file('mem://vol/dir/a').write(data).catch(error => error)).to.equal(failure)
+        expect((await streams.at(-1)!.getReader().read()).done).to.equal(true)
+      } finally {
+        vi.restoreAllMocks()
+      }
+    })
+
+    it('writes the bytes of a blob, also of a subclass with another `stream()`', async () => {
+      const ctx = await setup()
+      const { files, provider } = directory()
+      ctx.fs.mount('mem:', provider)
+      class Other extends Blob {
+        stream() { return new Blob(['other']).stream() }
+      }
+      await ctx.fs.file('mem://vol/dir/a').write(new Other(['fixed']), { atomic: true })
+      expect([...files.values()]).to.deep.equal(['fixed'])
+    })
+
+    it('retries a rename that fails with `Busy`', async () => {
+      const ctx = await setup()
+      const { files, calls, provider } = directory({}, [busy(), busy()])
+      ctx.fs.mount('mem:', provider)
+      await ctx.fs.file('mem://vol/dir/a.txt').write('foo', { atomic: true })
+      expect([...files]).to.deep.equal([['mem://vol/dir/a.txt', 'foo']])
+      expect(calls.filter(([name]) => name === 'rename')).to.have.length(3)
+    })
+
+    it('fails with the second collision of an empty temporary file, and keeps both occupied entries', async () => {
+      const ctx = await setup()
+      const collisions: FsError[] = []
+      const { files, provider } = directory({
+        async write(url) {
+          files.set(url.href, 'occupied')
+          const error = new FsError('AlreadyExists', url, 'occupied')
+          collisions.push(error)
+          throw error
+        },
+      })
+      ctx.fs.mount('mem:', provider)
+      const dest = ctx.fs.file('mem://vol/dir/a.txt')
+      files.set(dest.url.href, 'old')
+      const pull = vi.fn()
+      const body = new ReadableStream<Uint8Array>({ pull }, { highWaterMark: 0 })
+      const error = await dest.write(body, { atomic: true }).catch(error => error)
+      expect(collisions).to.have.length(2)
+      expect(error).to.equal(collisions[1])
+      expect([...files.values()]).to.deep.equal(['old', 'occupied', 'occupied'])
+      expect(pull).not.toHaveBeenCalled()
+    })
+
+    it('removes the temporary file when the rename fails', async () => {
+      const ctx = await setup()
+      const failure = new FsError('PermissionDenied', new URL('mem://vol/dir/a.txt'), 'denied')
+      const { files, provider } = directory({}, [failure])
+      ctx.fs.mount('mem:', provider)
+      expect(await ctx.fs.file('mem://vol/dir/a.txt').write('foo', { atomic: true }).catch(error => error)).to.equal(failure)
+      expect([...files]).to.deep.equal([])
+    })
+
+    it('removes an empty temporary file of a read-only mode whose first removal fails', async () => {
+      const ctx = await setup()
+      const { files, provider } = directory({
+        async stat(url) {
+          if (!files.has(url.href)) throw new FsError('NotFound', url, 'missing')
+          return { type: 'file', size: 0, mtime: new Date(0), mode: 0o444 }
+        },
+      })
+      const failure = busy()
+      provider.remove = vi.fn(provider.remove!).mockRejectedValueOnce(failure)
+      ctx.fs.mount('mem:', provider)
+      const body = new Blob(['data']).stream()
+      await expect(ctx.fs.file('mem://vol/dir/a.txt').write(body, { atomic: true })).rejects.toBe(failure)
+      expect(files.size).to.equal(0)
+    })
+
+    it('keeps a replacement when removal took effect before reporting an error', async () => {
+      const ctx = await setup()
+      let ino = 1n
+      const { files, provider } = directory({
+        async stat(url) {
+          if (!files.has(url.href)) throw new FsError('NotFound', url, 'missing')
+          return { type: 'file', size: 0, mtime: new Date(0), mode: 0o444, ino, dev: 1n }
+        },
+      })
+      const failure = new Error('lost removal acknowledgement')
+      provider.remove = vi.fn(provider.remove!).mockImplementationOnce(async (url) => {
+        files.set(url.href, 'replacement')
+        ino++
+        throw failure
+      })
+      ctx.fs.mount('mem:', provider)
+      const body = new Blob(['data']).stream()
+      await expect(ctx.fs.file('mem://vol/dir/a.txt').write(body, { atomic: true })).rejects.toBe(failure)
+      expect([...files.values()]).to.deep.equal(['replacement'])
+    })
+
+    it('keeps the permission bits of an existing file unless `mode` is given', async () => {
+      const ctx = await setup()
+      const { calls, provider } = directory({
+        stat: async () => ({ type: 'file', size: 0, mtime: new Date(0), mode: 0o600 }),
+      })
+      ctx.fs.mount('mem:', provider)
+      await ctx.fs.file('mem://vol/dir/a.txt').write('foo', { atomic: true })
+      await ctx.fs.file('mem://vol/dir/a.txt').write('foo', { atomic: true, mode: 0o644 })
+      const writes = calls.filter(([name]) => name === 'write').map(call => (call[2] as WriteOptions).mode)
+      expect(writes).to.deep.equal([0o600, 0o644])
+    })
+
+    it('fails with the denial of a plain write to an existing file before writing', async () => {
+      const ctx = await setup()
+      const denied = new FsError('PermissionDenied', new URL('mem://vol/dir/a.txt'), 'denied')
+      const { calls, provider } = directory({
+        stat: async () => ({ type: 'file', size: 0, mtime: new Date(0) }),
+        access: async () => { throw denied },
+      })
+      ctx.fs.mount('mem:', provider)
+      expect(await ctx.fs.file('mem://vol/dir/a.txt').write('foo', { atomic: true }).catch(error => error)).to.equal(denied)
+      expect(calls).to.deep.equal([])
+    })
+
+    it('fails with `NotSupported` before any call without the capability `exclusive`', async () => {
+      const ctx = await setup()
+      const stat = vi.fn(async () => ({ type: 'file' as const, size: 0, mtime: new Date(0) }))
+      const { calls, provider } = directory({ capabilities: { exclusive: false }, stat, copy: vi.fn() })
+      ctx.fs.mount('mem:', provider)
+      for (const pending of [
+        ctx.fs.file('mem://vol/dir/a').write('data', { exclusive: true }),
+        ctx.fs.file('mem://vol/dir/a').write('data', { atomic: true }),
+        ctx.fs.copy('mem://vol/dir/a', 'mem://vol/dir/b', { exclusive: true }),
+      ]) {
+        expect(await code(pending)).to.equal('NotSupported')
+      }
+      expect(calls).to.deep.equal([])
+      expect(provider.copy).not.toHaveBeenCalled()
+      // only the type of the source of the copy is queried
+      expect(stat).toHaveBeenCalledOnce()
+    })
+
+    it.each(['rename', 'remove'] as const)('fails with `NotSupported` without `%s()` before any change, and cancels the body', async (name) => {
+      const ctx = await setup()
+      const cancel = vi.fn()
+      const { calls, provider } = directory()
+      delete provider[name]
+      ctx.fs.mount('mem:', provider)
+      const body = new ReadableStream({ cancel })
+      expect(await code(ctx.fs.file('mem://vol/dir/a.txt').write(body, { atomic: true }))).to.equal('NotSupported')
+      expect(calls).to.deep.equal([])
+      expect(cancel).toHaveBeenCalled()
+    })
+
+    // a provider of the directory `mem://vol/dir/` whose links are the given entries
+    function links(entries: Record<string, string>, overrides?: Partial<FsProvider>) {
+      const lookups: string[] = []
+      const result = directory({
+        async stat(url) {
+          lookups.push(url.href)
+          if (entries[url.href] !== undefined) return { type: 'symlink', size: 0, mtime: new Date(0) }
+          throw new FsError('NotFound', url, 'missing')
+        },
+        readlink: async url => entries[url.href],
+        ...overrides,
+      })
+      return { ...result, lookups }
+    }
+
+    it('writes to the location itself through a provider without `realpath()`', async () => {
+      const ctx = await setup()
+      const readlink = vi.fn()
+      const { files, lookups, provider } = links({}, { readlink })
+      ctx.fs.mount('mem:', provider)
+      ctx.fs.mount('mem://vol/overlay/', {})
+      await ctx.fs.file('mem://vol/dir/a.txt').write('foo', { exclusive: true })
+      expect(lookups).to.deep.equal([])
+      expect(readlink).not.toHaveBeenCalled()
+      expect([...files]).to.deep.equal([['mem://vol/dir/a.txt', 'foo']])
+    })
+
+    it.each([false, true])('fails with `NotSupported` before any query to stage a location without a hierarchical path (realpath: %s)', async (resolve) => {
+      const ctx = await setup()
+      const stat = vi.fn(async (url: URL): Promise<never> => { throw new FsError('PermissionDenied', url, 'denied') })
+      const realpath = resolve ? async () => new URL('doc:record') : undefined
+      // the mount at the empty prefix also serves `doc:record`
+      ctx.fs.mount('', { ...directory().provider, stat, realpath })
+      ctx.fs.mount('other:', {})
+      const url = resolve ? 'mem://vol/dir/a' : 'doc:record'
+      expect(await code(ctx.fs.file(url).write('foo', { atomic: true }))).to.equal('NotSupported')
+      expect(stat).not.toHaveBeenCalled()
+    })
+
+    it.each(['stat, readlink', 'stat', 'none'])('writes through a link resolved by `realpath()` (other operations: %s)', async (operations) => {
+      const ctx = await setup()
+      const realpath = vi.fn(async (url: URL) => new URL('../other/c.txt', url))
+      const { files, provider } = links({ 'mem://vol/dir/a.txt': '../x/../other/c.txt' }, { realpath })
+      if (!operations.includes('readlink')) delete provider.readlink
+      if (!operations.includes('stat')) delete provider.stat
+      ctx.fs.mount('mem:', provider)
+      await ctx.fs.file('mem://vol/dir/a.txt').write('foo', { atomic: true })
+      expect([...files]).to.deep.equal([['mem://vol/other/c.txt', 'foo']])
+    })
+
+    it('queries only the last component of the only mount at the empty prefix', async () => {
+      const ctx = await setup()
+      const { lookups, provider } = links({}, { realpath: vi.fn() })
+      ctx.fs.mount('', provider)
+      await ctx.fs.file('mem://vol/a/b/c/d/file').write('one', { exclusive: true })
+      expect(lookups).to.deep.equal(['mem://vol/a/b/c/d/file'])
+      expect(provider.realpath).not.toHaveBeenCalled()
+    })
+
+    it('names a location resolved by `realpath()` through the prefix of a mount at a path', async () => {
+      const ctx = await setup()
+      const targets: Record<string, string> = { 'mem://vol/app/link': 'mem://real/app/target', 'mem://vol/app/root': 'mem://real/app' }
+      const { files, provider } = links(targets, {
+        async realpath(url) { return new URL(targets[url.href] ?? url.href.replace('mem://vol/app/', 'mem://real/app/')) },
+      })
+      ctx.fs.mount('mem://vol/app/', provider)
+      await ctx.fs.file('mem://vol/app/link').write('data', { atomic: true })
+      expect([...files]).to.deep.equal([['mem://vol/app/target', 'data']])
+      expect(await code(ctx.fs.file('mem://vol/app/root').write('data', { exclusive: true }))).to.equal('IsADirectory')
+    })
+
+    it.each([
+      [['mem:', 'mem://vol/overlay/'], 'mem://vol/alias/file', 'mem://vol/overlay/file'],
+      [['', 'other:'], 'mem://vol/link', 'other://vol/target'],
+      [['mem://one/', 'mem://two/'], 'mem://one/alias/file', 'mem://two/file'],
+      [['view:', 'store:'], 'view://vol/alias/file', 'store://vol/file'],
+      [['view:'], 'view://vol/alias/file', 'store://vol/file'],
+    ])('fails with `CrossesDevices` where `realpath()` leads out of the mount (%j)', async ([prefix, ...others], url, real) => {
+      const ctx = await setup()
+      const { files, provider } = links({ [url]: 'link' }, {
+        async realpath(location) {
+          // the root of a host is not a path of a directory on every storage
+          if (location.pathname === '/') throw new FsError('InvalidPath', location, 'not a directory')
+          return new URL(real)
+        },
+      })
+      const other = directory({ capabilities: { atomic: true } })
+      ctx.fs.mount(prefix, provider)
+      for (const key of others) ctx.fs.mount(key, other.provider)
+      for (const options of [{ atomic: true }, { exclusive: true }]) {
+        expect(await code(ctx.fs.file(url).write('data', options))).to.equal('CrossesDevices')
+      }
+      expect(files.size + other.files.size).to.equal(0)
+    })
+
+    it('reports the destination of an atomic write named like a temporary file, and not its temporary file', async () => {
+      const ctx = await setup()
+      const { provider } = directory()
+      const url = new URL('mem://vol/dir/.notes.0123456789ab.tmp')
+      ctx.fs.mount('mem:', {
+        ...provider, ...fakeProvider(),
+        async write(dest, body, options) {
+          await provider.write!(dest, body, options)
+          watcher.emit('change', dest)
+        },
+        async rename(from, to) {
+          await provider.rename!(from, to)
+          watcher.emit('change', to)
+        },
+      })
+      const watcher = ctx.fs.watch('mem://vol/dir')
+      const seen: string[] = []
+      watcher.on('change', dest => { seen.push(dest.href) })
+      await ctx.fs.file(url).write('content', { atomic: true })
+      expect(seen).to.deep.equal([url.href])
+    })
+
+    it('writes and copies to a location without a hierarchical path, whose trailing `/` is a part of its name', async () => {
+      const ctx = await setup()
+      const written: string[] = []
+      ctx.fs.mount('doc:', {
+        capabilities: { atomic: true, exclusive: true },
+        realpath: async url => url,
+        async stat(url) {
+          if (url.href === 'doc:source') return { type: 'file', size: 6, mtime: new Date(0) }
+          throw new FsError('NotFound', url, 'missing')
+        },
+        read: () => new Blob(['source']).stream(),
+        async write(url, body) { written.push(url.href + ' ' + await new Response(body).text()) },
+      })
+      await ctx.fs.file('doc:entry/').write('data', { atomic: true, exclusive: true })
+      await ctx.fs.copy('doc:source', 'doc:copy/', { atomic: true, exclusive: true })
+      expect(written).to.deep.equal(['doc:entry/ data', 'doc:copy/ source'])
+    })
+
+    it('reports an unsupported write while the other branch of a tee is still open', async () => {
+      const ctx = await setup()
+      ctx.fs.mount('mem:', { async write() {} })
+      const [body, sibling] = new ReadableStream<Uint8Array>().tee()
+      const pending = code(ctx.fs.file('mem://vol/a').write(body, { atomic: true }))
+      try {
+        expect(await pending).to.equal('NotSupported')
+      } finally {
+        await sibling.cancel()
+      }
+    })
   })
 
   describe('provider ranges', () => {

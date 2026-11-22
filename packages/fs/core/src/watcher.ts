@@ -1,5 +1,6 @@
 import { Context } from 'cordis'
 import { Awaitable } from 'cosmokit'
+import { isTemporaryFile } from './write.ts'
 
 export type WatchFilter = string[] | ((path: string, isDirectory: boolean) => boolean)
 
@@ -11,7 +12,10 @@ export interface WatchOptions {
 }
 
 export interface WatchEvents {
-  /** A file at or below the watched location is modified. */
+  /**
+   * A file at or below the watched location is modified. A temporary file of
+   * an atomic write below it, `.cordis-<12 hexadecimal digits>.tmp`, is not reported.
+   */
   change(url: URL): Awaitable<void>
   /** The initial scan is done. A listener added afterwards is called at once. */
   ready(): Awaitable<void>
@@ -81,11 +85,18 @@ export class Watcher {
   emit<K extends keyof WatchEvents>(name: K, ...args: Parameters<WatchEvents[K]>) {
     if (this._closed) return
     if (name === 'error') return this._error(args[0])
+    if (name === 'change' && this._isTemporary(args[0] as URL)) return
     if (name === 'ready') {
       if (this._ready) return
       this._ready = true
     }
     this._dispatch(name, args)
+  }
+
+  private _isTemporary(url: URL) {
+    if (url.href === this.url.href) return false
+    const path = url.pathname
+    return isTemporaryFile(path.slice(path.lastIndexOf('/') + 1))
   }
 
   // An event reaches the hooks taken when it is dispatched.

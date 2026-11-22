@@ -4,11 +4,11 @@ import {
 import { Context } from 'cordis'
 import {
   access, constants, copyFile, lstat, mkdir, open, opendir,
-  readlink, rename, rm, rmdir, stat, symlink, unlink,
+  readlink, realpath, rename, rm, rmdir, stat, symlink, unlink,
 } from 'node:fs/promises'
 import type { BigIntStats, Dirent, Stats } from 'node:fs'
-import { dirname, isAbsolute, parse, resolve, sep } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { basename, dirname, isAbsolute, parse, resolve, sep } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Operation, toFsError } from './error.ts'
 import { watchPath } from './watcher.ts'
 
@@ -98,28 +98,35 @@ function toStats(info: BigIntStats): FsStats {
 
 const CHUNK_SIZE = 64 * 1024
 
-/** The number of links that a copy follows at its destination, as `SYMLOOP_MAX` of Linux. */
-const MAX_LINKS = 40
-
-/**
- * The location that a link at `filename` points to, or `undefined` for an
- * entry that is not a link. A relative target is appended to the directory of
- * the link as stored, so that the file system resolves its components, a link
- * before a following `..` included, and keeps a trailing separator.
- */
-async function followLink(filename: string) {
-  const target = await readlink(filename).catch((error) => {
-    if (error?.code !== 'EINVAL') throw error
-  })
-  if (target === undefined || isAbsolute(target)) return target
+// The location of the target of the link at `filename`. On POSIX, a relative
+// target is appended to the directory of the link as stored, so that the file
+// system resolves its components, a link before a following `..` included.
+// Windows resolves `..` before the links, and a rooted target on the volume
+// of the link, as `resolve()` does.
+function linkTarget(filename: string, target: string) {
+  if (process.platform === 'win32') return resolve(dirname(filename), target)
+  if (isAbsolute(target)) return target
   const directory = dirname(filename)
   // a root such as `/` already ends with a separator
   return directory.endsWith(sep) ? directory + target : directory + sep + target
 }
 
+// A path read from the file system as bytes, which a name that is not valid
+// UTF-8 would change when decoded, so that it names another entry.
+function decodePath(bytes: Buffer, url: URL) {
+  try {
+    return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes)
+  } catch (cause) {
+    throw new FsError('InvalidPath', url, `cannot represent a path below ${url.href}, which is not valid UTF-8`, { cause })
+  }
+}
+
+/** The number of links that `realpath()` follows to a missing entry, as `SYMLOOP_MAX` of Linux. */
+const MAX_LINKS = 40
+
 /** The local file system of Node.js. */
 class NodeFs extends BaseFs {
-  readonly capabilities: FsProvider.Capabilities = { range: 'unsigned' }
+  readonly capabilities: FsProvider.Capabilities = { range: 'unsigned', exclusive: true }
 
   constructor(ctx: Context, config: NodeFs.Config = {}) {
     super(ctx, { mount: config.mount ?? 'file:' })
@@ -184,27 +191,33 @@ class NodeFs extends BaseFs {
     }, { highWaterMark: 0 })
   }
 
-  async write(url: URL, body: ReadableStream<Uint8Array>, options: WriteOptions = {}) {
-    const { mode } = options
-    const handle = await run(url, 'write', (filename) => {
-      assertFile(filename, url)
-      return open(filename, 'w', mode)
-    })
+  async write(url: URL, body: ReadableStream<Uint8Array>, { mode, exclusive }: WriteOptions) {
+    const filename = toPath(url)
+    assertFile(filename, url)
+    const handle = await call(url, 'write', () => open(filename, exclusive ? 'wx' : 'w', mode))
     try {
       // before the content and without the umask, as `copyFile()` gives it
       if (mode !== undefined) await call(url, 'write', () => handle.chmod(mode))
       // an error of `body` is kept as it is
-      for await (const chunk of body) {
+      // A failed write must be able to close its handle even if cancelling
+      // the input waits for another consumer of a tee branch.
+      for await (const chunk of body.values({ preventCancel: true })) {
         for (let offset = 0; offset < chunk.byteLength;) {
           const { bytesWritten } = await call(url, 'write', () => handle.write(chunk, offset))
           offset += bytesWritten
         }
       }
+      await call(url, 'write', () => handle.close())
     } catch (error) {
+      body.cancel(error).catch(() => {})
+      const created = exclusive ? await handle.stat({ bigint: true }).catch(() => undefined) : undefined
       await handle.close().catch(() => {})
+      if (created) {
+        const entry = await lstat(filename, { bigint: true }).catch(() => undefined)
+        if (entry?.dev === created.dev && entry.ino === created.ino) await unlink(filename).catch(() => {})
+      }
       throw error
     }
-    await call(url, 'write', () => handle.close())
   }
 
   async access(url: URL, mode: AccessMode) {
@@ -284,38 +297,21 @@ class NodeFs extends BaseFs {
 
   // `copyFile()` clones the file where the file system supports it, and gives
   // the destination the permission bits of the source.
-  async copy(src: URL, dest: URL, options: { overwrite: boolean }) {
+  async copy(src: URL, dest: URL, options: { exclusive: boolean }) {
     const from = toPath(src)
-    let to = toPath(dest)
+    const to = toPath(dest)
     assertFile(from, src)
     assertFile(to, dest)
-    const flags = constants.COPYFILE_FICLONE | (options.overwrite ? 0 : constants.COPYFILE_EXCL)
-    for (let count = 0; ; count++) {
-      try {
-        return await copyFile(from, to, flags)
-      } catch (error: any) {
-        let info: Stats | undefined
-        let failure: any
-        try {
-          info = await stat(to)
-        } catch (cause) {
-          failure = cause
-        }
-        // a directory at the destination is reported as `EEXIST` with `COPYFILE_EXCL`, and as `EPERM` on Windows
-        if (info?.isDirectory()) {
-          throw new FsError('IsADirectory', dest, `cannot copy ${src.href} onto the directory ${dest.href}`, { cause: error })
-        }
-        if (error?.code !== 'EEXIST') throw toFsError(error, src, 'copy')
-        // An entry exists, which `stat()` misses only as a dangling link; any
-        // other failure, such as a loop of links, is that of the destination.
-        if (failure && failure.code !== 'ENOENT') throw toFsError(failure, dest, 'copy')
-        // the exclusive creation does not follow a dangling link, which has no content to replace
-        const next = !info && count < MAX_LINKS ? await call(dest, 'copy', () => followLink(to)) : undefined
-        if (next === undefined) {
-          throw new FsError('AlreadyExists', dest, `cannot copy ${src.href} onto the existing ${dest.href}`, { cause: error })
-        }
-        to = next
+    const flags = constants.COPYFILE_FICLONE | (options.exclusive ? constants.COPYFILE_EXCL : 0)
+    try {
+      await copyFile(from, to, flags)
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      // Windows reports a directory at the destination as `EPERM`
+      if (process.platform === 'win32' && code === 'EPERM' && (await stat(to).catch(() => undefined))?.isDirectory()) {
+        throw new FsError('IsADirectory', dest, `is a directory: ${dest.href}`, { cause: error })
       }
+      throw toFsError(error, code === 'EEXIST' ? dest : src, 'copy')
     }
   }
 
@@ -354,7 +350,50 @@ class NodeFs extends BaseFs {
         await assertDirectory(entry, await stat(entry), url)
         throw new FsError('NotALink', url, `expected a symbolic link at ${url.href}`)
       }
-      return readlink(entry)
+      return decodePath(await readlink(entry, { encoding: 'buffer' }), url)
+    })
+  }
+
+  // The system resolves an existing entry, with its limit of links and the
+  // directory that a trailing separator requires. A missing entry, or the
+  // target of a dangling link, is located by following the links of the last
+  // component here: the file system resolves the other components, and
+  // `realpath()` of `node:fs` the directory of the missing entry.
+  async realpath(url: URL) {
+    return run(url, 'realpath', async (filename) => {
+      try {
+        const info = await stat(filename)
+        // `node:fs` on Windows removes a trailing separator
+        if (trailingSeparators.test(filename) && !info.isDirectory()) {
+          throw new FsError('NotADirectory', url, `expected a directory at ${url.href}`)
+        }
+        return pathToFileURL(decodePath(await realpath(filename, { encoding: 'buffer' }), url))
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
+      let entry = toEntry(filename)
+      let directory = trailingSeparators.test(filename)
+      for (let links = 0; ; links++) {
+        const info = await lstat(entry).catch((error) => {
+          if (error.code !== 'ENOENT') throw error
+        })
+        if (info?.isSymbolicLink()) {
+          if (links === MAX_LINKS) throw new FsError('InvalidPath', url, `too many symbolic links at ${url.href}`)
+          const target = decodePath(await readlink(entry, { encoding: 'buffer' }), url)
+          if (trailingSeparators.test(target)) directory = true
+          entry = toEntry(linkTarget(entry, target))
+          continue
+        }
+        // an entry created since the first query
+        if (info) {
+          if (directory && !info.isDirectory()) throw new FsError('NotADirectory', url, `expected a directory at ${url.href}`)
+          return pathToFileURL(decodePath(await realpath(entry, { encoding: 'buffer' }), url))
+        }
+        const parent = decodePath(await realpath(dirname(entry), { encoding: 'buffer' }), url)
+        // a trailing separator names a directory
+        const name = basename(entry) + (directory ? sep : '')
+        return pathToFileURL(parent.endsWith(sep) ? parent + name : parent + sep + name)
+      }
     })
   }
 

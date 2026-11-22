@@ -5,7 +5,8 @@ import { CopyOptions, DirEntry, EntryType, MkdirOptions, RemoveOptions, StatOpti
 import { FsError } from './error.ts'
 import { DirEntryRef, EntryRef, FileRef, ReadOptions } from './file.ts'
 import { resolveSlices, sliceStream } from './slice.ts'
-import { assertLocation, isUrl, Path, resolvePath } from './path.ts'
+import { assertLocation, isHierarchical, isUrl, Path, resolvePath } from './path.ts'
+import { createTemporary, fileTarget, reserveFile } from './write.ts'
 import { Watcher, WatchOptions } from './watcher.ts'
 
 export type * from './entry.ts'
@@ -47,6 +48,19 @@ function normalizePrefix(prefix: string | URL) {
   return url.href.endsWith('/') ? url.href : url.href + '/'
 }
 
+/** The number of retries of the rename of an atomic write that fails with `Busy`. */
+const RENAME_RETRIES = 10
+/** The delay before the first retry of a rename in milliseconds, which grows linearly with each retry. */
+const RENAME_BACKOFF = 20
+
+function sleep(ms: number) {
+  return new Promise<void>(resolve => setTimeout(resolve, ms))
+}
+
+function isCode(error: unknown, code: FsError.Code) {
+  return error instanceof FsError && error.code === code
+}
+
 // the working directory as a URL, on a runtime that has one
 function getWorkingDirectory() {
   if (typeof process === 'undefined') return
@@ -77,6 +91,8 @@ function toKey(url: URL) {
 
 // whether `url` is `base` or lies below it, compared by the URLs alone
 function contains(base: URL, url: URL) {
+  // a location without a hierarchical path contains no other location
+  if (!isHierarchical(base) || !isHierarchical(url)) return base.href === url.href
   const prefix = toKey(base)
   const key = toKey(url)
   return key === prefix || key.startsWith(prefix + '/')
@@ -119,19 +135,31 @@ function readAfterStat(stat: () => Promise<Stats>, open: (size?: number) => Read
 // so that a failure to open the source is reported before it is consumed.
 async function primed(stream: ReadableStream<Uint8Array>) {
   const reader = stream.getReader()
-  const first = await reader.read()
+  async function read() {
+    try {
+      const chunk = await reader.read()
+      if (chunk.done) reader.releaseLock()
+      return chunk
+    } catch (error) {
+      reader.releaseLock()
+      throw error
+    }
+  }
+  const first = await read()
   return new ReadableStream<Uint8Array>({
     start(controller) {
       if (first.done) return controller.close()
       controller.enqueue(first.value)
     },
     async pull(controller) {
-      const { done, value } = await reader.read()
+      const { done, value } = await read()
       if (done) return controller.close()
       controller.enqueue(value)
     },
     cancel(reason) {
-      return reader.cancel(reason)
+      const pending = reader.cancel(reason)
+      reader.releaseLock()
+      return pending
     },
   }, { highWaterMark: 0 })
 }
@@ -305,6 +333,95 @@ export class Fs extends Service<Fs.Intercept> {
       : provider.read(url, resolveSlices(slices, size)))
   }
 
+  // A blob is read by a new stream for each attempt. The stream of a failed
+  // attempt, or an unread stream, is cancelled without waiting, as the
+  // cancellation of one branch of a tee remains pending until the consumer
+  // of the other branch finishes.
+  private async _write(url: URL, data: Blob | ReadableStream<Uint8Array>, options: WriteOptions): Promise<void> {
+    try {
+      // checked before the destination is resolved
+      this._provider(url, 'write')
+      await this._writeFile(url, options, data instanceof Blob, async (mount, dest, options) => {
+        const body = data instanceof Blob ? data.stream() : data
+        try {
+          await this._provider(dest, 'write', mount).write(dest, body, options)
+        } catch (error) {
+          if (body !== data) body.cancel(error).catch(() => {})
+          throw error
+        }
+      })
+    } catch (error) {
+      if (!(data instanceof Blob)) data.cancel(error).catch(() => {})
+      throw error
+    }
+  }
+
+  // A write or a file copy to `url`, which `transfer` performs at a location
+  // of the mount of `url`. A `retryable` transfer can be performed again, and
+  // transfers the same content each time. Without the capability `atomic`,
+  // an atomic write transfers the content to an exclusively created temporary
+  // file beside the destination, and renames it over the destination. A
+  // transfer that is not retryable goes to an empty temporary file created
+  // before. The temporary file is removed on a failure.
+  private async _writeFile(
+    url: URL, options: WriteOptions, retryable: boolean,
+    transfer: (mount: Mount, dest: URL, options: TransferOptions & Pick<WriteOptions, 'mode'>) => Promise<void>,
+  ) {
+    const mount = this._route(url)
+    const { provider } = mount
+    const { atomic, exclusive, mode } = options
+    if (exclusive && !provider.capabilities?.exclusive) {
+      throw new FsError('NotSupported', url, `the provider mounted at ${mount.prefix} does not create a file exclusively`)
+    }
+    const staged = !!atomic && !provider.capabilities?.atomic
+    if (staged && (exclusive || !provider.capabilities?.exclusive || !provider.rename || !provider.remove)) {
+      throw new FsError('NotSupported', url, `cannot atomically ${exclusive ? 'create' : 'replace'} a file at ${url.href}`)
+    }
+    const forwarded: TransferOptions & Pick<WriteOptions, 'mode'> = { exclusive: !!exclusive, atomic: !!atomic && !staged }
+    if (mode !== undefined) forwarded.mode = mode
+    if (!staged && !(exclusive && provider.realpath)) return transfer(mount, url, forwarded)
+
+    const owns = (location: URL) => this._match(location) === mount
+    const { url: dest, stats } = await fileTarget(url, mount, this._mounts.size, owns, staged)
+    if ((isHierarchical(dest) && dest.pathname.endsWith('/')) || stats?.type === 'directory') {
+      throw new FsError('IsADirectory', url, `expected a file at ${dest.href}`)
+    }
+    if (exclusive && stats) throw new FsError('AlreadyExists', dest, `file already exists: ${dest.href}`)
+    if (!staged) return transfer(mount, dest, forwarded)
+    if (stats && stats.type !== 'file') throw new FsError('NotSupported', url, `cannot replace a ${stats.type} at ${dest.href}`)
+    if (stats && provider.access) await provider.access(dest, 'write')
+    // `rename()` and `remove()` are checked above
+    const staging = provider as FsProvider & Required<Pick<FsProvider, 'rename' | 'remove'>>
+    let temporary: URL
+    if (retryable) {
+      const finalMode = mode ?? stats?.mode
+      // the provider removes a file that it creates exclusively and then fails to write
+      temporary = await createTemporary(dest, owns, (url) => {
+        const options = { exclusive: true, atomic: false }
+        return transfer(mount, url, finalMode === undefined ? options : { ...options, mode: finalMode })
+      })
+    } else {
+      const writer = this._provider(dest, 'write', mount) as typeof staging & Required<Pick<FsProvider, 'write'>>
+      const reservation = await reserveFile(dest, writer, owns, mode ?? stats?.mode)
+      temporary = reservation.url
+      if (reservation.mode !== undefined) forwarded.mode = reservation.mode
+    }
+    try {
+      if (!retryable) await transfer(mount, temporary, forwarded)
+      for (let retries = 0; ; retries++) {
+        try {
+          return await staging.rename(temporary, dest)
+        } catch (error) {
+          if (retries >= RENAME_RETRIES || !isCode(error, 'Busy')) throw error
+        }
+        await sleep(RENAME_BACKOFF * (retries + 1))
+      }
+    } catch (error) {
+      await staging.remove(temporary, { recursive: false }).catch(() => {})
+      throw error
+    }
+  }
+
   /**
    * Resolve unless the operation is known to be denied: a missing location
    * rejects with `NotFound`, and a denial by the storage with `PermissionDenied`.
@@ -319,7 +436,7 @@ export class Fs extends Service<Fs.Intercept> {
   }
 
   /**
-   * Rename an entry. An existing file at `dest` is replaced; a non-empty
+   * Rename an entry. An existing file at `dest` is atomically replaced; a non-empty
    * directory fails with `DirectoryNotEmpty`. Locations of two different
    * mounts fail with `CrossesDevices`.
    */
@@ -427,17 +544,20 @@ export class Fs extends Service<Fs.Intercept> {
    * permission bits of a file are copied where both providers have them;
    * times and other metadata are not copied.
    *
-   * - An existing file at `dest` is replaced, unless `overwrite` is `false`,
-   *   which fails with `AlreadyExists`. Within a mount whose provider has
-   *   `copy`, it is checked when the file is created; otherwise it is
-   *   checked before the write. A link at `dest` is followed, and a dangling
-   *   link is written through, as it has no content to replace.
+   * - An existing file at `dest` is replaced. A link at `dest` is followed,
+   *   including a dangling link.
    * - A file onto an existing directory fails with `IsADirectory`, a
    *   directory onto an existing file with `NotADirectory`, and a directory
    *   onto an existing directory merges the entries.
-   * - A symbolic link is copied as a link with the same target, unless
-   *   `dereference` is set, which copies what it points to.
+   * - A symbolic link is copied as a link with the same target.
    * - A `dest` at or below `src` fails with `InvalidPath` before any I/O.
+   *
+   * Options:
+   *
+   * - `dereference`: a link is copied as what it points to.
+   * - `exclusive`, `atomic`: a file is copied as `FileRef.write()` writes with
+   *   them. With `atomic`, a directory, or a link copied as a link, fails with
+   *   `NotSupported` before any change.
    *
    * A failure stops the copy, and keeps what has been copied before it.
    */
@@ -447,42 +567,44 @@ export class Fs extends Service<Fs.Intercept> {
     if (contains(from, to)) {
       throw new FsError('InvalidPath', to, `cannot copy ${from.href} to ${to.href} at or below itself`)
     }
-    const { recursive = false, overwrite = true, dereference = false } = options
+    const { recursive = false, exclusive = false, dereference = false, atomic = false } = options
     const stats = await this.stat(from, { follow: dereference })
-    await this._copy(from, to, stats.type, { recursive, overwrite, dereference }, stats)
+    await this._copy(from, to, stats.type, { recursive, exclusive, dereference, atomic }, stats)
   }
 
   // `stats` of the source, if they have been obtained
   private async _copy(from: URL, to: URL, type: EntryType, options: Required<CopyOptions>, stats?: Stats) {
+    if (options.atomic && type !== 'file') {
+      throw new FsError('NotSupported', from, `cannot atomically copy a ${type} at ${from.href}`)
+    }
     if (type === 'symlink') return this._copyLink(from, to, options)
     if (type === 'directory') return this._copyDirectory(from, to, options)
     if (type !== 'file') {
       throw new FsError('NotSupported', from, `cannot copy ${from.href}, which is neither a file, a directory nor a link`)
     }
-    // the provider checks the destination
-    const mount = this._route(from)
-    if (this._route(to) === mount && mount.provider.copy) {
-      return mount.provider.copy(from, to, { overwrite: options.overwrite })
+    const source = this._route(from)
+    // a copy by the provider reads the source again for each attempt
+    const retryable = this._route(to) === source && !!source.provider.copy
+    if (!retryable) {
+      // checked before any change of the destination
+      this._provider(from, 'read', source)
+      this._provider(to, 'write')
     }
-    // a link at `dest` is followed, so that a dangling one is written through
-    const existing = await this._statIfExists(to, true)
-    if (existing?.type === 'directory') {
-      throw new FsError('IsADirectory', to, `cannot copy the file ${from.href} onto the directory ${to.href}`)
-    }
-    if (existing && !options.overwrite) {
-      throw new FsError('AlreadyExists', to, `cannot copy ${from.href} onto the existing ${to.href}`)
-    }
-    // checked before the source is opened
-    const target = this._provider(to, 'write')
-    const { mode } = stats ?? await this.stat(from)
-    // a failure to open the source is reported before the destination is written
-    const body = await primed(this._provider(from, 'read').read(from, {}))
-    try {
-      await target.write(to, body, mode === undefined ? {} : { mode })
-    } catch (error) {
-      await body.cancel(error).catch(() => {})
-      throw error
-    }
+    await this._writeFile(to, { ...options, mode: stats?.mode }, retryable, async (mount, dest, writeOptions) => {
+      const { mode: destinationMode, ...transfer } = writeOptions
+      if (mount === source && mount.provider.copy) {
+        return mount.provider.copy(from, dest, transfer)
+      }
+      const target = this._provider(dest, 'write', mount)
+      const mode = (stats ?? await this.stat(from)).mode ?? destinationMode
+      const body = await primed(this._provider(from, 'read', source).read(from, {}))
+      try {
+        await target.write(dest, body, mode === undefined ? transfer : { ...transfer, mode })
+      } catch (error) {
+        body.cancel(error).catch(() => {})
+        throw error
+      }
+    })
   }
 
   private async _copyDirectory(from: URL, to: URL, options: Required<CopyOptions>) {
@@ -513,7 +635,7 @@ export class Fs extends Service<Fs.Intercept> {
       throw new FsError('IsADirectory', to, `cannot copy the link ${from.href} onto the directory ${to.href}`)
     }
     if (existing) {
-      if (!options.overwrite) {
+      if (options.exclusive) {
         throw new FsError('AlreadyExists', to, `cannot copy ${from.href} onto the existing ${to.href}`)
       }
       await this.remove(to)
@@ -568,6 +690,9 @@ export namespace Fs {
   }
 }
 
+// the options of a write or a copy that a provider receives
+type TransferOptions = Required<Pick<WriteOptions, 'exclusive' | 'atomic'>>
+
 type Operation =
   | 'read' | 'write' | 'access' | 'rename' | 'remove'
   | 'stat' | 'readdir' | 'mkdir' | 'copy' | 'symlink' | 'readlink'
@@ -589,14 +714,20 @@ export interface FsProvider {
   read?(url: URL, options: ReadOptions): ReadableStream<Uint8Array>
   /**
    * Replace the content of a file with the data of `body`, creating the file
-   * but not its parent directory. An error of `body` rejects the write. A
-   * provider with permissions gives the file the permission bits `mode`
-   * before its content, if it is set.
+   * but not its parent directory. An error of `body` rejects the write.
+   *
+   * - `mode`: a provider with permissions gives the file these permission
+   *   bits before its content.
+   * - `exclusive`: `true` only with the capability `exclusive`. Create the
+   *   file only where no entry exists, a dangling link included, and fail
+   *   with `AlreadyExists` otherwise; remove the created file if the write
+   *   then fails.
+   * - `atomic`: `true` only with the capability `atomic`.
    */
-  write?(url: URL, body: ReadableStream<Uint8Array>, options: WriteOptions): Promise<void>
+  write?(url: URL, body: ReadableStream<Uint8Array>, options: Required<Pick<WriteOptions, 'exclusive' | 'atomic'>> & Pick<WriteOptions, 'mode'>): Promise<void>
   /** Reject when the operation of `mode` is known to be denied. */
   access?(url: URL, mode: AccessMode): Promise<void>
-  /** Rename an entry to a location of the same mount. */
+  /** Rename within a mount, atomically replacing an existing destination file. */
   rename?(src: URL, dest: URL): Promise<void>
   /**
    * Remove a file, an empty directory, or with `recursive` a directory with
@@ -616,15 +747,26 @@ export interface FsProvider {
   mkdir?(url: URL, options: Required<MkdirOptions>): Promise<void>
   /**
    * Copy a file to a location of the same mount, with the semantics of
-   * `Fs.copy()` for a file, and check `overwrite: false` when the file is
-   * created. `@cordisjs/fs` calls it only for a file, and leaves the checks of
-   * the destination to it.
+   * `Fs.copy()` for a file. `exclusive` and `atomic` are those of `write()`.
    */
-  copy?(src: URL, dest: URL, options: Required<Pick<CopyOptions, 'overwrite'>>): Promise<void>
+  copy?(src: URL, dest: URL, options: Required<Pick<WriteOptions, 'exclusive' | 'atomic'>>): Promise<void>
   /** Create a symbolic link at `url` that stores `target` as given. */
   symlink?(target: string, url: URL): Promise<void>
   /** Return the target of a symbolic link as stored, and fail with `NotALink` on another entry. */
   readlink?(url: URL): Promise<string>
+  /**
+   * Return the location that `url` designates with every symbolic link
+   * resolved by the rules of the storage, which may be one of another mount.
+   *
+   * - A link in the last component is resolved, also a dangling one.
+   * - The last component may be missing; a missing parent fails with `NotFound`.
+   *
+   * `@cordisjs/fs` resolves through it the destination of an exclusive write,
+   * and of an atomic write without the capability `atomic`. A provider
+   * without it guarantees that no symbolic link, in a parent directory or in
+   * the last component, changes the entry that a write gives content to.
+   */
+  realpath?(url: URL): Promise<URL>
   /**
    * Start serving `watcher`, and return a function that disposes it. The
    * provider reports through `watcher.emit()`, with a `ready` once the initial
@@ -638,6 +780,10 @@ export namespace FsProvider {
   export interface Capabilities {
     /** `unsigned` accepts omitted or non-negative bounds, and `signed` every bound. */
     range?: 'unsigned' | 'signed'
+    /** `write()` and `copy()` replace a file at once, and receive `atomic`. */
+    atomic?: boolean
+    /** `write()` and `copy()` create a file exclusively, and receive `exclusive`. */
+    exclusive?: boolean
   }
 }
 

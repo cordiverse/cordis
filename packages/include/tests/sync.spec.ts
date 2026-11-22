@@ -1,5 +1,5 @@
 import { expect, describe, it, afterEach } from 'vitest'
-import { AccessMode, FsError } from '@cordisjs/fs'
+import { AccessMode, FsError, WriteOptions } from '@cordisjs/fs'
 import { Entry } from '@cordisjs/loader'
 import MemoryFs from '@cordisjs/fs-memory'
 import * as yaml from 'yaml'
@@ -17,9 +17,9 @@ class ReadOnlyFs extends MemoryFs {
     return super.access(url, mode)
   }
 
-  async write(url: URL, body: ReadableStream<Uint8Array>) {
+  async write(url: URL, body: ReadableStream<Uint8Array>, options: WriteOptions) {
     if (readonly.has(url.href)) throw new FsError('PermissionDenied', url, `permission denied: ${url.href}`)
-    return super.write(url, body)
+    return super.write(url, body, options)
   }
 }
 

@@ -16,9 +16,11 @@ export interface ReadOptions {
   end?: number
 }
 
-function toStream(data: WriteSource): ReadableStream<Uint8Array> {
+// A blob of the bytes of `data`, which can be read again, unless it is a
+// stream. A blob is copied, so that a subclass does not change its bytes.
+function toSource(data: WriteSource): Blob | ReadableStream<Uint8Array> {
   if (data instanceof ReadableStream) return data
-  return new Blob([data]).stream()
+  return new Blob([data])
 }
 
 // Converts a number as `[Clamp] long long`, as the bounds of `Blob.slice()`.
@@ -114,13 +116,27 @@ export class FileRef extends EntryRef {
   /**
    * Replaces the content, creating the file if it is missing. The parent
    * directory is not created. A stream is consumed by the provider, and an
-   * error of the stream rejects the write.
+   * error of the stream rejects the write. A symbolic link at the location
+   * is followed, also a dangling one.
+   *
+   * - `mode`: the permission bits of the file, where the provider has them.
+   * - `exclusive`: an existing file fails with `AlreadyExists`, checked when
+   *   the file is created. It requires a provider with the capability
+   *   `exclusive`.
+   * - `atomic`: a reader observes either the previous or the complete new
+   *   content, and an existing file keeps its permission bits unless `mode`
+   *   is given. It requires a provider with the capability `atomic`; without
+   *   `exclusive`, also one with the capability `exclusive`, `rename()` and
+   *   `remove()`.
+   *
+   * With `exclusive` or `atomic`, a link that leads into another mount fails
+   * with `CrossesDevices`.
    */
   async write(data: WriteSource, options: WriteOptions = {}): Promise<void> {
     if (this._slices) {
       throw new TypeError(`cannot write a slice of ${this.url.href}`)
     }
-    return this.fs['_provider'](this.url, 'write').write(this.url, toStream(data), options)
+    return this.fs['_write'](this.url, toSource(data), options)
   }
 }
 
