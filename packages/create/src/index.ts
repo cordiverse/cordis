@@ -1,6 +1,6 @@
 import { access, copyFile, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { execSync } from 'node:child_process'
-import { basename, join, relative } from 'node:path'
+import { basename, join, relative, resolve, sep } from 'node:path'
 import { Readable } from 'node:stream'
 import * as tar from 'tar'
 import * as yaml from 'js-yaml'
@@ -220,6 +220,14 @@ class Scaffold {
       console.log(kleur.yellow(message))
       const yes = await confirm('Remove existing files and continue?')
       if (!yes) process.exit(0)
+    }
+
+    // `join(cwd, '..')` names an ancestor: deleting it destroys files outside the
+    // target, and on Windows `rm` cannot remove our own cwd, so it only half-runs.
+    const target = resolve(rootDir)
+    if (target === cwd || cwd.startsWith(target.endsWith(sep) ? target : target + sep)) {
+      console.log(kleur.red('error') + ` refusing to remove ${target}`)
+      process.exit(1)
     }
 
     await rm(rootDir, { recursive: true })
