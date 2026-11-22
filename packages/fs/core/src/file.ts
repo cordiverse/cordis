@@ -115,12 +115,19 @@ export class FileRef extends EntryRef {
    * Replaces the content, creating the file if it is missing. The parent
    * directory is not created. A stream is consumed by the provider, and an
    * error of the stream rejects the write.
+   *
+   * A destination link is followed, including a dangling link. With
+   * `exclusive: true`, the target is created exclusively. With `atomic`,
+   * complete content is published at once, keeping the existing permission
+   * bits unless `mode` is given. Requesting both requires a provider that
+   * can atomically publish a new file only while its target is missing.
+   * An exclusive or staged write through a link into another mount fails with `CrossesDevices`.
    */
   async write(data: WriteSource, options: WriteOptions = {}): Promise<void> {
     if (this._slices) {
       throw new TypeError(`cannot write a slice of ${this.url.href}`)
     }
-    return this.fs['_provider'](this.url, 'write').write(this.url, toStream(data), options)
+    return this.fs['_write'](this.url, toStream(data), options)
   }
 }
 

@@ -98,6 +98,19 @@ export function conformance(name: string, options: ConformanceOptions) {
         expect(await ctx.fs.file(url('b.bin')).bytes()).to.deep.equal(content)
       })
 
+      it('allows one exclusive creator across write and copy', async () => {
+        await write('src', 'copy')
+        const dest = ctx.fs.file(url('dest'))
+        const results = await Promise.allSettled([
+          dest.write('write', { exclusive: true }),
+          ctx.fs.copy(url('src'), dest.url, { exclusive: true }),
+        ])
+        const winner = results.findIndex(result => result.status === 'fulfilled')
+        expect(winner).to.be.oneOf([0, 1])
+        expect(results[1 - winner]).to.have.nested.property('reason.code', 'AlreadyExists')
+        expect(await dest.text()).to.equal(['write', 'copy'][winner])
+      })
+
       it('does not create the parent directory', async () => {
         await rejects(ctx.fs.file(url('missing/a.txt')).write('foo'), 'NotFound')
         expect(await ctx.fs.exists(url('missing'))).to.equal(false)
@@ -136,6 +149,107 @@ export function conformance(name: string, options: ConformanceOptions) {
       it('fails to read below a file', async () => {
         await write('a.txt')
         await rejects(ctx.fs.file(url('a.txt/b.txt')).text(), ...belowFile)
+      })
+    })
+
+    describe('atomic write', () => {
+      function atomic(path: string, data: string | ReadableStream<Uint8Array>) {
+        return ctx.fs.file(url(path)).write(data, { atomic: true })
+      }
+
+      it('replaces the content of a file, and creates a missing one', async () => {
+        await write('a.txt', 'foo')
+        await atomic('a.txt', 'bar')
+        await atomic('b.txt', 'baz')
+        expect(await text('a.txt')).to.equal('bar')
+        expect(await text('b.txt')).to.equal('baz')
+        expect(await names('')).to.deep.equal([['a.txt', 'file'], ['b.txt', 'file']])
+      })
+
+      it('exposes the previous content until the complete stream is published', async () => {
+        await write('a', 'old')
+        const consumed = Promise.withResolvers<void>()
+        const finish = Promise.withResolvers<void>()
+        let first = true
+        const body = new ReadableStream<Uint8Array>({
+          async pull(controller) {
+            if (first) {
+              first = false
+              controller.enqueue(new Uint8Array([65]))
+            } else {
+              consumed.resolve()
+              await finish.promise
+              controller.enqueue(new Uint8Array([66]))
+              controller.close()
+            }
+          },
+        }, { highWaterMark: 0 })
+        const pending = atomic('a', body)
+        try {
+          await consumed.promise
+          expect(await text('a')).to.equal('old')
+        } finally {
+          finish.resolve()
+          await pending
+        }
+        expect(await text('a')).to.equal('AB')
+      })
+
+      it('keeps the previous content and no temporary file when the stream errors', async () => {
+        await write('a.txt', 'foo')
+        const error = new Error('aborted')
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('bar'))
+            controller.error(error)
+          },
+        })
+        expect(await atomic('a.txt', body).catch(error => error)).to.equal(error)
+        expect(await text('a.txt')).to.equal('foo')
+        expect(await names('')).to.deep.equal([['a.txt', 'file']])
+      })
+
+      it('atomically copies a file and rejects a directory before changing the destination', async () => {
+        await write('src/a', 'new')
+        await write('dest/a', 'old')
+        await rejects(ctx.fs.copy(url('src'), url('dest'), { recursive: true, atomic: true }), 'NotSupported')
+        expect(await text('dest/a')).to.equal('old')
+        await ctx.fs.copy(url('src/a'), url('dest/a'), { atomic: true })
+        expect(await text('dest/a')).to.equal('new')
+      })
+
+      it.runIf(symlinks && !windows)('atomically copies the file a link points to only when dereferencing', async () => {
+        await write('a', 'data')
+        await ctx.fs.symlink('a', url('link'))
+        await rejects(ctx.fs.copy(url('link'), url('b'), { atomic: true }), 'NotSupported')
+        expect(await ctx.fs.exists(url('b'))).to.equal(false)
+        await ctx.fs.copy(url('link'), url('b'), { dereference: true, atomic: true })
+        expect(await ctx.fs.file(url('b')).text()).to.equal('data')
+      })
+
+      it('does not create the parent directory', async () => {
+        await rejects(atomic('missing/a.txt', 'foo'), 'NotFound')
+        expect(await ctx.fs.exists(url('missing'))).to.equal(false)
+      })
+
+      it('fails to write a directory or a location named with a trailing separator', async () => {
+        await ctx.fs.mkdir(url('dir'))
+        await rejects(atomic('dir', 'foo'), 'IsADirectory')
+        await rejects(atomic('missing/', 'foo'), 'IsADirectory')
+        expect(await names('')).to.deep.equal([['dir', 'directory']])
+      })
+
+      it.runIf(symlinks)('writes through symbolic links in the last component, also a dangling one', async () => {
+        await write('dir/a.txt', 'foo')
+        await ctx.fs.symlink('dir/a.txt', url('link.txt'))
+        await ctx.fs.symlink('link.txt', url('chain.txt'))
+        await ctx.fs.symlink('dir/new.txt', url('dangling.txt'))
+        await atomic('chain.txt', 'bar')
+        await atomic('dangling.txt', 'baz')
+        expect(await text('dir/a.txt')).to.equal('bar')
+        expect(await text('dir/new.txt')).to.equal('baz')
+        expect(await ctx.fs.readlink(url('link.txt'))).to.equal('dir/a.txt')
+        expect(await names('dir')).to.deep.equal([['a.txt', 'file'], ['new.txt', 'file']])
       })
     })
 
@@ -397,12 +511,12 @@ export function conformance(name: string, options: ConformanceOptions) {
         expect(await text('a.txt')).to.equal('bar')
       })
 
-      it('keeps an existing file with `overwrite: false`', async () => {
+      it('keeps an existing file with `exclusive: true`', async () => {
         await write('a.txt', 'foo')
         await write('b.txt', 'bar')
-        await rejects(ctx.fs.copy(url('a.txt'), url('b.txt'), { overwrite: false }), 'AlreadyExists')
+        await rejects(ctx.fs.copy(url('a.txt'), url('b.txt'), { exclusive: true }), 'AlreadyExists')
         expect(await text('b.txt')).to.equal('bar')
-        await ctx.fs.copy(url('a.txt'), url('c.txt'), { overwrite: false })
+        await ctx.fs.copy(url('a.txt'), url('c.txt'), { exclusive: true })
         expect(await text('c.txt')).to.equal('foo')
       })
 
@@ -431,10 +545,10 @@ export function conformance(name: string, options: ConformanceOptions) {
         expect(await text('dest/sub/c.txt')).to.equal('baz')
       })
 
-      it('keeps the existing files of a merge with `overwrite: false`', async () => {
+      it('keeps the existing files of a merge with `exclusive: true`', async () => {
         await write('src/a.txt', 'foo')
         await write('dest/a.txt', 'old')
-        await rejects(ctx.fs.copy(url('src'), url('dest'), { recursive: true, overwrite: false }), 'AlreadyExists')
+        await rejects(ctx.fs.copy(url('src'), url('dest'), { recursive: true, exclusive: true }), 'AlreadyExists')
         expect(await text('dest/a.txt')).to.equal('old')
       })
 
@@ -602,17 +716,26 @@ export function conformance(name: string, options: ConformanceOptions) {
         expect(await ctx.fs.readlink(url('copied/link'))).to.equal('a.txt')
         await ctx.fs.copy(url('dir/link'), url('link'))
         expect(await ctx.fs.readlink(url('link'))).to.equal('a.txt')
-        await rejects(ctx.fs.copy(url('dir/link'), url('link'), { overwrite: false }), 'AlreadyExists')
+        await rejects(ctx.fs.copy(url('dir/link'), url('link'), { exclusive: true }), 'AlreadyExists')
       })
 
       // as above
-      it.skipIf(windows)('copies a file through a dangling link, also with `overwrite: false`', async () => {
+      it.skipIf(windows)('exclusively creates the file named by a dangling destination link', async () => {
+        await ctx.fs.symlink('missing', url('link'))
+        const entry = ctx.fs.file(url('link'))
+        await entry.write('first', { exclusive: true })
+        await rejects(entry.write('second', { exclusive: true }), 'AlreadyExists')
+        expect(await text('missing')).to.equal('first')
+        expect(await ctx.fs.readlink(url('link'))).to.equal('missing')
+      })
+
+      it.skipIf(windows)('copies a file through a dangling link, also with `exclusive: true`', async () => {
         await write('a.txt', 'foo')
         await ctx.fs.symlink('target.txt', url('link'))
-        await ctx.fs.copy(url('a.txt'), url('link'), { overwrite: false })
+        await ctx.fs.copy(url('a.txt'), url('link'), { exclusive: true })
         expect(await text('target.txt')).to.equal('foo')
         expect((await ctx.fs.stat(url('link'), { follow: false })).type).to.equal('symlink')
-        await rejects(ctx.fs.copy(url('a.txt'), url('link'), { overwrite: false }), 'AlreadyExists')
+        await rejects(ctx.fs.copy(url('a.txt'), url('link'), { exclusive: true }), 'AlreadyExists')
       })
 
       it.skipIf(windows)('copies what a link points to with `dereference`', async () => {

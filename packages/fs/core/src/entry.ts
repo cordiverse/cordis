@@ -41,18 +41,23 @@ export interface DirEntry {
 }
 
 export interface WriteOptions {
+  /** Create the file exclusively. An existing target fails with `AlreadyExists`. Defaults to false. */
+  exclusive?: boolean
   /**
    * The permission bits that the file is given before its content, as in the
    * lower 12 bits of a POSIX mode, where the provider has permissions.
    */
   mode?: number
+  /**
+   * A reader observes either the previous or the new content, and a write
+   * that fails leaves the previous content.
+   */
+  atomic?: boolean
 }
 
-export interface CopyOptions {
+export interface CopyOptions extends Pick<WriteOptions, 'exclusive' | 'atomic'> {
   /** A directory is copied with every entry below it. */
   recursive?: boolean
-  /** An existing file at the destination is replaced; `true` by default. */
-  overwrite?: boolean
   /** The entries that symbolic links point to are copied instead of the links. */
   dereference?: boolean
 }

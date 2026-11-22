@@ -29,7 +29,7 @@ const drive = /^[a-zA-Z]:[\\/]/
 // change are percent-encoded: `%`, `?`, `#` and `\` end a segment or escape,
 // and the parser removes controls and spaces at the ends of the input, and
 // tabs and newlines anywhere.
-function encodeName(name: string) {
+export function encodeName(name: string) {
   // eslint-disable-next-line no-control-regex
   return name.replace(/[\x00-\x20%?#\\]/g, (char) => {
     return '%' + char.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')

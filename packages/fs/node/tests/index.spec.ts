@@ -4,10 +4,10 @@ import {
   chmodSync, closeSync, constants, existsSync, mkdirSync, openSync, readdirSync,
   readFileSync, readSync, rmSync, statSync, symlinkSync, writeFileSync, writeSync,
 } from 'node:fs'
-import { writeFile } from 'node:fs/promises'
+import { open, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Fs, { FsError } from '@cordisjs/fs'
 import { conformance } from '@cordisjs/fs-conformance'
 import NodeFs from '../src/index.ts'
@@ -96,6 +96,179 @@ describe('NodeFs', () => {
     })
   })
 
+  describe('atomic write', () => {
+    it('atomically replaces a file whose name fills the filesystem component limit', async () => {
+      const name = 'a'.repeat(255)
+      writeFileSync(path(name), 'old')
+      await ctx.fs.file(url(name)).write('new', { atomic: true })
+      expect(readFileSync(path(name), 'utf8')).to.equal('new')
+    })
+
+    it('preserves a destination created while opening a cross-mount exclusive copy', async () => {
+      ctx.fs.mount('src:', {
+        async stat() { return { type: 'file', size: 4, mtime: new Date(0) } },
+        read() {
+          writeFileSync(path('dest'), 'concurrent')
+          return new Blob(['copy']).stream()
+        },
+      })
+      await rejects(ctx.fs.copy('src:///file', url('dest'), { exclusive: true }), 'AlreadyExists')
+      expect(readFileSync(path('dest'), 'utf8')).to.equal('concurrent')
+    })
+
+    it('cleans up a failed staged disk write while another tee branch is open', async () => {
+      const handle = await open(path('dest'), 'w')
+      await handle.writeFile('old')
+      await handle.close()
+      const failure = new Error('disk write failed')
+      const write = vi.spyOn(Object.getPrototypeOf(handle), 'write').mockRejectedValueOnce(failure)
+      const [stream, sibling] = new ReadableStream<Uint8Array>({
+        start(controller) { controller.enqueue(new Uint8Array([1])) },
+      }).tee()
+      try {
+        await expect(ctx.fs.file(url('dest')).write(stream, { atomic: true })).rejects.toBe(failure)
+        expect(readFileSync(path('dest'), 'utf8')).to.equal('old')
+        expect(readdirSync(fixture)).to.deep.equal(['dest'])
+      } finally {
+        write.mockRestore()
+        await sibling.cancel()
+      }
+    })
+
+    it('keeps the destination when a cross-mount atomic copy fails mid-stream', async () => {
+      writeFileSync(path('dest'), 'old')
+      const failure = new Error('source failed')
+      ctx.fs.mount('src:', {
+        async stat() { return { type: 'file', size: 2, mtime: new Date(0) } },
+        read() {
+          return new ReadableStream({
+            start(controller) { controller.enqueue(new Uint8Array([1])) },
+            pull(controller) { controller.error(failure) },
+          }, { highWaterMark: 0 })
+        },
+      })
+      await expect(ctx.fs.copy('src:///file', url('dest'), { atomic: true })).rejects.toBe(failure)
+      expect(readFileSync(path('dest'), 'utf8')).to.equal('old')
+      expect(readdirSync(fixture)).to.deep.equal(['dest'])
+    })
+
+    it('removes a reserved file when the source itself reports AlreadyExists', async () => {
+      writeFileSync(path('dest'), 'old')
+      const failure = new FsError('AlreadyExists', url('source'), 'source failed')
+      const body = new ReadableStream<Uint8Array>({ start(controller) { controller.error(failure) } })
+      await expect(ctx.fs.file(url('dest')).write(body, { atomic: true })).rejects.toBe(failure)
+      expect(readdirSync(fixture)).to.deep.equal(['dest'])
+      expect(readFileSync(path('dest'), 'utf8')).to.equal('old')
+    })
+
+    it.skipIf(process.platform === 'win32')('keeps a replacement published while an exclusive write was consuming its source', async () => {
+      const file = ctx.fs.file(url('dest'))
+      const failure = new Error('source failed')
+      const body = new ReadableStream<Uint8Array>({
+        async pull(controller) {
+          await file.write('replacement', { atomic: true })
+          controller.error(failure)
+        },
+      }, { highWaterMark: 0 })
+      await expect(file.write(body, { exclusive: true })).rejects.toBe(failure)
+      expect(await file.text()).to.equal('replacement')
+    })
+
+    it('rejects exclusive atomic publication before writing or copying', async () => {
+      const dest = ctx.fs.file(url('dest'))
+      const options = { atomic: true, exclusive: true }
+      writeFileSync(path('src'), 'source')
+      const cancel = vi.fn()
+      await rejects(dest.write(new ReadableStream({ cancel }), options), 'NotSupported')
+      expect(cancel).toHaveBeenCalledOnce()
+      await rejects(ctx.fs.copy(url('src'), dest.url, options), 'NotSupported')
+      expect(readdirSync(fixture)).to.deep.equal(['src'])
+    })
+
+    it.skipIf(process.platform === 'win32')('publishes writes and copies after a staging name collides with a dangling link', async () => {
+      writeFileSync(path('src'), 'source')
+      writeFileSync(path('dest'), 'old')
+      symlinkSync('foreign', path('.cordis-000000000000.tmp'))
+      const random = vi.spyOn(crypto, 'getRandomValues').mockImplementation(bytes => bytes)
+      try {
+        await ctx.fs.file(url('dest')).write('new', { atomic: true })
+        expect(readFileSync(path('dest'), 'utf8')).to.equal('new')
+        await ctx.fs.copy(url('src'), url('dest'), { atomic: true })
+        expect(readFileSync(path('dest'), 'utf8')).to.equal('source')
+        expect(await ctx.fs.readlink(url('.cordis-000000000000.tmp'))).to.equal('foreign')
+        expect(existsSync(path('foreign'))).to.equal(false)
+      } finally {
+        random.mockRestore()
+      }
+    })
+
+    it.skipIf(process.platform === 'win32')('publishes through a link whose target traverses another link before ".."', async () => {
+      mkdirSync(path('real/deep'), { recursive: true })
+      symlinkSync('real/deep', path('shortcut'))
+      symlinkSync('shortcut/../target', path('link'))
+      await ctx.fs.file(url('link')).write('data', { atomic: true })
+      expect(readFileSync(path('real/target'), 'utf8')).to.equal('data')
+      expect(existsSync(path('target'))).to.equal(false)
+    })
+
+    it.skipIf(process.platform === 'win32')('follows the physical parent and preserves a backslash in a POSIX link target', async () => {
+      mkdirSync(path('real/deep'), { recursive: true })
+      symlinkSync('real/deep', path('alias'))
+      symlinkSync('../new\\name', path('real/deep/link'))
+      await ctx.fs.file(url('alias/link')).write('data', { exclusive: true })
+      expect(readFileSync(path('real/new\\name'), 'utf8')).to.equal('data')
+      expect(await ctx.fs.readlink(url('alias/link'))).to.equal('../new\\name')
+    })
+
+    it.skipIf(process.platform === 'win32')('requires an existing directory before ".." in a link target', async () => {
+      writeFileSync(path('file'), 'old')
+      for (const [name, error] of [['file', 'NotADirectory'], ['missing', 'NotFound']] as const) {
+        symlinkSync(name + '/../dest', path(name + '-link'))
+        await rejects(ctx.fs.file(url(name + '-link')).write('data', { atomic: true }), error)
+      }
+      expect(existsSync(path('dest'))).to.be.false
+    })
+
+    it.skipIf(process.platform === 'win32')('publishes a new read-only file with explicit or default permissions', async () => {
+      const previous = process.umask(0o222)
+      try {
+        await ctx.fs.file(url('default')).write('data', { atomic: true })
+        await ctx.fs.file(url('explicit')).write('more', { atomic: true, mode: 0o400 })
+        expect(readFileSync(path('default'), 'utf8')).to.equal('data')
+        expect(readFileSync(path('explicit'), 'utf8')).to.equal('more')
+        expect(statSync(path('default')).mode & 0o777).to.equal(0o444)
+        expect(statSync(path('explicit')).mode & 0o777).to.equal(0o400)
+      } finally {
+        process.umask(previous)
+      }
+    })
+
+    // permission bits do not exist on Windows
+    it.skipIf(process.platform === 'win32')('keeps the permission bits of an existing file unless `mode` is given', async () => {
+      writeFileSync(path('a.sh'), '')
+      writeFileSync(path('b.sh'), '')
+      chmodSync(path('a.sh'), 0o751)
+      chmodSync(path('b.sh'), 0o600)
+      await ctx.fs.file(url('a.sh')).write('foo', { atomic: true })
+      await ctx.fs.file(url('b.sh')).write('bar', { atomic: true, mode: 0o751 })
+      expect([statSync(path('a.sh')).mode & 0o7777, statSync(path('b.sh')).mode & 0o7777]).to.deep.equal([0o751, 0o751])
+      expect(readFileSync(path('a.sh'), 'utf8')).to.equal('foo')
+    })
+
+    // the superuser may write to any file
+    it.skipIf(process.getuid?.() === 0)('fails on a read-only file, as a plain write does', async () => {
+      writeFileSync(path('a.txt'), 'foo')
+      chmodSync(path('a.txt'), 0o444)
+      try {
+        await rejects(ctx.fs.file(url('a.txt')).write('bar', { atomic: true }), 'PermissionDenied')
+        expect(readFileSync(path('a.txt'), 'utf8')).to.equal('foo')
+        expect(readdirSync(fixture)).to.deep.equal(['a.txt'])
+      } finally {
+        chmodSync(path('a.txt'), 0o644)
+      }
+    })
+  })
+
   describe('access', () => {
     // the superuser may write to any file
     it.skipIf(process.getuid?.() === 0)('rejects a read-only file', async () => {
@@ -178,18 +351,28 @@ describe('NodeFs', () => {
   })
 
   describe('copy', () => {
+    it.skipIf(process.platform === 'win32')('treats a dangling link as occupied for literal provider creation', async () => {
+      const provider = new NodeFs(ctx, { mount: url('.').href + '/' })
+      writeFileSync(path('src'), 'data')
+      symlinkSync('missing', path('link'))
+      await rejects(provider.copy(url('src'), url('link'), { exclusive: true }), 'AlreadyExists')
+      await rejects(provider.write(url('link'), new Blob(['data']).stream(), { exclusive: true }), 'AlreadyExists')
+      expect(await ctx.fs.readlink(url('link'))).to.equal('missing')
+      expect(existsSync(path('missing'))).to.be.false
+    })
+
     // `b/` is a second mount of the same disk, to which a copy is a read and a write
     async function mountB() {
       mkdirSync(path('b'))
       await ctx.use(NodeFs, { mount: pathToFileURL(path('b')).href + '/' })
     }
 
-    it('creates the file once for two concurrent copies with `overwrite: false`', async () => {
+    it('creates the file once for two concurrent copies with `exclusive: true`', async () => {
       writeFileSync(path('a.txt'), 'foo')
       writeFileSync(path('b.txt'), 'bar')
       const results = await Promise.allSettled([
-        ctx.fs.copy(url('a.txt'), url('c.txt'), { overwrite: false }),
-        ctx.fs.copy(url('b.txt'), url('c.txt'), { overwrite: false }),
+        ctx.fs.copy(url('a.txt'), url('c.txt'), { exclusive: true }),
+        ctx.fs.copy(url('b.txt'), url('c.txt'), { exclusive: true }),
       ])
       const created = results.findIndex(result => result.status === 'fulfilled')
       expect(results.filter(result => result.status === 'fulfilled')).to.have.length(1)
@@ -198,17 +381,17 @@ describe('NodeFs', () => {
     })
 
     // links require a privilege on Windows
-    it.skipIf(process.platform === 'win32')('resolves a dangling link at the destination as the file system does, with `overwrite: false`', async () => {
+    it.skipIf(process.platform === 'win32')('resolves a dangling link at the destination as the file system does, with `exclusive: true`', async () => {
       writeFileSync(path('a.txt'), 'foo')
       mkdirSync(path('real/deep'), { recursive: true })
       symlinkSync('real/deep', path('shortcut'))
       // `..` follows the link `shortcut`, and a trailing separator names a directory
       symlinkSync('shortcut/../created.txt', path('link'))
       symlinkSync('missing/', path('slash'))
-      await ctx.fs.copy(url('a.txt'), url('link'), { overwrite: false })
+      await ctx.fs.copy(url('a.txt'), url('link'), { exclusive: true })
       expect(readFileSync(path('real/created.txt'), 'utf8')).to.equal('foo')
       expect(existsSync(path('created.txt'))).to.be.false
-      expect(await ctx.fs.copy(url('a.txt'), url('slash'), { overwrite: false }).catch(error => error)).to.be.instanceOf(FsError)
+      expect(await ctx.fs.copy(url('a.txt'), url('slash'), { exclusive: true }).catch(error => error)).to.be.instanceOf(FsError)
       expect(existsSync(path('missing'))).to.be.false
     })
 
@@ -216,10 +399,11 @@ describe('NodeFs', () => {
     it.skipIf(process.platform === 'win32')('fails on a loop of links at the destination with the error of the loop', async () => {
       writeFileSync(path('a.txt'), 'foo')
       symlinkSync('loop', path('loop'))
-      for (const overwrite of [true, false]) {
-        const error = await ctx.fs.copy(url('a.txt'), url('loop'), { overwrite }).catch(error => error)
+      for (const exclusive of [false, true]) {
+        const error = await ctx.fs.copy(url('a.txt'), url('loop'), { exclusive }).catch(error => error)
         expect(error).to.be.instanceOf(FsError)
-        expect(error.cause).to.have.property('code', 'ELOOP')
+        if (exclusive) expect(error.code).to.equal('InvalidPath')
+        else expect(error.cause).to.have.property('code', 'ELOOP')
       }
     })
 

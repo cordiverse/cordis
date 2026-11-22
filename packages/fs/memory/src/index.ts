@@ -1,4 +1,4 @@
-import { AccessMode, createFilter, FsError, FsProvider, ReadOptions, Stats, Watcher } from '@cordisjs/fs'
+import { AccessMode, createFilter, FsError, FsProvider, ReadOptions, Stats, Watcher, WriteOptions } from '@cordisjs/fs'
 import { Context } from 'cordis'
 
 interface File {
@@ -153,7 +153,7 @@ async function collect(body: ReadableStream<Uint8Array>) {
 class MemoryFs implements FsProvider {
   static inject = ['fs']
 
-  readonly capabilities: FsProvider.Capabilities = { range: 'signed' }
+  readonly capabilities: FsProvider.Capabilities = { range: 'signed', atomic: true }
 
   private _roots = new Map<string, Directory>()
   private _subscriptions = new Set<Subscription>()
@@ -238,12 +238,13 @@ class MemoryFs implements FsProvider {
   }
 
   // the parent directory and the name of a file to be written at `location`
-  private _target(location: Location) {
+  private _target(location: Location, exclusive = false) {
     const { url } = location
     const { parent, name, entry } = this._lookup(location)
     if (!parent || entry?.type === 'directory') {
       throw new FsError('IsADirectory', url, `is a directory: ${url.href}`)
     }
+    if (exclusive && entry) throw new FsError('AlreadyExists', url, `file already exists: ${url.href}`)
     return { parent, name: name! }
   }
 
@@ -263,14 +264,14 @@ class MemoryFs implements FsProvider {
     })
   }
 
-  async write(url: URL, body: ReadableStream<Uint8Array>) {
+  async write(url: URL, body: ReadableStream<Uint8Array>, { exclusive }: WriteOptions = {}) {
     const location = locate(url)
     if (location.directory) throw new FsError('IsADirectory', url, `is a directory: ${url.href}`)
-    this._target(location)
+    this._target(location, exclusive)
     // an error of `body` is kept as it is, and leaves the file unchanged
     const content = await collect(body)
     // the entries may have changed while `body` was consumed
-    const { parent, name } = this._target(location)
+    const { parent, name } = this._target(location, exclusive)
     place(parent, name, createFile(content))
     this._notify(location.root, location.names, false)
   }
@@ -355,17 +356,14 @@ class MemoryFs implements FsProvider {
     if (!entry) place(parent!, name!, createDirectory())
   }
 
-  async copy(src: URL, dest: URL, options: { overwrite: boolean }) {
+  async copy(src: URL, dest: URL, options: { exclusive?: boolean } = {}) {
     const from = locate(src)
     const to = locate(dest)
     if (from.directory) throw new FsError('IsADirectory', src, `is a directory: ${src.href}`)
     if (to.directory) throw new FsError('IsADirectory', dest, `is a directory: ${dest.href}`)
     const { entry } = this._find(from)
     if (entry.type === 'directory') throw new FsError('IsADirectory', src, `is a directory: ${src.href}`)
-    const { parent, name } = this._target(to)
-    if (!options.overwrite && parent.children.has(name)) {
-      throw new FsError('AlreadyExists', dest, `cannot copy ${src.href} onto the existing ${dest.href}`)
-    }
+    const { parent, name } = this._target(to, options.exclusive)
     // the content is never modified, so it is shared
     place(parent, name, createFile(entry.content))
     this._notify(to.root, to.names, false)

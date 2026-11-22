@@ -169,6 +169,21 @@ describe('Fs', () => {
       expect([...new Set(seen)]).to.deep.equal([path])
     }, 15000)
 
+    it('reports the target of an atomic write below a watched directory, and not its temporary file', async () => {
+      const path = write('atomic-dir/a.txt')
+      const ctx = await setup()
+      const seen: string[] = []
+      await watch(ctx, resolve(fixture, 'atomic-dir'), (filename) => { seen.push(filename) })
+
+      for (let i = 0; !seen.length; i++) {
+        if (i >= 80) throw new Error('write timed out')
+        await ctx.fs.file(pathToFileURL(path)).write(`v${i}`, { atomic: true })
+        await new Promise(r => setTimeout(r, 100))
+      }
+      await new Promise(r => setTimeout(r, 200))
+      expect([...new Set(seen)]).to.deep.equal([path])
+    }, 15000)
+
     it('applies `filter` to each watch on its own', async () => {
       const kept = write('filtered/kept.txt')
       const claimed = write('filtered/.claimed.yml')

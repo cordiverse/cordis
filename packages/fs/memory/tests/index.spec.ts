@@ -11,7 +11,7 @@ conformance('MemoryFs', {
   },
 })
 
-// a provider that declares no capabilities, on which `@cordisjs/fs` composes ranges
+// a provider that declares no capabilities, on which `@cordisjs/fs` composes ranges and atomic writes
 class PlainFs extends MemoryFs {
   readonly capabilities = {}
 }
@@ -57,6 +57,21 @@ describe('MemoryFs', () => {
     await fiber.await().catch(() => {})
     return fiber.state
   }
+
+  it('checks exclusive atomic creation when the write commits', async () => {
+    const ctx = await setup({ 'src': 'winner' })
+    const dest = ctx.fs.file('memory:///dest')
+    let controller!: ReadableStreamDefaultController<Uint8Array>
+    const body = new ReadableStream<Uint8Array>({ start(c) { controller = c } })
+    const options = { atomic: true, exclusive: true }
+    const pending = dest.write(body, options)
+    controller.enqueue(new Uint8Array([1]))
+    expect(await ctx.fs.exists(dest.url)).to.equal(false)
+    await ctx.fs.copy('memory:///src', dest.url, options)
+    controller.close()
+    await rejects(pending, 'AlreadyExists')
+    expect(await dest.text()).to.equal('winner')
+  })
 
   describe('mount', () => {
     it('mounts at `memory:` by default, or at `config.mount`', async () => {
@@ -213,11 +228,11 @@ describe('MemoryFs', () => {
   })
 
   describe('copy', () => {
-    it('creates the file once for two concurrent copies with `overwrite: false`', async () => {
+    it('creates the file once for two concurrent copies with `exclusive: true`', async () => {
       const ctx = await setup({ 'a.txt': 'foo', 'b.txt': 'bar' })
       const results = await Promise.allSettled([
-        ctx.fs.copy('a.txt', 'c.txt', { overwrite: false }),
-        ctx.fs.copy('b.txt', 'c.txt', { overwrite: false }),
+        ctx.fs.copy('a.txt', 'c.txt', { exclusive: true }),
+        ctx.fs.copy('b.txt', 'c.txt', { exclusive: true }),
       ])
       const created = results.findIndex(result => result.status === 'fulfilled')
       expect(results.filter(result => result.status === 'fulfilled')).to.have.length(1)
@@ -228,7 +243,7 @@ describe('MemoryFs', () => {
     it('copies between two mounts through their content', async () => {
       const copies: string[] = []
       class RecordingFs extends MemoryFs {
-        async copy(src: URL, dest: URL, options: { overwrite: boolean }) {
+        async copy(src: URL, dest: URL, options: { exclusive?: boolean } = {}) {
           copies.push(src.href)
           return super.copy(src, dest, options)
         }
