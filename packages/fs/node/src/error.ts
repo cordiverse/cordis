@@ -2,7 +2,7 @@ import { FsError } from '@cordisjs/fs'
 
 export type Operation =
   | 'read' | 'write' | 'access' | 'rename' | 'remove'
-  | 'stat' | 'readdir' | 'mkdir' | 'copy' | 'symlink' | 'readlink'
+  | 'stat' | 'readdir' | 'mkdir' | 'copy' | 'symlink' | 'readlink' | 'realpath'
 
 // the operations that change an existing entry, for which `EPERM` on Windows
 // is most often an entry held open by another process
@@ -32,7 +32,8 @@ function getCode(code: string, operation: Operation): FsError.Code {
     case 'EXDEV': return 'CrossesDevices'
     case 'ENOTSUP':
     case 'EOPNOTSUPP': return 'NotSupported'
-    case 'ENAMETOOLONG': return 'InvalidPath'
+    case 'ENAMETOOLONG':
+    case 'ELOOP': return 'InvalidPath'
     default: return 'Unknown'
   }
 }

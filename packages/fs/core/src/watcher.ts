@@ -1,6 +1,6 @@
 import { Context } from 'cordis'
 import { Awaitable } from 'cosmokit'
-import { isTemporaryFile } from './temporary.ts'
+import { isTemporaryFile } from './write.ts'
 
 export type WatchFilter = string[] | ((path: string, isDirectory: boolean) => boolean)
 
@@ -13,8 +13,8 @@ export interface WatchOptions {
 
 export interface WatchEvents {
   /**
-   * A file at or below the watched location is modified. Directory watches
-   * omit the staging names `.cordis-<12 hex digits>.tmp` used by core.
+   * A file at or below the watched location is modified. A temporary file of
+   * an atomic write below it, `.cordis-<12 hexadecimal digits>.tmp`, is not reported.
    */
   change(url: URL): Awaitable<void>
   /** The initial scan is done. A listener added afterwards is called at once. */

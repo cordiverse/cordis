@@ -29,7 +29,7 @@ const drive = /^[a-zA-Z]:[\\/]/
 // change are percent-encoded: `%`, `?`, `#` and `\` end a segment or escape,
 // and the parser removes controls and spaces at the ends of the input, and
 // tabs and newlines anywhere.
-export function encodeName(name: string) {
+function encodeName(name: string) {
   // eslint-disable-next-line no-control-regex
   return name.replace(/[\x00-\x20%?#\\]/g, (char) => {
     return '%' + char.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')
@@ -140,4 +140,10 @@ export function assertLocation(url: URL) {
       throw new FsError('InvalidPath', url, `invalid percent-encoding in ${href}`, { cause: error })
     }
   }
+}
+
+// Whether `url` has a hierarchical path, in which a trailing separator names a
+// directory. At a location without one, it may be a part of the name.
+export function isHierarchical(url: URL) {
+  return URL.canParse('.', url)
 }

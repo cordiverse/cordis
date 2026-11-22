@@ -5,7 +5,7 @@ import {
   readFileSync, readSync, rmSync, statSync, symlinkSync, writeFileSync, writeSync,
 } from 'node:fs'
 import { open, writeFile } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
+import { dirname, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Fs, { FsError } from '@cordisjs/fs'
@@ -202,22 +202,79 @@ describe('NodeFs', () => {
       }
     })
 
-    it.skipIf(process.platform === 'win32')('publishes through a link whose target traverses another link before ".."', async () => {
+    // POSIX resolves `..` after the preceding link, and Windows before it
+    it('publishes through a link whose target traverses another link before ".." as the system does', async () => {
       mkdirSync(path('real/deep'), { recursive: true })
-      symlinkSync('real/deep', path('shortcut'))
-      symlinkSync('shortcut/../target', path('link'))
-      await ctx.fs.file(url('link')).write('data', { atomic: true })
-      expect(readFileSync(path('real/target'), 'utf8')).to.equal('data')
-      expect(existsSync(path('target'))).to.equal(false)
+      symlinkSync(['real', 'deep'].join(sep), path('shortcut'), 'dir')
+      // the target as stored, which `join()` would normalize to `target`
+      const target = ['shortcut', '..', 'target'].join(sep)
+      symlinkSync(target, path('link'), 'file')
+      // the location that a write of `node:fs` through the link creates
+      writeFileSync(path('link'), 'native')
+      const native = [path('real/target'), path('target')].filter(file => existsSync(file))
+      expect(native).to.have.length(1)
+      rmSync(native[0])
+      for (const options of [{ atomic: true }, { exclusive: true }]) {
+        await ctx.fs.file(url('link')).write('data', options)
+        expect(readFileSync(native[0], 'utf8')).to.equal('data')
+        rmSync(native[0])
+      }
+      expect(await ctx.fs.readlink(url('link'))).to.equal(target)
     })
 
-    it.skipIf(process.platform === 'win32')('follows the physical parent and preserves a backslash in a POSIX link target', async () => {
-      mkdirSync(path('real/deep'), { recursive: true })
-      symlinkSync('real/deep', path('alias'))
-      symlinkSync('../new\\name', path('real/deep/link'))
-      await ctx.fs.file(url('alias/link')).write('data', { exclusive: true })
-      expect(readFileSync(path('real/new\\name'), 'utf8')).to.equal('data')
-      expect(await ctx.fs.readlink(url('alias/link'))).to.equal('../new\\name')
+    it('keeps the limit of links of the system on an existing target', async () => {
+      writeFileSync(path('file'), 'old')
+      symlinkSync('file', path('link0'), 'file')
+      for (let i = 1; i <= 64; i++) symlinkSync('link' + (i - 1), path('link' + i), 'file')
+      // the shortest chain that the system rejects, if any within 64 links
+      const native = Array.from({ length: 65 }, (_, i) => i).find((i) => {
+        try {
+          readFileSync(path('link' + i))
+          return false
+        } catch {
+          return true
+        }
+      })
+      for (const i of native === undefined ? [] : [native, 64]) {
+        await rejects(ctx.fs.file(url('link' + i)).write('new', { atomic: true }), 'InvalidPath')
+        expect(readFileSync(path('file'), 'utf8')).to.equal('old')
+      }
+    })
+
+    it('requires a directory for a trailing separator of the location it resolves', async () => {
+      writeFileSync(path('file'), '')
+      const provider = new NodeFs(ctx, { mount: url('.').href + '/' })
+      await rejects(provider.realpath(new URL(url('file').href + '/')), 'NotADirectory')
+      expect((await provider.realpath(new URL(url('missing').href + '/'))).href).to.match(/\/missing\/$/)
+    })
+
+    it.skipIf(process.platform === 'win32')('fails with `InvalidPath` on a link target that is not valid UTF-8', async () => {
+      const lookalike = 'a\uFFFDb'
+      writeFileSync(path(lookalike), 'old')
+      symlinkSync(Buffer.from([0x61, 0xFF, 0x62]), path('link'))
+      await rejects(ctx.fs.readlink(url('link')), 'InvalidPath')
+      for (const options of [{ atomic: true }, { exclusive: true }]) {
+        await rejects(ctx.fs.file(url('link')).write('new', options), 'InvalidPath')
+      }
+      expect(readFileSync(path(lookalike), 'utf8')).to.equal('old')
+    })
+
+    it('requires a directory for a link target with a trailing separator, as the system does', async () => {
+      writeFileSync(path('ordinary'), 'old')
+      symlinkSync('ordinary' + sep, path('link'), 'file')
+      const native = await writeFile(path('link'), 'native').then(() => true, () => false)
+      writeFileSync(path('ordinary'), 'old')
+      expect(await ctx.fs.file(url('link')).write('data', { atomic: true }).then(() => true, () => false)).to.equal(native)
+      if (!native) {
+        await expect(ctx.fs.file(url('link')).write('data', { exclusive: true })).rejects.toBeInstanceOf(FsError)
+        expect(readFileSync(path('ordinary'), 'utf8')).to.equal('old')
+      }
+    })
+
+    it.skipIf(process.platform === 'win32')('keeps a backslash in a POSIX link target as a part of a name', async () => {
+      symlinkSync('new\\name', path('link'))
+      await ctx.fs.file(url('link')).write('data', { exclusive: true })
+      expect(readFileSync(path('new\\name'), 'utf8')).to.equal('data')
     })
 
     it.skipIf(process.platform === 'win32')('requires an existing directory before ".." in a link target', async () => {

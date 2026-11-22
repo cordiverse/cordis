@@ -41,7 +41,7 @@ export interface DirEntry {
 }
 
 export interface WriteOptions {
-  /** Create the file exclusively. An existing target fails with `AlreadyExists`. Defaults to false. */
+  /** An existing file fails with `AlreadyExists`, checked when the file is created. */
   exclusive?: boolean
   /**
    * The permission bits that the file is given before its content, as in the

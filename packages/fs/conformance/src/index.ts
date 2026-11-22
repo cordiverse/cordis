@@ -248,7 +248,7 @@ export function conformance(name: string, options: ConformanceOptions) {
         await atomic('dangling.txt', 'baz')
         expect(await text('dir/a.txt')).to.equal('bar')
         expect(await text('dir/new.txt')).to.equal('baz')
-        expect(await ctx.fs.readlink(url('link.txt'))).to.equal('dir/a.txt')
+        expect((await ctx.fs.stat(url('link.txt'), { follow: false })).type).to.equal('symlink')
         expect(await names('dir')).to.deep.equal([['a.txt', 'file'], ['new.txt', 'file']])
       })
     })

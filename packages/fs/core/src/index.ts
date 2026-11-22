@@ -5,9 +5,8 @@ import { CopyOptions, DirEntry, EntryType, MkdirOptions, RemoveOptions, StatOpti
 import { FsError } from './error.ts'
 import { DirEntryRef, EntryRef, FileRef, ReadOptions } from './file.ts'
 import { resolveSlices, sliceStream } from './slice.ts'
-import { assertLocation, isUrl, Path, resolvePath } from './path.ts'
-import { fileTarget } from './target.ts'
-import { reserveFile } from './temporary.ts'
+import { assertLocation, isHierarchical, isUrl, Path, resolvePath } from './path.ts'
+import { fileTarget, reserveFile } from './write.ts'
 import { Watcher, WatchOptions } from './watcher.ts'
 
 export type * from './entry.ts'
@@ -92,6 +91,8 @@ function toKey(url: URL) {
 
 // whether `url` is `base` or lies below it, compared by the URLs alone
 function contains(base: URL, url: URL) {
+  // a location without a hierarchical path contains no other location
+  if (!isHierarchical(base) || !isHierarchical(url)) return base.href === url.href
   const prefix = toKey(base)
   const key = toKey(url)
   return key === prefix || key.startsWith(prefix + '/')
@@ -344,7 +345,10 @@ export class Fs extends Service<Fs.Intercept> {
     }
   }
 
-  // Both writes and file copies publish through the destination mount.
+  // A write or a file copy to `url`, which `transfer` performs at a location
+  // of the mount of `url`. Without the capability `atomic`, an atomic write
+  // transfers the content to an exclusively created temporary file beside the
+  // destination, renames it over the destination, and removes it on failure.
   private async _writeFile(
     url: URL, options: WriteOptions,
     transfer: (mount: Mount, dest: URL, options: WriteOptions) => Promise<void>,
@@ -354,16 +358,16 @@ export class Fs extends Service<Fs.Intercept> {
     const { atomic, exclusive, mode } = options
     const forwarded: WriteOptions = mode === undefined ? {} : { mode }
     if (exclusive) forwarded.exclusive = true
-    const staged = atomic && !provider.capabilities?.atomic
+    const staged = !!atomic && !provider.capabilities?.atomic
     if (staged && (exclusive || !provider.rename)) {
       throw new FsError('NotSupported', url, `cannot atomically ${exclusive ? 'create' : 'replace'} a file at ${url.href}`)
     }
     if (atomic && !staged) forwarded.atomic = true
-    if (!staged && !(exclusive && provider.readlink)) return transfer(mount, url, forwarded)
+    if (!staged && !(exclusive && provider.realpath)) return transfer(mount, url, forwarded)
 
     const owns = (location: URL) => this._match(location) === mount
-    const { url: dest, stats } = await fileTarget(url, mount, this._mounts.keys(), owns)
-    if (dest.pathname.endsWith('/') || stats?.type === 'directory') {
+    const { url: dest, stats } = await fileTarget(url, mount, this._mounts.size, owns, staged)
+    if ((isHierarchical(dest) && dest.pathname.endsWith('/')) || stats?.type === 'directory') {
       throw new FsError('IsADirectory', url, `expected a file at ${dest.href}`)
     }
     if (exclusive && stats) throw new FsError('AlreadyExists', dest, `file already exists: ${dest.href}`)
@@ -510,20 +514,22 @@ export class Fs extends Service<Fs.Intercept> {
    * permission bits of a file are copied where both providers have them;
    * times and other metadata are not copied.
    *
-   * - An existing file at `dest` is replaced, unless `exclusive` is set,
-   *   which fails with `AlreadyExists` if the target exists at creation.
-   *   A link at `dest` is followed, including a dangling link.
+   * - An existing file at `dest` is replaced. A link at `dest` is followed,
+   *   including a dangling link.
    * - A file onto an existing directory fails with `IsADirectory`, a
    *   directory onto an existing file with `NotADirectory`, and a directory
    *   onto an existing directory merges the entries.
-   * - A symbolic link is copied as a link with the same target, unless
-   *   `dereference` is set, which copies what it points to.
+   * - A symbolic link is copied as a link with the same target.
    * - A `dest` at or below `src` fails with `InvalidPath` before any I/O.
    *
-   * With `atomic`, a regular file is published in full. Directories and
-   * links copied as links reject this option with `NotSupported`. An exclusive or
-   * staged copy through a link into another mount fails with `CrossesDevices`.
-   * A failure of a recursive copy keeps what has already been copied.
+   * Options:
+   *
+   * - `dereference`: a link is copied as what it points to.
+   * - `exclusive`, `atomic`: a file is copied as `FileRef.write()` writes with
+   *   them. With `atomic`, a directory, or a link copied as a link, fails with
+   *   `NotSupported` before any change.
+   *
+   * A failure stops the copy, and keeps what has been copied before it.
    */
   async copy(src: Path, dest: Path, options: CopyOptions = {}): Promise<void> {
     const from = this.resolve(src)
@@ -668,13 +674,15 @@ export interface FsProvider {
   read?(url: URL, options: ReadOptions): ReadableStream<Uint8Array>
   /**
    * Replace the content of a file with the data of `body`, creating the file
-   * but not its parent directory. An error of `body` rejects the write. A
-   * provider with permissions gives the file the permission bits `mode`
-   * before its content, if it is set. `options` has `atomic` only with the
-   * capability `atomic`. With `exclusive`, claim a previously absent directory
-   * entry. An existing file or symbolic link, including a dangling link, fails
-   * with `AlreadyExists`. A provider that cannot enforce exclusivity fails with
-   * `NotSupported`. Clean up a failed exclusive creation after claiming it.
+   * but not its parent directory. An error of `body` rejects the write.
+   *
+   * - `mode`: a provider with permissions gives the file these permission
+   *   bits before its content.
+   * - `exclusive`: create the file only where no entry exists, a dangling link
+   *   included, and fail with `AlreadyExists` otherwise; remove the created
+   *   file if the write then fails. A provider that cannot create a file
+   *   exclusively fails with `NotSupported`.
+   * - `atomic`: received only with the capability `atomic`.
    */
   write?(url: URL, body: ReadableStream<Uint8Array>, options: WriteOptions): Promise<void>
   /** Reject when the operation of `mode` is known to be denied. */
@@ -699,14 +707,26 @@ export interface FsProvider {
   mkdir?(url: URL, options: Required<MkdirOptions>): Promise<void>
   /**
    * Copy a file to a location of the same mount, with the semantics of
-   * `Fs.copy()` for a file. Exclusive creation has the same semantics as `write`.
-   * Only providers declaring `atomic` receive `atomic: true`.
+   * `Fs.copy()` for a file. `exclusive` and `atomic` are those of `write()`.
    */
   copy?(src: URL, dest: URL, options: Pick<WriteOptions, 'exclusive' | 'atomic'>): Promise<void>
   /** Create a symbolic link at `url` that stores `target` as given. */
   symlink?(target: string, url: URL): Promise<void>
   /** Return the target of a symbolic link as stored, and fail with `NotALink` on another entry. */
   readlink?(url: URL): Promise<string>
+  /**
+   * Return the location that `url` designates with every symbolic link
+   * resolved by the rules of the storage, which may be one of another mount.
+   *
+   * - A link in the last component is resolved, also a dangling one.
+   * - The last component may be missing; a missing parent fails with `NotFound`.
+   *
+   * `@cordisjs/fs` resolves through it the destination of an exclusive write,
+   * and of an atomic write without the capability `atomic`. A provider
+   * without it guarantees that no symbolic link, in a parent directory or in
+   * the last component, changes the entry that a write gives content to.
+   */
+  realpath?(url: URL): Promise<URL>
   /**
    * Start serving `watcher`, and return a function that disposes it. The
    * provider reports through `watcher.emit()`, with a `ready` once the initial
@@ -720,7 +740,7 @@ export namespace FsProvider {
   export interface Capabilities {
     /** `unsigned` accepts omitted or non-negative bounds, and `signed` every bound. */
     range?: 'unsigned' | 'signed'
-    /** File writes and provider file copies support atomic publication. */
+    /** `write()` and `copy()` replace a file at once, and receive `atomic`. */
     atomic?: boolean
   }
 }
