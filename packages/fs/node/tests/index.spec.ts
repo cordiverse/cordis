@@ -389,7 +389,7 @@ describe('NodeFs', () => {
       writeFileSync(path('src'), 'data')
       symlinkSync('missing', path('link'))
       await rejects(provider.copy(url('src'), url('link'), { exclusive: true }), 'AlreadyExists')
-      await rejects(provider.write(url('link'), new Blob(['data']).stream(), { exclusive: true }), 'AlreadyExists')
+      await rejects(provider.write(url('link'), new Blob(['data']).stream(), { exclusive: true, atomic: false }), 'AlreadyExists')
       expect(await ctx.fs.readlink(url('link'))).to.equal('missing')
       expect(existsSync(path('missing'))).to.be.false
     })

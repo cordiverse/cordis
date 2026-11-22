@@ -365,21 +365,20 @@ export class Fs extends Service<Fs.Intercept> {
   // before. The temporary file is removed on a failure.
   private async _writeFile(
     url: URL, options: WriteOptions, retryable: boolean,
-    transfer: (mount: Mount, dest: URL, options: WriteOptions) => Promise<void>,
+    transfer: (mount: Mount, dest: URL, options: TransferOptions & Pick<WriteOptions, 'mode'>) => Promise<void>,
   ) {
     const mount = this._route(url)
     const { provider } = mount
     const { atomic, exclusive, mode } = options
-    const forwarded: WriteOptions = mode === undefined ? {} : { mode }
     if (exclusive && !provider.capabilities?.exclusive) {
       throw new FsError('NotSupported', url, `the provider mounted at ${mount.prefix} does not create a file exclusively`)
     }
-    if (exclusive) forwarded.exclusive = true
     const staged = !!atomic && !provider.capabilities?.atomic
     if (staged && (exclusive || !provider.capabilities?.exclusive || !provider.rename || !provider.remove)) {
       throw new FsError('NotSupported', url, `cannot atomically ${exclusive ? 'create' : 'replace'} a file at ${url.href}`)
     }
-    if (atomic && !staged) forwarded.atomic = true
+    const forwarded: TransferOptions & Pick<WriteOptions, 'mode'> = { exclusive: !!exclusive, atomic: !!atomic && !staged }
+    if (mode !== undefined) forwarded.mode = mode
     if (!staged && !(exclusive && provider.realpath)) return transfer(mount, url, forwarded)
 
     const owns = (location: URL) => this._match(location) === mount
@@ -398,7 +397,8 @@ export class Fs extends Service<Fs.Intercept> {
       const finalMode = mode ?? stats?.mode
       // the provider removes a file that it creates exclusively and then fails to write
       temporary = await createTemporary(dest, owns, (url) => {
-        return transfer(mount, url, finalMode === undefined ? { exclusive: true } : { mode: finalMode, exclusive: true })
+        const options = { exclusive: true, atomic: false }
+        return transfer(mount, url, finalMode === undefined ? options : { ...options, mode: finalMode })
       })
     } else {
       const writer = this._provider(dest, 'write', mount) as typeof staging & Required<Pick<FsProvider, 'write'>>
@@ -690,6 +690,9 @@ export namespace Fs {
   }
 }
 
+// the options of a write or a copy that a provider receives
+type TransferOptions = Required<Pick<WriteOptions, 'exclusive' | 'atomic'>>
+
 type Operation =
   | 'read' | 'write' | 'access' | 'rename' | 'remove'
   | 'stat' | 'readdir' | 'mkdir' | 'copy' | 'symlink' | 'readlink'
@@ -715,13 +718,13 @@ export interface FsProvider {
    *
    * - `mode`: a provider with permissions gives the file these permission
    *   bits before its content.
-   * - `exclusive`: received only with the capability `exclusive`. Create the
+   * - `exclusive`: `true` only with the capability `exclusive`. Create the
    *   file only where no entry exists, a dangling link included, and fail
    *   with `AlreadyExists` otherwise; remove the created file if the write
    *   then fails.
-   * - `atomic`: received only with the capability `atomic`.
+   * - `atomic`: `true` only with the capability `atomic`.
    */
-  write?(url: URL, body: ReadableStream<Uint8Array>, options: WriteOptions): Promise<void>
+  write?(url: URL, body: ReadableStream<Uint8Array>, options: Required<Pick<WriteOptions, 'exclusive' | 'atomic'>> & Pick<WriteOptions, 'mode'>): Promise<void>
   /** Reject when the operation of `mode` is known to be denied. */
   access?(url: URL, mode: AccessMode): Promise<void>
   /** Rename within a mount, atomically replacing an existing destination file. */
@@ -746,7 +749,7 @@ export interface FsProvider {
    * Copy a file to a location of the same mount, with the semantics of
    * `Fs.copy()` for a file. `exclusive` and `atomic` are those of `write()`.
    */
-  copy?(src: URL, dest: URL, options: Pick<WriteOptions, 'exclusive' | 'atomic'>): Promise<void>
+  copy?(src: URL, dest: URL, options: Required<Pick<WriteOptions, 'exclusive' | 'atomic'>>): Promise<void>
   /** Create a symbolic link at `url` that stores `target` as given. */
   symlink?(target: string, url: URL): Promise<void>
   /** Return the target of a symbolic link as stored, and fail with `NotALink` on another entry. */

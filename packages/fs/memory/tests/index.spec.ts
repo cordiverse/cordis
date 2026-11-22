@@ -245,7 +245,7 @@ describe('MemoryFs', () => {
     it('copies between two mounts through their content', async () => {
       const copies: string[] = []
       class RecordingFs extends MemoryFs {
-        async copy(src: URL, dest: URL, options: { exclusive?: boolean } = {}) {
+        async copy(src: URL, dest: URL, options: { exclusive: boolean }) {
           copies.push(src.href)
           return super.copy(src, dest, options)
         }

@@ -191,7 +191,7 @@ class NodeFs extends BaseFs {
     }, { highWaterMark: 0 })
   }
 
-  async write(url: URL, body: ReadableStream<Uint8Array>, { mode, exclusive }: WriteOptions = {}) {
+  async write(url: URL, body: ReadableStream<Uint8Array>, { mode, exclusive }: WriteOptions) {
     const filename = toPath(url)
     assertFile(filename, url)
     const handle = await call(url, 'write', () => open(filename, exclusive ? 'wx' : 'w', mode))
@@ -297,7 +297,7 @@ class NodeFs extends BaseFs {
 
   // `copyFile()` clones the file where the file system supports it, and gives
   // the destination the permission bits of the source.
-  async copy(src: URL, dest: URL, options: { exclusive?: boolean } = {}) {
+  async copy(src: URL, dest: URL, options: { exclusive: boolean }) {
     const from = toPath(src)
     const to = toPath(dest)
     assertFile(from, src)

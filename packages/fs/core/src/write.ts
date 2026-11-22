@@ -62,7 +62,7 @@ export async function reserveFile(
 ) {
   const attempts: Attempts = {}
   const empty = (privateFile: boolean) => (url: URL) => provider.write(url, new Blob([]).stream(),
-    privateFile ? { exclusive: true, mode: 0o600 } : { exclusive: true })
+    privateFile ? { exclusive: true, atomic: false, mode: 0o600 } : { exclusive: true, atomic: false })
   let url = await createTemporary(dest, owns, empty(mode !== undefined), attempts)
   if (mode !== undefined || !provider.stat) return { url, mode }
 

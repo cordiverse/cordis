@@ -959,8 +959,8 @@ describe('Fs', () => {
       await ctx.fs.file('mem://vol/dir/a.txt').write('foo', { atomic: true, mode: 0o600 })
       await ctx.fs.file('mem://vol/dir/a.txt').write('bar', { atomic: false })
       expect(calls).to.deep.equal([
-        ['write', 'mem://vol/dir/a.txt', { atomic: true, mode: 0o600 }],
-        ['write', 'mem://vol/dir/a.txt', {}],
+        ['write', 'mem://vol/dir/a.txt', { exclusive: false, atomic: true, mode: 0o600 }],
+        ['write', 'mem://vol/dir/a.txt', { exclusive: false, atomic: false }],
       ])
     })
 

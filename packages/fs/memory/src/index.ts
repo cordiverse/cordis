@@ -264,7 +264,7 @@ class MemoryFs implements FsProvider {
     })
   }
 
-  async write(url: URL, body: ReadableStream<Uint8Array>, { exclusive }: WriteOptions = {}) {
+  async write(url: URL, body: ReadableStream<Uint8Array>, { exclusive }: WriteOptions) {
     const location = locate(url)
     if (location.directory) throw new FsError('IsADirectory', url, `is a directory: ${url.href}`)
     this._target(location, exclusive)
@@ -356,7 +356,7 @@ class MemoryFs implements FsProvider {
     if (!entry) place(parent!, name!, createDirectory())
   }
 
-  async copy(src: URL, dest: URL, options: { exclusive?: boolean } = {}) {
+  async copy(src: URL, dest: URL, options: { exclusive: boolean }) {
     const from = locate(src)
     const to = locate(dest)
     if (from.directory) throw new FsError('IsADirectory', src, `is a directory: ${src.href}`)
