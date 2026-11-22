@@ -16,9 +16,11 @@ export interface ReadOptions {
   end?: number
 }
 
-function toStream(data: WriteSource): ReadableStream<Uint8Array> {
+// A blob of the bytes of `data`, which can be read again, unless it is a
+// stream. A blob is copied, so that a subclass does not change its bytes.
+function toSource(data: WriteSource): Blob | ReadableStream<Uint8Array> {
   if (data instanceof ReadableStream) return data
-  return new Blob([data]).stream()
+  return new Blob([data])
 }
 
 // Converts a number as `[Clamp] long long`, as the bounds of `Blob.slice()`.
@@ -132,7 +134,7 @@ export class FileRef extends EntryRef {
     if (this._slices) {
       throw new TypeError(`cannot write a slice of ${this.url.href}`)
     }
-    return this.fs['_write'](this.url, toStream(data), options)
+    return this.fs['_write'](this.url, toSource(data), options)
   }
 }
 

@@ -717,14 +717,13 @@ describe('Fs', () => {
       expect(write).not.toHaveBeenCalled()
     })
 
-    it('uses native atomic copy on a copy-only mount and reserves a file for staged copy', async () => {
+    it('copies through the provider, natively atomic or to a temporary file, without `write()`', async () => {
       const ctx = await setup()
       for (const atomic of [false, true]) {
         const scheme = atomic ? 'native:' : 'staged:'
         const target = tree({ '/a': 'new', '/b': 'old' }, { copy: true })
         ctx.fs.mount(scheme, {
           stat: target.provider.stat, capabilities: { atomic },
-          write: atomic ? undefined : target.provider.write,
           async copy(src, dest, options) {
             if (atomic) expect(options.atomic).to.equal(true)
             else expect(target.entries['/b']).to.equal('old')
@@ -738,14 +737,6 @@ describe('Fs', () => {
         await ctx.fs.copy(scheme + '///a', scheme + '///b', { atomic: true })
         expect(target.entries).to.deep.equal({ '/a': 'new', '/b': 'new' })
       }
-    })
-
-    it('requires an exclusive reservation before a staged native copy', async () => {
-      const ctx = await setup()
-      const target = tree({ '/a': 'new', '/b': 'old' }, { copy: true })
-      ctx.fs.mount('staged:', { stat: target.provider.stat, copy: target.provider.copy, async rename() {} })
-      expect(await code(ctx.fs.copy('staged:///a', 'staged:///b', { atomic: true }))).to.equal('NotSupported')
-      expect(target.entries).to.deep.equal({ '/a': 'new', '/b': 'old' })
     })
 
     it('streams cross-mount copies with the destination write guarantees', async () => {
@@ -983,6 +974,157 @@ describe('Fs', () => {
       expect(new URL('./', url).href).to.equal('mem://vol/dir/')
     })
 
+    it('creates the temporary file with content that can be read again in one write, also after a collision', async () => {
+      const ctx = await setup()
+      const { files, calls, provider } = directory()
+      const write = provider.write!
+      const read: string[] = []
+      provider.write = async (url, body, options) => {
+        if (read.length) return write(url, body, options)
+        // the first attempt reads the whole content before it finds the name occupied
+        read.push(await new Response(body).text())
+        files.set(url.href, 'occupied')
+        throw new FsError('AlreadyExists', url, 'occupied')
+      }
+      ctx.fs.mount('mem:', provider)
+      await ctx.fs.file('mem://vol/dir/a.txt').write('foo', { atomic: true })
+      expect(read).to.deep.equal(['foo'])
+      expect([...files.values()]).to.deep.equal(['occupied', 'foo'])
+      // no empty file precedes the content
+      expect(calls.map(([name]) => name)).to.deep.equal(['write', 'rename'])
+      expect(calls[0][2]).to.include({ exclusive: true })
+    })
+
+    it('copies through an empty temporary file where the provider does not copy exclusively', async () => {
+      const ctx = await setup()
+      const { files, provider } = directory({
+        async copy(src, dest, options) {
+          if (options.exclusive) throw new FsError('NotSupported', dest, 'not exclusively')
+          files.set(dest.href, files.get(src.href)!)
+        },
+      })
+      ctx.fs.mount('mem:', provider)
+      provider.stat = async url => ({ type: 'file', size: 0, mtime: new Date(0) })
+      files.set('mem://vol/dir/a', 'new')
+      files.set('mem://vol/dir/b', 'old')
+      await ctx.fs.copy('mem://vol/dir/a', 'mem://vol/dir/b', { atomic: true })
+      expect(Object.fromEntries(files)).to.deep.equal({ 'mem://vol/dir/a': 'new', 'mem://vol/dir/b': 'new' })
+    })
+
+    it('propagates a failure other than an exclusive copy that the provider does not support', async () => {
+      const ctx = await setup()
+      const failure = new FsError('NotSupported', new URL('mem://vol/dir/a'), 'of the source')
+      const { calls, provider } = directory({
+        stat: async () => ({ type: 'file', size: 0, mtime: new Date(0) }),
+        copy: async () => { throw failure },
+      })
+      ctx.fs.mount('mem:', provider)
+      expect(await ctx.fs.copy('mem://vol/dir/a', 'mem://vol/dir/b', { atomic: true }).catch(error => error)).to.equal(failure)
+      expect(calls).to.deep.equal([])
+    })
+
+    it('writes a blob once where the provider does not write exclusively', async () => {
+      const ctx = await setup()
+      const write = vi.fn(async (url: URL) => { throw new FsError('NotSupported', url, 'not exclusively') })
+      ctx.fs.mount('mem:', { ...directory().provider, write })
+      expect(await code(ctx.fs.file('mem://vol/dir/a').write('data', { atomic: true }))).to.equal('NotSupported')
+      expect(write).toHaveBeenCalledOnce()
+    })
+
+    it('shares the retry of an occupied name between an exclusive copy and an empty temporary file', async () => {
+      const ctx = await setup()
+      let creations = 0
+      const occupied = (url: URL) => new FsError('AlreadyExists', url, 'occupied')
+      const { files, provider } = directory({
+        stat: async () => ({ type: 'file', size: 0, mtime: new Date(0) }),
+        async copy(src, dest, options) {
+          if (!options.exclusive) return void files.set(dest.href, 'copied')
+          // the first name is occupied, and the second cannot be copied to exclusively
+          if (++creations === 1) throw occupied(dest)
+          throw new FsError('NotSupported', dest, 'not exclusively')
+        },
+      })
+      const write = provider.write!
+      provider.write = async (url, body, options) => {
+        // the empty temporary file finds its first name occupied
+        if (options.exclusive && ++creations === 3) throw occupied(url)
+        return write(url, body, options)
+      }
+      ctx.fs.mount('mem:', provider)
+      expect(await code(ctx.fs.copy('mem://vol/dir/a', 'mem://vol/dir/b', { atomic: true }))).to.equal('AlreadyExists')
+      expect(files.has('mem://vol/dir/b')).to.equal(false)
+    })
+
+    it('retries only an `AlreadyExists` of the temporary file itself', async () => {
+      const ctx = await setup()
+      const failure = new FsError('AlreadyExists', new URL('mem://vol/dir/a'), 'of the source')
+      const copy = vi.fn(async () => { throw failure })
+      const { calls, provider } = directory({ copy, stat: async () => ({ type: 'file', size: 0, mtime: new Date(0) }) })
+      ctx.fs.mount('mem:', provider)
+      expect(await ctx.fs.copy('mem://vol/dir/a', 'mem://vol/dir/b', { atomic: true }).catch(error => error)).to.equal(failure)
+      expect(copy).toHaveBeenCalledOnce()
+      expect(calls).to.deep.equal([])
+    })
+
+    it('shares the retry of an occupied name between the two creations of an empty temporary file', async () => {
+      const ctx = await setup()
+      let creations = 0
+      const { files, provider } = directory({
+        async stat(url) {
+          if (!files.has(url.href)) throw new FsError('NotFound', url, 'missing')
+          return { type: 'file', size: 0, mtime: new Date(0), mode: 0o444 }
+        },
+      })
+      const write = provider.write!
+      provider.write = async (url, body, options) => {
+        // the first creation of each of the two attempts finds its name occupied
+        if (options.exclusive && ++creations % 2) throw new FsError('AlreadyExists', url, 'occupied')
+        return write(url, body, options)
+      }
+      ctx.fs.mount('mem:', provider)
+      expect(await code(ctx.fs.file('mem://vol/dir/a').write(new Blob(['data']).stream(), { atomic: true }))).to.equal('AlreadyExists')
+      expect(creations).to.equal(3)
+    })
+
+    it('cancels the stream of a blob read by a failed attempt', async () => {
+      const ctx = await setup()
+      const streams: ReadableStream<Uint8Array>[] = []
+      const stream = Blob.prototype.stream
+      vi.spyOn(Blob.prototype, 'stream').mockImplementation(function (this: Blob) {
+        const result = stream.call(this)
+        streams.push(result)
+        return result
+      })
+      const failure = new FsError('Unknown', new URL('mem://vol/dir/a'), 'failed')
+      ctx.fs.mount('mem:', {
+        async write(url, body) {
+          const reader = body.getReader()
+          await reader.read()
+          reader.releaseLock()
+          throw failure
+        },
+      })
+      try {
+        // a blob of two parts, which a stream reads as two chunks
+        const data = new Blob([new Uint8Array(4), new Uint8Array(4)])
+        expect(await ctx.fs.file('mem://vol/dir/a').write(data).catch(error => error)).to.equal(failure)
+        expect((await streams.at(-1)!.getReader().read()).done).to.equal(true)
+      } finally {
+        vi.restoreAllMocks()
+      }
+    })
+
+    it('writes the bytes of a blob, also of a subclass with another `stream()`', async () => {
+      const ctx = await setup()
+      const { files, provider } = directory()
+      ctx.fs.mount('mem:', provider)
+      class Other extends Blob {
+        stream() { return new Blob(['other']).stream() }
+      }
+      await ctx.fs.file('mem://vol/dir/a').write(new Other(['fixed']), { atomic: true })
+      expect([...files.values()]).to.deep.equal(['fixed'])
+    })
+
     it('retries a rename that fails with `Busy`', async () => {
       const ctx = await setup()
       const { files, calls, provider } = directory({}, [busy(), busy()])
@@ -1035,7 +1177,8 @@ describe('Fs', () => {
       const failure = busy()
       provider.remove = vi.fn(provider.remove!).mockRejectedValueOnce(failure)
       ctx.fs.mount('mem:', provider)
-      await expect(ctx.fs.file('mem://vol/dir/a.txt').write('data', { atomic: true })).rejects.toBe(failure)
+      const body = new Blob(['data']).stream()
+      await expect(ctx.fs.file('mem://vol/dir/a.txt').write(body, { atomic: true })).rejects.toBe(failure)
       expect(files.size).to.equal(0)
     })
 
@@ -1055,7 +1198,8 @@ describe('Fs', () => {
         throw failure
       })
       ctx.fs.mount('mem:', provider)
-      await expect(ctx.fs.file('mem://vol/dir/a.txt').write('data', { atomic: true })).rejects.toBe(failure)
+      const body = new Blob(['data']).stream()
+      await expect(ctx.fs.file('mem://vol/dir/a.txt').write(body, { atomic: true })).rejects.toBe(failure)
       expect([...files.values()]).to.deep.equal(['replacement'])
     })
 
@@ -1067,8 +1211,8 @@ describe('Fs', () => {
       ctx.fs.mount('mem:', provider)
       await ctx.fs.file('mem://vol/dir/a.txt').write('foo', { atomic: true })
       await ctx.fs.file('mem://vol/dir/a.txt').write('foo', { atomic: true, mode: 0o644 })
-      const writes = calls.filter(([name]) => name === 'write').map(call => call[2] as WriteOptions)
-      expect(writes.filter(options => !options.exclusive).map(options => options.mode)).to.deep.equal([0o600, 0o644])
+      const writes = calls.filter(([name]) => name === 'write').map(call => (call[2] as WriteOptions).mode)
+      expect(writes).to.deep.equal([0o600, 0o644])
     })
 
     it('fails with the denial of a plain write to an existing file before writing', async () => {

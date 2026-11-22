@@ -25,29 +25,44 @@ function temporaryUrl(url: URL, occupied?: URL): URL {
   }
 }
 
-// Creates an empty temporary file beside `dest` exclusively, before the
-// content is transferred into it, and returns it with the mode to give the
-// content. A known mode is given by the transfer, so the empty file is private.
-export async function reserveFile(
-  dest: URL, provider: FsProvider & Required<Pick<FsProvider, 'write'>>,
-  owns: (url: URL) => boolean, mode?: number,
+/** The attempts of an operation to create a temporary file, which retries an occupied name once. */
+export interface Attempts {
+  retried?: boolean
+}
+
+/**
+ * Creates a temporary file beside `dest` by `create`, which creates the file
+ * at the given location exclusively, and returns its location. An
+ * `AlreadyExists` of that location is retried under another name, once for
+ * all `attempts` of an operation; another failure is thrown as it is.
+ */
+export async function createTemporary(
+  dest: URL, owns: (url: URL) => boolean, create: (url: URL) => Promise<void>, attempts: Attempts = {},
 ) {
   let url = temporaryUrl(dest)
-  let retried = false
-  async function create(privateFile: boolean) {
-    const options = privateFile ? { exclusive: true, mode: 0o600 } : { exclusive: true }
-    for (;;) {
-      if (!owns(url)) throw new FsError('NotSupported', dest, `cannot stage a file in the mount of ${dest.href}`)
-      try {
-        return await provider.write(url, new Blob([]).stream(), options)
-      } catch (error) {
-        if (retried || !(error instanceof FsError) || error.code !== 'AlreadyExists') throw error
-        retried = true
-        url = temporaryUrl(dest, url)
-      }
+  while (true) {
+    if (!owns(url)) throw new FsError('NotSupported', dest, `cannot stage a file in the mount of ${dest.href}`)
+    try {
+      await create(url)
+      return url
+    } catch (error) {
+      if (attempts.retried || !(error instanceof FsError) || error.code !== 'AlreadyExists' || error.url?.href !== url.href) throw error
+      attempts.retried = true
+      url = temporaryUrl(dest, url)
     }
   }
-  await create(mode !== undefined)
+}
+
+// Creates an empty temporary file beside `dest`, before content that cannot
+// be read again is transferred into it, and returns it with the mode to give
+// the content. A known mode is given by the transfer, so the empty file is private.
+export async function reserveFile(
+  dest: URL, provider: FsProvider & Required<Pick<FsProvider, 'write'>>,
+  owns: (url: URL) => boolean, mode: number | undefined, attempts: Attempts,
+) {
+  const empty = (privateFile: boolean) => (url: URL) => provider.write(url, new Blob([]).stream(),
+    privateFile ? { exclusive: true, mode: 0o600 } : { exclusive: true })
+  let url = await createTemporary(dest, owns, empty(mode !== undefined), attempts)
   if (mode !== undefined || !provider.stat || !provider.remove) return { url, mode }
 
   // A default mode such as 0444 permits creation but prevents reopening.
@@ -68,7 +83,7 @@ export async function reserveFile(
     if (retained) await provider.remove(url, { recursive: false }).catch(() => {})
     throw error
   }
-  await create(true)
+  url = await createTemporary(dest, owns, empty(true), attempts)
   return { url, mode: stats.mode }
 }
 

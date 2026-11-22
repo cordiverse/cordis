@@ -6,7 +6,7 @@ import { FsError } from './error.ts'
 import { DirEntryRef, EntryRef, FileRef, ReadOptions } from './file.ts'
 import { resolveSlices, sliceStream } from './slice.ts'
 import { assertLocation, isHierarchical, isUrl, Path, resolvePath } from './path.ts'
-import { fileTarget, reserveFile } from './write.ts'
+import { Attempts, createTemporary, fileTarget, reserveFile } from './write.ts'
 import { Watcher, WatchOptions } from './watcher.ts'
 
 export type * from './entry.ts'
@@ -333,24 +333,38 @@ export class Fs extends Service<Fs.Intercept> {
       : provider.read(url, resolveSlices(slices, size)))
   }
 
-  // Cancel an unread body on failure. Cancellation of one tee branch can
-  // remain pending until the consumer of the other branch finishes.
-  private async _write(url: URL, body: ReadableStream<Uint8Array>, options: WriteOptions): Promise<void> {
+  // A blob is read by a new stream for each attempt. The stream of a failed
+  // attempt, or an unread stream, is cancelled without waiting, as the
+  // cancellation of one branch of a tee remains pending until the consumer
+  // of the other branch finishes.
+  private async _write(url: URL, data: Blob | ReadableStream<Uint8Array>, options: WriteOptions): Promise<void> {
     try {
-      await this._writeFile(url, options, (mount, dest, options) =>
-        this._provider(dest, 'write', mount).write(dest, body, options))
+      await this._writeFile(url, options, data instanceof Blob && 'write', async (mount, dest, options) => {
+        const body = data instanceof Blob ? data.stream() : data
+        try {
+          await this._provider(dest, 'write', mount).write(dest, body, options)
+        } catch (error) {
+          if (body !== data) body.cancel(error).catch(() => {})
+          throw error
+        }
+      })
     } catch (error) {
-      body.cancel(error).catch(() => {})
+      if (!(data instanceof Blob)) data.cancel(error).catch(() => {})
       throw error
     }
   }
 
   // A write or a file copy to `url`, which `transfer` performs at a location
-  // of the mount of `url`. Without the capability `atomic`, an atomic write
-  // transfers the content to an exclusively created temporary file beside the
-  // destination, renames it over the destination, and removes it on failure.
+  // of the mount of `url`. A `retryable` transfer can be performed again, and
+  // transfers the same content each time; a `copy` by the provider, which may
+  // not create a file exclusively, also after an empty temporary file is
+  // created. Without the capability `atomic`, an atomic write transfers the
+  // content to an exclusively created temporary file beside the destination,
+  // and renames it over the destination. A transfer that is not retryable
+  // goes to an empty temporary file created before, which is removed on a
+  // failure. A name is retried once for the whole operation.
   private async _writeFile(
-    url: URL, options: WriteOptions,
+    url: URL, options: WriteOptions, retryable: 'write' | 'copy' | false,
     transfer: (mount: Mount, dest: URL, options: WriteOptions) => Promise<void>,
   ) {
     const mount = this._route(url)
@@ -374,10 +388,32 @@ export class Fs extends Service<Fs.Intercept> {
     if (!staged) return transfer(mount, dest, forwarded)
     if (stats && stats.type !== 'file') throw new FsError('NotSupported', url, `cannot replace a ${stats.type} at ${dest.href}`)
     if (stats && provider.access) await provider.access(dest, 'write')
-    const { url: temporary, mode: finalMode } = await reserveFile(dest, this._provider(dest, 'write', mount), owns, mode ?? stats?.mode)
-    if (finalMode !== undefined) forwarded.mode = finalMode
+    const attempts: Attempts = {}
+    let temporary: URL | undefined
+    if (retryable) {
+      const finalMode = mode ?? stats?.mode
+      let attempted: URL | undefined
+      try {
+        // the provider removes a file that it creates exclusively and then fails to write
+        temporary = await createTemporary(dest, owns, (url) => {
+          attempted = url
+          return transfer(mount, url, finalMode === undefined ? { exclusive: true } : { mode: finalMode, exclusive: true })
+        }, attempts)
+      } catch (error) {
+        // only an exclusive copy to the temporary file that the provider does not support
+        const exclusiveCopy = retryable === 'copy' && provider.write && isCode(error, 'NotSupported')
+        if (!exclusiveCopy || (error as FsError).url?.href !== attempted?.href) throw error
+      }
+    }
+    // content that is transferred after an empty temporary file is created
+    const reserved = !temporary
+    if (!temporary) {
+      const reservation = await reserveFile(dest, this._provider(dest, 'write', mount), owns, mode ?? stats?.mode, attempts)
+      temporary = reservation.url
+      if (reservation.mode !== undefined) forwarded.mode = reservation.mode
+    }
     try {
-      await transfer(mount, temporary, forwarded)
+      if (reserved) await transfer(mount, temporary, forwarded)
       for (let retries = 0; ; retries++) {
         try {
           return await provider.rename!(temporary, dest)
@@ -553,7 +589,9 @@ export class Fs extends Service<Fs.Intercept> {
       throw new FsError('NotSupported', from, `cannot copy ${from.href}, which is neither a file, a directory nor a link`)
     }
     const source = this._route(from)
-    await this._writeFile(to, { ...options, mode: stats?.mode }, async (mount, dest, writeOptions) => {
+    // a copy by the provider reads the source again for each attempt
+    const retryable = this._route(to) === source && !!source.provider.copy && 'copy'
+    await this._writeFile(to, { ...options, mode: stats?.mode }, retryable, async (mount, dest, writeOptions) => {
       const { mode: destinationMode, ...transfer } = writeOptions
       if (mount === source && mount.provider.copy) {
         return mount.provider.copy(from, dest, transfer)
