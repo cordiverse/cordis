@@ -1,5 +1,6 @@
 import {
-  AccessMode, BaseFs, EntryType, FsError, FsProvider, Stats as FsStats, ReadOptions, ReadResult, Watcher, WriteOptions, WriteResult,
+  AccessMode, BaseFs, EntryType, FsError, FsProvider, Stats as FsStats,
+  ReadlinkResult, ReadOptions, ReadResult, RealpathResult, Watcher, WriteOptions, WriteResult,
 } from '@cordisjs/fs'
 import { Context } from 'cordis'
 import {
@@ -415,8 +416,8 @@ class NodeFs extends BaseFs {
     })
   }
 
-  async readlink(url: URL) {
-    return run(url, 'readlink', async (filename) => {
+  async readlink(url: URL): Promise<ReadlinkResult> {
+    const target = await run(url, 'readlink', async (filename) => {
       const entry = toEntry(filename)
       if (entry !== filename) {
         // a trailing separator names the directory that a link resolves to
@@ -425,6 +426,7 @@ class NodeFs extends BaseFs {
       }
       return decodePath(await readlink(entry, { encoding: 'buffer' }), url)
     })
+    return { target }
   }
 
   // The system resolves an existing entry, with its limit of links and the
@@ -432,8 +434,8 @@ class NodeFs extends BaseFs {
   // target of a dangling link, is located by following the links of the last
   // component here: the file system resolves the other components, and
   // `realpath()` of `node:fs` the directory of the missing entry.
-  async realpath(url: URL) {
-    return run(url, 'realpath', async (filename) => {
+  async realpath(url: URL): Promise<RealpathResult> {
+    const resolved = await run(url, 'realpath', async (filename) => {
       try {
         const info = await stat(filename)
         // `node:fs` on Windows removes a trailing separator
@@ -468,6 +470,7 @@ class NodeFs extends BaseFs {
         return pathToFileURL(parent.endsWith(sep) ? parent + name : parent + sep + name)
       }
     })
+    return { url: resolved }
   }
 
   watch(watcher: Watcher) {

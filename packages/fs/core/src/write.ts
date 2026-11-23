@@ -134,11 +134,11 @@ export async function fileTarget(
     }
   }
 
-  let dest = await provider.realpath(url)
+  let { url: dest } = await provider.realpath(url)
   // A mount at a path below the root names its locations through the path of
   // its prefix, which the storage may resolve to another path.
   if (!owns(dest) && atPath && new URL(prefix).pathname !== '/') {
-    const base = (await provider.realpath(new URL(prefix))).href.replace(/\/$/, '')
+    const base = (await provider.realpath(new URL(prefix))).url.href.replace(/\/$/, '')
     if (dest.href === base) dest = new URL(prefix)
     else if (dest.href.startsWith(base + '/')) dest = new URL(prefix + dest.href.slice(base.length + 1))
   }

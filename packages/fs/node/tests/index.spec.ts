@@ -246,7 +246,7 @@ describe('NodeFs', () => {
       writeFileSync(path('file'), '')
       const provider = new NodeFs(ctx, { mount: url('.').href + '/' })
       await rejects(provider.realpath(new URL(url('file').href + '/')), 'NotADirectory')
-      expect((await provider.realpath(new URL(url('missing').href + '/'))).href).to.match(/\/missing\/$/)
+      expect((await provider.realpath(new URL(url('missing').href + '/'))).url.href).to.match(/\/missing\/$/)
     })
 
     it.skipIf(process.platform === 'win32')('fails with `InvalidPath` on a link target that is not valid UTF-8', async () => {
