@@ -37,7 +37,7 @@ interface Attempts {
  * all `attempts` of an operation; another failure is thrown as it is.
  */
 export async function createTemporary(
-  dest: URL, owns: (url: URL) => boolean, create: (url: URL) => Promise<void>, attempts: Attempts = {},
+  dest: URL, owns: (url: URL) => boolean, create: (url: URL) => Promise<unknown>, attempts: Attempts = {},
 ) {
   let url = temporaryUrl(dest)
   while (true) {

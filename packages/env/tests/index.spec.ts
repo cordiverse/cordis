@@ -164,11 +164,9 @@ describe('env', () => {
 
   it('fails on an error other than a missing file', async () => {
     class DeniedFs extends MemoryFs {
-      read(url: URL) {
+      async read(url: URL) {
         if (url.href !== 'mem:///.env.local') return super.read(url)
-        return new ReadableStream<Uint8Array>({
-          start: controller => controller.error(new FsError('PermissionDenied', url, `cannot read ${url.href}`)),
-        })
+        throw new FsError('PermissionDenied', url, `cannot read ${url.href}`)
       }
     }
     const ctx = await setup({}, DeniedFs)

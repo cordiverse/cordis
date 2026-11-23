@@ -44,6 +44,8 @@ export namespace FsError {
     | 'Busy'
     /** The two locations are not in the same provider or device, so the operation cannot be performed as one. */
     | 'CrossesDevices'
+    /** The entry is not a file of the version that a conditional operation requires, or is missing. */
+    | 'VersionMismatch'
     /** The input is not a valid location. */
     | 'InvalidPath'
     /** The storage reports a failure of no other category. */

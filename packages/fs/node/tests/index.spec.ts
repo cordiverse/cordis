@@ -26,7 +26,7 @@ conformance('NodeFs', {
     rmSync(resolve(root, '__conformance__'), { recursive: true, force: true })
   },
   windows: process.platform === 'win32',
-  capabilities: { symlink: true, exclusive: true, atomic: true },
+  capabilities: { symlink: true, exclusive: true, atomic: true, conditional: { stat: true, read: true, write: true, atomicWrite: true } },
 })
 
 const fixture = resolve(root, '__file__')
@@ -107,9 +107,9 @@ describe('NodeFs', () => {
     it('preserves a destination created while opening a cross-mount exclusive copy', async () => {
       ctx.fs.mount('src:', {
         async stat() { return { type: 'file', size: 4, mtime: new Date(0) } },
-        read() {
+        async read() {
           writeFileSync(path('dest'), 'concurrent')
-          return new Blob(['copy']).stream()
+          return { stream: new Blob(['copy']).stream() }
         },
       })
       await rejects(ctx.fs.copy('src:///file', url('dest'), { exclusive: true }), 'AlreadyExists')
@@ -140,11 +140,12 @@ describe('NodeFs', () => {
       const failure = new Error('source failed')
       ctx.fs.mount('src:', {
         async stat() { return { type: 'file', size: 2, mtime: new Date(0) } },
-        read() {
-          return new ReadableStream({
+        async read() {
+          const stream = new ReadableStream({
             start(controller) { controller.enqueue(new Uint8Array([1])) },
             pull(controller) { controller.error(failure) },
           }, { highWaterMark: 0 })
+          return { stream }
         },
       })
       await expect(ctx.fs.copy('src:///file', url('dest'), { atomic: true })).rejects.toBe(failure)
@@ -356,6 +357,31 @@ describe('NodeFs', () => {
         await writeFile(path('fifo'), 'abc')
         expect(await reading, `slice(${start}, ${end})`).to.equal(expected)
       }
+    })
+  })
+
+  describe('conditional', () => {
+    async function version(name: string) {
+      return (await ctx.fs.stat(url(name))).version!
+    }
+
+    it('keeps the content and the permission bits of a file of another version', async () => {
+      writeFileSync(path('a.sh'), 'old')
+      const previous = await version('a.sh')
+      writeFileSync(path('a.sh'), 'newer')
+      chmodSync(path('a.sh'), 0o600)
+      const mode = statSync(path('a.sh')).mode
+      await rejects(ctx.fs.file(url('a.sh')).write('foo', { ifMatch: previous, mode: 0o751 }), 'VersionMismatch')
+      expect(readFileSync(path('a.sh'), 'utf8')).to.equal('newer')
+      expect(statSync(path('a.sh')).mode).to.equal(mode)
+    })
+
+    it.runIf(process.platform !== 'win32')('fails on a FIFO without the other end', async () => {
+      writeFileSync(path('a.txt'), 'foo')
+      const current = await version('a.txt')
+      execFileSync('mkfifo', [path('fifo')])
+      await rejects(ctx.fs.file(url('fifo')).text({ ifMatch: current }), 'VersionMismatch')
+      await rejects(ctx.fs.file(url('fifo')).write('bar', { ifMatch: current }), 'VersionMismatch')
     })
   })
 

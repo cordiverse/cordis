@@ -1,5 +1,5 @@
 import {
-  AccessMode, BaseFs, EntryType, FsError, FsProvider, Stats as FsStats, ReadOptions, Watcher, WriteOptions,
+  AccessMode, BaseFs, EntryType, FsError, FsProvider, Stats as FsStats, ReadOptions, ReadResult, Watcher, WriteOptions, WriteResult,
 } from '@cordisjs/fs'
 import { Context } from 'cordis'
 import {
@@ -7,6 +7,7 @@ import {
   readlink, realpath, rename, rm, rmdir, stat, symlink, unlink,
 } from 'node:fs/promises'
 import type { BigIntStats, Dirent, Stats } from 'node:fs'
+import type { FileHandle } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, parse, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Operation, toFsError } from './error.ts'
@@ -85,14 +86,62 @@ function getType(info: BigIntStats | Dirent): EntryType {
   return 'other'
 }
 
+// The version of a file: a fingerprint of the metadata that a change of
+// the content updates. The change time detects a modification time restored
+// after a change, and also changes with the permissions of the file.
+function toVersion(info: BigIntStats) {
+  return `${info.dev}-${info.ino}-${info.mtimeNs}-${info.ctimeNs}-${info.size}`
+}
+
 function toStats(info: BigIntStats): FsStats {
-  return {
+  const stats: FsStats = {
     type: getType(info),
     size: Number(info.size),
     mtime: info.mtime,
     mode: Number(info.mode & 0o7777n),
     ino: info.ino,
     dev: info.dev,
+  }
+  if (stats.type === 'file') stats.version = toVersion(info)
+  return stats
+}
+
+function mismatch(url: URL, ifMatch: string, found: string, cause?: unknown) {
+  return new FsError('VersionMismatch', url, `expected a file of version ${JSON.stringify(ifMatch)} at ${url.href}, found ${found}`, { cause })
+}
+
+// Fails unless the opened entry is a file of the version `ifMatch`.
+function matchFile(url: URL, info: BigIntStats, ifMatch: string) {
+  if (!info.isFile()) throw mismatch(url, ifMatch, info.isDirectory() ? 'a directory' : 'an entry of another type')
+  const version = toVersion(info)
+  if (version !== ifMatch) throw mismatch(url, ifMatch, `version ${JSON.stringify(version)}`)
+}
+
+/**
+ * The flag of a conditional opening, which does not wait for the other end
+ * of a FIFO: a reading succeeds, and a writing fails with `ENXIO`. The type
+ * of the entry is then checked on the handle. Windows has no such entries.
+ */
+const nonblock = process.platform === 'win32' ? 0 : constants.O_NONBLOCK
+
+// opens the file of a conditional write, which is neither created nor truncated
+async function openMatching(filename: string, url: URL, ifMatch: string) {
+  let handle: FileHandle
+  try {
+    handle = await open(filename, constants.O_WRONLY | nonblock)
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === 'ENOENT') throw mismatch(url, ifMatch, 'no entry', error)
+    if (code === 'ENXIO') throw mismatch(url, ifMatch, 'an entry of another type', error)
+    if (code === 'EISDIR') throw mismatch(url, ifMatch, 'a directory', error)
+    throw toFsError(error, url, 'write')
+  }
+  try {
+    matchFile(url, await handle.stat({ bigint: true }), ifMatch)
+    return handle
+  } catch (error) {
+    await handle.close().catch(() => {})
+    throw toFsError(error, url, 'write')
   }
 }
 
@@ -126,33 +175,50 @@ const MAX_LINKS = 40
 
 /** The local file system of Node.js. */
 class NodeFs extends BaseFs {
-  readonly capabilities: FsProvider.Capabilities = { range: 'unsigned', exclusive: true }
+  readonly capabilities: FsProvider.Capabilities = {
+    range: 'unsigned',
+    exclusive: true,
+    conditional: { stat: true, read: true, write: true },
+  }
 
   constructor(ctx: Context, config: NodeFs.Config = {}) {
     super(ctx, { mount: config.mount ?? 'file:' })
   }
 
-  read(url: URL, { start = 0, end = Infinity }: ReadOptions = {}): ReadableStream<Uint8Array> {
+  // The version is checked on the handle that the stream reads.
+  async read(url: URL, { start = 0, end = Infinity, ifMatch }: ReadOptions = {}): Promise<ReadResult> {
     const filename = toPath(url)
-    const opening = call(url, 'read', () => {
-      assertFile(filename, url)
-      return open(filename, 'r')
-    })
+    assertFile(filename, url)
+    const opening = call(url, 'read', () => open(filename, ifMatch === undefined ? 'r' : constants.O_RDONLY | nonblock))
     let closing: Promise<void> | undefined
     const close = () => closing ??= opening.then(
       handle => call(url, 'read', () => handle.close()),
       () => {},
     )
+    // the metadata of the opened file, if it has been queried for a version
+    let checked: BigIntStats | undefined
+    if (ifMatch !== undefined) {
+      try {
+        const handle = await opening.catch((error) => {
+          throw error instanceof FsError && error.code === 'IsADirectory' ? mismatch(url, ifMatch, 'a directory', error) : error
+        })
+        checked = await call(url, 'read', () => handle.stat({ bigint: true }))
+        matchFile(url, checked, ifMatch)
+      } catch (error) {
+        await close().catch(() => {})
+        throw error
+      }
+    }
     let offset = 0
     let positioned = false
-    return new ReadableStream({
+    const stream = new ReadableStream({
       async start(controller) {
         const handle = await opening
         if (start === 0 && end > 0) return
         try {
           // Empty ranges still reject directories. A nonzero start seeks in a
           // regular file and skips bytes sequentially in a FIFO.
-          const info = await call(url, 'read', () => handle.stat())
+          const info = checked ?? await call(url, 'read', () => handle.stat())
           if (info.isDirectory()) throw new FsError('IsADirectory', url, `is a directory: ${url.href}`)
           if (end <= start) {
             await close()
@@ -189,15 +255,21 @@ class NodeFs extends BaseFs {
       },
       cancel: close,
     }, { highWaterMark: 0 })
+    return { stream }
   }
 
-  async write(url: URL, body: ReadableStream<Uint8Array>, { mode, exclusive }: WriteOptions) {
+  // A conditional write opens the existing file without truncating it,
+  // checks its version on the handle, and truncates it then.
+  async write(url: URL, body: ReadableStream<Uint8Array>, { mode, exclusive, ifMatch }: WriteOptions): Promise<WriteResult> {
     const filename = toPath(url)
     assertFile(filename, url)
-    const handle = await call(url, 'write', () => open(filename, exclusive ? 'wx' : 'w', mode))
+    const handle = ifMatch === undefined
+      ? await call(url, 'write', () => open(filename, exclusive ? 'wx' : 'w', mode))
+      : await openMatching(filename, url, ifMatch)
     try {
       // before the content and without the umask, as `copyFile()` gives it
       if (mode !== undefined) await call(url, 'write', () => handle.chmod(mode))
+      if (ifMatch !== undefined) await call(url, 'write', () => handle.truncate(0))
       // an error of `body` is kept as it is
       // A failed write must be able to close its handle even if cancelling
       // the input waits for another consumer of a tee branch.
@@ -218,6 +290,7 @@ class NodeFs extends BaseFs {
       }
       throw error
     }
+    return {}
   }
 
   async access(url: URL, mode: AccessMode) {

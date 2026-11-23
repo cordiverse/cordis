@@ -1,10 +1,12 @@
-import { AccessMode, createFilter, FsError, FsProvider, ReadOptions, Stats, Watcher, WriteOptions } from '@cordisjs/fs'
+import { AccessMode, createFilter, FsError, FsProvider, ReadOptions, ReadResult, Stats, Watcher, WriteOptions, WriteResult } from '@cordisjs/fs'
 import { Context } from 'cordis'
 
 interface File {
   type: 'file'
   content: Uint8Array
   mtime: Date
+  /** the revision of the content, unique in the file system */
+  version: string
 }
 
 interface Directory {
@@ -56,10 +58,6 @@ function locate(url: URL): Location {
 
 function createDirectory(): Directory {
   return { type: 'directory', children: new Map(), mtime: new Date() }
-}
-
-function createFile(content: Uint8Array): File {
-  return { type: 'file', content, mtime: new Date() }
 }
 
 // Adds or replaces an entry. A file that replaces a file leaves the
@@ -148,14 +146,25 @@ async function collect(body: ReadableStream<Uint8Array>) {
  * its content, and that of a directory is the last time an entry was added to
  * or removed from it. The file system has no symbolic links.
  *
+ * The version of a file is a revision, which each write and copy that gives
+ * content to a file allocates anew, and which a rename moves with the file.
+ * It identifies the content exactly. A conditional write compares it and
+ * replaces the file at once, after its body is consumed.
+ *
  * A subclass can override the operations, e.g. to inject failures in tests.
  */
 class MemoryFs implements FsProvider {
   static inject = ['fs']
 
-  readonly capabilities: FsProvider.Capabilities = { range: 'signed', atomic: true, exclusive: true }
+  readonly capabilities: FsProvider.Capabilities = {
+    range: 'signed',
+    atomic: true,
+    exclusive: true,
+    conditional: { stat: true, read: true, write: true },
+  }
 
   private _roots = new Map<string, Directory>()
+  private _revision = 0
   private _subscriptions = new Set<Subscription>()
 
   constructor(private ctx: Context, config: MemoryFs.Config = {}) {
@@ -186,7 +195,7 @@ class MemoryFs implements FsProvider {
         if (location.directory || !parent || entry?.type === 'directory') {
           throw new FsError('IsADirectory', url, `expected a file at ${url.href}`)
         }
-        parent.children.set(name!, createFile(toBytes(value)))
+        parent.children.set(name!, this._createFile(toBytes(value)))
       } else {
         if (!url.pathname.endsWith('/')) url.pathname += '/'
         const location = locate(url)
@@ -196,6 +205,10 @@ class MemoryFs implements FsProvider {
         this._populate(value, scope, url)
       }
     }
+  }
+
+  private _createFile(content: Uint8Array): File {
+    return { type: 'file', content, mtime: new Date(), version: String(++this._revision) }
   }
 
   /**
@@ -248,32 +261,58 @@ class MemoryFs implements FsProvider {
     return { parent, name: name! }
   }
 
-  read(url: URL, options: ReadOptions = {}): ReadableStream<Uint8Array> {
-    return new ReadableStream({
-      // called synchronously, so that the stream has the content at the time of the call
-      start: (controller) => {
-        const location = locate(url)
-        if (location.directory) throw new FsError('IsADirectory', url, `is a directory: ${url.href}`)
-        const { entry } = this._find(location)
-        if (entry.type === 'directory') throw new FsError('IsADirectory', url, `is a directory: ${url.href}`)
-        // A typed array slice also copies the bytes, so the reader cannot modify the stored content.
-        const bytes = entry.content.slice(options.start, options.end)
+  // Fails unless the entry at `location` is a file of the version `ifMatch`.
+  private _match(location: Location, entry: Entry | undefined, ifMatch: string) {
+    const { url } = location
+    if (entry?.type !== 'file' || entry.version !== ifMatch) {
+      const found = !entry ? 'no entry' : entry.type === 'file' ? `version ${JSON.stringify(entry.version)}` : `a ${entry.type}`
+      throw new FsError('VersionMismatch', url, `expected a file of version ${JSON.stringify(ifMatch)} at ${url.href}, found ${found}`)
+    }
+  }
+
+  // The stream is created when the method is called, so that it has the content at the time of the call.
+  async read(url: URL, { start, end, ifMatch }: ReadOptions = {}): Promise<ReadResult> {
+    const location = locate(url)
+    if (location.directory) throw new FsError('IsADirectory', url, `is a directory: ${url.href}`)
+    const { entry } = this._find(location)
+    if (ifMatch !== undefined) this._match(location, entry, ifMatch)
+    if (entry.type === 'directory') throw new FsError('IsADirectory', url, `is a directory: ${url.href}`)
+    // A typed array slice also copies the bytes, so the reader cannot modify the stored content.
+    const bytes = entry.content.slice(start, end)
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
         if (bytes.length) controller.enqueue(bytes)
         controller.close()
       },
     })
+    return this.capabilities.conditional?.read ? { stream, version: entry.version } : { stream }
   }
 
-  async write(url: URL, body: ReadableStream<Uint8Array>, { exclusive }: WriteOptions) {
+  async write(url: URL, body: ReadableStream<Uint8Array>, { exclusive, ifMatch }: WriteOptions): Promise<WriteResult> {
     const location = locate(url)
     if (location.directory) throw new FsError('IsADirectory', url, `is a directory: ${url.href}`)
-    this._target(location, exclusive)
+    // checked before and after `body` is consumed, as the entries may have changed meanwhile
+    const target = () => {
+      if (ifMatch !== undefined) {
+        let entry: Entry | undefined
+        try {
+          entry = this._lookup(location).entry
+        } catch (error) {
+          // a missing parent directory leaves the file missing
+          if (!(error instanceof FsError) || error.code !== 'NotFound') throw error
+        }
+        this._match(location, entry, ifMatch)
+      }
+      return this._target(location, exclusive)
+    }
+    target()
     // an error of `body` is kept as it is, and leaves the file unchanged
     const content = await collect(body)
-    // the entries may have changed while `body` was consumed
-    const { parent, name } = this._target(location, exclusive)
-    place(parent, name, createFile(content))
+    const { parent, name } = target()
+    const file = this._createFile(content)
+    place(parent, name, file)
     this._notify(location.root, location.names, false)
+    return { version: file.version }
   }
 
   async access(url: URL, mode: AccessMode) {
@@ -325,11 +364,14 @@ class MemoryFs implements FsProvider {
   async stat(url: URL, options: { follow: boolean }): Promise<Stats> {
     const location = locate(url)
     const { entry } = this._find(location)
-    return {
+    const stats: Stats = {
       type: entry.type,
       size: entry.type === 'file' ? entry.content.byteLength : 0,
       mtime: new Date(entry.mtime),
     }
+    // a subclass may declare other capabilities
+    if (entry.type === 'file' && this.capabilities.conditional?.stat) stats.version = entry.version
+    return stats
   }
 
   async* readdir(url: URL) {
@@ -365,7 +407,7 @@ class MemoryFs implements FsProvider {
     if (entry.type === 'directory') throw new FsError('IsADirectory', src, `is a directory: ${src.href}`)
     const { parent, name } = this._target(to, options.exclusive)
     // the content is never modified, so it is shared
-    place(parent, name, createFile(entry.content))
+    place(parent, name, this._createFile(entry.content))
     this._notify(to.root, to.names, false)
   }
 

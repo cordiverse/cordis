@@ -1,6 +1,6 @@
 import { Context, Fiber, FiberState } from 'cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import Fs, { FsError, WatchOptions } from '@cordisjs/fs'
+import Fs, { FsError, FsProvider, WatchOptions } from '@cordisjs/fs'
 import { conformance } from '@cordisjs/fs-conformance'
 import MemoryFs from '../src/index.ts'
 
@@ -9,20 +9,46 @@ conformance('MemoryFs', {
     await ctx.use(MemoryFs)
     return new URL('memory://conformance/')
   },
-  capabilities: { exclusive: true, atomic: true },
+  capabilities: { exclusive: true, atomic: true, conditional: { stat: true, read: true, write: true, atomicWrite: true } },
 })
 
-// a provider that declares only `exclusive`, on which `@cordisjs/fs` composes ranges and atomic writes
+// A provider that declares only `exclusive` and versions by `stat()`, on
+// which `@cordisjs/fs` composes ranges, atomic writes and conditional reads and writes.
 class PlainFs extends MemoryFs {
-  readonly capabilities = { exclusive: true }
+  readonly capabilities = { exclusive: true, conditional: { stat: true } }
 }
 
-conformance('MemoryFs with composed ranges and atomic writes', {
+conformance('MemoryFs with composed operations', {
   async setup(ctx) {
     await ctx.use(PlainFs)
     return new URL('memory://conformance/')
   },
-  capabilities: { exclusive: true, atomic: true },
+  capabilities: { exclusive: true, atomic: true, conditional: { stat: true, read: true, write: true, atomicWrite: true } },
+})
+
+// A provider whose `stat()` reports no version, on which `@cordisjs/fs`
+// composes atomic writes and cannot check a version for them. The tests
+// obtain the versions from its reads.
+let instance: MemoryFs
+
+class ReadWriteVersionedFs extends MemoryFs {
+  readonly capabilities: FsProvider.Capabilities = { range: 'signed', exclusive: true, conditional: { read: true, write: true } }
+
+  constructor(ctx: Context, config?: MemoryFs.Config) {
+    super(ctx, config)
+    instance = this
+  }
+}
+
+conformance('MemoryFs with conditional reads and writes alone', {
+  async setup(ctx) {
+    await ctx.use(ReadWriteVersionedFs)
+    return new URL('memory://conformance/')
+  },
+  async version(ctx, url) {
+    return (await instance.read(url, {})).version!
+  },
+  capabilities: { exclusive: true, atomic: true, conditional: { read: true, write: true } },
 })
 
 async function rejects(promise: Promise<unknown>, code: FsError.Code) {
@@ -73,6 +99,20 @@ describe('MemoryFs', () => {
     controller.close()
     await rejects(pending, 'AlreadyExists')
     expect(await dest.text()).to.equal('winner')
+  })
+
+  it('lets one of two writers of the same version commit', async () => {
+    const ctx = await setup({ 'a.txt': 'old' })
+    const file = ctx.fs.file('memory:///a.txt')
+    const { version } = await ctx.fs.stat(file.url)
+    let controller!: ReadableStreamDefaultController<Uint8Array>
+    const body = new ReadableStream<Uint8Array>({ start(c) { controller = c } })
+    const pending = file.write(body, { atomic: true, ifMatch: version })
+    controller.enqueue(new TextEncoder().encode('first'))
+    const result = await file.write('second', { atomic: true, ifMatch: version })
+    controller.close()
+    await rejects(pending, 'VersionMismatch')
+    expect(await file.text({ ifMatch: result.version })).to.equal('second')
   })
 
   describe('mount', () => {

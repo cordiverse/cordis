@@ -2,7 +2,7 @@ import { Context, Fiber, FiberState } from 'cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import Fs, { BaseFs, DirEntryRef, FileRef, FsError, FsProvider, Watcher, WriteOptions } from '../src/index.ts'
+import Fs, { BaseFs, CopyOptions, DirEntryRef, FileRef, FsError, FsProvider, StatOptions, Stats, Watcher, WriteOptions } from '../src/index.ts'
 
 interface FakeWatch {
   watcher: Watcher
@@ -395,8 +395,8 @@ describe('Fs', () => {
   function recorder() {
     const calls: [string, ...any[]][] = []
     const provider: FsProvider = {
-      read(url) { calls.push(['read', url.href]); return new Blob(['foo']).stream() },
-      async write(url, body) { calls.push(['write', url.href, await new Response(body).text()]) },
+      async read(url) { calls.push(['read', url.href]); return { stream: new Blob(['foo']).stream() } },
+      async write(url, body) { calls.push(['write', url.href, await new Response(body).text()]); return {} },
       async access(url, mode) { calls.push(['access', url.href, mode]) },
       async rename(src, dest) { calls.push(['rename', src.href, dest.href]) },
       async remove(url, options) { calls.push(['remove', url.href, options]) },
@@ -591,7 +591,7 @@ describe('Fs', () => {
           yield { name: 'dir', type: 'directory' }
           yield { name: 'link', type: 'symlink' }
         },
-        read: () => new Blob(['foo']).stream(),
+        read: async () => ({ stream: new Blob(['foo']).stream() }),
       })
       const entries: DirEntryRef[] = []
       for await (const entry of ctx.fs.readdir('mem://bucket/')) entries.push(entry)
@@ -644,13 +644,14 @@ describe('Fs', () => {
           calls.push('mkdir ' + find(url))
           entries[find(url)] = null
         },
-        read(url) {
+        async read(url) {
           calls.push('read ' + find(url))
-          return new Blob([entries[find(url)]!]).stream()
+          return { stream: new Blob([entries[find(url)]!]).stream() }
         },
         async write(url, body) {
           calls.push('write ' + find(url))
           entries[find(url)] = await new Response(body).text()
+          return {}
         },
         async readlink(url) {
           return links[find(url)]
@@ -684,8 +685,8 @@ describe('Fs', () => {
       const written: string[] = []
       ctx.fs.mount('doc:', {
         async stat(url) { return { type: 'file', size: 6, mtime: new Date(0) } },
-        read: () => new Blob(['source']).stream(),
-        async write(url) { written.push(url.href) },
+        read: async () => ({ stream: new Blob(['source']).stream() }),
+        async write(url) { written.push(url.href); return {} },
       })
       await ctx.fs.copy('doc:entry', 'doc:entry/')
       await ctx.fs.copy('doc:entry', 'doc:entry/child')
@@ -751,6 +752,7 @@ describe('Fs', () => {
         async write(url, body, options) {
           expect(options).to.include({ atomic: true, exclusive: true })
           received.push(await new Response(body).text())
+          return {}
         },
       })
       await ctx.fs.copy('src:///a', 'dest:///b', { atomic: true, exclusive: true })
@@ -764,7 +766,7 @@ describe('Fs', () => {
       }).tee()
       ctx.fs.mount('src:', {
         stat: async () => ({ type: 'file', size: 1, mtime: new Date(0) }),
-        read: () => stream,
+        read: async () => ({ stream }),
       })
       ctx.fs.mount('dest:', {
         async write(url) { throw new FsError('PermissionDenied', url, 'denied') },
@@ -783,10 +785,10 @@ describe('Fs', () => {
       const target = tree({})
       ctx.fs.mount('mem:', {
         async stat() { return { type: 'file', size: 0, mtime: new Date(0) } },
-        read(url) {
-          return new ReadableStream({
+        async read(url) {
+          return { stream: new ReadableStream({
             start() { throw new FsError('PermissionDenied', url, 'PermissionDenied') },
-          })
+          }) }
         },
       })
       ctx.fs.mount('other:', target.provider)
@@ -841,17 +843,20 @@ describe('Fs', () => {
     function memory(content: Uint8Array, size: number) {
       const written: Uint8Array[] = []
       const provider: FsProvider = {
-        read() {
+        async read() {
           let offset = 0
-          return new ReadableStream({
-            pull(controller) {
-              if (offset >= content.byteLength) return controller.close()
-              controller.enqueue(content.slice(offset, offset += size))
-            },
-          })
+          return {
+            stream: new ReadableStream({
+              pull(controller) {
+                if (offset >= content.byteLength) return controller.close()
+                controller.enqueue(content.slice(offset, offset += size))
+              },
+            }),
+          }
         },
         async write(url, body) {
           written.push(new Uint8Array(await new Response(body).arrayBuffer()))
+          return {}
         },
       }
       return { written, provider }
@@ -902,7 +907,7 @@ describe('Fs', () => {
       const ctx = await setup()
       const error = new FsError('NotFound', new URL('mem://a.txt'), 'missing')
       ctx.fs.mount('mem:', {
-        read: () => new ReadableStream({ start(controller) { controller.error(error) } }),
+        read: async () => ({ stream: new ReadableStream({ start(controller) { controller.error(error) } }) }),
       })
       expect(await ctx.fs.file('mem://a.txt').text().catch(error => error)).to.equal(error)
     })
@@ -932,6 +937,7 @@ describe('Fs', () => {
         async write(url, body, options) {
           calls.push(['write', url.href, options])
           files.set(url.href, await new Response(body).text())
+          return {}
         },
         async rename(src, dest) {
           calls.push(['rename', src.href, dest.href])
@@ -1313,8 +1319,9 @@ describe('Fs', () => {
       ctx.fs.mount('mem:', {
         ...provider, ...fakeProvider(),
         async write(dest, body, options) {
-          await provider.write!(dest, body, options)
+          const result = await provider.write!(dest, body, options)
           watcher.emit('change', dest)
+          return result
         },
         async rename(from, to) {
           await provider.rename!(from, to)
@@ -1338,8 +1345,8 @@ describe('Fs', () => {
           if (url.href === 'doc:source') return { type: 'file', size: 6, mtime: new Date(0) }
           throw new FsError('NotFound', url, 'missing')
         },
-        read: () => new Blob(['source']).stream(),
-        async write(url, body) { written.push(url.href + ' ' + await new Response(body).text()) },
+        read: async () => ({ stream: new Blob(['source']).stream() }),
+        async write(url, body) { written.push(url.href + ' ' + await new Response(body).text()); return {} },
       })
       await ctx.fs.file('doc:entry/').write('data', { atomic: true, exclusive: true })
       await ctx.fs.copy('doc:source', 'doc:copy/', { atomic: true, exclusive: true })
@@ -1348,7 +1355,7 @@ describe('Fs', () => {
 
     it('reports an unsupported write while the other branch of a tee is still open', async () => {
       const ctx = await setup()
-      ctx.fs.mount('mem:', { async write() {} })
+      ctx.fs.mount('mem:', { async write() { return {} } })
       const [body, sibling] = new ReadableStream<Uint8Array>().tee()
       const pending = code(ctx.fs.file('mem://vol/a').write(body, { atomic: true }))
       try {
@@ -1365,9 +1372,9 @@ describe('Fs', () => {
       const options: object[] = []
       const provider: FsProvider = {
         capabilities,
-        read(url, value) {
+        async read(url, value) {
           options.push(value)
-          return new Blob(['0123456789']).slice(value.start, value.end).stream()
+          return { stream: new Blob(['0123456789']).slice(value.start, value.end).stream() }
         },
       }
       return { options, provider }
@@ -1460,7 +1467,7 @@ describe('Fs', () => {
       ctx.fs.mount('mem:', {
         capabilities: { range: 'unsigned' },
         async stat() { throw new Error('metadata unavailable') },
-        read: () => new ReadableStream({ start: controller => controller.error(failure) }),
+        read: async () => ({ stream: new ReadableStream({ start: controller => controller.error(failure) }) }),
       })
       const reader = ctx.fs.file('mem://a.txt').slice(1).slice(-1).stream().getReader()
       expect(await reader.read().catch(error => error)).to.equal(failure)
@@ -1490,7 +1497,7 @@ describe('Fs', () => {
   describe('range', () => {
     it('cuts a range with a negative bound from the whole content without `stat`', async () => {
       const ctx = await setup()
-      ctx.fs.mount('mem:', { read: () => new Blob(['0123456789']).stream() })
+      ctx.fs.mount('mem:', { read: async () => ({ stream: new Blob(['0123456789']).stream() }) })
       const file = ctx.fs.file('mem://a.txt')
       expect(await file.slice(-3).text()).to.equal('789')
       expect(await file.slice(2, -2).slice(-3, -1).text()).to.equal('56')
@@ -1501,13 +1508,13 @@ describe('Fs', () => {
       const ctx = await setup()
       let content = ''
       ctx.fs.mount('mem:', {
-        read: () => new ReadableStream({
+        read: async () => ({ stream: new ReadableStream({
           start(controller) {
             const bytes = new TextEncoder().encode(content)
             for (let i = 0; i < bytes.length; i += 3) controller.enqueue(bytes.subarray(i, i + 3))
             controller.close()
           },
-        }),
+        }) }),
       })
       const file = ctx.fs.file('mem://a.txt')
       for (const input of ['a', 'abcd', 'abcde', 'abcdef', 'abcdefgh']) {
@@ -1523,12 +1530,12 @@ describe('Fs', () => {
       const ctx = await setup()
       let pulls = 0
       ctx.fs.mount('mem:', {
-        read: () => new ReadableStream({
+        read: async () => ({ stream: new ReadableStream({
           pull(controller) {
             pulls++
             controller.enqueue(new Uint8Array(4).fill(pulls))
           },
-        }, { highWaterMark: 0 }),
+        }, { highWaterMark: 0 }) }),
       })
       expect(await ctx.fs.file('mem://a.bin').slice(2, 6).bytes()).to.deep.equal(new Uint8Array([1, 1, 2, 2]))
       expect(pulls).to.equal(2)
@@ -1538,7 +1545,7 @@ describe('Fs', () => {
       const ctx = await setup()
       const cancel = vi.fn()
       const source = new ReadableStream({ cancel })
-      ctx.fs.mount('mem:', { read: () => source })
+      ctx.fs.mount('mem:', { read: async () => ({ stream: source }) })
       await ctx.fs.file('mem://a.txt').slice(1, 2).stream().cancel('reason')
       expect(cancel).toHaveBeenCalledWith('reason')
     })
@@ -1548,9 +1555,9 @@ describe('Fs', () => {
       const options: object[] = []
       ctx.fs.mount('mem:', {
         capabilities: { range: 'signed' },
-        read(url, value) {
+        async read(url, value) {
           options.push(value)
-          return new Blob(['0123']).slice(value.start, value.end).stream()
+          return { stream: new Blob(['0123']).slice(value.start, value.end).stream() }
         },
       })
       expect(await ctx.fs.file('mem://a.txt').slice(0, 4).slice(-1).text()).to.equal('3')
@@ -1563,7 +1570,7 @@ describe('Fs', () => {
       const content = new Uint8Array(1 << 20).fill(1)
       ctx.fs.mount('mem:', {
         capabilities: { range: 'signed' },
-        read: (url, { start, end }) => new Blob([content.subarray(start, end)]).stream(),
+        read: async (url, { start, end }) => ({ stream: new Blob([content.subarray(start, end)]).stream() }),
       })
       const reader = ctx.fs.file('mem://a.bin').slice(0, 1 << 20).slice(-1).stream().getReader()
       const { value } = await reader.read()
@@ -1575,10 +1582,10 @@ describe('Fs', () => {
       const ctx = await setup()
       ctx.fs.mount('mem:', {
         capabilities: { range: 'signed' },
-        read: url => new ReadableStream({
+        read: async url => ({ stream: new ReadableStream({
           start: controller => controller.enqueue(new TextEncoder().encode('a')),
           pull: controller => controller.error(new FsError('Unknown', url, 'Unknown')),
-        }),
+        }) }),
       })
       expect(await ctx.fs.file('mem://a.txt').slice(-1000).slice(0, 1).text()).to.equal('a')
     })
@@ -1586,15 +1593,15 @@ describe('Fs', () => {
     it('emits bytes before EOF when only the end is relative to EOF', async () => {
       const ctx = await setup()
       ctx.fs.mount('mem:', {
-        read() {
+        async read() {
           const chunks = ['ab', 'cde']
-          return new ReadableStream({
+          return { stream: new ReadableStream({
             pull(controller) {
               const chunk = chunks.shift()
               if (chunk === undefined) throw new Error('read past the required bytes')
               controller.enqueue(new TextEncoder().encode(chunk))
             },
-          }, { highWaterMark: 0 })
+          }, { highWaterMark: 0 }) }
         },
       })
       const file = ctx.fs.file('mem://a.txt')
@@ -1604,12 +1611,12 @@ describe('Fs', () => {
     it('preserves pending bytes when a consumer transfers an emitted chunk', async () => {
       const ctx = await setup()
       ctx.fs.mount('mem:', {
-        read: () => new ReadableStream({
+        read: async () => ({ stream: new ReadableStream({
           start(controller) {
             for (const chunk of ['abc', 'de', 'fgh']) controller.enqueue(new TextEncoder().encode(chunk))
             controller.close()
           },
-        }),
+        }) }),
       })
       const reader = ctx.fs.file('mem://a.txt').slice(0, -3).stream().getReader()
       let text = ''
@@ -1625,10 +1632,10 @@ describe('Fs', () => {
     it('ends a range once it is known to be empty, after the first read', async () => {
       const ctx = await setup()
       ctx.fs.mount('mem:', {
-        read: url => new ReadableStream({
+        read: async url => ({ stream: new ReadableStream({
           start: controller => controller.enqueue(new Uint8Array(5)),
           pull: controller => controller.error(new FsError('Unknown', url, 'Unknown')),
-        }),
+        }) }),
       })
       for (const [start, end] of [[4, 4], [6, 2], [-2, -2], [-1, 0], [-2, 3]]) {
         expect(await ctx.fs.file('mem://a.txt').slice(start, end).text(), `slice(${start}, ${end})`).to.equal('')
@@ -1640,13 +1647,13 @@ describe('Fs', () => {
       const ctx = await setup()
       const cancel = vi.fn()
       ctx.fs.mount('mem:', {
-        read: () => new ReadableStream({
+        read: async () => ({ stream: new ReadableStream({
           async pull(controller) {
             await new Promise(resolve => setTimeout(resolve, 1))
             controller.enqueue(new Uint8Array(4))
           },
           cancel,
-        }, { highWaterMark: 0 }),
+        }, { highWaterMark: 0 }) }),
       })
       const reader = ctx.fs.file('mem://a.bin').slice(-4).stream().getReader()
       const reading = reader.read()
@@ -1659,9 +1666,9 @@ describe('Fs', () => {
     it('reports a failure of the first read of an empty range', async () => {
       const ctx = await setup()
       ctx.fs.mount('mem:', {
-        read: url => new ReadableStream({
+        read: async url => ({ stream: new ReadableStream({
           pull: controller => controller.error(new FsError('NotFound', url, 'NotFound')),
-        }),
+        }) }),
       })
       expect(await code(ctx.fs.file('mem://a.txt').slice(0, 0).text())).to.equal('NotFound')
     })
@@ -1669,13 +1676,13 @@ describe('Fs', () => {
     it('ends a range without waiting for the cancellation of the source', async () => {
       const ctx = await setup()
       const [branch] = new Blob(['0123456789']).stream().tee()
-      ctx.fs.mount('mem:', { read: () => branch })
+      ctx.fs.mount('mem:', { read: async () => ({ stream: branch }) })
       expect(await ctx.fs.file('mem://a.txt').slice(0, 1).text()).to.equal('0')
     })
 
     it('converts the bounds as `[Clamp] long long`', async () => {
       const ctx = await setup()
-      ctx.fs.mount('mem:', { read: () => new Blob(['0123456789']).stream() })
+      ctx.fs.mount('mem:', { read: async () => ({ stream: new Blob(['0123456789']).stream() }) })
       const file = ctx.fs.file('mem://a.txt')
       const ranges: [number, number?, string?][] = [
         [0, Infinity, '0123456789'], [Infinity, undefined, ''], [-Infinity, undefined, '0123456789'],
@@ -1690,6 +1697,356 @@ describe('Fs', () => {
     it('rejects a bound that is not a number with a `TypeError`', async () => {
       const ctx = await setup()
       expect(() => ctx.fs.file('mem://a.txt').slice('1' as any)).to.throw(TypeError)
+    })
+  })
+
+  describe('conditional read', () => {
+    // a provider of one file of version `v1`, which records its operations
+    function versioned(capabilities: FsProvider.Capabilities, stats: Partial<Stats> = {}) {
+      const calls: [string, ...unknown[]][] = []
+      const provider: FsProvider = {
+        capabilities,
+        async read(url, options) {
+          calls.push(['read', options])
+          if (options.ifMatch !== undefined && options.ifMatch !== 'v1') {
+            throw new FsError('VersionMismatch', url, 'mismatch')
+          }
+          return { stream: new Blob(['0123456789']).slice(options.start, options.end).stream() }
+        },
+        async stat(url, options) {
+          calls.push(['stat', options])
+          return { type: 'file', size: 10, mtime: new Date(0), version: 'v1', ...stats }
+        },
+      }
+      return { calls, provider }
+    }
+
+    it('forwards the version to a provider with `conditional.read`, without `stat()`', async () => {
+      const ctx = await setup()
+      const { calls, provider } = versioned({ range: 'signed', conditional: { stat: true, read: true } })
+      ctx.fs.mount('mem:', provider)
+      const file = ctx.fs.file('mem://a.txt')
+      expect(await file.slice(2, 8).text({ ifMatch: 'v1' })).to.equal('234567')
+      expect(await code(file.text({ ifMatch: 'v2' }))).to.equal('VersionMismatch')
+      expect(calls).to.deep.equal([
+        ['read', { start: 2, end: 8, ifMatch: 'v1' }],
+        ['read', { ifMatch: 'v2' }],
+      ])
+    })
+
+    it('checks the version by `stat()` before a read without the version', async () => {
+      const ctx = await setup()
+      const { calls, provider } = versioned({ range: 'signed', conditional: { stat: true } })
+      ctx.fs.mount('mem:', provider)
+      const file = ctx.fs.file('mem://a.txt')
+      expect(await file.slice(2, 8).text({ ifMatch: 'v1' })).to.equal('234567')
+      expect(calls).to.deep.equal([['stat', { follow: true }], ['read', { start: 2, end: 8 }]])
+      calls.length = 0
+      expect(await code(file.slice(2, 8).text({ ifMatch: 'v2' }))).to.equal('VersionMismatch')
+      expect(calls).to.deep.equal([['stat', { follow: true }]])
+    })
+
+    it('throws `NotSupported` before any I/O without a way to check the version, also for an empty range', async () => {
+      const cases: FsProvider.Capabilities[] = [{}, { range: 'signed' }, { conditional: { write: true } }]
+      for (const capabilities of cases) {
+        const ctx = await setup()
+        const { calls, provider } = versioned(capabilities)
+        ctx.fs.mount('mem:', provider)
+        const file = ctx.fs.file('mem://a.txt')
+        for (const ref of [file, file.slice(0, 0), file.slice(-2)]) {
+          expect(() => ref.stream({ ifMatch: 'v1' })).to.throw(FsError).with.property('code', 'NotSupported')
+        }
+        expect(await file.text()).to.equal('0123456789')
+        expect(calls.filter(([name]) => name === 'stat')).to.deep.equal([])
+        expect(calls).to.have.length(1)
+      }
+    })
+
+    it('does not check a version by `stat()` without the method', async () => {
+      const ctx = await setup()
+      const { calls, provider } = versioned({ conditional: { stat: true } })
+      delete provider.stat
+      ctx.fs.mount('mem:', provider)
+      expect(() => ctx.fs.file('mem://a.txt').stream({ ifMatch: 'v1' })).to.throw(FsError).with.property('code', 'NotSupported')
+      expect(calls).to.deep.equal([])
+    })
+
+    it('rejects a version that is not a string with a `TypeError`', async () => {
+      const ctx = await setup()
+      const { calls, provider } = versioned({ conditional: { stat: true, read: true } })
+      ctx.fs.mount('mem:', provider)
+      const file = ctx.fs.file('mem://a.txt')
+      expect(() => file.stream({ ifMatch: null as any })).to.throw(TypeError)
+      expect(await file.text({ ifMatch: 1 as any }).catch(error => error)).to.be.instanceOf(TypeError)
+      expect(calls).to.deep.equal([])
+    })
+
+    it('fails on an entry other than a file, also with the same version', async () => {
+      const ctx = await setup()
+      const { calls, provider } = versioned({ conditional: { stat: true } }, { type: 'directory' })
+      ctx.fs.mount('mem:', provider)
+      expect(await code(ctx.fs.file('mem://a.txt').text({ ifMatch: 'v1' }))).to.equal('VersionMismatch')
+      expect(calls.map(([name]) => name)).to.deep.equal(['stat'])
+    })
+
+    it('reports a file without a version under `conditional.stat` as a failure of the provider', async () => {
+      const ctx = await setup()
+      const { calls, provider } = versioned({ conditional: { stat: true } }, { version: undefined })
+      ctx.fs.mount('mem:', provider)
+      expect(await code(ctx.fs.file('mem://a.txt').text({ ifMatch: 'v1' }))).to.equal('Unknown')
+      expect(calls.map(([name]) => name)).to.deep.equal(['stat'])
+    })
+
+    it('propagates a failure of the check of the version without reading', async () => {
+      const ctx = await setup()
+      const { calls, provider } = versioned({ range: 'unsigned', conditional: { stat: true, read: true } })
+      provider.stat = async (url) => {
+        calls.push(['stat'])
+        throw new FsError('PermissionDenied', url, 'denied')
+      }
+      ctx.fs.mount('mem:', provider)
+      expect(await code(ctx.fs.file('mem://a.txt').slice(-3).text({ ifMatch: 'v1' }))).to.equal('PermissionDenied')
+      expect(calls).to.deep.equal([['stat']])
+    })
+
+    it('resolves a range by the size of a matching version', async () => {
+      const ctx = await setup()
+      const { calls, provider } = versioned({ range: 'unsigned', conditional: { stat: true, read: true } })
+      ctx.fs.mount('mem:', provider)
+      const file = ctx.fs.file('mem://a.txt')
+      expect(await file.slice(-3).text({ ifMatch: 'v1' })).to.equal('789')
+      expect(calls).to.deep.equal([['stat', { follow: true }], ['read', { start: 7, end: 10, ifMatch: 'v1' }]])
+      calls.length = 0
+      expect(await code(file.slice(-3).text({ ifMatch: 'v2' }))).to.equal('VersionMismatch')
+      expect(calls).to.deep.equal([['stat', { follow: true }]])
+    })
+
+    it('slices the stream of a matching version whose size cannot resolve a range', async () => {
+      const ctx = await setup()
+      const { calls, provider } = versioned({ range: 'unsigned', conditional: { stat: true } }, { size: NaN })
+      ctx.fs.mount('mem:', provider)
+      expect(await ctx.fs.file('mem://a.txt').slice(-3).text({ ifMatch: 'v1' })).to.equal('789')
+      expect(calls).to.deep.equal([['stat', { follow: true }], ['read', {}]])
+    })
+
+    it('does not query a size that is not checked against the version', async () => {
+      const ctx = await setup()
+      const { calls, provider } = versioned({ range: 'unsigned', conditional: { read: true } })
+      ctx.fs.mount('mem:', provider)
+      expect(await ctx.fs.file('mem://a.txt').slice(2, 8).slice(-2).text({ ifMatch: 'v1' })).to.equal('67')
+      expect(calls).to.deep.equal([['read', { start: 2, end: 8, ifMatch: 'v1' }]])
+    })
+
+    it('reports a rejected read of the provider through the stream', async () => {
+      const ctx = await setup()
+      const failure = new FsError('NotFound', new URL('mem://a.txt'), 'missing')
+      ctx.fs.mount('mem:', { read() { throw failure } })
+      const stream = ctx.fs.file('mem://a.txt').stream()
+      expect(await stream.getReader().read().catch(error => error)).to.equal(failure)
+    })
+
+    it('closes the stream with the source once its last chunk is read', async () => {
+      const ctx = await setup()
+      // a source that closes once its chunks are enqueued
+      const source = (chunks: string[]) => new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const chunk of chunks) controller.enqueue(new TextEncoder().encode(chunk))
+          controller.close()
+        },
+      })
+      ctx.fs.mount('mem:', { read: async url => ({ stream: source(url.pathname ? [url.pathname] : []) }) })
+      const reader = ctx.fs.file('mem:foo').stream().getReader()
+      expect(new TextDecoder().decode((await reader.read()).value)).to.equal('foo')
+      await reader.closed
+      await ctx.fs.file('mem:').stream().getReader().closed
+    })
+
+    it('cancels a source requested before the stream is cancelled once it is obtained, with the result of its cancellation', async () => {
+      const ctx = await setup()
+      const opened = Promise.withResolvers<void>()
+      const failure = new Error('cleanup failed')
+      const cancel = vi.fn(() => Promise.reject(failure))
+      ctx.fs.mount('mem:', {
+        async read() {
+          await opened.promise
+          return { stream: new ReadableStream({ cancel }) }
+        },
+      })
+      const cancelled = ctx.fs.file('mem://a.txt').stream().cancel('reason')
+      opened.resolve()
+      expect(await cancelled.catch(error => error)).to.equal(failure)
+      expect(cancel).toHaveBeenCalledWith('reason')
+    })
+  })
+
+  describe('conditional write', () => {
+    // a provider of files, whose versions are their contents, which records its operations
+    function versioned(capabilities: FsProvider.Capabilities, entries: Record<string, string | null> = {}, failures: FsError[] = []) {
+      const files = new Map<string, string | null>(Object.entries(entries))
+      const calls: [string, ...unknown[]][] = []
+      const missing = (url: URL) => new FsError('NotFound', url, 'missing')
+      const provider: FsProvider = {
+        capabilities: { exclusive: true, ...capabilities },
+        async write(url, body, options) {
+          calls.push(['write', url.href, options])
+          files.set(url.href, await new Response(body).text())
+          return { version: 'written' }
+        },
+        async stat(url, options) {
+          calls.push(['stat', url.href, options])
+          if (!files.has(url.href)) throw missing(url)
+          const content = files.get(url.href)
+          if (content === null) return { type: 'symlink', size: 0, mtime: new Date(0) }
+          return { type: 'file', size: content!.length, mtime: new Date(0), version: content! }
+        },
+        async rename(src, dest) {
+          calls.push(['rename', src.href, dest.href])
+          const failure = failures.shift()
+          if (failure) throw failure
+          files.set(dest.href, files.get(src.href)!)
+          files.delete(src.href)
+        },
+        async remove(url) {
+          calls.push(['remove', url.href])
+          if (!files.delete(url.href)) throw missing(url)
+        },
+      }
+      return { files, calls, provider }
+    }
+
+    const target = 'mem://vol/a.txt'
+
+    it('forwards the version to a provider with `conditional.write`, with `atomic`', async () => {
+      const ctx = await setup()
+      const { calls, provider } = versioned({ atomic: true, conditional: { stat: true, write: true } }, { [target]: 'old' })
+      ctx.fs.mount('mem:', provider)
+      expect(await ctx.fs.file(target).write('new', { ifMatch: 'old', atomic: true })).to.deep.equal({ version: 'written' })
+      expect(calls).to.deep.equal([['write', target, { exclusive: false, atomic: true, ifMatch: 'old' }]])
+    })
+
+    it('checks the version by `stat()` before a direct write without the version', async () => {
+      const ctx = await setup()
+      const { files, calls, provider } = versioned({ conditional: { stat: true } }, { [target]: 'old' })
+      ctx.fs.mount('mem:', provider)
+      const file = ctx.fs.file(target)
+      expect(await code(file.write('new', { ifMatch: 'other' }))).to.equal('VersionMismatch')
+      expect(await code(ctx.fs.file('mem://vol/b.txt').write('new', { ifMatch: 'old' }))).to.equal('VersionMismatch')
+      expect(calls.map(([name]) => name)).to.deep.equal(['stat', 'stat'])
+      calls.length = 0
+      expect(await file.write('new', { ifMatch: 'old' })).to.deep.equal({ version: 'written' })
+      expect(calls).to.deep.equal([
+        ['stat', target, { follow: true }],
+        ['write', target, { exclusive: false, atomic: false }],
+      ])
+      expect([...files.keys()]).to.deep.equal([target])
+    })
+
+    it('treats a `NotFound` thrown by `stat()` as a missing destination', async () => {
+      const ctx = await setup()
+      const { calls, provider } = versioned({ conditional: { stat: true } }, { [target]: 'old' })
+      provider.stat = (url) => { throw new FsError('NotFound', url, 'missing') }
+      ctx.fs.mount('mem:', provider)
+      for (const atomic of [false, true]) {
+        expect(await code(ctx.fs.file(target).write('new', { ifMatch: 'old', atomic }))).to.equal('VersionMismatch')
+      }
+      expect(calls).to.deep.equal([])
+    })
+
+    it('fails on an entry other than a file, also with the same version', async () => {
+      const ctx = await setup()
+      const { calls, provider } = versioned({ conditional: { stat: true } })
+      provider.stat = async () => ({ type: 'directory', size: 0, mtime: new Date(0), version: 'old' })
+      ctx.fs.mount('mem:', provider)
+      expect(await code(ctx.fs.file(target).write('new', { ifMatch: 'old' }))).to.equal('VersionMismatch')
+      expect(await code(ctx.fs.file(target).write('new', { ifMatch: 'old', atomic: true }))).to.equal('VersionMismatch')
+      expect(calls).to.deep.equal([])
+    })
+
+    it('checks the destination of a composed atomic write before the temporary file and before each rename', async () => {
+      const ctx = await setup()
+      const { files, calls, provider } = versioned({ conditional: { stat: true, write: true } }, { [target]: 'old' }, [
+        new FsError('Busy', new URL(target), 'busy'),
+      ])
+      ctx.fs.mount('mem:', provider)
+      const file = ctx.fs.file(target)
+      expect(await code(file.write('new', { ifMatch: 'other', atomic: true }))).to.equal('VersionMismatch')
+      expect(calls.map(([name]) => name)).to.deep.equal(['stat'])
+      calls.length = 0
+      await file.write('new', { ifMatch: 'old', atomic: true })
+      expect(files.get(target)).to.equal('new')
+      expect(calls.map(([name, , options]) => name === 'stat' ? `stat ${(options as StatOptions).follow}` : name)).to.deep.equal([
+        'stat false', 'write', 'stat false', 'rename', 'stat false', 'rename',
+      ])
+      // the temporary file is written without the version of the destination
+      expect(calls[1][2]).not.to.have.property('ifMatch')
+    })
+
+    it('keeps a destination that becomes a link while a composed atomic write waits to retry', async () => {
+      const ctx = await setup()
+      const { files, calls, provider } = versioned({ conditional: { stat: true } }, { [target]: 'old' }, [
+        new FsError('Busy', new URL(target), 'busy'),
+      ])
+      const rename = provider.rename!
+      provider.rename = async (src, dest) => {
+        try {
+          await rename(src, dest)
+        } finally {
+          files.set(target, null)
+        }
+      }
+      ctx.fs.mount('mem:', provider)
+      expect(await code(ctx.fs.file(target).write('new', { ifMatch: 'old', atomic: true }))).to.equal('VersionMismatch')
+      expect([...files]).to.deep.equal([[target, null]])
+      expect(calls.at(-1)?.[0]).to.equal('remove')
+    })
+
+    it('rejects a write without a way to check the version, cancelling the stream with the error', async () => {
+      const cases: FsProvider.Capabilities[] = [{}, { conditional: { write: true } }]
+      for (const capabilities of cases) {
+        const ctx = await setup()
+        const { calls, provider } = versioned(capabilities, { [target]: 'old' })
+        ctx.fs.mount('mem:', provider)
+        // `conditional.write` serves only a direct write
+        const atomic = !!capabilities.conditional
+        const cancel = vi.fn()
+        const error = await ctx.fs.file(target).write(new ReadableStream({ cancel }), { ifMatch: 'old', atomic }).catch(error => error)
+        expect(error).to.have.property('code', 'NotSupported')
+        expect(cancel).toHaveBeenCalledWith(error)
+        expect(calls).to.deep.equal([])
+      }
+    })
+
+    it('does not check a version by `stat()` without the method', async () => {
+      const ctx = await setup()
+      const { calls, provider } = versioned({ conditional: { stat: true } }, { [target]: 'old' })
+      delete provider.stat
+      ctx.fs.mount('mem:', provider)
+      for (const atomic of [false, true]) {
+        expect(await code(ctx.fs.file(target).write('new', { ifMatch: 'old', atomic }))).to.equal('NotSupported')
+      }
+      expect(calls).to.deep.equal([])
+    })
+
+    it('rejects an invalid version, or one with `exclusive`, with a `TypeError` that cancels the stream', async () => {
+      const ctx = await setup()
+      const { calls, provider } = versioned({ conditional: { stat: true, write: true } }, { [target]: 'old' })
+      ctx.fs.mount('mem:', provider)
+      for (const options of [{ ifMatch: null as any }, { ifMatch: 'old', exclusive: true }]) {
+        const cancel = vi.fn()
+        const error = await ctx.fs.file(target).write(new ReadableStream({ cancel }), options).catch(error => error)
+        expect(error).to.be.instanceOf(TypeError)
+        expect(cancel).toHaveBeenCalledWith(error)
+      }
+      expect(calls).to.deep.equal([])
+    })
+
+    it('rejects a copy with a version with a `TypeError` before any I/O', async () => {
+      const ctx = await setup()
+      const { calls, provider } = versioned({ conditional: { stat: true, write: true } }, { [target]: 'old' })
+      ctx.fs.mount('mem:', provider)
+      const error = await ctx.fs.copy(target, 'mem://vol/b.txt', { ifMatch: 'old' } as CopyOptions).catch(error => error)
+      expect(error).to.be.instanceOf(TypeError)
+      expect(calls).to.deep.equal([])
     })
   })
 
