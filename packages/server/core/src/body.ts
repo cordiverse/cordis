@@ -5,6 +5,30 @@ import { Readable } from 'node:stream'
 import accepts from 'accepts'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 
+const escapeFormData = (value: string) => value.replace(/\n/g, '%0A').replace(/\r/g, '%0D').replace(/"/g, '%22')
+const normalizeLinefeeds = (value: string) => value.replace(/\r?\n|\r/g, '\r\n')
+
+/**
+ * Encodes form data with the multipart/form-data encoding algorithm. The native encoder
+ * generates a boundary for every serialization, and its result can only be read asynchronously,
+ * so the body is encoded once into a blob whose type carries the boundary of its bytes.
+ */
+function encodeFormData(data: FormData) {
+  const boundary = `----formdata-cordis-${crypto.randomUUID()}`
+  const parts: BlobPart[] = []
+  for (const [name, value] of data) {
+    const prefix = `--${boundary}\r\nContent-Disposition: form-data; name="${escapeFormData(normalizeLinefeeds(name))}"`
+    if (typeof value === 'string') {
+      parts.push(`${prefix}\r\n\r\n${normalizeLinefeeds(value)}\r\n`)
+    } else {
+      // a file entry always has a filename parameter, which may be empty
+      parts.push(`${prefix}; filename="${escapeFormData(value.name)}"\r\nContent-Type: ${value.type || 'application/octet-stream'}\r\n\r\n`, value, '\r\n')
+    }
+  }
+  parts.push(`--${boundary}--\r\n`)
+  return new Blob(parts, { type: `multipart/form-data; boundary=${boundary}` })
+}
+
 export class ValidationError extends Error {
   name = 'ValidationError'
 
@@ -107,6 +131,8 @@ export class Response {
 
   private _bodyInit?: BodyInit | null
   private _claimed = false
+  /** The content type generated for the last form data body. */
+  private _formType?: string
 
   constructor(public _res: ServerResponse) {
     defineProperty(this, Service.tracker, { associate: 'server.response' })
@@ -183,6 +209,13 @@ export class Response {
           if (!this.headers.has('content-type')) {
             this.headers.set('content-type', 'application/json')
           }
+        } else if (method === 'formData') {
+          data = encodeFormData(data)
+          // the new body has its own boundary, so the content type of a previous form data body is replaced
+          if (this.headers.get('content-type') === this._formType) {
+            this.headers.delete('content-type')
+          }
+          this._formType = data.type
         }
         return this._write(data)
       } as any
