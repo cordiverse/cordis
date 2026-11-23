@@ -13,7 +13,7 @@ const renames = {
   calls: 0,
   failures: 0,
   code: 'Busy' as FsError.Code,
-  beforeFail: undefined as (() => Promise<void>) | undefined,
+  beforeFail: undefined as (() => Promise<unknown>) | undefined,
 }
 
 class FlakyFs extends MemoryFs {

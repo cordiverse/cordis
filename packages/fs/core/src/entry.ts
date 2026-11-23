@@ -14,6 +14,12 @@ export interface Stats {
   ino?: bigint
   /** the number of the device of the entry */
   dev?: bigint
+  /**
+   * The version of a file, which a provider with the capability
+   * `conditional.stat` reports for every file. It is an opaque string,
+   * compared for equality with other versions of the same location.
+   */
+  version?: string
 }
 
 export interface StatOptions {
@@ -53,6 +59,18 @@ export interface WriteOptions {
    * that fails leaves the previous content.
    */
   atomic?: boolean
+  /**
+   * The version of the file to be replaced, as `Stats.version` reports it.
+   * The write fails with `VersionMismatch` unless the destination is a file
+   * of this version.
+   */
+  ifMatch?: string
+}
+
+/** The result of a write. */
+export interface WriteResult {
+  /** the version of the written content, if the provider reports it */
+  version?: string
 }
 
 export interface CopyOptions extends Pick<WriteOptions, 'exclusive' | 'atomic'> {

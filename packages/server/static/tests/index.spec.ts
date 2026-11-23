@@ -300,11 +300,11 @@ describe('@cordisjs/server-static', () => {
     async function setupChunked(files: MemoryFs.Tree, chunkSize: number) {
       active = 0
       class ChunkedFs extends MemoryFs {
-        read(url: URL) {
-          const reader = super.read(url).getReader()
+        async read(url: URL) {
+          const reader = (await super.read(url)).stream.getReader()
           let rest: Uint8Array = new Uint8Array()
           active++
-          return new ReadableStream<Uint8Array>({
+          const stream = new ReadableStream<Uint8Array>({
             async pull(controller) {
               if (!rest.byteLength) {
                 const result = await reader.read().catch((error) => {
@@ -325,6 +325,7 @@ describe('@cordisjs/server-static', () => {
               return reader.cancel(reason)
             },
           })
+          return { stream }
         }
       }
       ;({ ctx, url } = await setup({}, { files, Provider: ChunkedFs }))

@@ -1,6 +1,7 @@
-import type { EntryType, WriteOptions } from './entry.ts'
+import type { EntryType, WriteOptions, WriteResult } from './entry.ts'
 import type { Fs } from './index.ts'
 import { appendSlice } from './slice.ts'
+import { checkVersion } from './version.ts'
 
 /** The data accepted by `FileRef.write()`. A string is encoded as UTF-8. */
 export type WriteSource = string | ArrayBuffer | ArrayBufferView<ArrayBuffer> | Blob | ReadableStream<Uint8Array>
@@ -14,6 +15,20 @@ export interface ReadOptions {
   start?: number
   /** The end of the range, exclusive, with the semantics of `start`; the size by default. */
   end?: number
+  /**
+   * The version of the whole file, as `Stats.version` reports it. The read
+   * fails with `VersionMismatch` before any byte unless the file has this
+   * version. A provider receives it only with the capability `conditional.read`.
+   */
+  ifMatch?: string
+}
+
+/** The result of a read by a provider. */
+export interface ReadResult {
+  /** the content, or the range of it that the options select */
+  stream: ReadableStream<Uint8Array>
+  /** the version of the file whose bytes `stream` delivers, if the provider reports it */
+  version?: string
 }
 
 // A blob of the bytes of `data`, which can be read again, unless it is a
@@ -68,16 +83,23 @@ export class FileRef extends EntryRef {
   /**
    * Returns a stream of the current content. A failure of the provider,
    * including a missing file, errors the stream. The consumer owns each chunk.
+   *
+   * - `ifMatch`: the version of the whole file, also for a slice. The stream
+   *   fails with `VersionMismatch` before any byte unless the location is a
+   *   file of this version. A provider that can check no version makes the
+   *   call throw `NotSupported`.
    */
-  stream(): ReadableStream<Uint8Array> {
-    return this.fs['_read'](this.url, this._slices ?? [])
+  stream(options: Pick<ReadOptions, 'ifMatch'> = {}): ReadableStream<Uint8Array> {
+    const { ifMatch } = options
+    checkVersion(ifMatch)
+    return this.fs['_read'](this.url, this._slices ?? [], ifMatch)
   }
 
-  /** Reads the current content. */
-  async bytes(): Promise<Uint8Array<ArrayBuffer>> {
+  /** Reads the current content, with the options of `stream()`. */
+  async bytes(options?: Pick<ReadOptions, 'ifMatch'>): Promise<Uint8Array<ArrayBuffer>> {
     const chunks: Uint8Array[] = []
     let length = 0
-    const reader = this.stream().getReader()
+    const reader = this.stream(options).getReader()
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
@@ -98,19 +120,19 @@ export class FileRef extends EntryRef {
     return result
   }
 
-  /** Reads the current content. */
-  async arrayBuffer(): Promise<ArrayBuffer> {
-    return (await this.bytes()).buffer
+  /** Reads the current content, with the options of `stream()`. */
+  async arrayBuffer(options?: Pick<ReadOptions, 'ifMatch'>): Promise<ArrayBuffer> {
+    return (await this.bytes(options)).buffer
   }
 
-  /** Reads the current content as UTF-8 text. A byte order mark is removed. */
-  async text(): Promise<string> {
-    return new TextDecoder().decode(await this.bytes())
+  /** Reads the current content as UTF-8 text, with the options of `stream()`. A byte order mark is removed. */
+  async text(options?: Pick<ReadOptions, 'ifMatch'>): Promise<string> {
+    return new TextDecoder().decode(await this.bytes(options))
   }
 
-  /** Reads the current content as UTF-8 text and parses it as JSON. */
-  async json(): Promise<any> {
-    return JSON.parse(await this.text())
+  /** Reads the current content as UTF-8 text and parses it as JSON, with the options of `stream()`. */
+  async json<T = any>(options?: Pick<ReadOptions, 'ifMatch'>): Promise<T> {
+    return JSON.parse(await this.text(options))
   }
 
   /**
@@ -128,11 +150,21 @@ export class FileRef extends EntryRef {
    *   is given. It requires a provider with the capability `atomic`; without
    *   `exclusive`, also one with the capability `exclusive`, `rename()` and
    *   `remove()`.
+   * - `ifMatch`: the version of the file to be replaced, as `Stats.version`
+   *   reports it. A missing file, an entry of another type or another version
+   *   fails with `VersionMismatch`, and the file is not changed. It cannot be
+   *   combined with `exclusive`. It requires a provider with the capability
+   *   `conditional.write`, or with `conditional.stat`, by which the version is
+   *   checked before the write, or before each rename of an atomic write
+   *   composed by `@cordisjs/fs`. The latter does not exclude a change
+   *   between the check and the write.
    *
    * With `exclusive` or `atomic`, a link that leads into another mount fails
    * with `CrossesDevices`.
+   *
+   * Resolves to the version of the written content, if the provider reports it.
    */
-  async write(data: WriteSource, options: WriteOptions = {}): Promise<void> {
+  async write(data: WriteSource, options: WriteOptions = {}): Promise<WriteResult> {
     if (this._slices) {
       throw new TypeError(`cannot write a slice of ${this.url.href}`)
     }

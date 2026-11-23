@@ -1,11 +1,12 @@
 import { Context, Service } from 'cordis'
 import { Awaitable } from 'cosmokit'
 import { pathToFileURL } from 'node:url'
-import { CopyOptions, DirEntry, EntryType, MkdirOptions, RemoveOptions, StatOptions, Stats, WriteOptions } from './entry.ts'
+import { CopyOptions, DirEntry, EntryType, MkdirOptions, RemoveOptions, StatOptions, Stats, WriteOptions, WriteResult } from './entry.ts'
 import { FsError } from './error.ts'
-import { DirEntryRef, EntryRef, FileRef, ReadOptions } from './file.ts'
+import { DirEntryRef, EntryRef, FileRef, ReadOptions, ReadResult } from './file.ts'
 import { resolveSlices, sliceStream } from './slice.ts'
 import { assertLocation, isHierarchical, isUrl, Path, resolvePath } from './path.ts'
+import { checkVersion, matchVersion } from './version.ts'
 import { createTemporary, fileTarget, reserveFile } from './write.ts'
 import { Watcher, WatchOptions } from './watcher.ts'
 
@@ -61,6 +62,11 @@ function isCode(error: unknown, code: FsError.Code) {
   return error instanceof FsError && error.code === code
 }
 
+// whether `@cordisjs/fs` can check a version through the metadata of the provider
+function hasVersionedStat(provider: FsProvider): provider is FsProvider & Required<Pick<FsProvider, 'stat'>> {
+  return !!(provider.capabilities?.conditional?.stat && provider.stat)
+}
+
 // the working directory as a URL, on a runtime that has one
 function getWorkingDirectory() {
   if (typeof process === 'undefined') return
@@ -98,35 +104,81 @@ function contains(base: URL, url: URL) {
   return key === prefix || key.startsWith(prefix + '/')
 }
 
-async function fileSize(stat: () => Promise<Stats>) {
-  try {
-    const stats = await stat()
-    if (stats.type === 'file' && Number.isSafeInteger(stats.size) && stats.size >= 0) return stats.size
-  } catch {
-    // The read can still proceed without metadata.
-  }
+// the size of a file by its metadata, if it is one that resolves a range
+function fileSize(stats: Stats) {
+  if (stats.type === 'file' && Number.isSafeInteger(stats.size) && stats.size >= 0) return stats.size
 }
 
-// Opens the read with the file size when available. Cancelling during stat leaves the source unopened.
-function readAfterStat(stat: () => Promise<Stats>, open: (size?: number) => ReadableStream<Uint8Array>) {
+// The state of a stream opened by `deferred()`.
+interface Opening {
+  cancelled: boolean
+  /** whether the source has been requested from the provider */
+  requested: boolean
+}
+
+// A stream of the source that `open` resolves to. `open` checks `cancelled`
+// before it requests the source, so that cancelling during a metadata query
+// leaves the source unopened. A source requested before the cancellation is
+// cancelled once it is obtained, and the cancellation settles with it. A
+// failure of `open` errors the stream. The stream closes with the source,
+// after the last chunk is delivered.
+function deferred(open: (state: Opening) => Promise<ReadableStream<Uint8Array> | undefined>) {
+  const state: Opening = { cancelled: false, requested: false }
+  let controller!: ReadableStreamDefaultController<Uint8Array>
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
-  let cancelled = false
+  let reason: unknown
+  let opened: Promise<void> | undefined
+  let cancelling: Promise<void> | undefined
+  // whether a read of the source is pending, whether the source has closed,
+  // and whether the stream has closed
+  let pulling = false
+  let ended = false
+  let closed = false
+
+  function close() {
+    if (closed || state.cancelled) return
+    closed = true
+    controller.close()
+  }
+
   return new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const size = await fileSize(stat)
-      if (cancelled) return
-      reader = open(size).getReader()
-      reader.closed.catch(error => controller.error(error))
+    start(value) {
+      controller = value
+      opened = (async () => {
+        const source = await open(state)
+        if (!source) return
+        if (state.cancelled) {
+          cancelling = source.cancel(reason)
+          return
+        }
+        reader = source.getReader()
+        // The source may report its closing before the pending read that
+        // returns its last chunk, which then closes the stream after the chunk.
+        reader.closed.then(() => {
+          ended = true
+          if (!pulling) close()
+        }, error => controller.error(error))
+      })()
+      return opened
     },
-    async pull(controller) {
-      const { done, value } = await reader!.read()
-      if (cancelled) return
-      if (done) controller.close()
-      else controller.enqueue(value)
+    async pull() {
+      pulling = true
+      let result: ReadableStreamReadResult<Uint8Array>
+      try {
+        result = await reader!.read()
+      } finally {
+        pulling = false
+      }
+      const { done, value } = result
+      if (state.cancelled || closed) return
+      if (!done) controller.enqueue(value)
+      if (done || ended) close()
     },
-    cancel(reason) {
-      cancelled = true
-      return reader?.cancel(reason)
+    cancel(value) {
+      state.cancelled = true
+      reason = value
+      if (reader) return reader.cancel(value)
+      if (state.requested) return opened!.then(() => cancelling, () => {})
     },
   }, { highWaterMark: 0 })
 }
@@ -315,36 +367,79 @@ export class Fs extends Service<Fs.Intercept> {
   // 3. Otherwise, a size from `stat()` resolves the chain to one range. Without
   //    a size, the first slice is read as a range if its bounds are accepted,
   //    and the rest of the chain is applied to the stream.
-  private _read(url: URL, slices: readonly ReadOptions[]): ReadableStream<Uint8Array> {
-    const provider = this._provider(url, 'read')
-    const range = provider.capabilities?.range
-    if (!range || !slices.length) return slices.reduce(sliceStream, provider.read(url, {}))
+  //
+  // With `ifMatch`, a provider with the capability `conditional.read` checks
+  // the version at the final read. Otherwise, the version is checked by a
+  // versioned `stat()` before the read, which also gives the size for 3. A
+  // `stat()` that does not report versions is not queried for a size, as the
+  // size may belong to another version.
+  private _read(url: URL, slices: readonly ReadOptions[], ifMatch?: string): ReadableStream<Uint8Array> {
+    const mount = this._route(url)
+    const provider = this._provider(url, 'read', mount)
+    const { range, conditional } = provider.capabilities ?? {}
+    const versioned = hasVersionedStat(provider)
+    const native = ifMatch !== undefined && !!conditional?.read
+    if (ifMatch !== undefined && !native && !versioned) {
+      throw new FsError('NotSupported', url, `the provider mounted at ${mount.prefix} cannot read ${url.href} conditionally`)
+    }
+    const stat = async () => {
+      const stats = await provider.stat!(url, { follow: true })
+      if (ifMatch !== undefined) matchVersion(url, stats, ifMatch, mount.prefix)
+      return stats
+    }
 
-    const [first, ...rest] = slices
-    const canReadFirst = range === 'signed' || (first.start ?? 0) >= 0 && (first.end ?? 0) >= 0
-    if (canReadFirst && !rest.length) return provider.read(url, { ...first })
+    return deferred(async (state) => {
+      const read = async (options: ReadOptions, rest: readonly ReadOptions[]) => {
+        state.requested = true
+        const { stream } = await provider.read(url, native ? { ...options, ifMatch } : { ...options })
+        return rest.reduce(sliceStream, stream)
+      }
 
-    const fallback = () => canReadFirst
-      ? rest.reduce(sliceStream, provider.read(url, { ...first }))
-      : slices.reduce(sliceStream, provider.read(url, {}))
-    if (!provider.stat) return fallback()
-    return readAfterStat(() => provider.stat!(url, { follow: true }), size => size === undefined
-      ? fallback()
-      : provider.read(url, resolveSlices(slices, size)))
+      // the version is checked by `stat()`, as the read does not check it
+      const precheck = ifMatch !== undefined && !native
+      if (!range || !slices.length) {
+        if (precheck) await stat()
+        if (state.cancelled) return
+        return read({}, slices)
+      }
+      const [first, ...rest] = slices
+      const canReadFirst = range === 'signed' || (first.start ?? 0) >= 0 && (first.end ?? 0) >= 0
+      if (canReadFirst && !rest.length) {
+        if (precheck) await stat()
+        if (state.cancelled) return
+        return read(first, [])
+      }
+
+      let size: number | undefined
+      if (ifMatch !== undefined) {
+        // the error of a check is the error of the read
+        if (versioned) size = fileSize(await stat())
+      } else if (provider.stat) {
+        // the read can still proceed without metadata
+        size = await stat().then(fileSize, () => undefined)
+      }
+      if (state.cancelled) return
+      if (size !== undefined) return read(resolveSlices(slices, size), [])
+      return canReadFirst ? read(first, rest) : read({}, slices)
+    })
   }
 
   // A blob is read by a new stream for each attempt. The stream of a failed
   // attempt, or an unread stream, is cancelled without waiting, as the
   // cancellation of one branch of a tee remains pending until the consumer
   // of the other branch finishes.
-  private async _write(url: URL, data: Blob | ReadableStream<Uint8Array>, options: WriteOptions): Promise<void> {
+  private async _write(url: URL, data: Blob | ReadableStream<Uint8Array>, options: WriteOptions): Promise<WriteResult> {
     try {
+      checkVersion(options.ifMatch)
+      if (options.exclusive && options.ifMatch !== undefined) {
+        throw new TypeError('cannot combine `exclusive` with `ifMatch`')
+      }
       // checked before the destination is resolved
       this._provider(url, 'write')
-      await this._writeFile(url, options, data instanceof Blob, async (mount, dest, options) => {
+      return await this._writeFile(url, options, data instanceof Blob, async (mount, dest, options) => {
         const body = data instanceof Blob ? data.stream() : data
         try {
-          await this._provider(dest, 'write', mount).write(dest, body, options)
+          return await this._provider(dest, 'write', mount).write(dest, body, options)
         } catch (error) {
           if (body !== data) body.cancel(error).catch(() => {})
           throw error
@@ -363,13 +458,18 @@ export class Fs extends Service<Fs.Intercept> {
   // file beside the destination, and renames it over the destination. A
   // transfer that is not retryable goes to an empty temporary file created
   // before. The temporary file is removed on a failure.
+  //
+  // With `ifMatch`, a provider with the capability `conditional.write`
+  // checks the version of a direct write. Otherwise, the version of the
+  // destination is checked through a versioned `stat()` before a direct
+  // write, and before each rename of a staged one.
   private async _writeFile(
     url: URL, options: WriteOptions, retryable: boolean,
-    transfer: (mount: Mount, dest: URL, options: TransferOptions & Pick<WriteOptions, 'mode'>) => Promise<void>,
-  ) {
+    transfer: (mount: Mount, dest: URL, options: TransferOptions & Pick<WriteOptions, 'mode' | 'ifMatch'>) => Promise<WriteResult | void>,
+  ): Promise<WriteResult> {
     const mount = this._route(url)
     const { provider } = mount
-    const { atomic, exclusive, mode } = options
+    const { atomic, exclusive, mode, ifMatch } = options
     if (exclusive && !provider.capabilities?.exclusive) {
       throw new FsError('NotSupported', url, `the provider mounted at ${mount.prefix} does not create a file exclusively`)
     }
@@ -377,17 +477,47 @@ export class Fs extends Service<Fs.Intercept> {
     if (staged && (exclusive || !provider.capabilities?.exclusive || !provider.rename || !provider.remove)) {
       throw new FsError('NotSupported', url, `cannot atomically ${exclusive ? 'create' : 'replace'} a file at ${url.href}`)
     }
-    const forwarded: TransferOptions & Pick<WriteOptions, 'mode'> = { exclusive: !!exclusive, atomic: !!atomic && !staged }
+    const native = ifMatch !== undefined && !staged && !!provider.capabilities?.conditional?.write
+    if (ifMatch !== undefined && !native && !hasVersionedStat(provider)) {
+      throw new FsError('NotSupported', url, `the provider mounted at ${mount.prefix} cannot write ${url.href} conditionally`)
+    }
+    // checks the version of the destination, which is missing on `NotFound`
+    const check = async (dest: URL, follow: boolean) => {
+      let stats: Stats | undefined
+      try {
+        stats = await provider.stat!(dest, { follow })
+      } catch (error) {
+        if (!isCode(error, 'NotFound')) throw error
+      }
+      matchVersion(dest, stats, ifMatch!, mount.prefix)
+    }
+    const forwarded: TransferOptions & Pick<WriteOptions, 'mode' | 'ifMatch'> = { exclusive: !!exclusive, atomic: !!atomic && !staged }
     if (mode !== undefined) forwarded.mode = mode
-    if (!staged && !(exclusive && provider.realpath)) return transfer(mount, url, forwarded)
+    if (native) forwarded.ifMatch = ifMatch
+    if (!staged && !(exclusive && provider.realpath)) {
+      if (ifMatch !== undefined && !native) {
+        if (isHierarchical(url) && url.pathname.endsWith('/')) {
+          throw new FsError('IsADirectory', url, `expected a file at ${url.href}`)
+        }
+        await check(url, true)
+      }
+      return await transfer(mount, url, forwarded) ?? {}
+    }
 
     const owns = (location: URL) => this._match(location) === mount
-    const { url: dest, stats } = await fileTarget(url, mount, this._mounts.size, owns, staged)
-    if ((isHierarchical(dest) && dest.pathname.endsWith('/')) || stats?.type === 'directory') {
+    const { url: dest, stats } = await fileTarget(url, mount, this._mounts.size, owns, staged).catch((error) => {
+      // a missing parent directory, by which the file is missing
+      if (ifMatch !== undefined && isCode(error, 'NotFound')) matchVersion(url, undefined, ifMatch, mount.prefix)
+      throw error
+    })
+    if (isHierarchical(dest) && dest.pathname.endsWith('/')) {
       throw new FsError('IsADirectory', url, `expected a file at ${dest.href}`)
     }
+    // `stats` of the destination is missing only where `stat()` fails with `NotFound`
+    if (ifMatch !== undefined) matchVersion(dest, stats, ifMatch, mount.prefix)
+    if (stats?.type === 'directory') throw new FsError('IsADirectory', url, `expected a file at ${dest.href}`)
     if (exclusive && stats) throw new FsError('AlreadyExists', dest, `file already exists: ${dest.href}`)
-    if (!staged) return transfer(mount, dest, forwarded)
+    if (!staged) return await transfer(mount, dest, forwarded) ?? {}
     if (stats && stats.type !== 'file') throw new FsError('NotSupported', url, `cannot replace a ${stats.type} at ${dest.href}`)
     if (stats && provider.access) await provider.access(dest, 'write')
     // `rename()` and `remove()` are checked above
@@ -409,8 +539,11 @@ export class Fs extends Service<Fs.Intercept> {
     try {
       if (!retryable) await transfer(mount, temporary, forwarded)
       for (let retries = 0; ; retries++) {
+        // the entry to be replaced itself, which may have become a link
+        if (ifMatch !== undefined) await check(dest, false)
         try {
-          return await staging.rename(temporary, dest)
+          await staging.rename(temporary, dest)
+          return {}
         } catch (error) {
           if (retries >= RENAME_RETRIES || !isCode(error, 'Busy')) throw error
         }
@@ -562,6 +695,9 @@ export class Fs extends Service<Fs.Intercept> {
    * A failure stops the copy, and keeps what has been copied before it.
    */
   async copy(src: Path, dest: Path, options: CopyOptions = {}): Promise<void> {
+    if ((options as WriteOptions).ifMatch !== undefined) {
+      throw new TypeError('cannot copy with `ifMatch`')
+    }
     const from = this.resolve(src)
     const to = this.resolve(dest)
     if (contains(from, to)) {
@@ -597,7 +733,8 @@ export class Fs extends Service<Fs.Intercept> {
       }
       const target = this._provider(dest, 'write', mount)
       const mode = (stats ?? await this.stat(from)).mode ?? destinationMode
-      const body = await primed(this._provider(from, 'read', source).read(from, {}))
+      const { stream } = await this._provider(from, 'read', source).read(from, {})
+      const body = await primed(stream)
       try {
         await target.write(dest, body, mode === undefined ? transfer : { ...transfer, mode })
       } catch (error) {
@@ -705,16 +842,25 @@ export interface FsProvider {
   /** The behaviors that the provider implements itself, for every location of the mount. */
   readonly capabilities?: FsProvider.Capabilities
   /**
-   * Return a stream of the content of a file. A failure, including a missing
-   * file, errors the stream. The consumer owns each chunk once it is
-   * enqueued, and the provider does not modify it afterwards. The range
-   * capability determines which bounds may occur in `options`. A provider
-   * without it receives empty options.
+   * Open the content of a file. A failure to open it, including a missing
+   * file, rejects the result or errors its stream; a later failure errors the
+   * stream. The consumer owns each chunk once it is enqueued, and the
+   * provider does not modify it afterwards.
+   *
+   * - `start`, `end`: the range capability determines which bounds may occur.
+   *   A provider without it receives neither.
+   * - `ifMatch`: received only with the capability `conditional.read`. A
+   *   location other than a file of this version fails with
+   *   `VersionMismatch`, or with `NotFound` if it is missing, before any byte.
+   *
+   * `version`, if present, exactly identifies the version of the file whose
+   * bytes the stream delivers.
    */
-  read?(url: URL, options: ReadOptions): ReadableStream<Uint8Array>
+  read?(url: URL, options: ReadOptions): Promise<ReadResult>
   /**
    * Replace the content of a file with the data of `body`, creating the file
    * but not its parent directory. An error of `body` rejects the write.
+   * `version` of the result, if present, exactly identifies the written content.
    *
    * - `mode`: a provider with permissions gives the file these permission
    *   bits before its content.
@@ -723,8 +869,16 @@ export interface FsProvider {
    *   with `AlreadyExists` otherwise; remove the created file if the write
    *   then fails.
    * - `atomic`: `true` only with the capability `atomic`.
+   * - `ifMatch`: received only with the capability `conditional.write`, and
+   *   never with `exclusive`. A location other than a file of this version,
+   *   a missing one included, fails with `VersionMismatch` before the file is
+   *   created, truncated or changed. With `atomic`, the version is checked
+   *   by the same commit that replaces the file.
    */
-  write?(url: URL, body: ReadableStream<Uint8Array>, options: Required<Pick<WriteOptions, 'exclusive' | 'atomic'>> & Pick<WriteOptions, 'mode'>): Promise<void>
+  write?(
+    url: URL, body: ReadableStream<Uint8Array>,
+    options: Required<Pick<WriteOptions, 'exclusive' | 'atomic'>> & Pick<WriteOptions, 'mode' | 'ifMatch'>,
+  ): Promise<WriteResult>
   /** Reject when the operation of `mode` is known to be denied. */
   access?(url: URL, mode: AccessMode): Promise<void>
   /** Rename within a mount, atomically replacing an existing destination file. */
@@ -784,6 +938,25 @@ export namespace FsProvider {
     atomic?: boolean
     /** `write()` and `copy()` create a file exclusively, and receive `exclusive`. */
     exclusive?: boolean
+    /**
+     * The versions of files. An absent key is `false`.
+     *
+     * - `stat`: `stat()` is implemented, and reports `version` for every file.
+     *   `@cordisjs/fs` checks through it a version that the provider does not.
+     *   Without it, `stat()` reports no version.
+     * - `read`: `read()` receives and checks `ifMatch`.
+     * - `write`: `write()` receives and checks `ifMatch`.
+     *
+     * A version may identify the content exactly, such as a revision, or
+     * approximately, such as a fingerprint of metadata, which may be equal
+     * for different contents. An exact version is equal for two observations
+     * of a location only if the content is the same.
+     */
+    conditional?: {
+      stat?: boolean
+      read?: boolean
+      write?: boolean
+    }
   }
 }
 

@@ -1,4 +1,4 @@
-import Fs, { DirEntryRef, EntryType, FsError } from '@cordisjs/fs'
+import Fs, { DirEntryRef, EntryType, FsError, WriteOptions } from '@cordisjs/fs'
 import { Context, Fiber } from 'cordis'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
@@ -10,6 +10,12 @@ export interface ConformanceOptions {
   /** whether the provider uses the native Windows file system */
   windows?: boolean
   capabilities?: Capabilities
+  /**
+   * Returns the current version of the file at `url`, which the tests of
+   * conditional reads and writes compare. `Stats.version` by default, for a
+   * provider whose `stat()` reports versions.
+   */
+  version?(ctx: Context, url: URL): Promise<string>
 }
 
 export interface Capabilities {
@@ -19,6 +25,24 @@ export interface Capabilities {
   exclusive?: boolean
   /** whether a file can be written atomically, by the provider or composed by `@cordisjs/fs` */
   atomic?: boolean
+  /**
+   * The conditional operations, by the provider or composed by
+   * `@cordisjs/fs`. Each test changes the size of a file, so that an
+   * approximate version also changes.
+   *
+   * - `stat`: `stat()` reports the version of a file.
+   * - `read`: a read checks `ifMatch`.
+   * - `write`: a write without `atomic` checks `ifMatch`.
+   * - `atomicWrite`: a write with `atomic` checks `ifMatch`. A provider with
+   *   the capability `conditional.write` and without `atomic` supports it
+   *   only where `stat()` reports versions.
+   */
+  conditional?: {
+    stat?: boolean
+    read?: boolean
+    write?: boolean
+    atomicWrite?: boolean
+  }
 }
 
 async function rejects(promise: Promise<unknown>, ...codes: FsError.Code[]) {
@@ -37,6 +61,7 @@ export function conformance(name: string, options: ConformanceOptions) {
   const symlinks = !!options.capabilities?.symlink
   const exclusive = !!options.capabilities?.exclusive
   const atomic = !!options.capabilities?.atomic
+  const conditional = options.capabilities?.conditional ?? {}
   const windows = options.windows
   // Windows may report a missing path when an intermediate component is a file.
   const belowFile: FsError.Code[] = windows ? ['NotADirectory', 'NotFound'] : ['NotADirectory']
@@ -256,6 +281,115 @@ export function conformance(name: string, options: ConformanceOptions) {
         expect(await text('dir/new.txt')).to.equal('baz')
         expect((await ctx.fs.stat(url('link.txt'), { follow: false })).type).to.equal('symlink')
         expect(await names('dir')).to.deep.equal([['a.txt', 'file'], ['new.txt', 'file']])
+      })
+    })
+
+    describe.runIf(Object.values(conditional).some(Boolean))('conditional', () => {
+      async function version(path: string) {
+        if (options.version) return options.version(ctx, url(path))
+        const { version } = await ctx.fs.stat(url(path))
+        expect(version).to.be.a('string')
+        return version!
+      }
+
+      // the variants of a write that check a version
+      const writes: WriteOptions[] = [
+        ...conditional.write ? [{}] : [],
+        ...conditional.atomicWrite ? [{ atomic: true }] : [],
+      ]
+
+      it.runIf(conditional.stat)('reports the version of a file, which changes with its content', async () => {
+        await write('a.txt', 'foo')
+        const { version: before } = await ctx.fs.stat(url('a.txt'))
+        expect(before).to.be.a('string')
+        expect((await ctx.fs.stat(url('a.txt'))).version).to.equal(before)
+        await write('a.txt', 'foobar')
+        expect((await ctx.fs.stat(url('a.txt'))).version).not.to.equal(before)
+      })
+
+      it.runIf(conditional.read)('reads a file, also a slice, of the version', async () => {
+        await write('a.txt', '0123456789')
+        const file = ctx.fs.file(url('a.txt'))
+        const current = await version('a.txt')
+        expect(await file.text({ ifMatch: current })).to.equal('0123456789')
+        expect(await file.slice(2, 8).text({ ifMatch: current })).to.equal('234567')
+        expect(await file.slice(-3).text({ ifMatch: current })).to.equal('789')
+        expect(await file.slice(2, 8).slice(-2).text({ ifMatch: current })).to.equal('67')
+      })
+
+      it.runIf(conditional.read)('fails to read another version before any byte, also of a slice', async () => {
+        await write('a.txt', 'foo')
+        const previous = await version('a.txt')
+        await write('a.txt', 'foobar')
+        const file = ctx.fs.file(url('a.txt'))
+        for (const ref of [file, file.slice(1, 2), file.slice(-2), file.slice(0, 0)]) {
+          await rejects(ref.stream({ ifMatch: previous }).getReader().read(), 'VersionMismatch')
+        }
+      })
+
+      it.runIf(conditional.read)('fails to read a directory or a missing file with a version', async () => {
+        await write('a.txt', 'foo')
+        const current = await version('a.txt')
+        await ctx.fs.mkdir(url('dir'))
+        await rejects(ctx.fs.file(url('dir')).text({ ifMatch: current }), 'VersionMismatch')
+        await rejects(ctx.fs.file(url('missing.txt')).text({ ifMatch: current }), 'NotFound', 'VersionMismatch')
+      })
+
+      it.runIf(writes.length > 0)('replaces a file of the version', async () => {
+        for (const options of writes) {
+          await write('a.txt', 'foo')
+          const result = await ctx.fs.file(url('a.txt')).write('foobar', { ...options, ifMatch: await version('a.txt') })
+          expect(await text('a.txt')).to.equal('foobar')
+          // a version of the result identifies the same content as other versions
+          if (result.version !== undefined) expect(await version('a.txt')).to.equal(result.version)
+        }
+      })
+
+      it.runIf(writes.length > 0)('keeps a file of another version', async () => {
+        for (const options of writes) {
+          await write('a.txt', 'foo')
+          const previous = await version('a.txt')
+          await write('a.txt', 'foobar')
+          await rejects(ctx.fs.file(url('a.txt')).write('baz', { ...options, ifMatch: previous }), 'VersionMismatch')
+          expect(await text('a.txt')).to.equal('foobar')
+          expect(await names('')).to.deep.equal([['a.txt', 'file']])
+        }
+      })
+
+      it.runIf(writes.length > 0)('does not create a missing file, also one removed with its parent since the version', async () => {
+        for (const options of writes) {
+          await write('dir/a.txt', 'foo')
+          const previous = await version('dir/a.txt')
+          await rejects(ctx.fs.file(url('dir/b.txt')).write('bar', { ...options, ifMatch: previous }), 'VersionMismatch')
+          await ctx.fs.remove(url('dir/a.txt'))
+          await rejects(ctx.fs.file(url('dir/a.txt')).write('bar', { ...options, ifMatch: previous }), 'VersionMismatch')
+          await ctx.fs.remove(url('dir'))
+          await rejects(ctx.fs.file(url('dir/a.txt')).write('bar', { ...options, ifMatch: previous }), 'VersionMismatch')
+          expect(await names('')).to.deep.equal([])
+        }
+      })
+
+      it.runIf(writes.length > 0)('does not replace a directory', async () => {
+        await write('a.txt', 'foo')
+        const current = await version('a.txt')
+        await ctx.fs.mkdir(url('dir'))
+        for (const options of writes) {
+          await rejects(ctx.fs.file(url('dir')).write('bar', { ...options, ifMatch: current }), 'VersionMismatch')
+          expect((await ctx.fs.stat(url('dir'))).type).to.equal('directory')
+        }
+      })
+
+      it('does not match the version of a file replaced by a rename', async () => {
+        await write('a.txt', 'foo')
+        const previous = await version('a.txt')
+        await write('b.txt', 'foobar')
+        await ctx.fs.rename(url('b.txt'), url('a.txt'))
+        expect(await version('a.txt')).not.to.equal(previous)
+        if (conditional.read) await rejects(ctx.fs.file(url('a.txt')).text({ ifMatch: previous }), 'VersionMismatch')
+        for (const options of writes) {
+          await rejects(ctx.fs.file(url('a.txt')).write('baz', { ...options, ifMatch: previous }), 'VersionMismatch')
+        }
+        expect(await text('a.txt')).to.equal('foobar')
       })
     })
 
