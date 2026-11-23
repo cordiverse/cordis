@@ -89,7 +89,7 @@ describe('Events', () => {
       dispose()
       root.emit(name)
       expect(callback.mock.calls, name).to.have.length(1)
-      expect(Reflect.has(root.events._hooks, name), name).to.be.false
+      expect(Reflect.has(root.events['_hooks'], name), name).to.be.false
     }
   })
 
@@ -100,9 +100,9 @@ describe('Events', () => {
     const second = root.on(event, () => {})
 
     first()
-    expect(Reflect.has(root.events._hooks, event)).to.be.true
+    expect(Reflect.has(root.events['_hooks'], event)).to.be.true
     second()
-    expect(Reflect.has(root.events._hooks, event)).to.be.false
+    expect(Reflect.has(root.events['_hooks'], event)).to.be.false
   })
 
   it('ctx.on()', async () => {

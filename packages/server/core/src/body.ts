@@ -189,7 +189,7 @@ export class Response {
     }
   }
 
-  _end() {
+  private _end() {
     if (this._res.headersSent) return
     this._res.writeHead(this._res.statusCode, this._res.statusMessage, Object.fromEntries(this.headers))
     if (isNullable(this._bodyInit)) {

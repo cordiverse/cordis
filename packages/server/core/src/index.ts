@@ -153,8 +153,8 @@ class Server extends Service<Server.Intercept> {
     routes: z.dict(z.any()).hidden(),
   })
 
-  public _http: http.Server
-  public _ws: WebSocketServer
+  private _http: http.Server
+  private _ws: WebSocketServer
   public httpRoutes = new DisposableList<HttpRoute>()
   public wsRoutes = new DisposableList<WsRoute>()
 
@@ -192,7 +192,7 @@ class Server extends Service<Server.Intercept> {
           }
         }
       }
-      res._end()
+      res['_end']()
     })
 
     this.ctx.on('server/request', async (req, res, next) => {

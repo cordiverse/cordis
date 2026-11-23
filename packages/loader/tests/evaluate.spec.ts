@@ -502,7 +502,7 @@ describe('Loader: entry evaluation context', () => {
     const owner = loader.store.owner
     loader.remove('settings')
     await loader.await()
-    expect(owner._verdict).to.be.undefined
+    expect(owner['_verdict']).to.be.undefined
     expect(owner.disabled).to.equal(false)
     expect(owner.options.disabled).to.deep.equal({ __jsExpr: '!settings.enabled' })
     await loader.create(settings({ enabled: true }))
@@ -559,7 +559,7 @@ describe('Loader: entry evaluation context', () => {
   it.each(['import', 'patch'])('drops entries removed or disabled during %s', async (window) => {
     await loader.read([settings({})])
     const original = loader.import
-    const patch = Entry.prototype._patchContext
+    const patch = Entry.prototype['_patchContext']
     try {
       for (const inject of [undefined, ['settings']]) {
         for (const action of ['remove', 'disable']) {
@@ -575,7 +575,7 @@ describe('Loader: entry evaluation context', () => {
               return original.call(loader, name)
             }
           } else {
-            const spy = vi.spyOn(Entry.prototype, '_patchContext')
+            const spy = vi.spyOn(Entry.prototype as unknown as { _patchContext: typeof patch }, '_patchContext')
             spy.mockImplementation(async function (this: Entry, diff) {
               if (this.options.id === 'worker') {
                 entered.resolve()

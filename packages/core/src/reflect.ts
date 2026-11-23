@@ -256,10 +256,10 @@ export class ReflectService {
           if (!(name in fiber.inject)) continue
           if (!filter(fiber.ctx, name)) continue
           hasUpdate = true
-          fiber._checkImpl(name)
+          fiber['_checkImpl'](name)
         }
         if (!hasUpdate) continue
-        fiber._refresh()
+        fiber['_refresh']()
       }
     }
     for (const name of names) {

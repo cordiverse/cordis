@@ -180,7 +180,7 @@ export class RegistryService {
     return !!key && this._internal.has(key)
   }
 
-  _unregister(runtime: Component.Runtime) {
+  private _unregister(runtime: Component.Runtime) {
     this._internal.delete(runtime.callback)
   }
 
@@ -205,7 +205,7 @@ export class RegistryService {
     target ??= this._create(key, newComponent)
 
     for (const fiber of fibers) {
-      fiber._replace(target, Inject.resolve(newComponent.inject))
+      fiber['_replace'](target, Inject.resolve(newComponent.inject))
     }
     return fibers
   }

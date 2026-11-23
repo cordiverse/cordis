@@ -30,11 +30,11 @@ export function apply(ctx: Context, config: Config = {}) {
 
     if (tokens.length === 0) {
       // No input: show root command help if root exists with subcommands
-      const root = cli._aliases['']
+      const root = cli['_aliases']['']
       if (root) {
         const subs = getSubcommands(cli, '')
         if (subs.length > 0) {
-          const hasRequiredArgs = root._arguments.some(a => a.required)
+          const hasRequiredArgs = root['_arguments'].some(a => a.required)
           if (!hasRequiredArgs) {
             return showCommandHelp(cli, root, '')
           }
@@ -53,7 +53,7 @@ export function apply(ctx: Context, config: Config = {}) {
         if (resolved) return showCommandHelp(cli, resolved.command, resolved.name)
       }
       // bare --help: show root help if root exists, otherwise command list
-      const root = cli._aliases['']
+      const root = cli['_aliases']['']
       if (root) return showCommandHelp(cli, root, '')
       return showCommandList(cli)
     }
@@ -71,10 +71,10 @@ export function apply(ctx: Context, config: Config = {}) {
     const resolved = resolveCommandName(cli, parts[0], parts.slice(1))
     if (resolved) {
       const displayName = getDisplayName(cli, command)
-      const optionList = Array.from(resolved.command._optionList).filter(opt => !opt.hidden)
+      const optionList = Array.from(resolved.command['_optionList']).filter(opt => !opt.hidden)
       const hasOptions = optionList.length > 0
       const subcommands = getSubcommands(cli, resolved.name)
-      const argParts = resolved.command._arguments.map(formatArg)
+      const argParts = resolved.command['_arguments'].map(formatArg)
       const usageParts = [kleur.bold().cyan(displayName)]
       if (hasOptions) usageParts.push(kleur.cyan('[OPTIONS]'))
       if (subcommands.length) usageParts.push(kleur.cyan('[COMMAND]'))
@@ -87,11 +87,11 @@ export function apply(ctx: Context, config: Config = {}) {
 }
 
 function resolveCommandName(cli: Cli, first: string, rest: string[]): { command: Command; name: string } | null {
-  let command = cli._aliases[first]
+  let command = cli['_aliases'][first]
   if (!command) return null
   let name = first
   for (const part of rest) {
-    const sub = cli._aliases[`${name}.${part}`]
+    const sub = cli['_aliases'][`${name}.${part}`]
     if (!sub) break
     command = sub
     name = `${name}.${part}`
@@ -104,9 +104,9 @@ function getSubcommands(cli: Cli, parentName: string, showHidden = false): { com
   const seen = new Set<Command>()
   if (parentName === '') {
     // Root command: direct children are all top-level commands (no dots in name)
-    for (const cmd of cli._commands) {
+    for (const cmd of cli['_commands']) {
       if (seen.has(cmd)) continue
-      const name = Object.keys(cmd._aliases)[0]
+      const name = Object.keys(cmd['_aliases'])[0]
       if (name === undefined || name === '') continue // skip root itself
       if (name.includes('.')) continue // skip nested
       if (!showHidden && cmd.config.hidden) continue
@@ -115,9 +115,9 @@ function getSubcommands(cli: Cli, parentName: string, showHidden = false): { com
     }
   } else {
     const prefix = parentName + '.'
-    for (const cmd of cli._commands) {
+    for (const cmd of cli['_commands']) {
       if (seen.has(cmd)) continue
-      const name = Object.keys(cmd._aliases)[0]
+      const name = Object.keys(cmd['_aliases'])[0]
       if (!name?.startsWith(prefix)) continue
       const rest = name.slice(prefix.length)
       if (rest.includes('.')) continue
@@ -130,16 +130,16 @@ function getSubcommands(cli: Cli, parentName: string, showHidden = false): { com
 }
 
 function showCommandList(cli: Cli, showHidden = false): string {
-  const commands = Array.from(cli._commands)
+  const commands = Array.from(cli['_commands'])
     .filter((cmd) => {
-      const name = Object.keys(cmd._aliases)[0] || ''
+      const name = Object.keys(cmd['_aliases'])[0] || ''
       if (name.includes('.')) return false // only top-level
       if (!showHidden && cmd.config.hidden) return false
-      return Object.keys(cmd._aliases).length > 0
+      return Object.keys(cmd['_aliases']).length > 0
     })
     .sort((a, b) => {
-      const nameA = Object.keys(a._aliases)[0] || ''
-      const nameB = Object.keys(b._aliases)[0] || ''
+      const nameA = Object.keys(a['_aliases'])[0] || ''
+      const nameB = Object.keys(b['_aliases'])[0] || ''
       return nameA.localeCompare(nameB)
     })
 
@@ -153,7 +153,7 @@ function showCommandList(cli: Cli, showHidden = false): string {
 
   lines.push(kleur.bold().green('Commands:'))
   const entries = commands.map(cmd => {
-    const name = Object.keys(cmd._aliases)[0] || ''
+    const name = Object.keys(cmd['_aliases'])[0] || ''
     return { name, desc: cmd.description }
   })
   const maxLen = Math.max(...entries.map(e => e.name.length))
@@ -176,8 +176,8 @@ function getDisplayName(cli: Cli, name: string): string {
 
 function showCommandHelp(cli: Cli, command: Command, name: string, showHidden = false): string {
   const displayName = getDisplayName(cli, name)
-  const argParts = command._arguments.map(formatArg)
-  const optionList = Array.from(command._optionList)
+  const argParts = command['_arguments'].map(formatArg)
+  const optionList = Array.from(command['_optionList'])
     .filter(opt => showHidden || !opt.hidden)
   const hasOptions = optionList.length > 0
   const subcommands = getSubcommands(cli, name, showHidden)
@@ -197,9 +197,9 @@ function showCommandHelp(cli: Cli, command: Command, name: string, showHidden = 
   lines.push(kleur.bold().green('Usage:') + ' ' + usageParts.join(' '))
 
   // Arguments
-  if (command._arguments.length > 0) {
+  if (command['_arguments'].length > 0) {
     lines.push('', kleur.bold().green('Arguments:'))
-    for (const arg of command._arguments) {
+    for (const arg of command['_arguments']) {
       lines.push('  ' + kleur.bold().cyan(formatArg(arg)))
     }
   }
@@ -229,7 +229,7 @@ function showCommandHelp(cli: Cli, command: Command, name: string, showHidden = 
   }
 
   // Aliases
-  const aliases = Object.keys(command._aliases).slice(1)
+  const aliases = Object.keys(command['_aliases']).slice(1)
   if (aliases.length > 0) {
     lines.push('', kleur.bold().green('Aliases:') + ' ' + aliases.join(', '))
   }

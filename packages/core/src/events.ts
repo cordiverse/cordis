@@ -42,7 +42,7 @@ export interface Hook extends EventOptions {
 }
 
 export class EventsService {
-  _hooks: Record<keyof any, Hook[]> = Object.create(null)
+  private _hooks: Record<keyof any, Hook[]> = Object.create(null)
 
   constructor(private ctx: Context) {
     defineProperty(this, symbols.tracker, {
@@ -52,7 +52,7 @@ export class EventsService {
 
     this.on('internal/listener', function (this: Context, name, listener, options: EventOptions) {
       if (name === 'internal/update' && !options.global) {
-        const hooks = this.fiber._hooks['internal/update'] ??= new DisposableList()
+        const hooks = this.fiber['_hooks']['internal/update'] ??= new DisposableList()
         const method = options.prepend ? 'unshift' : 'push'
         return this.fiber.effect(() => {
           let removed = false

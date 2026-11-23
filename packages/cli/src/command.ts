@@ -97,11 +97,11 @@ export class CliSyntaxError extends Error {
 }
 
 export class Command<A extends any[] = any[], O extends {} = {}> {
-  _arguments: Param[] = []
-  _optionList = new DisposableList<Option>()
-  _optionDict: Dict<Option | undefined> = Object.create(null)
-  _aliases: Dict<CommandAlias> = Object.create(null)
-  _action?: CommandAction
+  private _arguments: Param[] = []
+  private _optionList = new DisposableList<Option>()
+  private _optionDict: Dict<Option | undefined> = Object.create(null)
+  private _aliases: Dict<CommandAlias> = Object.create(null)
+  private _action?: CommandAction
 
   parent?: Command
   description: string
@@ -114,19 +114,19 @@ export class Command<A extends any[] = any[], O extends {} = {}> {
     this.description = desc
     const self = this
     this.dispose = ctx.effect(function* () {
-      yield ctx.cli._commands.push(self)
+      yield ctx.cli['_commands'].push(self)
       self._aliases[name] = {}
-      ctx.cli._aliases[name] = self
+      ctx.cli['_aliases'][name] = self
       yield () => {
         for (const name in self._aliases) {
-          delete ctx.cli._aliases[name]
+          delete ctx.cli['_aliases'][name]
         }
       }
     })
   }
 
   * [Service.init]() {
-    yield this.ctx.cli._commands.push(this)
+    yield this.ctx.cli['_commands'].push(this)
   }
 
   alias(name: string, alias: CommandAlias) {
@@ -135,8 +135,8 @@ export class Command<A extends any[] = any[], O extends {} = {}> {
       self._aliases[name] = alias
       yield () => delete self._aliases[name]
       if (name.startsWith('.')) return
-      self.ctx.cli._aliases[name] = self
-      yield () => delete self.ctx.cli._aliases[name]
+      self.ctx.cli['_aliases'][name] = self
+      yield () => delete self.ctx.cli['_aliases'][name]
     })
   }
 

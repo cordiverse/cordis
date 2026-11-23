@@ -419,8 +419,8 @@ describe('HMR', () => {
       let firstInstalled: Fiber | undefined
       let updating: Promise<void> | undefined
       let reenabled: Promise<void> | undefined
-      const patch = entry._patchContext
-      const spy = vi.spyOn(entry, '_patchContext').mockImplementation(async (diff) => {
+      const patch = entry['_patchContext']
+      const spy = vi.spyOn(entry as unknown as { _patchContext: typeof patch }, '_patchContext').mockImplementation(async (diff) => {
         if (++patches === 1) {
           await firstHold
         } else if (patches === 2) {

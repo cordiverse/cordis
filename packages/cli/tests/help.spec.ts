@@ -11,7 +11,7 @@ beforeAll(async () => {
 describe('cli-help', () => {
   describe('help command', () => {
     it('should register help command', () => {
-      expect(ctx.cli._aliases['help']).to.exist
+      expect(ctx.cli['_aliases']['help']).to.exist
     })
 
     it('should list available commands', async () => {
