@@ -82,9 +82,9 @@ export namespace Cli {
 }
 
 export class Cli extends Service {
-  _builtin: Dict<Type | undefined> = {}
-  _commands = new DisposableList<Command>()
-  _aliases: Dict<Command | undefined> = Object.create(null)
+  private _builtin: Dict<Type | undefined> = {}
+  private _commands = new DisposableList<Command>()
+  private _aliases: Dict<Command | undefined> = Object.create(null)
 
   constructor(ctx: Context, public config: Cli.Config = {}) {
     super(ctx, 'cli')
@@ -192,7 +192,7 @@ export class Cli extends Service {
     const [path] = source.split(/(?=[\s<\[])/, 1)
     source = source.slice(path.length).trimStart()
     const command = new Command(this.ctx, hyphenate(path), source, desc, config)
-    command._arguments = this.parseParams(source, 'argument')
+    command['_arguments'] = this.parseParams(source, 'argument')
     return command
   }
 
@@ -234,7 +234,7 @@ export class Cli extends Service {
         if (error.message === 'too many arguments') {
           const prefix = name ? name + '.' : ''
           for (const cmd of this._commands) {
-            const cmdName = Object.keys(cmd._aliases)[0]
+            const cmdName = Object.keys(cmd['_aliases'])[0]
             if (cmdName !== undefined && cmdName.startsWith(prefix) && cmdName !== name) {
               error.message = `unknown command`
               break

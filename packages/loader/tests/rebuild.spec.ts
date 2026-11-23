@@ -72,8 +72,8 @@ describe('Loader: entry rebuild', () => {
         return original.call(loader, name)
       }
     } else {
-      const patch = Entry.prototype._patchContext
-      const spy = vi.spyOn(Entry.prototype, '_patchContext')
+      const patch = Entry.prototype['_patchContext']
+      const spy = vi.spyOn(Entry.prototype as unknown as { _patchContext: typeof patch }, '_patchContext')
       spy.mockImplementation(async function (this: Entry, diff) {
         if (this.options.name === 'a') {
           entered.resolve()
@@ -301,8 +301,8 @@ describe('Loader: active entry rebuild (#218)', () => {
       }
       return load.call(loader, name)
     }
-    const patch = Entry.prototype._patchContext
-    const spy = vi.spyOn(Entry.prototype, '_patchContext')
+    const patch = Entry.prototype['_patchContext']
+    const spy = vi.spyOn(Entry.prototype as unknown as { _patchContext: typeof patch }, '_patchContext')
     spy.mockImplementation(async function (this: Entry, diff) {
       await patch.call(this, diff)
       if (this.options.name !== 'b' || stage !== 'context patch') return

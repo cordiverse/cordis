@@ -42,7 +42,7 @@ export class Context {
     this.registry = new RegistryService(self)
     this.events = new EventsService(self)
     this.logger = new LoggerService(self)
-    this.fiber._disposables.clear()
+    this.fiber['_disposables'].clear()
     return self
   }
 

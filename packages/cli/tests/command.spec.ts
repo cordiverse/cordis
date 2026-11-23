@@ -11,23 +11,23 @@ beforeAll(async () => {
 describe('CLI Service', () => {
   describe('builtin types', () => {
     it('should have string type', () => {
-      const type = ctx.cli._builtin['string']!
+      const type = ctx.cli['_builtin']['string']!
       expect(type.parse('hello')).to.equal('hello')
     })
 
     it('should have text type (greedy)', () => {
-      const type = ctx.cli._builtin['text']!
+      const type = ctx.cli['_builtin']['text']!
       expect(type.greedy).to.be.true
       expect(type.parse('hello world')).to.equal('hello world')
     })
 
     it('should have boolean type', () => {
-      const type = ctx.cli._builtin['boolean']!
+      const type = ctx.cli['_builtin']['boolean']!
       expect(type.parse('')).to.be.true
     })
 
     it('should have number type', () => {
-      const type = ctx.cli._builtin['number']!
+      const type = ctx.cli['_builtin']['number']!
       expect(type.parse('42')).to.equal(42)
       expect(type.parse('-3.14')).to.equal(-3.14)
       expect(type.numeric).to.be.true
@@ -35,7 +35,7 @@ describe('CLI Service', () => {
     })
 
     it('should have integer type', () => {
-      const type = ctx.cli._builtin['integer']!
+      const type = ctx.cli['_builtin']['integer']!
       expect(type.parse('42')).to.equal(42)
       expect(type.parse('-5')).to.equal(-5)
       expect(() => type.parse('3.14')).to.throw()
@@ -43,21 +43,21 @@ describe('CLI Service', () => {
     })
 
     it('should have posint type', () => {
-      const type = ctx.cli._builtin['posint']!
+      const type = ctx.cli['_builtin']['posint']!
       expect(type.parse('1')).to.equal(1)
       expect(() => type.parse('0')).to.throw()
       expect(() => type.parse('-1')).to.throw()
     })
 
     it('should have natural type', () => {
-      const type = ctx.cli._builtin['natural']!
+      const type = ctx.cli['_builtin']['natural']!
       expect(type.parse('0')).to.equal(0)
       expect(type.parse('1')).to.equal(1)
       expect(() => type.parse('-1')).to.throw()
     })
 
     it('should have date type', () => {
-      const type = ctx.cli._builtin['date']!
+      const type = ctx.cli['_builtin']['date']!
       const result = type.parse('2026-01-01')
       expect(result).to.be.instanceOf(Date)
     })
@@ -66,10 +66,10 @@ describe('CLI Service', () => {
   describe('custom types', () => {
     it('should define and dispose custom types', () => {
       const dispose = ctx.cli.define('string', (s) => s.toUpperCase())
-      expect(ctx.cli._builtin['string']!.parse('hello')).to.equal('HELLO')
+      expect(ctx.cli['_builtin']['string']!.parse('hello')).to.equal('HELLO')
       dispose()
       // after dispose, string type should be removed
-      expect(ctx.cli._builtin['string']).to.be.undefined
+      expect(ctx.cli['_builtin']['string']).to.be.undefined
     })
   })
 
@@ -101,37 +101,37 @@ describe('CLI Service', () => {
 describe('Command Registration', () => {
   it('should register a command', () => {
     const cmd = ctx.cli.command('test-reg-1')
-    expect(ctx.cli._aliases['test-reg-1']).to.exist
+    expect(ctx.cli['_aliases']['test-reg-1']).to.exist
     cmd.dispose()
   })
 
   it('should hyphenate command name', () => {
     const cmd = ctx.cli.command('fooBar')
-    expect(ctx.cli._aliases['foo-bar']).to.exist
+    expect(ctx.cli['_aliases']['foo-bar']).to.exist
     cmd.dispose()
   })
 
   it('should register command with arguments', () => {
     const cmd = ctx.cli.command('greet <name> [greeting]')
-    expect(cmd._arguments).to.have.length(2)
-    expect(cmd._arguments[0].name).to.equal('name')
-    expect(cmd._arguments[0].required).to.be.true
-    expect(cmd._arguments[1].name).to.equal('greeting')
-    expect(cmd._arguments[1].required).to.be.false
+    expect(cmd['_arguments']).to.have.length(2)
+    expect(cmd['_arguments'][0].name).to.equal('name')
+    expect(cmd['_arguments'][0].required).to.be.true
+    expect(cmd['_arguments'][1].name).to.equal('greeting')
+    expect(cmd['_arguments'][1].required).to.be.false
     cmd.dispose()
   })
 
   it('should register variadic arguments', () => {
     const cmd = ctx.cli.command('echo [...messages]')
-    expect(cmd._arguments).to.have.length(1)
-    expect(cmd._arguments[0].variadic).to.be.true
+    expect(cmd['_arguments']).to.have.length(1)
+    expect(cmd['_arguments'][0].variadic).to.be.true
     cmd.dispose()
   })
 
   it('should register typed arguments', () => {
     const cmd = ctx.cli.command('add <a:number> <b:number>')
-    expect(cmd._arguments).to.have.length(2)
-    expect(cmd._arguments[0].numeric).to.be.true
+    expect(cmd['_arguments']).to.have.length(2)
+    expect(cmd['_arguments'][0].numeric).to.be.true
     cmd.dispose()
   })
 })
@@ -149,26 +149,26 @@ describe('Command Options', () => {
 
   it('should register boolean option', () => {
     cmd.option('-v, --verbose')
-    expect(cmd._optionDict['verbose']).to.exist
-    expect(cmd._optionDict['v']).to.exist
+    expect(cmd['_optionDict']['verbose']).to.exist
+    expect(cmd['_optionDict']['v']).to.exist
   })
 
   it('should register option with argument', () => {
     cmd.option('-o, --output <path>')
-    const opt = cmd._optionDict['output']!
+    const opt = cmd['_optionDict']['output']!
     expect(opt.param).to.exist
     expect(opt.param!.name).to.equal('path')
   })
 
   it('should register typed option', () => {
     cmd.option('-n, --count <n:number>')
-    const opt = cmd._optionDict['count']!
+    const opt = cmd['_optionDict']['count']!
     expect(opt.param!.numeric).to.be.true
   })
 
   it('should register option with explicit type', () => {
     cmd.option('-p, --port <port>', { type: 'number' })
-    const opt = cmd._optionDict['port']!
+    const opt = cmd['_optionDict']['port']!
     expect(opt.param!.numeric).to.be.true
   })
 
@@ -191,7 +191,7 @@ describe('Command Options', () => {
 
   it('should register option with default', () => {
     cmd.option('-p, --port <port:number>', { default: 8080 })
-    const opt = cmd._optionDict['port']!
+    const opt = cmd['_optionDict']['port']!
     expect(opt.default).to.equal(8080)
   })
 })
@@ -438,33 +438,33 @@ describe('Command Aliases', () => {
   it('should register aliases', () => {
     const cmd = ctx.cli.command('install-test')
     cmd.alias('i-test', {})
-    expect(ctx.cli._aliases['i-test']).to.exist
-    expect(ctx.cli._aliases['install-test']).to.exist
+    expect(ctx.cli['_aliases']['i-test']).to.exist
+    expect(ctx.cli['_aliases']['install-test']).to.exist
     cmd.dispose()
   })
 
   it('should support alias with preset args/options', () => {
     const cmd = ctx.cli.command('alias-test-2')
     cmd.alias('at2', { args: ['--save'] })
-    expect(cmd._aliases['at2']).to.deep.equal({ args: ['--save'] })
+    expect(cmd['_aliases']['at2']).to.deep.equal({ args: ['--save'] })
     cmd.dispose()
   })
 
   it('dot-prefixed aliases should not register globally', () => {
     const cmd = ctx.cli.command('alias-test-3')
     cmd.alias('.hidden', {})
-    expect(ctx.cli._aliases['.hidden']).to.be.undefined
-    expect(cmd._aliases['.hidden']).to.exist
+    expect(ctx.cli['_aliases']['.hidden']).to.be.undefined
+    expect(cmd['_aliases']['.hidden']).to.exist
     cmd.dispose()
   })
 
   it('should clean up aliases on dispose', () => {
     const cmd = ctx.cli.command('alias-test-4')
     cmd.alias('at4', {})
-    expect(ctx.cli._aliases['at4']).to.exist
+    expect(ctx.cli['_aliases']['at4']).to.exist
     cmd.dispose()
-    expect(ctx.cli._aliases['at4']).to.be.undefined
-    expect(ctx.cli._aliases['alias-test-4']).to.be.undefined
+    expect(ctx.cli['_aliases']['at4']).to.be.undefined
+    expect(ctx.cli['_aliases']['alias-test-4']).to.be.undefined
   })
 })
 
@@ -555,11 +555,11 @@ describe('Command Dispose', () => {
   it('should remove command and aliases on dispose', () => {
     const cmd = ctx.cli.command('dispose-1')
     cmd.alias('d1', {})
-    expect(ctx.cli._aliases['dispose-1']).to.exist
-    expect(ctx.cli._aliases['d1']).to.exist
+    expect(ctx.cli['_aliases']['dispose-1']).to.exist
+    expect(ctx.cli['_aliases']['d1']).to.exist
     cmd.dispose()
-    expect(ctx.cli._aliases['dispose-1']).to.be.undefined
-    expect(ctx.cli._aliases['d1']).to.be.undefined
+    expect(ctx.cli['_aliases']['dispose-1']).to.be.undefined
+    expect(ctx.cli['_aliases']['d1']).to.be.undefined
   })
 })
 

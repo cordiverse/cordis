@@ -39,13 +39,13 @@ const outer = {
   async* apply(ctx: Context) {
     const entry = ctx[Entry.key]!
     // re-imported so that a module reloaded by HMR in between is used
-    const exports = await entry._import()
+    const exports = await entry['_import']()
     // stops here if a dependency was lost during the import; the verdict was
     // evaluated with the services of this fiber, so it expires with them
     yield () => {
-      if (entry.outerFiber?.ctx.fiber === ctx.fiber) entry._verdict = undefined
+      if (entry.outerFiber?.ctx.fiber === ctx.fiber) entry['_verdict'] = undefined
     }
-    if (exports) entry._start(ctx, exports.component)
+    if (exports) entry['_start'](ctx, exports.component)
   },
 }
 
@@ -66,9 +66,9 @@ export class Entry {
   public subtree?: EntryTree
   public inject: Dict = Object.create(null)
 
-  _initTask?: Promise<void> | undefined
-  _disposing = false
-  _verdict?: boolean
+  private _initTask?: Promise<void> | undefined
+  private _disposing = false
+  private _verdict?: boolean
   private _intercept: Dict = Object.create(null)
   /**
    * The registration of the outermost fiber of the entry on the fiber that
@@ -194,7 +194,7 @@ export class Entry {
     }
   }
 
-  async _patchContext(diff: string[]) {
+  private async _patchContext(diff: string[]) {
     await patchIsolate(this, async () => {
       Object.setPrototypeOf(this.ctx, this.parent.ctx)
       Object.setPrototypeOf(this._intercept, this.parent.ctx[Context.intercept])
@@ -383,7 +383,7 @@ export class Entry {
       })
   }
 
-  async _import() {
+  private async _import() {
     try {
       const exports = await this.parent.tree.import(this.options.name, this.getOuterStack)
       return { component: this.loader.unwrapExports(exports) }
@@ -424,7 +424,7 @@ export class Entry {
     return this.parent.tree.store[this.options.id] === this
   }
 
-  _start(ctx: Context, component: Component) {
+  private _start(ctx: Context, component: Component) {
     if (!this._registered()) return
     // a group still starts; its verdict only reaches its children
     this._resolveDisabled(ctx)

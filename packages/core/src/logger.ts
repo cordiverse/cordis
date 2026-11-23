@@ -132,7 +132,7 @@ export class Logger {
         }
       }
 
-      const sn = ++this.service._snMessage
+      const sn = ++this.service['_snMessage']
       const ts = Date.now()
       for (const exporter of this.service.exporters.values()) {
         const targetLevel = exporter.levels?.[this.name] ?? exporter.levels?.default ?? this.level ?? LoggerLevel.INFO
@@ -171,8 +171,8 @@ export class LoggerService {
   buffer: Message[] = []
   ctx!: Context
 
-  _snMessage = 0
-  _snExporter = 0
+  private _snMessage = 0
+  private _snExporter = 0
   exporters = new Map<number, Exporter>()
 
   constructor(ctx: Context) {

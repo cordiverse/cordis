@@ -130,8 +130,8 @@ export class Fiber {
   public readonly provisions = new Set<Impl>()
   public inertia: Promise<void> | undefined
 
-  public readonly _hooks: Dict<DisposableList<Function>> = Object.create(null)
-  public readonly _disposables = new DisposableList<Disposable>()
+  private readonly _hooks: Dict<DisposableList<Function>> = Object.create(null)
+  private readonly _disposables = new DisposableList<Disposable>()
 
   // Same as `this.ctx`, but with a more specific type.
   protected context: Context
@@ -200,7 +200,7 @@ export class Fiber {
           const runtime = this.runtime!
           this._remove!()
           if (!runtime.fibers.length) {
-            this.ctx.registry._unregister(runtime)
+            this.ctx.registry['_unregister'](runtime)
           }
           this._setEpoch(INACTIVE)
           // `inertia` never rejects: `_reload` and `_unload` both log their
@@ -405,7 +405,7 @@ export class Fiber {
     }
   }
 
-  _checkImpl(name: string) {
+  private _checkImpl(name: string) {
     const impl = this.ctx.reflect._getImpl(name, true)
     if (!impl) return delete this._store[name]
     try {
@@ -419,7 +419,7 @@ export class Fiber {
     this._store[name] = impl
   }
 
-  _replace(runtime: Component.Runtime, inject: Dict<any>) {
+  private _replace(runtime: Component.Runtime, inject: Dict<any>) {
     if (runtime !== this.runtime) {
       this._remove!()
       this._remove = runtime.fibers.push(this)
@@ -436,7 +436,7 @@ export class Fiber {
     this._refresh()
   }
 
-  _refresh() {
+  private _refresh() {
     if (this.uid === null) return
     let epoch = `${this._revision}`
     for (const name of Object.keys(this.inject)) {

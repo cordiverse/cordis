@@ -86,8 +86,8 @@ declare module '../src/context.ts' {
 export function getHookSnapshot(ctx: Context) {
   const result: Dict<number> = {}
   // `Reflect.ownKeys` rather than `Object.entries`, so that symbol-named events are visible to the leak checks
-  for (const name of Reflect.ownKeys(ctx.events._hooks)) {
-    const callbacks = ctx.events._hooks[name]
+  for (const name of Reflect.ownKeys(ctx.events['_hooks'])) {
+    const callbacks = ctx.events['_hooks'][name]
     if (callbacks.length) result[name.toString()] = callbacks.length
   }
   return result
