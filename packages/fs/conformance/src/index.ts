@@ -1,4 +1,4 @@
-import Fs, { DirEntryRef, EntryType, FsError, WriteOptions } from '@cordisjs/fs'
+import Fs, { DirEntryRef, DirRef, EntryType, FsError, WriteOptions } from '@cordisjs/fs'
 import { Context, Fiber } from 'cordis'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
@@ -100,7 +100,7 @@ export function conformance(name: string, options: ConformanceOptions) {
 
     async function list(path: string) {
       const entries: DirEntryRef[] = []
-      for await (const entry of ctx.fs.readdir(url(path))) entries.push(entry)
+      for await (const entry of ctx.fs.dir(url(path)).list()) entries.push(entry)
       return entries
     }
 
@@ -454,13 +454,30 @@ export function conformance(name: string, options: ConformanceOptions) {
       })
     })
 
-    describe('readdir', () => {
+    describe('list', () => {
       it('lists the names, the types and the locations of the entries', async () => {
         await write('dir/a.txt')
         await ctx.fs.mkdir(url('dir/sub'))
         expect(await names('dir')).to.deep.equal([['a.txt', 'file'], ['sub', 'directory']])
         const entries = await list('dir/')
-        expect(entries.map(entry => entry.url.href).sort()).to.deep.equal([url('dir/a.txt').href, url('dir/sub').href])
+        expect(entries.map(entry => entry.url.href).sort()).to.deep.equal([url('dir/a.txt').href, url('dir/sub/').href])
+      })
+
+      it('lists the entries of a listed directory', async () => {
+        await write('dir/a.txt', 'foo')
+        await write('dir/sub/b.txt', 'bar')
+        const contents: Record<string, string> = {}
+        async function walk(dir: DirRef, prefix: string) {
+          for await (const entry of dir.list()) {
+            if (entry.type === 'directory') {
+              await walk(entry, prefix + entry.name + '/')
+            } else if (entry.type === 'file') {
+              contents[prefix + entry.name] = await entry.text()
+            }
+          }
+        }
+        await walk(ctx.fs.dir(url('dir')), '')
+        expect(contents).to.deep.equal({ 'a.txt': 'foo', 'sub/b.txt': 'bar' })
       })
 
       it('lists an empty directory', async () => {
@@ -478,10 +495,8 @@ export function conformance(name: string, options: ConformanceOptions) {
 
       it('fails from the iteration on a file or a missing location', async () => {
         await write('a.txt')
-        const iterable = ctx.fs.readdir(url('a.txt'))
-        await rejects(list('a.txt'), 'NotADirectory')
+        const iterable = ctx.fs.dir(url('a.txt')).list()
         await rejects(iterable[Symbol.asyncIterator]().next(), 'NotADirectory')
-        await rejects(list('a.txt/'), 'NotADirectory')
         await rejects(list('missing'), 'NotFound')
       })
     })
