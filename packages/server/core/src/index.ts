@@ -135,6 +135,11 @@ interface RouteImpl {
   (path: string | RegExp, middleware: Middleware, options?: Route.Options): HttpRoute
 }
 
+/** Formats a host for the authority of a URL, where an IPv6 address is bracketed. */
+function formatHost(host: string) {
+  return host.includes(':') ? `[${host}]` : host
+}
+
 interface Server extends Record<typeof Server.methods[number], RouteImpl> {}
 
 class Server extends Service<Server.Intercept> {
@@ -311,8 +316,9 @@ class Server extends Service<Server.Intercept> {
     yield () => new Promise<void>((resolve, reject) => {
       this._http.close((err) => err ? reject(err) : resolve())
     })
-    this.ctx.logger?.info('server listening at %C', `http://${this.host}:${this.port}`)
-    yield () => this.ctx.logger?.info(`server closing at %C`, `http://${this.host}:${this.port}`)
+    const address = `http://${formatHost(this.host)}:${this.port}`
+    this.ctx.logger?.info('server listening at %C', address)
+    yield () => this.ctx.logger?.info(`server closing at %C`, address)
   }
 
   /** The public URL of the routes in this context, with the path prefix of its intercepts. */
@@ -322,13 +328,14 @@ class Server extends Service<Server.Intercept> {
     if (this.config.publicUrl) return this.config.publicUrl + pathPrefix
     const wildcard = ['0.0.0.0', '::']
     const host = wildcard.includes(this.host) ? '127.0.0.1' : this.host
+    const authority = formatHost(host)
     let root: string
     if (this.port === 80) {
-      root = `http://${host}`
+      root = `http://${authority}`
     } else if (this.port === 443) {
-      root = `https://${host}`
+      root = `https://${authority}`
     } else {
-      root = `http://${host}:${this.port}`
+      root = `http://${authority}:${this.port}`
     }
     return root + pathPrefix
   }

@@ -652,6 +652,13 @@ describe('@cordisjs/server', () => {
       expect(ctx.server.publicUrl).to.match(/^http:\/\/127\.0\.0\.1:\d+$/)
     })
 
+    it('should bracket an IPv6 host', async () => {
+      ({ ctx } = await setup())
+      ctx.server.host = '::1'
+      ctx.server.port = 8080
+      expect(ctx.server.publicUrl).to.equal('http://[::1]:8080')
+    })
+
     it('should prefer config.publicUrl when set', async () => {
       ({ ctx } = await setup({ publicUrl: 'https://example.com/' }))
       expect(ctx.server.publicUrl).to.equal('https://example.com')
