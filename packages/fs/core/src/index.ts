@@ -6,7 +6,7 @@ import {
   RemoveOptions, StatOptions, Stats, WriteOptions, WriteResult,
 } from './entry.ts'
 import { FsError } from './error.ts'
-import { DirEntryRef, EntryRef, FileRef, ReadOptions, ReadResult } from './file.ts'
+import { DirEntryRef, DirRef, EntryRef, FileRef, ReadOptions, ReadResult } from './ref.ts'
 import { resolveSlices, sliceStream } from './slice.ts'
 import { assertLocation, isHierarchical, isUrl, Path, resolvePath } from './path.ts'
 import { checkVersion, matchVersion } from './version.ts'
@@ -15,7 +15,7 @@ import { Watcher, WatchOptions } from './watcher.ts'
 
 export type * from './entry.ts'
 export * from './error.ts'
-export * from './file.ts'
+export * from './ref.ts'
 export * from './filter.ts'
 export type * from './path.ts'
 export * from './watcher.ts'
@@ -365,6 +365,15 @@ export class Fs extends Service<Fs.Intercept> {
     return new FileRef(this, this.resolve(path))
   }
 
+  /**
+   * Create a reference to a directory. The location is resolved now, with a
+   * trailing `/`, and routed at each operation. A URL with an opaque path
+   * fails with `InvalidPath`.
+   */
+  dir(path: Path): DirRef {
+    return new DirRef(this, this.resolve(path))
+  }
+
   // 1. Without slices or the range capability, the chain is applied to a whole read.
   // 2. A single slice with accepted bounds is read as a range, without `stat()`.
   // 3. Otherwise, a size from `stat()` resolves the chain to one range. Without
@@ -629,16 +638,21 @@ export class Fs extends Service<Fs.Intercept> {
   }
 
   /**
-   * List the entries of a directory in an unspecified order. Entries added or
-   * removed during the iteration may or may not be listed. A failure,
-   * including a missing location or a non-directory, is thrown from the
-   * iteration.
+   * List the entries of a directory, as `ctx.fs.dir(path).list()` does. A
+   * failure, including an invalid path, is thrown from the iteration.
    */
   async* readdir(path: Path): AsyncIterable<DirEntryRef> {
-    const url = this.resolve(path)
+    yield* this.dir(path).list()
+  }
+
+  private async* _list(url: URL): AsyncIterable<DirEntryRef> {
+    // a copy, so that a change of the reference does not affect the iteration
+    url = new URL(url)
     for await (const { name, type } of this._provider(url, 'readdir').readdir(url)) {
       const location = resolvePath([name], url)
-      const entry = type === 'file' ? new FileRef(this, location) : new EntryRef(this, location)
+      const entry = type === 'file' ? new FileRef(this, location)
+        : type === 'directory' ? new DirRef(this, location)
+          : new EntryRef(this, location)
       yield Object.defineProperty(entry, 'type', { value: type, enumerable: true }) as DirEntryRef
     }
   }
@@ -754,7 +768,7 @@ export class Fs extends Service<Fs.Intercept> {
     }
     // listed before the destination is created
     const entries: DirEntryRef[] = []
-    for await (const entry of this.readdir(from)) entries.push(entry)
+    for await (const entry of this._list(from)) entries.push(entry)
     const existing = await this._statIfExists(to, true)
     if (!existing) {
       await this.mkdir(to)

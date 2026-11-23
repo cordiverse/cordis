@@ -1,5 +1,7 @@
 import type { EntryType, WriteOptions, WriteResult } from './entry.ts'
+import { FsError } from './error.ts'
 import type { Fs } from './index.ts'
+import { assertLocation, isHierarchical, Path } from './path.ts'
 import { appendSlice } from './slice.ts'
 import { checkVersion } from './version.ts'
 
@@ -173,11 +175,52 @@ export class FileRef extends EntryRef {
 }
 
 /**
- * An entry of a directory, as listed by `readdir()`: a reference to it with
- * its type at the time of the listing. A file is a `FileRef`. The type is that
- * of the entry itself, not of the target of a link, so a link to a file is an
- * `EntryRef`.
+ * A reference to a directory. Creating it performs no I/O. Its URL ends with
+ * `/`, and serves as the base URL of the paths given to `dir()` and `file()`.
+ * A path resolved against it may leave it, such as `../x` or `/x`; whether a
+ * location can be accessed depends on the provider to which it is routed and
+ * on the underlying storage.
+ */
+export class DirRef extends EntryRef {
+  /** A copy of `url` with a trailing `/`. */
+  constructor(fs: Fs, url: URL) {
+    url = new URL(url)
+    assertLocation(url)
+    if (!isHierarchical(url)) {
+      throw new FsError('InvalidPath', url, `expected a location with a hierarchical path, got ${url.href}`)
+    }
+    if (!url.pathname.endsWith('/')) url.pathname += '/'
+    super(fs, url)
+  }
+
+  /** Create a reference to a directory, resolving `path` against this directory. */
+  dir(path: Path): DirRef {
+    return new DirRef(this.fs, this.fs.resolve(path, this.url))
+  }
+
+  /** Create a reference to a file, resolving `path` against this directory. */
+  file(path: Path): FileRef {
+    return new FileRef(this.fs, this.fs.resolve(path, this.url))
+  }
+
+  /**
+   * List the entries of the directory in an unspecified order. The location
+   * is routed when the iteration starts. Entries added or removed during the
+   * iteration may or may not be listed. A failure, including a missing
+   * location or a non-directory, is thrown from the iteration.
+   */
+  list(): AsyncIterable<DirEntryRef> {
+    return this.fs['_list'](this.url)
+  }
+}
+
+/**
+ * An entry of a directory, as listed by `DirRef.list()`: a reference to it
+ * with its type at the time of the listing. A file is a `FileRef`, and a
+ * directory a `DirRef`. The type is that of the entry itself, not of the
+ * target of a link, so a link to a file is an `EntryRef`.
  */
 export type DirEntryRef =
   | (FileRef & { readonly type: 'file' })
-  | (EntryRef & { readonly type: Exclude<EntryType, 'file'> })
+  | (DirRef & { readonly type: 'directory' })
+  | (EntryRef & { readonly type: Exclude<EntryType, 'file' | 'directory'> })

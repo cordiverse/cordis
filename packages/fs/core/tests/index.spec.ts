@@ -2,7 +2,7 @@ import { Context, Fiber, FiberState } from 'cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import Fs, { BaseFs, CopyOptions, DirEntryRef, FileRef, FsError, FsProvider, StatOptions, Stats, Watcher, WriteOptions } from '../src/index.ts'
+import Fs, { BaseFs, CopyOptions, DirEntryRef, DirRef, EntryRef, FileRef, FsError, FsProvider, StatOptions, Stats, Watcher, WriteOptions } from '../src/index.ts'
 
 interface FakeWatch {
   watcher: Watcher
@@ -459,15 +459,17 @@ describe('Fs', () => {
       ])
     })
 
-    it('routes a file reference when an operation is performed', async () => {
+    it('routes a reference when an operation is performed', async () => {
       const ctx = await setup()
       const file = ctx.fs.file('mem://bucket/a.txt')
       expect(await code(file.text())).to.equal('NoProvider')
+      const entries = ctx.fs.dir('mem://bucket/').list()[Symbol.asyncIterator]()
 
       const { calls, provider } = recorder()
       ctx.fs.mount('mem:', provider)
       await file.text()
-      expect(calls).to.deep.equal([['read', 'mem://bucket/a.txt']])
+      expect((await entries.next()).value?.name).to.equal('a.txt')
+      expect(calls).to.deep.equal([['read', 'mem://bucket/a.txt'], ['readdir', 'mem://bucket/']])
     })
 
     it('rejects with `NotSupported` for an operation the provider does not implement', async () => {
@@ -542,7 +544,7 @@ describe('Fs', () => {
     })
   })
 
-  describe('readdir', () => {
+  describe('dir', () => {
     function lister(names: string[]): FsProvider {
       return {
         async* readdir() {
@@ -553,9 +555,41 @@ describe('Fs', () => {
 
     async function list(ctx: Context, path: string) {
       const urls: string[] = []
-      for await (const entry of ctx.fs.readdir(path)) urls.push(entry.url.href)
+      for await (const entry of ctx.fs.dir(path).list()) urls.push(entry.url.href)
       return urls
     }
+
+    it('resolves a directory with a trailing separator', async () => {
+      const ctx = await setup('file:///app/')
+      const dir = ctx.fs.dir('data')
+      expect(dir.url.href).to.equal('file:///app/data/')
+      expect(dir.name).to.equal('data')
+      expect(ctx.fs.dir('data/').url.href).to.equal('file:///app/data/')
+      expect(ctx.fs.dir(['data']).url.href).to.equal('file:///app/data/')
+    })
+
+    it('resolves a path against the directory', async () => {
+      const ctx = await setup('file:///app/')
+      const dir = ctx.fs.dir('data')
+      expect(dir.file('a.txt').url.href).to.equal('file:///app/data/a.txt')
+      expect(dir.dir('sub').file('b.txt').url.href).to.equal('file:///app/data/sub/b.txt')
+      expect(dir.file('../x').url.href).to.equal('file:///app/x')
+      expect(dir.file('/x').url.href).to.equal('file:///x')
+    })
+
+    it('does not change the URL that it is created from', async () => {
+      const ctx = await setup()
+      const file = ctx.fs.file('mem://bucket/a.txt')
+      expect(ctx.fs.dir(file.url).url.href).to.equal('mem://bucket/a.txt/')
+      expect(file.url.href).to.equal('mem://bucket/a.txt')
+    })
+
+    it('rejects a URL with an opaque path with `InvalidPath`', async () => {
+      const ctx = await setup()
+      expect(() => ctx.fs.dir('doc:record')).to.throw(FsError).with.property('code', 'InvalidPath')
+      expect(() => new DirRef(ctx.fs, new URL('doc:record'))).to.throw(FsError).with.property('code', 'InvalidPath')
+      expect(await code(ctx.fs.readdir('doc:record')[Symbol.asyncIterator]().next())).to.equal('InvalidPath')
+    })
 
     it('gives the location of each entry below the listed directory', async () => {
       const ctx = await setup()
@@ -569,7 +603,6 @@ describe('Fs', () => {
         'mem://bucket/dir/a%23b',
         'mem://bucket/dir/a%5Cb',
       ])
-      expect(await list(ctx, 'mem://bucket/dir/')).to.deep.equal(await list(ctx, 'mem://bucket/dir'))
     })
 
     it('decodes the location of an entry to its name', async () => {
@@ -577,29 +610,52 @@ describe('Fs', () => {
       const ctx = await setup()
       ctx.fs.mount('file:', lister(names))
       const decoded: string[] = []
-      for await (const { url } of ctx.fs.readdir('file:///dir/')) {
+      for await (const { url } of ctx.fs.dir('file:///dir/').list()) {
         decoded.push(decodeURIComponent(url.pathname.slice('/dir/'.length)))
       }
       expect(decoded).to.deep.equal(names)
     })
 
-    it('lists a file as a reference to it, and another entry as a reference with its type', async () => {
+    it('lists a file and a directory as references to them, and another entry as a reference with its type', async () => {
       const ctx = await setup()
       ctx.fs.mount('mem:', {
         async* readdir() {
           yield { name: 'a #.txt', type: 'file' }
           yield { name: 'dir', type: 'directory' }
           yield { name: 'link', type: 'symlink' }
+          yield { name: 'fifo', type: 'other' }
         },
         read: async () => ({ stream: new Blob(['foo']).stream() }),
       })
-      const entries: DirEntryRef[] = []
-      for await (const entry of ctx.fs.readdir('mem://bucket/')) entries.push(entry)
-      expect(entries.map(({ name, type }) => [name, type])).to.deep.equal([['a #.txt', 'file'], ['dir', 'directory'], ['link', 'symlink']])
-      const [file, ...others] = entries
+      const entries: Record<string, DirEntryRef> = {}
+      for await (const entry of ctx.fs.dir('mem://bucket/').list()) entries[entry.name] = entry
+      expect(Object.keys(entries).sort()).to.deep.equal(['a #.txt', 'dir', 'fifo', 'link'])
+      const { 'a #.txt': file, dir, link, fifo } = entries
+      expect(file.type).to.equal('file')
       expect(file).to.be.instanceOf(FileRef)
       if (file.type === 'file') expect(await file.text()).to.equal('foo')
-      for (const entry of others) expect(entry).not.to.be.instanceOf(FileRef)
+      expect(dir.type).to.equal('directory')
+      expect(dir).to.be.instanceOf(DirRef)
+      expect(dir.url.href).to.equal('mem://bucket/dir/')
+      if (dir.type === 'directory') expect(dir.file('b.txt').url.href).to.equal('mem://bucket/dir/b.txt')
+      expect(link.type).to.equal('symlink')
+      expect(fifo.type).to.equal('other')
+      for (const entry of [link, fifo]) {
+        expect(entry).to.be.instanceOf(EntryRef)
+        expect(entry).not.to.be.instanceOf(FileRef)
+        expect(entry).not.to.be.instanceOf(DirRef)
+      }
+    })
+
+    it('resolves the entries of an iteration against the URL at its start', async () => {
+      const ctx = await setup()
+      ctx.fs.mount('mem:', lister(['a.txt', 'b.txt']))
+      const dir = ctx.fs.dir('mem://bucket/one/')
+      const iterator = dir.list()[Symbol.asyncIterator]()
+      await iterator.next()
+      dir.url.pathname = '/two/'
+      const { value } = await iterator.next()
+      expect(new URL('.', value!.url).href).to.equal('mem://bucket/one/')
     })
 
     it('throws a failure from the iteration', async () => {
@@ -609,7 +665,7 @@ describe('Fs', () => {
           throw new FsError('NotFound', url, 'NotFound')
         },
       })
-      const iterable = ctx.fs.readdir('mem://bucket/dir')
+      const iterable = ctx.fs.dir('mem://bucket/dir').list()
       expect(await code(iterable[Symbol.asyncIterator]().next())).to.equal('NotFound')
     })
   })

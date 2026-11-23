@@ -1,4 +1,4 @@
-import type { ReadOptions } from './file.ts'
+import type { ReadOptions } from './ref.ts'
 
 // The greatest length this slice can have before the size of the input is known.
 function maxLength({ start = 0, end }: ReadOptions) {
