@@ -410,7 +410,7 @@ describe('Fs', () => {
       },
       async mkdir(url, options) { calls.push(['mkdir', url.href, options]) },
       async symlink(target, url) { calls.push(['symlink', target, url.href]) },
-      async readlink(url) { calls.push(['readlink', url.href]); return 'a.txt' },
+      async readlink(url) { calls.push(['readlink', url.href]); return { target: 'a.txt' } },
     }
     return { calls, provider }
   }
@@ -654,7 +654,7 @@ describe('Fs', () => {
           return {}
         },
         async readlink(url) {
-          return links[find(url)]
+          return { target: links[find(url)] }
         },
       }
       if (options.copy) {
@@ -712,7 +712,7 @@ describe('Fs', () => {
       target.links['/link'] = 'file'
       const write = vi.fn(async (url: URL) => { throw new FsError('AlreadyExists', url, 'occupied') })
       ctx.fs.mount('src:', source.provider)
-      const realpath = async (url: URL) => new URL(url.href.replace(/\/link$/, '/file'))
+      const realpath = async (url: URL) => ({ url: new URL(url.href.replace(/\/link$/, '/file')) })
       ctx.fs.mount('dest:', { ...target.provider, write, realpath })
       expect(await code(ctx.fs.copy('src:///file', 'dest:///link', { exclusive: true }))).to.equal('AlreadyExists')
       expect(source.calls).to.deep.equal([])
@@ -1226,7 +1226,7 @@ describe('Fs', () => {
           if (entries[url.href] !== undefined) return { type: 'symlink', size: 0, mtime: new Date(0) }
           throw new FsError('NotFound', url, 'missing')
         },
-        readlink: async url => entries[url.href],
+        readlink: async url => ({ target: entries[url.href] }),
         ...overrides,
       })
       return { ...result, lookups }
@@ -1247,7 +1247,7 @@ describe('Fs', () => {
     it.each([false, true])('fails with `NotSupported` before any query to stage a location without a hierarchical path (realpath: %s)', async (resolve) => {
       const ctx = await setup()
       const stat = vi.fn(async (url: URL): Promise<never> => { throw new FsError('PermissionDenied', url, 'denied') })
-      const realpath = resolve ? async () => new URL('doc:record') : undefined
+      const realpath = resolve ? async () => ({ url: new URL('doc:record') }) : undefined
       // the mount at the empty prefix also serves `doc:record`
       ctx.fs.mount('', { ...directory().provider, stat, realpath })
       ctx.fs.mount('other:', {})
@@ -1258,7 +1258,7 @@ describe('Fs', () => {
 
     it.each(['stat, readlink', 'stat', 'none'])('writes through a link resolved by `realpath()` (other operations: %s)', async (operations) => {
       const ctx = await setup()
-      const realpath = vi.fn(async (url: URL) => new URL('../other/c.txt', url))
+      const realpath = vi.fn(async (url: URL) => ({ url: new URL('../other/c.txt', url) }))
       const { files, provider } = links({ 'mem://vol/dir/a.txt': '../x/../other/c.txt' }, { realpath })
       if (!operations.includes('readlink')) delete provider.readlink
       if (!operations.includes('stat')) delete provider.stat
@@ -1280,7 +1280,7 @@ describe('Fs', () => {
       const ctx = await setup()
       const targets: Record<string, string> = { 'mem://vol/app/link': 'mem://real/app/target', 'mem://vol/app/root': 'mem://real/app' }
       const { files, provider } = links(targets, {
-        async realpath(url) { return new URL(targets[url.href] ?? url.href.replace('mem://vol/app/', 'mem://real/app/')) },
+        async realpath(url) { return { url: new URL(targets[url.href] ?? url.href.replace('mem://vol/app/', 'mem://real/app/')) } },
       })
       ctx.fs.mount('mem://vol/app/', provider)
       await ctx.fs.file('mem://vol/app/link').write('data', { atomic: true })
@@ -1300,7 +1300,7 @@ describe('Fs', () => {
         async realpath(location) {
           // the root of a host is not a path of a directory on every storage
           if (location.pathname === '/') throw new FsError('InvalidPath', location, 'not a directory')
-          return new URL(real)
+          return { url: new URL(real) }
         },
       })
       const other = directory({ capabilities: { atomic: true } })
@@ -1340,7 +1340,7 @@ describe('Fs', () => {
       const written: string[] = []
       ctx.fs.mount('doc:', {
         capabilities: { atomic: true, exclusive: true },
-        realpath: async url => url,
+        realpath: async url => ({ url }),
         async stat(url) {
           if (url.href === 'doc:source') return { type: 'file', size: 6, mtime: new Date(0) }
           throw new FsError('NotFound', url, 'missing')

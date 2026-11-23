@@ -1,7 +1,10 @@
 import { Context, Service } from 'cordis'
 import { Awaitable } from 'cosmokit'
 import { pathToFileURL } from 'node:url'
-import { CopyOptions, DirEntry, EntryType, MkdirOptions, RemoveOptions, StatOptions, Stats, WriteOptions, WriteResult } from './entry.ts'
+import {
+  CopyOptions, DirEntry, EntryType, MkdirOptions, ReadlinkResult, RealpathResult,
+  RemoveOptions, StatOptions, Stats, WriteOptions, WriteResult,
+} from './entry.ts'
 import { FsError } from './error.ts'
 import { DirEntryRef, EntryRef, FileRef, ReadOptions, ReadResult } from './file.ts'
 import { resolveSlices, sliceStream } from './slice.ts'
@@ -668,7 +671,8 @@ export class Fs extends Service<Fs.Intercept> {
   /** Return the target of a symbolic link as stored. An entry of another type fails with `NotALink`. */
   async readlink(path: Path): Promise<string> {
     const url = this.resolve(path)
-    return this._provider(url, 'readlink').readlink(url)
+    const { target } = await this._provider(url, 'readlink').readlink(url)
+    return target
   }
 
   /**
@@ -907,7 +911,7 @@ export interface FsProvider {
   /** Create a symbolic link at `url` that stores `target` as given. */
   symlink?(target: string, url: URL): Promise<void>
   /** Return the target of a symbolic link as stored, and fail with `NotALink` on another entry. */
-  readlink?(url: URL): Promise<string>
+  readlink?(url: URL): Promise<ReadlinkResult>
   /**
    * Return the location that `url` designates with every symbolic link
    * resolved by the rules of the storage, which may be one of another mount.
@@ -920,7 +924,7 @@ export interface FsProvider {
    * without it guarantees that no symbolic link, in a parent directory or in
    * the last component, changes the entry that a write gives content to.
    */
-  realpath?(url: URL): Promise<URL>
+  realpath?(url: URL): Promise<RealpathResult>
   /**
    * Start serving `watcher`, and return a function that disposes it. The
    * provider reports through `watcher.emit()`, with a `ready` once the initial

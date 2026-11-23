@@ -73,6 +73,18 @@ export interface WriteResult {
   version?: string
 }
 
+/** The result of `FsProvider.readlink()`. */
+export interface ReadlinkResult {
+  /** the target of the link as stored */
+  target: string
+}
+
+/** The result of `FsProvider.realpath()`. */
+export interface RealpathResult {
+  /** the location with every symbolic link resolved */
+  url: URL
+}
+
 export interface CopyOptions extends Pick<WriteOptions, 'exclusive' | 'atomic'> {
   /** A directory is copied with every entry below it. */
   recursive?: boolean
