@@ -486,6 +486,86 @@ describe('@cordisjs/server', () => {
     })
   })
 
+  describe('response form data', () => {
+    beforeEach(async () => {
+      ({ ctx, url } = await setup())
+    })
+
+    it('should serialize a form data body with the boundary of its content type', async () => {
+      ctx.server.get('/form', async (req, res, next) => {
+        const data = new FormData()
+        data.append('name', 'value')
+        res.formData(data)
+      })
+      await sleep()
+
+      const res = await fetch(`${url}/form`)
+      expect(res.status).to.equal(200)
+      expect(res.headers.get('content-type')).to.match(/^multipart\/form-data; boundary=/)
+      const data = await res.formData()
+      expect(data.get('name')).to.equal('value')
+    })
+
+    it('should send the form data body that is read back', async () => {
+      let bytes: Uint8Array | undefined
+      ctx.server.get('/form', async (req, res, next) => {
+        const data = new FormData()
+        data.append('name', 'value')
+        res.formData(data)
+        bytes = await res.bytes()
+      })
+      await sleep()
+
+      const res = await fetch(`${url}/form`)
+      expect(new Uint8Array(await res.arrayBuffer())).to.deep.equal(bytes)
+    })
+
+    it('should derive the content type from the last written form data', async () => {
+      ctx.server.get('/form', async (req, res, next) => {
+        const first = new FormData()
+        first.append('name', 'first')
+        res.formData(first)
+        const second = new FormData()
+        second.append('name', 'second')
+        res.formData(second)
+      })
+      await sleep()
+
+      const res = await fetch(`${url}/form`)
+      const data = await res.formData()
+      expect(data.get('name')).to.equal('second')
+    })
+
+    it('should keep the content type when a form data body is rewritten as bytes', async () => {
+      ctx.server.get('/form', async (req, res, next) => {
+        const data = new FormData()
+        data.append('name', 'value')
+        res.formData(data)
+        res.bytes(await res.bytes())
+      })
+      await sleep()
+
+      const res = await fetch(`${url}/form`)
+      const data = await res.formData()
+      expect(data.get('name')).to.equal('value')
+    })
+
+    it('should keep a file entry with an empty filename', async () => {
+      ctx.server.get('/form', async (req, res, next) => {
+        const data = new FormData()
+        data.append('file', new Blob([new Uint8Array([0xff])]), '')
+        res.formData(data)
+      })
+      await sleep()
+
+      const res = await fetch(`${url}/form`)
+      const file = (await res.formData()).get('file')
+      expect(file).to.be.instanceOf(File)
+      expect((file as File).name).to.equal('')
+      expect(new Uint8Array(await (file as File).arrayBuffer())).to.deep.equal(new Uint8Array([0xff]))
+    })
+  })
+
   describe('response headers', () => {
     beforeEach(async () => {
       ({ ctx, url } = await setup())
