@@ -25,16 +25,16 @@ export class ConsoleExporter implements Exporter {
   static readonly name = 'logger-console'
 
   static readonly Config: z<ConsoleExporter.Config> = z.object({
-    colors: z.union([z.const(false), z.number()]),
-    maxLength: z.number(),
-    levels: z.dict(z.number()),
-    showDiff: z.boolean().default(false),
-    showTime: z.string().default('yyyy-MM-dd hh:mm:ss '),
+    colors: z.union([z.const(false), z.number()]).description('The color support level: `false` or `0` for no colors, `1` for 16 colors, and `2` or `3` for 256 colors with text decorations.'),
+    maxLength: z.number().description('The maximum length of a line, beyond which the line is truncated. Defaults to 10240.'),
+    levels: z.dict(z.number()).description('The maximum levels of the messages to print, keyed by logger name. The `default` key applies to the loggers that are not listed.'),
+    showDiff: z.boolean().default(false).description('Append the time elapsed since the previous message.'),
+    showTime: z.string().default('yyyy-MM-dd hh:mm:ss ').description('The template of the timestamp prefixed to each message. An empty string omits the timestamp.'),
     label: z.object({
-      width: z.number(),
-      margin: z.number(),
-      align: z.union(['left', 'right']),
-    }),
+      width: z.number().description('The width to which logger names are padded.'),
+      margin: z.number().description('The number of spaces that separate the type prefix, the logger name and the message. Defaults to 1.'),
+      align: z.union(['left', 'right']).description('The alignment of logger names within `width`.'),
+    }).description('The layout of logger names.'),
   }) as z<ConsoleExporter.Config>
 
   colors!: false | ColorSupportLevel

@@ -206,16 +206,16 @@ export class Http extends Service<Http.Intercept> {
   }
 
   static Config: z<Http.Config> = z.object({
-    timeout: z.natural().role('ms').description('等待请求的最长时间。'),
-    keepAlive: z.boolean().description('是否保持连接。'),
-    proxyAgent: z.string().description('代理服务器地址。'),
+    timeout: z.natural().role('ms').description('The time to wait for a response before the request is aborted, in milliseconds.'),
+    keepAlive: z.boolean().description('Set the `keepalive` option of `fetch()`, which allows the request to outlive the context that sends it.'),
+    proxyAgent: z.string().description('The URL of the proxy server, such as `http://127.0.0.1:7890`. Its protocol requires a proxy agent registered through `ctx.http.proxy()`.'),
   })
 
   Config: z<Http.Config> = z.object({
-    baseUrl: z.string().description('基础 URL。'),
-    timeout: z.natural().role('ms').description('等待请求的最长时间。'),
-    keepAlive: z.boolean().description('是否保持连接。'),
-    proxyAgent: z.string().description('代理服务器地址。'),
+    baseUrl: z.string().description('The base URL against which relative request URLs are resolved.'),
+    timeout: z.natural().role('ms').description('The time to wait for a response before the request is aborted, in milliseconds.'),
+    keepAlive: z.boolean().description('Set the `keepalive` option of `fetch()`, which allows the request to outlive the context that sends it.'),
+    proxyAgent: z.string().description('The URL of the proxy server, such as `http://127.0.0.1:7890`. Its protocol requires a proxy agent registered through `ctx.http.proxy()`.'),
   })
 
   public isError = HttpError.is
