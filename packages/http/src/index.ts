@@ -4,6 +4,10 @@ import { createRequire } from 'node:module'
 import fetchFile from '@cordisjs/fetch-file'
 import type { Dispatcher, HeadersInit, RequestInit, WebSocketInit } from 'undici'
 import z from 'schemastery'
+import { parseEventStream } from './event-stream.ts'
+import type { ServerSentEvent } from './event-stream.ts'
+
+export * from './event-stream.ts'
 
 declare module 'cordis' {
   interface Context {
@@ -94,6 +98,7 @@ export namespace Http {
     json: any
     text: string
     stream: ReadableStream
+    'event-stream': ReadableStream<ServerSentEvent>
     blob: Blob
     formdata: FormData
     arraybuffer: ArrayBuffer
@@ -232,6 +237,7 @@ export class Http extends Service<Http.Intercept> {
     this.decoder('arraybuffer', (raw) => raw.arrayBuffer())
     this.decoder('formdata', (raw) => raw.formData())
     this.decoder('stream', (raw) => raw.body!)
+    this.decoder('event-stream', (raw) => parseEventStream(raw.body))
     this.decoder('headers', (raw) => raw.headers)
 
     this.proxy(['http', 'https'], (url) => {
