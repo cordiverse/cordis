@@ -1,7 +1,7 @@
 {
   "name": "@cordisjs/hmr",
   "description": "Hot module replacement for Cordis",
-  "version": "2.0.0-rc.0",
+  "version": "2.0.0-rc.1",
   "sideEffects": false,
   "type": "module",
   "main": "lib/index.js",
@@ -43,8 +43,8 @@
     }
   },
   "peerDependencies": {
-    "@cordisjs/fs": "^2.0.0-rc.0",
-    "cordis": "^4.0.0-rc.13",
+    "@cordisjs/fs": "^2.0.0-rc.1",
+    "cordis": "^4.0.0-rc.14",
     "node-addon-require-builtin": "^0.1.0"
   },
   "peerDependenciesMeta": {
@@ -53,13 +53,13 @@
     }
   },
   "devDependencies": {
-    "@cordisjs/fs": "^2.0.0-rc.0",
-    "@cordisjs/fs-node": "^0.1.0",
-    "@cordisjs/include": "^2.0.0-rc.0",
-    "@cordisjs/loader": "^1.0.0-rc.10",
-    "@cordisjs/logger-console": "^1.0.1",
+    "@cordisjs/fs": "^2.0.0-rc.1",
+    "@cordisjs/fs-node": "^1.0.0-rc.0",
+    "@cordisjs/include": "^2.0.0-rc.1",
+    "@cordisjs/loader": "^1.0.0-rc.11",
+    "@cordisjs/logger-console": "^1.0.2",
     "@types/babel__code-frame": "^7.27.0",
-    "cordis": "^4.0.0-rc.13",
+    "cordis": "^4.0.0-rc.14",
     "esbuild": "^0.27.3"
   },
   "dependencies": {

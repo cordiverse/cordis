@@ -1,7 +1,7 @@
 {
   "name": "@cordisjs/package-manager",
   "description": "Package manager service for Cordis",
-  "version": "0.1.0",
+  "version": "1.0.0-rc.0",
   "sideEffects": false,
   "type": "module",
   "main": "lib/index.js",
@@ -37,12 +37,12 @@
     }
   },
   "peerDependencies": {
-    "@cordisjs/fs": "^2.0.0-rc.0",
-    "cordis": "^4.0.0-rc.13"
+    "@cordisjs/fs": "^2.0.0-rc.1",
+    "cordis": "^4.0.0-rc.14"
   },
   "devDependencies": {
-    "@cordisjs/fs": "^2.0.0-rc.0",
-    "cordis": "^4.0.0-rc.13"
+    "@cordisjs/fs": "^2.0.0-rc.1",
+    "cordis": "^4.0.0-rc.14"
   },
   "dependencies": {
     "cosmokit": "^1.8.1",

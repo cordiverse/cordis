@@ -1,7 +1,7 @@
 {
   "name": "@cordisjs/loader",
   "description": "Loader for Cordis",
-  "version": "1.0.0-rc.10",
+  "version": "1.0.0-rc.11",
   "sideEffects": false,
   "type": "module",
   "main": "lib/index.js",
@@ -36,13 +36,13 @@
     "service"
   ],
   "devDependencies": {
-    "@cordisjs/fs": "^2.0.0-rc.0",
-    "@cordisjs/logger-console": "^1.0.1",
-    "cordis": "^4.0.0-rc.13"
+    "@cordisjs/fs": "^2.0.0-rc.1",
+    "@cordisjs/logger-console": "^1.0.2",
+    "cordis": "^4.0.0-rc.14"
   },
   "peerDependencies": {
-    "@cordisjs/fs": "^2.0.0-rc.0",
-    "cordis": "^4.0.0-rc.13",
+    "@cordisjs/fs": "^2.0.0-rc.1",
+    "cordis": "^4.0.0-rc.14",
     "node-addon-require-builtin": "^0.1.0"
   },
   "peerDependenciesMeta": {

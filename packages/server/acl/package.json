@@ -1,7 +1,7 @@
 {
   "name": "@cordisjs/server-acl",
   "description": "Access control list for @cordisjs/server",
-  "version": "1.0.1",
+  "version": "2.0.0-rc.0",
   "sideEffects": false,
   "type": "module",
   "main": "lib/index.js",
@@ -30,14 +30,14 @@
     "component"
   ],
   "peerDependencies": {
-    "@cordisjs/server": "^1.7.0",
-    "cordis": "^4.0.0-rc.13"
+    "@cordisjs/server": "^2.0.0-rc.0",
+    "cordis": "^4.0.0-rc.14"
   },
   "devDependencies": {
-    "@cordisjs/logger-console": "^1.0.1",
-    "@cordisjs/server": "^1.7.0",
+    "@cordisjs/logger-console": "^1.0.2",
+    "@cordisjs/server": "^2.0.0-rc.0",
     "@types/ws": "^8.18.1",
-    "cordis": "^4.0.0-rc.13",
+    "cordis": "^4.0.0-rc.14",
     "ws": "^8.19.0"
   },
   "dependencies": {
