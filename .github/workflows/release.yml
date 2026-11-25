@@ -1,16 +1,13 @@
 name: Release
 
 on:
-  push:
-    branches:
-      - main
   pull_request:
-    types: [opened, edited, synchronize, reopened, labeled, unlabeled]
+    types: [opened, edited, synchronize, reopened, labeled, unlabeled, closed]
 
 jobs:
   check:
     if: >-
-      github.event_name == 'pull_request' &&
+      github.event.action != 'closed' &&
       contains(github.event.pull_request.labels.*.name, 'release')
     runs-on: ubuntu-latest
 
@@ -37,30 +34,14 @@ jobs:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: node .github/scripts/check-release.mjs
 
-  detect:
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-
-    permissions:
-      contents: read
-      pull-requests: read
-
-    outputs:
-      number: ${{ steps.detect.outputs.number }}
-
-    steps:
-      - name: Find the release pull request
-        id: detect
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |-
-          number=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" \
-            --jq 'map(select(.merged_at and any(.labels[]; .name == "release"))) | .[0].number // empty')
-          echo "number=$number" >> "$GITHUB_OUTPUT"
-
   publish:
-    needs: detect
-    if: needs.detect.outputs.number
+    # For a merged pull request, `GITHUB_REF` is the base branch and `GITHUB_SHA` is
+    # the merge commit, which the checkout, the provenance and the tag all refer to.
+    if: >-
+      github.event.action == 'closed' &&
+      github.event.pull_request.merged &&
+      github.event.pull_request.base.ref == 'main' &&
+      contains(github.event.pull_request.labels.*.name, 'release')
     runs-on: ubuntu-latest
     environment: release
 
@@ -71,7 +52,6 @@ jobs:
     permissions:
       contents: write
       id-token: write
-      pull-requests: read
 
     steps:
       - name: Check out
@@ -99,13 +79,13 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ needs.detect.outputs.number }}
+          NOTES: ${{ github.event.pull_request.body }}
         run: |-
           version=$(node -p "require('./packages/core/package.json').version")
           if gh release view "v$version" > /dev/null 2>&1; then
             echo "release v$version already exists"
             exit 0
           fi
-          gh pr view "$PR_NUMBER" --json body --jq .body > "$RUNNER_TEMP/notes.md"
+          printf '%s\n' "$NOTES" > "$RUNNER_TEMP/notes.md"
           gh release create "v$version" --target "$GITHUB_SHA" \
             --title "Cordis $version" --notes-file "$RUNNER_TEMP/notes.md"
