@@ -34,6 +34,26 @@ function findOwnValue(source: any, predicate: (value: any, key: PropertyKey) => 
   }
 }
 
+const defaultPorts: Dict<string> = { 'http:': '80', 'https:': '443', 'ws:': '80', 'wss:': '443' }
+
+function bypassProxy(url: URL, noProxy: string[] = []) {
+  const hostname = url.hostname.replace(/\.$/, '')
+  const port = +(url.port || defaultPorts[url.protocol])
+  return noProxy.some((entry) => {
+    if (entry === '*') return true
+    if (entry.indexOf(':') !== entry.lastIndexOf(':') && !entry.startsWith('[')) entry = `[${entry}]`
+    const capture = /^(\[[\da-f:.]+\]|[\w.*\-\u0080-\uffff]+)(?::(\d+))?$/i.exec(entry)
+    if (!capture || capture[2] && +capture[2] !== port) return false
+    let domain: string
+    try {
+      domain = new URL(`http://${capture[1]}`).hostname.replace(/^\*?\./, '').replace(/\.$/, '')
+    } catch {
+      return false
+    }
+    return hostname === domain || hostname.endsWith(`.${domain}`)
+  })
+}
+
 function setupInternalUndici(undici: typeof import('undici')) {
   const runtime: Partial<typeof import('undici')> = undici
   if (!runtime.getGlobalDispatcher) return
@@ -122,6 +142,7 @@ export namespace Http {
     headers?: Dict
     timeout?: number
     proxyAgent?: string
+    noProxy?: string[]
   }
 
   export interface Config extends Intercept {}
@@ -227,6 +248,7 @@ export class Http extends Service<Http.Intercept> {
     timeout: z.natural().role('ms').description('The time to wait for a response before the request is aborted, in milliseconds.'),
     keepAlive: z.boolean().description('Set the `keepalive` option of `fetch()`, which allows the request to outlive the context that sends it.'),
     proxyAgent: z.string().description('The URL of the proxy server, such as `http://127.0.0.1:7890`. Its protocol requires a proxy agent registered through `ctx.std.http.proxy()`.'),
+    noProxy: z.array(z.string().required()).description('The hosts that bypass the proxy, such as `localhost`, `.example.com` or `127.0.0.1:8080`. A host matches its subdomains, and `*` matches every host.'),
   })
 
   Config: z<Http.Config> = z.object({
@@ -234,6 +256,7 @@ export class Http extends Service<Http.Intercept> {
     timeout: z.natural().role('ms').description('The time to wait for a response before the request is aborted, in milliseconds.'),
     keepAlive: z.boolean().description('Set the `keepalive` option of `fetch()`, which allows the request to outlive the context that sends it.'),
     proxyAgent: z.string().description('The URL of the proxy server, such as `http://127.0.0.1:7890`. Its protocol requires a proxy agent registered through `ctx.std.http.proxy()`.'),
+    noProxy: z.array(z.string().required()).description('The hosts that bypass the proxy, such as `localhost`, `.example.com` or `127.0.0.1:8080`. A host matches its subdomains, and `*` matches every host.'),
   })
 
   public isError = HttpError.is
@@ -416,12 +439,7 @@ export class Http extends Service<Http.Intercept> {
         (init as any).duplex = 'half'
       }
 
-      if (config.proxyAgent) {
-        const proxyURL = new URL(config.proxyAgent)
-        const factory = this._proxies[proxyURL.protocol.slice(0, -1)]
-        if (!factory) throw new Error(`Cannot resolve proxy agent ${proxyURL}`)
-        init.dispatcher = factory(proxyURL)
-      }
+      init.dispatcher = this._resolveDispatcher(url, config)
 
       const response = await this.ctx.waterfall(this, 'http/fetch', url, init, config, () => {
         this.ctx.logger('http:request').debug('%C %s', method, url.href)
@@ -440,6 +458,14 @@ export class Http extends Service<Http.Intercept> {
     } finally {
       dispose()
     }
+  }
+
+  private _resolveDispatcher(url: URL, config: Http.Config) {
+    if (!config.proxyAgent || bypassProxy(url, config.noProxy)) return
+    const proxyURL = new URL(config.proxyAgent)
+    const factory = this._proxies[proxyURL.protocol.slice(0, -1)]
+    if (!factory) throw new Error(`Cannot resolve proxy agent ${proxyURL}`)
+    return factory(proxyURL)
   }
 
   private async _decode(response: Response) {
@@ -478,12 +504,7 @@ export class Http extends Service<Http.Intercept> {
       headers,
     }
 
-    if (config.proxyAgent) {
-      const proxyURL = new URL(config.proxyAgent)
-      const factory = this._proxies[proxyURL.protocol.slice(0, -1)]
-      if (!factory) throw new Error(`Cannot resolve proxy agent ${proxyURL}`)
-      init.dispatcher = factory(proxyURL)
-    }
+    init.dispatcher = this._resolveDispatcher(url, config)
 
     const socket = this.ctx.waterfall(this, 'http/websocket', url, init, config, () => {
       this.ctx.logger('http:ws').debug('connect %s', url.href)
