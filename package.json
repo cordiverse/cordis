@@ -33,9 +33,9 @@
     "typescript": "^5.9.3",
     "vite": "^7.3.2",
     "vitest": "^4.1.5",
-    "yakumo": "patch:yakumo@npm%3A3.4.2#~/.yarn/patches/yakumo-npm-3.4.2-e527abe6ed.patch",
-    "yakumo-esbuild": "patch:yakumo-esbuild@npm%3A3.1.1#~/.yarn/patches/yakumo-esbuild-npm-3.1.1-9f5f8f52da.patch",
-    "yakumo-tsc": "patch:yakumo-tsc@npm%3A3.1.1#~/.yarn/patches/yakumo-tsc-npm-3.1.1-4ed307d193.patch",
-    "yakumo-vitest": "patch:yakumo-vitest@npm%3A1.4.1#~/.yarn/patches/yakumo-vitest-npm-1.4.1-e09ff4a335.patch"
+    "yakumo": "^4.0.0",
+    "yakumo-esbuild": "^4.0.0",
+    "yakumo-tsc": "^4.0.0",
+    "yakumo-vitest": "^2.0.0"
   }
 }
