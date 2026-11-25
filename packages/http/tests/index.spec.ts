@@ -118,3 +118,43 @@ describe('responseType: event-stream', () => {
     await closed
   })
 })
+
+describe('method', () => {
+  let ctx: Context
+  let server: Server
+  let url: string
+  let methods: string[]
+
+  beforeEach(async () => {
+    methods = []
+    server = createServer((req, res) => {
+      methods.push(req.method!)
+      res.end()
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+    ctx = new Context()
+    await ctx.use(Http)
+  })
+
+  afterEach(async () => {
+    await ctx.fiber.dispose()
+    server.closeAllConnections()
+    await new Promise((resolve) => server.close(resolve))
+  })
+
+  it('sends the method of each convenience method', async () => {
+    await ctx.std.http.get(url)
+    await ctx.std.http.delete(url)
+    await ctx.std.http.patch(url, {})
+    await ctx.std.http.post(url, {})
+    await ctx.std.http.put(url, {})
+    expect(methods).to.deep.equal(['GET', 'DELETE', 'PATCH', 'POST', 'PUT'])
+  })
+
+  it('normalizes a standard method before the http/fetch listeners', async () => {
+    expect(await ctx.std.http.get('data:text/plain,hello')).to.equal('hello')
+    const response = await ctx.std.http('data:text/plain,hello', { method: 'get' })
+    expect(response.status).to.equal(200)
+  })
+})
