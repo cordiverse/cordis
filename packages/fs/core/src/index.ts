@@ -22,7 +22,7 @@ export * from './watcher.ts'
 
 declare module 'cordis' {
   interface Context {
-    fs: Fs
+    'std:fs': Fs
   }
 }
 
@@ -230,7 +230,7 @@ export class Fs extends Service<Fs.Intercept> {
   public config: Fs.Config
 
   constructor(ctx: Context, config: Fs.Config = {}) {
-    super(ctx, 'fs')
+    super(ctx, 'std:fs')
     // the working directory is the default, and the base URL of a path
     const { baseUrl } = config
     const cwd = baseUrl === undefined || !isUrl(baseUrl) ? getWorkingDirectory() : undefined
@@ -283,7 +283,7 @@ export class Fs extends Service<Fs.Intercept> {
         this._mounts.delete(key)
         return this._reroute()
       }
-    }, 'ctx.fs.mount()')
+    }, 'ctx.std.fs.mount()')
   }
 
   /**
@@ -638,7 +638,7 @@ export class Fs extends Service<Fs.Intercept> {
   }
 
   /**
-   * List the entries of a directory, as `ctx.fs.dir(path).list()` does. A
+   * List the entries of a directory, as `ctx.std.fs.dir(path).list()` does. A
    * failure, including an invalid path, is thrown from the iteration.
    */
   async* readdir(path: Path): AsyncIterable<DirEntryRef> {
@@ -982,10 +982,10 @@ export interface BaseFs extends FsProvider {}
 
 /** A provider that mounts itself at `config.mount`. */
 export abstract class BaseFs {
-  static inject = ['fs']
+  static inject = ['std:fs']
 
   constructor(public ctx: Context, config: BaseFs.Config) {
-    ctx.fs.mount(config.mount, this)
+    ctx.std.fs.mount(config.mount, this)
   }
 }
 

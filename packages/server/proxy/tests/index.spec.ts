@@ -22,7 +22,7 @@ describe('@cordisjs/server-proxy', () => {
       host: '127.0.0.1',
       port: 0,
     })
-    upstreamUrl = upstream.server.publicUrl
+    upstreamUrl = upstream.std.server.publicUrl
 
     // proxy server
     proxy = new Context().intercept('logger', { level: 3 })
@@ -35,7 +35,7 @@ describe('@cordisjs/server-proxy', () => {
     await proxy.use(Proxy, {
       target: upstreamUrl,
     })
-    proxyUrl = proxy.server.publicUrl
+    proxyUrl = proxy.std.server.publicUrl
   })
 
   afterEach(async () => {
@@ -46,7 +46,7 @@ describe('@cordisjs/server-proxy', () => {
 
   describe('GET requests', () => {
     it('should proxy a simple GET request', async () => {
-      upstream.server.get('/hello', async (req, res, next) => {
+      upstream.std.server.get('/hello', async (req, res, next) => {
         res.body = 'world'
       })
       await sleep()
@@ -57,7 +57,7 @@ describe('@cordisjs/server-proxy', () => {
     })
 
     it('should proxy nested paths', async () => {
-      upstream.server.get('/api/users/:id', async (req, res, next) => {
+      upstream.std.server.get('/api/users/:id', async (req, res, next) => {
         res.body = req.params.id
       })
       await sleep()
@@ -68,7 +68,7 @@ describe('@cordisjs/server-proxy', () => {
     })
 
     it('should forward query string', async () => {
-      upstream.server.get('/search', async (req, res, next) => {
+      upstream.std.server.get('/search', async (req, res, next) => {
         res.body = req.query.get('q') ?? ''
       })
       await sleep()
@@ -79,7 +79,7 @@ describe('@cordisjs/server-proxy', () => {
     })
 
     it('should proxy root path', async () => {
-      upstream.server.get('/', async (req, res, next) => {
+      upstream.std.server.get('/', async (req, res, next) => {
         res.body = 'root'
       })
       await sleep()
@@ -92,7 +92,7 @@ describe('@cordisjs/server-proxy', () => {
 
   describe('POST requests', () => {
     it('should forward request body', async () => {
-      upstream.server.post('/echo', async (req, res, next) => {
+      upstream.std.server.post('/echo', async (req, res, next) => {
         const text = await req.text()
         res.body = text
       })
@@ -107,7 +107,7 @@ describe('@cordisjs/server-proxy', () => {
     })
 
     it('should forward JSON body', async () => {
-      upstream.server.post('/json', async (req, res, next) => {
+      upstream.std.server.post('/json', async (req, res, next) => {
         const data = await req.json()
         return new Response(JSON.stringify(data), {
           headers: { 'content-type': 'application/json' },
@@ -127,7 +127,7 @@ describe('@cordisjs/server-proxy', () => {
 
   describe('status codes', () => {
     it('should forward upstream status codes', async () => {
-      upstream.server.get('/not-found', async (req, res, next) => {
+      upstream.std.server.get('/not-found', async (req, res, next) => {
         return new Response(null, { status: 404, statusText: 'Not Found' })
       })
       await sleep()
@@ -139,7 +139,7 @@ describe('@cordisjs/server-proxy', () => {
 
   describe('response headers', () => {
     it('should forward upstream response headers', async () => {
-      upstream.server.get('/headers', async (req, res, next) => {
+      upstream.std.server.get('/headers', async (req, res, next) => {
         return new Response('ok', {
           headers: { 'x-custom': 'value' },
         })
@@ -153,7 +153,7 @@ describe('@cordisjs/server-proxy', () => {
 
   describe('target with path prefix', () => {
     it('should correctly join with target path', async () => {
-      upstream.server.get('/api/v1/data', async (req, res, next) => {
+      upstream.std.server.get('/api/v1/data', async (req, res, next) => {
         res.body = 'scoped'
       })
       await sleep()
@@ -169,7 +169,7 @@ describe('@cordisjs/server-proxy', () => {
       await scoped.use(Proxy, {
         target: upstreamUrl + '/api/v1/',
       })
-      const scopedUrl = scoped.server.publicUrl
+      const scopedUrl = scoped.std.server.publicUrl
 
       const res = await fetch(`${scopedUrl}/data`)
       expect(res.status).to.equal(200)
@@ -192,7 +192,7 @@ describe('@cordisjs/server-proxy', () => {
     }
 
     it('should forward reserved characters as part of the path', async () => {
-      upstream.server.get('{/*path}', async (req, res) => {
+      upstream.std.server.get('{/*path}', async (req, res) => {
         res.body = req.path
       })
       await sleep()
@@ -204,7 +204,7 @@ describe('@cordisjs/server-proxy', () => {
 
     it('should reject a path outside the target', async () => {
       let reached = false
-      upstream.server.get('{/*path}', async (req, res) => {
+      upstream.std.server.get('{/*path}', async (req, res) => {
         reached = true
         res.body = req.path
       })
@@ -212,7 +212,7 @@ describe('@cordisjs/server-proxy', () => {
 
       const scoped = await createProxy(upstreamUrl + '/api/v1/')
       // fetch() removes a literal `..`, but keeps an encoded separator
-      const res = await fetch(`${scoped.server.publicUrl}/..%2Fsecret`)
+      const res = await fetch(`${scoped.std.server.publicUrl}/..%2Fsecret`)
       expect(res.status).to.equal(400)
       expect(reached).to.equal(false)
 
@@ -221,17 +221,17 @@ describe('@cordisjs/server-proxy', () => {
     })
 
     it.each(['?key=value', '#fragment'])('should forward under the path of a target with %s', async (suffix) => {
-      upstream.server.get('{/*path}', async (req, res) => {
+      upstream.std.server.get('{/*path}', async (req, res) => {
         res.body = req.path
       })
       await sleep()
 
       const scoped = await createProxy(upstreamUrl + '/api/v1' + suffix)
-      const res1 = await fetch(`${scoped.server.publicUrl}/users`)
+      const res1 = await fetch(`${scoped.std.server.publicUrl}/users`)
       expect(res1.status).to.equal(200)
       expect(await res1.text()).to.equal('/api/v1/users')
       // a sibling of the target directory with the same prefix
-      const res2 = await fetch(`${scoped.server.publicUrl}/v10/secret`)
+      const res2 = await fetch(`${scoped.std.server.publicUrl}/v10/secret`)
       expect(res2.status).to.equal(200)
       expect(await res2.text()).to.equal('/api/v1/v10/secret')
 

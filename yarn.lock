@@ -1300,10 +1300,10 @@ __metadata:
     typescript: "npm:^5.9.3"
     vite: "npm:^7.3.2"
     vitest: "npm:^4.1.5"
-    yakumo: "npm:^3.4.2"
-    yakumo-esbuild: "npm:^3.1.1"
-    yakumo-tsc: "npm:^3.1.1"
-    yakumo-vitest: "npm:^1.4.1"
+    yakumo: "patch:yakumo@npm%3A3.4.2#~/.yarn/patches/yakumo-npm-3.4.2-e527abe6ed.patch"
+    yakumo-esbuild: "patch:yakumo-esbuild@npm%3A3.1.1#~/.yarn/patches/yakumo-esbuild-npm-3.1.1-9f5f8f52da.patch"
+    yakumo-tsc: "patch:yakumo-tsc@npm%3A3.1.1#~/.yarn/patches/yakumo-tsc-npm-3.1.1-4ed307d193.patch"
+    yakumo-vitest: "patch:yakumo-vitest@npm%3A1.4.1#~/.yarn/patches/yakumo-vitest-npm-1.4.1-e09ff4a335.patch"
   languageName: unknown
   linkType: soft
 
@@ -3920,7 +3920,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"yakumo-esbuild@npm:^3.1.1":
+"yakumo-esbuild@npm:3.1.1":
   version: 3.1.1
   resolution: "yakumo-esbuild@npm:3.1.1"
   dependencies:
@@ -3935,7 +3935,22 @@ __metadata:
   languageName: node
   linkType: hard
 
-"yakumo-tsc@npm:^3.1.1":
+"yakumo-esbuild@patch:yakumo-esbuild@npm%3A3.1.1#~/.yarn/patches/yakumo-esbuild-npm-3.1.1-9f5f8f52da.patch":
+  version: 3.1.1
+  resolution: "yakumo-esbuild@patch:yakumo-esbuild@npm%3A3.1.1#~/.yarn/patches/yakumo-esbuild-npm-3.1.1-9f5f8f52da.patch::version=3.1.1&hash=c4deda"
+  dependencies:
+    dumble: "npm:^0.2.3"
+    schemastery: "npm:^3.18.0"
+    tsconfig-utils: "npm:^4.2.0"
+  peerDependencies:
+    esbuild: "*"
+    typescript: "*"
+    yakumo: ^3.4.1
+  checksum: 10c0/ff9ffed67b579fd014d64bdce37d4c87b8adbb58e12e45ea5cf15ee612c799ee1be59f4b114638200128b8a2c0b19155729e42b8e5352997b40a65de0de523d8
+  languageName: node
+  linkType: hard
+
+"yakumo-tsc@npm:3.1.1":
   version: 3.1.1
   resolution: "yakumo-tsc@npm:3.1.1"
   dependencies:
@@ -3949,7 +3964,21 @@ __metadata:
   languageName: node
   linkType: hard
 
-"yakumo-vitest@npm:^1.4.1":
+"yakumo-tsc@patch:yakumo-tsc@npm%3A3.1.1#~/.yarn/patches/yakumo-tsc-npm-3.1.1-4ed307d193.patch":
+  version: 3.1.1
+  resolution: "yakumo-tsc@patch:yakumo-tsc@npm%3A3.1.1#~/.yarn/patches/yakumo-tsc-npm-3.1.1-4ed307d193.patch::version=3.1.1&hash=d40171"
+  dependencies:
+    atsc: "npm:^2.1.0"
+    dtsc: "npm:^3.1.0"
+    tsconfig-utils: "npm:^4.2.0"
+  peerDependencies:
+    typescript: "*"
+    yakumo: ^3.4.1
+  checksum: 10c0/0d10495b9fdf70100d7bdc122781a5eb3c5e7a3ec57ebbb4666fc7180bfa1e14608d64d66bf664b02cf0e36de055458730e991d05a448eb13cec857ba4bd5e0a
+  languageName: node
+  linkType: hard
+
+"yakumo-vitest@npm:1.4.1":
   version: 1.4.1
   resolution: "yakumo-vitest@npm:1.4.1"
   dependencies:
@@ -3963,7 +3992,21 @@ __metadata:
   languageName: node
   linkType: hard
 
-"yakumo@npm:^3.4.2":
+"yakumo-vitest@patch:yakumo-vitest@npm%3A1.4.1#~/.yarn/patches/yakumo-vitest-npm-1.4.1-e09ff4a335.patch":
+  version: 1.4.1
+  resolution: "yakumo-vitest@patch:yakumo-vitest@npm%3A1.4.1#~/.yarn/patches/yakumo-vitest-npm-1.4.1-e09ff4a335.patch::version=1.4.1&hash=c56f93"
+  dependencies:
+    globby: "npm:^14.1.0"
+    vite-tsconfig-paths: "npm:^6.1.1"
+  peerDependencies:
+    vite: ^6 || ^7
+    vitest: ^4
+    yakumo: ^3.4.1
+  checksum: 10c0/05b43d50dc7382fe310e4ff3b619140e4ceb1fe8d8dd9d7ff7f9588d3278fe04d27da0f2e1aa2cd3f973790b54e72488b5e7980245c4f86fa87fbb61ced67916
+  languageName: node
+  linkType: hard
+
+"yakumo@npm:3.4.2":
   version: 3.4.2
   resolution: "yakumo@npm:3.4.2"
   dependencies:
@@ -3988,6 +4031,34 @@ __metadata:
   bin:
     yakumo: lib/cli.js
   checksum: 10c0/3ca41817707c615799bc66357895c7a89acf2001069b3e6cc7d39884700ce6771bb09e02bf4ee111d643ea0b9f0177e2691b54dbda33dcaa3ebf6efd4c57211a
+  languageName: node
+  linkType: hard
+
+"yakumo@patch:yakumo@npm%3A3.4.2#~/.yarn/patches/yakumo-npm-3.4.2-e527abe6ed.patch":
+  version: 3.4.2
+  resolution: "yakumo@patch:yakumo@npm%3A3.4.2#~/.yarn/patches/yakumo-npm-3.4.2-e527abe6ed.patch::version=3.4.2&hash=63de57"
+  dependencies:
+    "@cordisjs/cli": "npm:^4.0.0"
+    "@cordisjs/fs": "npm:^2.0.0-rc.0"
+    "@cordisjs/fs-node": "npm:^0.1.0"
+    "@cordisjs/include": "npm:^2.0.0-rc.0"
+    "@cordisjs/loader": "npm:^1.0.0-rc.10"
+    "@npm/types": "npm:^2.1.0"
+    "@yarnpkg/parsers": "npm:^3.1.0"
+    cordis: "npm:^4.0.0-rc.13"
+    cosmokit: "npm:^1.8.1"
+    detect-indent: "npm:^7.0.2"
+    globby: "npm:^14.1.0"
+    kleur: "npm:^4.1.5"
+    ora: "npm:^8.2.0"
+    p-map: "npm:^7.1.1"
+    picomatch: "npm:^4.0.7"
+    prompts: "npm:^2.4.2"
+    semver: "npm:^7.8.6"
+    yaml: "npm:^2.9.1"
+  bin:
+    yakumo: lib/cli.js
+  checksum: 10c0/510a1b8f5a953541dc2fb55c758e01a15166ce94bb0449dd8dd16109fa634ec8fa7c0c3a11e76e98a6d90c2d8a6668f55bd59b7e90e3f7439056917b738fce14
   languageName: node
   linkType: hard
 

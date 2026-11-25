@@ -170,8 +170,8 @@ async function setup(dir: string) {
   await root.use(Fs, { baseUrl: pathToFileURL(dir).href })
   await root.use(PackageManager, { timeout: 120000 })
   let ctx!: Context
-  await root.inject(['packageManager'], (inner) => { ctx = inner })
-  return ctx.packageManager
+  await root.inject(['std:packageManager'], (inner) => { ctx = inner })
+  return ctx.std.packageManager
 }
 
 function toPosix(path: string) {

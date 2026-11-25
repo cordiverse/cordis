@@ -18,25 +18,25 @@ export type { InstallState, PackageChange, PackageState, StateDiff } from './sta
 
 declare module 'cordis' {
   interface Context {
-    packageManager: PackageManager
+    'std:packageManager': PackageManager
   }
 }
 
 class PackageManager extends Service {
-  static inject = ['fs']
+  static inject = ['std:fs']
 
-  /** the real path of the nearest directory with a `package.json` from `ctx.fs.baseUrl` */
+  /** the real path of the nearest directory with a `package.json` from `ctx.std.fs.baseUrl` */
   public root!: string
 
   private _queue: Promise<unknown> = Promise.resolve()
 
   constructor(ctx: Context, public config: PackageManager.Config) {
-    super(ctx, 'packageManager')
+    super(ctx, 'std:packageManager')
   }
 
   async* [Service.init]() {
     // Node.js has a working directory, so `baseUrl` is set
-    const start = fileURLToPath(this.ctx.fs.baseUrl!)
+    const start = fileURLToPath(this.ctx.std.fs.baseUrl!)
     let root = await realpath(start)
     while (!existsSync(join(root, 'package.json'))) {
       const parent = dirname(root)

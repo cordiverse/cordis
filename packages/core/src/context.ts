@@ -6,6 +6,14 @@ import { InjectKey, RegistryService } from './registry.ts'
 import { getTraceable, symbols } from './utils.ts'
 import { Fiber } from './fiber.ts'
 
+/**
+ * The properties `N:foo` of `C`, as the properties `foo` of an object.
+ * Properties whose remaining names contain a colon are excluded.
+ */
+export type Namespace<C, N extends string> = {
+  [K in keyof C as K extends `${N}:${infer R}` ? R extends `${string}:${string}` ? never : R : never]: C[K]
+}
+
 export interface Context {
   [symbols.root]: this
   [symbols.isolate]: Dict<symbol>
@@ -14,6 +22,7 @@ export interface Context {
   logger: LoggerService
   reflect: ReflectService
   registry: RegistryService
+  std: Namespace<this, 'std'>
 }
 
 export class Context {
@@ -42,6 +51,7 @@ export class Context {
     this.registry = new RegistryService(self)
     this.events = new EventsService(self)
     this.logger = new LoggerService(self)
+    this.reflect.namespace('std')
     this.fiber['_disposables'].clear()
     return self
   }

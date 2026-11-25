@@ -107,17 +107,17 @@ describe('Hmr with fs', () => {
     async function create(baseUrl?: string, intercept?: string) {
       ctx = new Context()
       await ctx.use(Fs, { baseUrl })
-      const scope = intercept === undefined ? ctx : ctx.intercept('fs', { baseUrl: intercept })
+      const scope = intercept === undefined ? ctx : ctx.intercept('std:fs', { baseUrl: intercept })
       fiber = await scope.use(Hmr, {} as Hmr.Config)
       // a trailing separator does not matter
-      return resolve(ctx.hmr.baseDir)
+      return resolve(ctx.std.hmr.baseDir)
     }
 
-    it('is the directory of `ctx.fs.baseUrl`', async () => {
+    it('is the directory of `ctx.std.fs.baseUrl`', async () => {
       expect(await create(new URL('.', import.meta.url).href)).to.equal(testDir)
     })
 
-    it('follows an `fs` intercept', async () => {
+    it('follows an `std:fs` intercept', async () => {
       expect(await create(new URL('.', import.meta.url).href, '..')).to.equal(dirname(testDir))
     })
 
@@ -131,7 +131,7 @@ describe('Hmr with fs', () => {
     })
   })
 
-  it('watches `files` in the directory of `ctx.fs.baseUrl`', async () => {
+  it('watches `files` in the directory of `ctx.std.fs.baseUrl`', async () => {
     const files = ['src', '!**/.*']
     await setup({ files }, new URL('__watch__/', import.meta.url).href)
     // a trailing separator does not matter
@@ -319,7 +319,7 @@ export const apply = ctx => ctx.on('hmr-watch/shadow', () => value)
   it('only reports a change to a host module', async () => {
     await setup()
     const path = await load('host.ts', component('host', 'v1'))
-    ctx.hmr.hostModules.add(pathToFileURL(path).href)
+    ctx.std.hmr.hostModules.add(pathToFileURL(path).href)
     const warnings: string[] = []
     ctx.logger.exporter({
       export(message) {

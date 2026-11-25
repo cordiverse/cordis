@@ -7,10 +7,10 @@ import { SocksClient, SocksProxy } from 'socks'
 import type { buildConnector } from 'undici'
 
 export const name = 'http-socks'
-export const inject = ['http']
+export const inject = ['std:http']
 
 export function apply(ctx: Context) {
-  ctx.http.proxy(['socks', 'socks4', 'socks4a', 'socks5', 'socks5h'], (url) => {
+  ctx.std.http.proxy(['socks', 'socks4', 'socks4a', 'socks5', 'socks5h'], (url) => {
     let shouldLookup = false
     let type: SocksProxy['type']
 
@@ -42,7 +42,7 @@ export function apply(ctx: Context) {
     const proxy: SocksProxy = { host, port, type }
     if (url.username) proxy.userId = decodeURIComponent(url.username)
     if (url.password) proxy.password = decodeURIComponent(url.password)
-    return new ctx.http.undici.Agent({ connect: createConnect(proxy, shouldLookup) })
+    return new ctx.std.http.undici.Agent({ connect: createConnect(proxy, shouldLookup) })
   })
 
   function resolvePort(protocol: string, port: string) {
@@ -51,7 +51,7 @@ export function apply(ctx: Context) {
 
   function createConnect(proxy: SocksProxy, shouldLookup: boolean, tlsOpts: buildConnector.BuildOptions = {}): buildConnector.connector {
     const { timeout = 10e3 } = tlsOpts
-    const connect = ctx.http.undici.buildConnector(tlsOpts)
+    const connect = ctx.std.http.undici.buildConnector(tlsOpts)
 
     return async (options, callback) => {
       let { protocol, hostname, port, httpSocket } = options

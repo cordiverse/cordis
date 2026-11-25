@@ -36,7 +36,7 @@ describe('env', () => {
       [`.env.${mode}.local`]: 'CORDIS_ENV_C=mode-local\n',
     })
     fibers.push(await ctx.plugin(env))
-    expect(ctx.get('env')).to.include({
+    expect(ctx.get('std:env')).to.include({
       CORDIS_ENV_A: 'env',
       CORDIS_ENV_B: 'local',
       CORDIS_ENV_C: 'mode-local',
@@ -49,7 +49,7 @@ describe('env', () => {
     })
     stub('CORDIS_ENV_A', 'process')
     fibers.push(await ctx.plugin(env))
-    expect(ctx.get('env')).to.include({ CORDIS_ENV_A: 'process', CORDIS_ENV_B: 'env' })
+    expect(ctx.get('std:env')).to.include({ CORDIS_ENV_A: 'process', CORDIS_ENV_B: 'env' })
   })
 
   it('takes a variable of the process environment of an empty value over the files', async () => {
@@ -58,7 +58,7 @@ describe('env', () => {
     })
     stub('CORDIS_ENV_A', '')
     fibers.push(await ctx.plugin(env))
-    expect(ctx.get('env')).to.include({ CORDIS_ENV_A: '', CORDIS_ENV_B: 'env' })
+    expect(ctx.get('std:env')).to.include({ CORDIS_ENV_A: '', CORDIS_ENV_B: 'env' })
   })
 
   it('does not modify the process environment', async () => {
@@ -68,7 +68,7 @@ describe('env', () => {
     stub('CORDIS_ENV_B', 'process')
     const before = { ...process.env }
     fibers.push(await ctx.plugin(env))
-    expect(ctx.get('env')?.CORDIS_ENV_A).to.equal('env')
+    expect(ctx.get('std:env')?.CORDIS_ENV_A).to.equal('env')
     expect(process.env).to.deep.equal(before)
   })
 
@@ -78,7 +78,7 @@ describe('env', () => {
       '.env': 'CORDIS_ENV_Z_HOST=localhost\nCORDIS_ENV_A_URL=http://${CORDIS_ENV_Z_HOST}/\n',
     })
     fibers.push(await ctx.plugin(env))
-    expect(ctx.get('env')?.CORDIS_ENV_A_URL).to.equal('http://localhost/')
+    expect(ctx.get('std:env')?.CORDIS_ENV_A_URL).to.equal('http://localhost/')
   })
 
   it('expands a reference to a variable of the process environment', async () => {
@@ -87,7 +87,7 @@ describe('env', () => {
     })
     stub('CORDIS_ENV_HOST', 'localhost')
     fibers.push(await ctx.plugin(env))
-    expect(ctx.get('env')?.CORDIS_ENV_URL).to.equal('http://localhost/')
+    expect(ctx.get('std:env')?.CORDIS_ENV_URL).to.equal('http://localhost/')
   })
 
   it('reads the files again on a restart', async () => {
@@ -96,28 +96,28 @@ describe('env', () => {
     })
     const fiber = await ctx.plugin(env)
     fibers.push(fiber)
-    await ctx.fs.file('.env').write('CORDIS_ENV_A=new\n')
+    await ctx.std.fs.file('.env').write('CORDIS_ENV_A=new\n')
     await fiber.restart()
-    expect(ctx.get('env')?.CORDIS_ENV_A).to.equal('new')
-    expect(ctx.get('env')).not.to.have.property('CORDIS_ENV_B')
+    expect(ctx.get('std:env')?.CORDIS_ENV_A).to.equal('new')
+    expect(ctx.get('std:env')).not.to.have.property('CORDIS_ENV_B')
   })
 
-  it('resolves the files against `ctx.fs.baseUrl`', async () => {
+  it('resolves the files against `ctx.std.fs.baseUrl`', async () => {
     const ctx = await setup({
       'mem://other/.env': 'CORDIS_ENV_A=other\n',
     })
-    const scoped = ctx.intercept('fs', { baseUrl: 'mem://other/' })
+    const scoped = ctx.intercept('std:fs', { baseUrl: 'mem://other/' })
     fibers.push(await scoped.plugin(env))
-    expect(ctx.get('env')?.CORDIS_ENV_A).to.equal('other')
+    expect(ctx.get('std:env')?.CORDIS_ENV_A).to.equal('other')
   })
 
-  it('provides `ctx.env` once the files are loaded', async () => {
+  it('provides `ctx.std.env` once the files are loaded', async () => {
     const ctx = await setup({
       '.env': 'CORDIS_ENV_A=env\n',
     })
     let value: string | undefined
-    const consumer = ctx.inject(['env'], (ctx) => {
-      value = ctx.env.CORDIS_ENV_A
+    const consumer = ctx.inject(['std:env'], (ctx) => {
+      value = ctx.std.env.CORDIS_ENV_A
     })
     fibers.push(consumer)
     fibers.push(await ctx.plugin(env))
@@ -125,12 +125,12 @@ describe('env', () => {
     expect(value).to.equal('env')
   })
 
-  it('provides a read-only `ctx.env`', async () => {
+  it('provides a read-only `ctx.std.env`', async () => {
     const ctx = await setup({
       '.env': 'CORDIS_ENV_A=env\n',
     })
     fibers.push(await ctx.plugin(env))
-    expect(Object.isFrozen(ctx.get('env'))).to.equal(true)
+    expect(Object.isFrozen(ctx.get('std:env'))).to.equal(true)
   })
 
   describe('populate', () => {
@@ -174,6 +174,6 @@ describe('env', () => {
     fibers.push(fiber)
     await fiber.await().catch(() => {})
     expect(fiber.state).to.equal(FiberState.FAILED)
-    expect(ctx.get('env')).to.be.undefined
+    expect(ctx.get('std:env')).to.be.undefined
   })
 })

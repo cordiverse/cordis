@@ -114,19 +114,19 @@ export class Command<A extends any[] = any[], O extends {} = {}> {
     this.description = desc
     const self = this
     this.dispose = ctx.effect(function* () {
-      yield ctx.cli['_commands'].push(self)
+      yield ctx.std.cli['_commands'].push(self)
       self._aliases[name] = {}
-      ctx.cli['_aliases'][name] = self
+      ctx.std.cli['_aliases'][name] = self
       yield () => {
         for (const name in self._aliases) {
-          delete ctx.cli['_aliases'][name]
+          delete ctx.std.cli['_aliases'][name]
         }
       }
     })
   }
 
   * [Service.init]() {
-    yield this.ctx.cli['_commands'].push(this)
+    yield this.ctx.std.cli['_commands'].push(this)
   }
 
   alias(name: string, alias: CommandAlias) {
@@ -135,8 +135,8 @@ export class Command<A extends any[] = any[], O extends {} = {}> {
       self._aliases[name] = alias
       yield () => delete self._aliases[name]
       if (name.startsWith('.')) return
-      self.ctx.cli['_aliases'][name] = self
-      yield () => delete self.ctx.cli['_aliases'][name]
+      self.ctx.std.cli['_aliases'][name] = self
+      yield () => delete self.ctx.std.cli['_aliases'][name]
     })
   }
 
@@ -164,7 +164,7 @@ export class Command<A extends any[] = any[], O extends {} = {}> {
       def = def.slice(cap.index + cap[0].length)
       names.push(camelize(cap[2]))
     }
-    const params = this.ctx.cli.parseParams(def, 'option')
+    const params = this.ctx.std.cli.parseParams(def, 'option')
     if (params.length > 1) {
       throw new TypeError('option accepts at most one argument')
     }
@@ -173,7 +173,7 @@ export class Command<A extends any[] = any[], O extends {} = {}> {
       if (!param) {
         throw new TypeError('option with type requires argument')
       }
-      Object.assign(param, this.ctx.cli.parseType(type))
+      Object.assign(param, this.ctx.std.cli.parseType(type))
     }
     const option: Option = {
       ...rest,

@@ -185,10 +185,10 @@ function createTraceable(ctx: Context, value: any, tracker: Tracker) {
       if (typeof prop === 'symbol') {
         return Reflect.get(target, prop, receiver)
       }
-      // `ctx` rather than `useSite`, so that `ctx.foo.bar` and `ctx['foo.bar']` are
+      // `ctx` rather than `useSite`, so that `ctx.foo.bar` and `ctx['foo:bar']` are
       // governed by the same def site
-      if (tracker.associate && useSite.reflect.props[`${tracker.associate}.${prop}`]) {
-        return Reflect.get(ctx, `${tracker.associate}.${prop}`, withProp(ctx, symbols.receiver, receiver))
+      if (tracker.associate && useSite.reflect.props[`${tracker.associate}:${prop}`]) {
+        return Reflect.get(ctx, `${tracker.associate}:${prop}`, withProp(ctx, symbols.receiver, receiver))
       }
       let shadow: any, innerValue: any
       const desc = getPropertyDescriptor(target, prop)
@@ -215,8 +215,8 @@ function createTraceable(ctx: Context, value: any, tracker: Tracker) {
       if (typeof prop === 'symbol') {
         return Reflect.set(target, prop, value, receiver)
       }
-      if (tracker.associate && useSite.reflect.props[`${tracker.associate}.${prop}`]) {
-        return Reflect.set(ctx, `${tracker.associate}.${prop}`, value, withProp(ctx, symbols.receiver, receiver))
+      if (tracker.associate && useSite.reflect.props[`${tracker.associate}:${prop}`]) {
+        return Reflect.set(ctx, `${tracker.associate}:${prop}`, value, withProp(ctx, symbols.receiver, receiver))
       }
       const shadow = createShadow(useSite, target, tracker.property, receiver)
       return Reflect.set(target, prop, value, shadow)

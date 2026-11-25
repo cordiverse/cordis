@@ -111,7 +111,7 @@ describe('responseType: event-stream', () => {
   })
 
   it('delivers events before the response ends and closes the connection when cancelled', async () => {
-    const stream = await ctx.http.get(url, { responseType: 'event-stream' })
+    const stream = await ctx.std.http.get(url, { responseType: 'event-stream' })
     const reader = stream.getReader()
     expect((await reader.read()).value).to.deep.equal({ event: 'message', data: 'first', id: '' })
     await reader.cancel()

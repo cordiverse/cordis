@@ -32,7 +32,7 @@ function encodeSegment(segment: string) {
   return encodeURIComponent(segment).replace(segmentChars, decodeURIComponent)
 }
 
-export const inject = ['http', 'server']
+export const inject = ['std:http', 'std:server']
 
 export function apply(ctx: Context, config: Config) {
   // the target as a directory, so that the paths of requests are resolved under it
@@ -49,18 +49,18 @@ export function apply(ctx: Context, config: Config) {
 
   const bodyMethods = new Set(['POST', 'PUT', 'PATCH'])
 
-  ctx.reflect.provide('server.proxy', {
+  ctx.reflect.provide('std:server:proxy', {
     get publicUrl() {
-      return ctx.server.publicUrl
+      return ctx.std.server.publicUrl
     },
   } satisfies ServerProxy)
 
-  ctx.server.all('{/*path}', async (req, res, next) => {
+  ctx.std.server.all('{/*path}', async (req, res, next) => {
     const url = locate(req.params.path)
     if (!url) return new Response(null, { status: 400, statusText: 'Bad Request' })
     url.search = req.query.toString()
     ctx.logger?.debug('%s %s -> %s', req.method, req.url, url.href)
-    const response = await ctx.http(url.href, {
+    const response = await ctx.std.http(url.href, {
       method: req.method as any,
       headers: req.headers,
       data: bodyMethods.has(req.method) ? req.body : undefined,
@@ -76,7 +76,7 @@ export function apply(ctx: Context, config: Config) {
     })
   })
 
-  ctx.server.ws('{/*path}', async (req, accept) => {
+  ctx.std.server.ws('{/*path}', async (req, accept) => {
     const httpUrl = locate(req.params.path)
     if (!httpUrl) {
       ctx.logger?.debug('WS %s is outside the target', req.url)
@@ -96,7 +96,7 @@ export function apply(ctx: Context, config: Config) {
       headers[k] = v
     }
 
-    const upstream = ctx.http.ws(wsUrl.href, { headers })
+    const upstream = ctx.std.http.ws(wsUrl.href, { headers })
 
     // WebSocket.close() spec: only 1000 or 3000-4999 are allowed from user code;
     // 1001-1015 are protocol-reserved and throw InvalidAccessError.

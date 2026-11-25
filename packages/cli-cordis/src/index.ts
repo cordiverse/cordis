@@ -9,7 +9,7 @@ import type { Config } from './worker/index.ts'
 import kleur from 'kleur'
 
 export const name = 'cli-cordis'
-export const inject = ['cli', 'fs']
+export const inject = ['std:cli', 'std:fs']
 
 interface Event {
   type: 'start' | 'shared' | 'heartbeat' | 'exit'
@@ -17,7 +17,7 @@ interface Event {
 }
 
 export function apply(ctx: Context, config: Config) {
-  ctx.cli
+  ctx.std.cli
     .command('', 'Meta-framework of spatiotemporal composability')
     .option('-v, --version', 'Show version')
     .action(({ options }) => {
@@ -28,12 +28,12 @@ export function apply(ctx: Context, config: Config) {
       }
     })
 
-  ctx.cli
+  ctx.std.cli
     .command('run [url]', 'Start a Cordis application')
     .option('-d, --daemon', 'Run as daemon', { default: config.daemon.enabled })
     .action(async ({ args, options }) => {
       const workerConfig: Config = { ...config }
-      workerConfig.baseUrl ??= ctx.fs.baseUrl?.href
+      workerConfig.baseUrl ??= ctx.std.fs.baseUrl?.href
       if (args[0]) {
         workerConfig.path = args[0]
       }

@@ -37,7 +37,7 @@
   "cordis": {
     "service": {
       "required": [
-        "http"
+        "std:http"
       ]
     }
   },

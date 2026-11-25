@@ -262,7 +262,7 @@ function seekExpr(content: string, document: Document, path: PropertyKey[], expr
 }
 
 export class Include extends EntryTree {
-  static inject = ['loader', 'fs']
+  static inject = ['loader', 'std:fs']
 
   public filename: string
   private url: URL
@@ -289,10 +289,10 @@ export class Include extends EntryTree {
   private _seq = 0
 
   constructor(ctx: Context, public config: Include.Config) {
-    const filename = fileURLToPath(ctx.fs.resolve(config.path))
+    const filename = fileURLToPath(ctx.std.fs.resolve(config.path))
     const url = pathToFileURL(filename)
     // the entries of the file resolve their references against its directory
-    super(ctx.intercept('fs', { baseUrl: new URL('.', url).href }))
+    super(ctx.intercept('std:fs', { baseUrl: new URL('.', url).href }))
     this.filename = filename
     this.url = url
     this.enableLogs = config.enableLogs ?? ctx[Entry.key]?.parent.tree.enableLogs ?? false
@@ -312,7 +312,7 @@ export class Include extends EntryTree {
     })
 
     if (config.watch) {
-      ctx.fs.watch(this.url).on('change', () => this.refresh())
+      ctx.std.fs.watch(this.url).on('change', () => this.refresh())
     }
   }
 
@@ -417,7 +417,7 @@ export class Include extends EntryTree {
   private async _read() {
     let content: string
     try {
-      content = await this.ctx.fs.file(this.url).text()
+      content = await this.ctx.std.fs.file(this.url).text()
     } catch (error) {
       throw new ConfigFileError('read', this.filename, error)
     }
@@ -484,7 +484,7 @@ export class Include extends EntryTree {
 
   private async _write() {
     if (!this.cache || !this.journal.size) return
-    const current = await this.ctx.fs.file(this.url).text().catch((error) => {
+    const current = await this.ctx.std.fs.file(this.url).text().catch((error) => {
       if (isNotFound(error)) return undefined
       throw error
     })
@@ -538,7 +538,7 @@ export class Include extends EntryTree {
     const text = this.dump(data)
 
     try {
-      await this.ctx.fs.access(this.url, 'write')
+      await this.ctx.std.fs.access(this.url, 'write')
     } catch {
       restore()
       this.ctx.logger.warn('config file %C is read-only, %d pending change(s) kept in memory', this.filename, this.journal.size)
@@ -569,17 +569,17 @@ export class Include extends EntryTree {
   private async _writeText(text: string, expected?: string) {
     const tmp = pathToFileURL(join(dirname(this.filename), `.${basename(this.filename)}.${process.pid}.${this._seq++}.tmp`))
     try {
-      await this.ctx.fs.file(tmp).write(text)
+      await this.ctx.std.fs.file(tmp).write(text)
       for (let attempt = 0; ; attempt++) {
         if (expected !== undefined) {
-          const current = await this.ctx.fs.file(this.url).text().catch((error) => {
+          const current = await this.ctx.std.fs.file(this.url).text().catch((error) => {
             if (isNotFound(error)) return undefined
             throw error
           })
           if (current !== expected) throw new StaleWriteError()
         }
         try {
-          await this.ctx.fs.rename(tmp, this.url)
+          await this.ctx.std.fs.rename(tmp, this.url)
           return
         } catch (error) {
           if (attempt >= RENAME_RETRIES || !isTransientRenameError(error)) throw error
@@ -587,7 +587,7 @@ export class Include extends EntryTree {
         await sleep(RENAME_BACKOFF * (attempt + 1))
       }
     } catch (error) {
-      await this.ctx.fs.remove(tmp, { force: true }).catch(() => {})
+      await this.ctx.std.fs.remove(tmp, { force: true }).catch(() => {})
       throw error
     }
   }

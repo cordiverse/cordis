@@ -12,7 +12,7 @@ import z from 'schemastery'
 
 declare module 'cordis' {
   interface Context {
-    hmr: Hmr
+    'std:hmr': Hmr
   }
 }
 
@@ -144,9 +144,9 @@ function canonical(path: string) {
 }
 
 class Hmr extends Service {
-  static inject = ['fs']
+  static inject = ['std:fs']
 
-  /** The local path of `ctx.fs.baseUrl`. `watch.files` and logged paths are relative to it. */
+  /** The local path of `ctx.std.fs.baseUrl`. `watch.files` and logged paths are relative to it. */
   public baseDir: string
 
   /** Node's internal ESM loader. */
@@ -168,7 +168,7 @@ class Hmr extends Service {
   private _storage = new AsyncLocalStorage<symbol>()
 
   constructor(ctx: Context, public config: Hmr.Config) {
-    super(ctx, 'hmr')
+    super(ctx, 'std:hmr')
     const loader = ModuleLoader.fromInternal()
     if (!loader) {
       throw new Error('loader internals are unavailable, pass --expose-internals or install node-addon-require-builtin')
@@ -178,7 +178,7 @@ class Hmr extends Service {
     ctx.effect(() => activate())
 
     // Node.js has a working directory, so `baseUrl` is set
-    this.baseDir = fileURLToPath(ctx.fs.baseUrl!)
+    this.baseDir = fileURLToPath(ctx.std.fs.baseUrl!)
 
     this._watch(ctx)
   }
@@ -228,7 +228,7 @@ class Hmr extends Service {
       }
     }
 
-    ctx.fs.watch(pathToFileURL(this.baseDir), { filter: files }).on('change', (url) => {
+    ctx.std.fs.watch(pathToFileURL(this.baseDir), { filter: files }).on('change', (url) => {
       const filename = fileURLToPath(url)
       this.ctx.logger.debug('change detected at %C', relative(this.baseDir, filename))
       // module URLs are real paths, while the watcher reports the spelling it was given
@@ -762,12 +762,12 @@ namespace Hmr {
 
   export const Config: z<Config> = z.object({
     watch: z.object({
-      enabled: z.boolean().default(false).description('Reload on file changes. Requires the `fs` service.'),
+      enabled: z.boolean().default(false).description('Reload on file changes. Requires the `std:fs` service.'),
       files: z.array(String).role('table').default([
         '.',
         '!**/node_modules',
         '!**/.*',
-      ]).description('Files to watch, in glob patterns relative to `ctx.fs.baseUrl`, as `filter` of `ctx.fs.watch()`.'),
+      ]).description('Files to watch, in glob patterns relative to `ctx.std.fs.baseUrl`, as `filter` of `ctx.std.fs.watch()`.'),
       debounce: z.natural().role('ms').default(100).description('Debounce changes before reloading, in milliseconds.'),
     }).description('Watch'),
   })

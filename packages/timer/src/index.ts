@@ -2,7 +2,7 @@ import { Context, Service } from 'cordis'
 
 declare module 'cordis' {
   interface Context extends Pick<TimerService, 'interval' | 'timeout' | 'throttle' | 'debounce' | 'setTimeout' | 'setInterval'> {
-    timer: TimerService
+    'std:timer': TimerService
   }
 }
 
@@ -10,8 +10,8 @@ type Scheduled<F extends (...args: any[]) => any> = ((...args: Parameters<F>) =>
 
 export class TimerService extends Service {
   constructor(ctx: Context) {
-    super(ctx, 'timer')
-    ctx.mixin('timer', ['timeout', 'interval', 'throttle', 'debounce', 'setTimeout', 'setInterval'])
+    super(ctx, 'std:timer')
+    ctx.mixin('std:timer', ['timeout', 'interval', 'throttle', 'debounce', 'setTimeout', 'setInterval'])
   }
 
   /** @deprecated use `ctx.timeout()` instead */

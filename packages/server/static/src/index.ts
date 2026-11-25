@@ -19,7 +19,7 @@ export interface Config {
 }
 
 export const Config: z<Config> = z.object({
-  root: z.string().required().description('The directory to serve, resolved against `ctx.fs.baseUrl`.'),
+  root: z.string().required().description('The directory to serve, resolved against `ctx.std.fs.baseUrl`.'),
   disposition: z.union(['attachment', 'inline']).description('The `Content-Disposition` of the files: `attachment` for a download, and `inline` for display. Without it, none is sent.'),
   fallthrough: z.boolean().description('Pass a request for a missing file to the next route, instead of responding with 404.'),
   exclude: z.array(String).description('Files that are not served, in glob patterns relative to `root`. A request for such a file is answered as for a missing one.'),
@@ -31,7 +31,7 @@ export const Config: z<Config> = z.object({
 
 export const name = 'server:static'
 
-export const inject = ['server', 'fs']
+export const inject = ['std:server', 'std:fs']
 
 // encodes each segment of a decoded path, keeping `.` and `..` as dot segments
 function encodePath(path: string) {
@@ -56,9 +56,9 @@ function getStatus(error?: FsError): [status: number, statusText: string] {
 }
 
 export function apply(ctx: Context, config: Config) {
-  // the root as a base URL of `ctx.fs`, which names the directory that contains every location served
+  // the root as a base URL of `ctx.std.fs`, which names the directory that contains every location served
   // set by the intercept, which fails on a path without an outer base URL
-  const root = ctx.intercept('fs', { baseUrl: config.root }).fs.baseUrl!
+  const root = ctx.intercept('std:fs', { baseUrl: config.root }).std.fs.baseUrl!
   const isExcluded = config.exclude.length ? picomatch(config.exclude, { dot: true }) : () => false
 
   // The location of a path under the root, or `undefined` outside of it. The
@@ -79,7 +79,7 @@ export function apply(ctx: Context, config: Config) {
   async function detectType(url: URL) {
     let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
     try {
-      const source = reader = ctx.fs.file(url).stream().getReader()
+      const source = reader = ctx.std.fs.file(url).stream().getReader()
       const probe = new ReadableStream<Uint8Array>({
         async pull(controller) {
           const { done, value } = await source.read()
@@ -102,7 +102,7 @@ export function apply(ctx: Context, config: Config) {
     let reader: ReadableStreamDefaultReader<Uint8Array>
     let first: ReadableStreamReadResult<Uint8Array>
     try {
-      reader = ctx.fs.file(url).stream().getReader()
+      reader = ctx.std.fs.file(url).stream().getReader()
       first = await reader.read()
     } catch (error) {
       if (!(error instanceof FsError)) throw error
@@ -155,7 +155,7 @@ export function apply(ctx: Context, config: Config) {
     return result
   }
 
-  ctx.server.get('{/*path}', async (req, res, next) => {
+  ctx.std.server.get('{/*path}', async (req, res, next) => {
     const url = locate(req.params.path?.replace(/^\/+/, '') ?? '')
     let status: number, statusText: string
     if (!url) {

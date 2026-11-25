@@ -11,7 +11,7 @@ export * from './event-stream.ts'
 
 declare module 'cordis' {
   interface Context {
-    http: Http
+    'std:http': Http
   }
 
   interface Intercept {
@@ -213,14 +213,14 @@ export class Http extends Service<Http.Intercept> {
   static Config: z<Http.Config> = z.object({
     timeout: z.natural().role('ms').description('The time to wait for a response before the request is aborted, in milliseconds.'),
     keepAlive: z.boolean().description('Set the `keepalive` option of `fetch()`, which allows the request to outlive the context that sends it.'),
-    proxyAgent: z.string().description('The URL of the proxy server, such as `http://127.0.0.1:7890`. Its protocol requires a proxy agent registered through `ctx.http.proxy()`.'),
+    proxyAgent: z.string().description('The URL of the proxy server, such as `http://127.0.0.1:7890`. Its protocol requires a proxy agent registered through `ctx.std.http.proxy()`.'),
   })
 
   Config: z<Http.Config> = z.object({
     baseUrl: z.string().description('The base URL against which relative request URLs are resolved.'),
     timeout: z.natural().role('ms').description('The time to wait for a response before the request is aborted, in milliseconds.'),
     keepAlive: z.boolean().description('Set the `keepalive` option of `fetch()`, which allows the request to outlive the context that sends it.'),
-    proxyAgent: z.string().description('The URL of the proxy server, such as `http://127.0.0.1:7890`. Its protocol requires a proxy agent registered through `ctx.http.proxy()`.'),
+    proxyAgent: z.string().description('The URL of the proxy server, such as `http://127.0.0.1:7890`. Its protocol requires a proxy agent registered through `ctx.std.http.proxy()`.'),
   })
 
   public isError = HttpError.is
@@ -229,7 +229,7 @@ export class Http extends Service<Http.Intercept> {
   private _proxies: Dict<(url: URL) => Dispatcher> = Object.create(null)
 
   constructor(ctx: Context, public config: Http.Config = {}) {
-    super(ctx, 'http')
+    super(ctx, 'std:http')
 
     this.decoder('json', (raw) => raw.json())
     this.decoder('text', (raw) => raw.text())
@@ -299,7 +299,7 @@ export class Http extends Service<Http.Intercept> {
     return this.ctx.effect(() => {
       this._decoders[type] = decoder
       return () => delete this._decoders[type]
-    }, 'ctx.http.decoder()')
+    }, 'ctx.std.http.decoder()')
   }
 
   proxy(name: string[], factory: (url: URL) => Dispatcher) {
@@ -312,7 +312,7 @@ export class Http extends Service<Http.Intercept> {
           delete this._proxies[key]
         }
       }
-    }, 'ctx.http.proxy()')
+    }, 'ctx.std.http.proxy()')
   }
 
   extend(config: Http.Config = {}) {
