@@ -11,7 +11,7 @@ export * from './body.ts'
 
 declare module 'cordis' {
   interface Context {
-    server: Server
+    'std:server': Server
   }
 
   interface Events {
@@ -107,7 +107,7 @@ export class WsRoute extends Route {
           socket.close()
         }
       }
-    }, `ctx.server.ws(${typeof path === 'string' ? JSON.stringify(path) : path})`)
+    }, `ctx.std.server.ws(${typeof path === 'string' ? JSON.stringify(path) : path})`)
   }
 }
 
@@ -125,7 +125,7 @@ export class HttpRoute extends Route {
     const self = this
     this.dispose = server.ctx.effect(function* () {
       yield server.httpRoutes.push(self)
-    }, `ctx.server.${method}(${typeof path === 'string' ? JSON.stringify(path) : path})`)
+    }, `ctx.std.server.${method}(${typeof path === 'string' ? JSON.stringify(path) : path})`)
   }
 }
 
@@ -167,7 +167,7 @@ class Server extends Service<Server.Intercept> {
   public port!: number
 
   constructor(public ctx: Context, public config: Server.Config) {
-    super(ctx, 'server')
+    super(ctx, 'std:server')
 
     this._http = http.createServer()
 

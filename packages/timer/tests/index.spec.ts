@@ -10,14 +10,14 @@ function withContext(callback: (ctx: Context) => any, config?: { now?: number | 
     vi.useFakeTimers(config)
     await ctx.use(Timer)
     try {
-      await ctx.use({ inject: ['timer'], apply: callback })
+      await ctx.use({ inject: ['std:timer'], apply: callback })
     } finally {
       vi.useRealTimers()
     }
   }
 }
 
-describe('ctx.timer', () => {
+describe('ctx.std.timer', () => {
   describe('ctx.timeout()', () => {
     it('basic support', withContext(async (ctx) => {
       const callback = mock.fn()
@@ -212,7 +212,7 @@ describe('ctx.timer', () => {
       const callback = mock.fn()
       let iterator!: AsyncIterableIterator<void>
       const fiber = await ctx.use({
-        inject: ['timer'],
+        inject: ['std:timer'],
         apply: (ctx) => {
           iterator = ctx.interval(1000)
         },
@@ -240,7 +240,7 @@ describe('ctx.timer', () => {
     it('async iterator (context dispose with concurrent reads)', withContext(async (ctx) => {
       let iterator!: AsyncIterableIterator<void>
       const fiber = await ctx.use({
-        inject: ['timer'],
+        inject: ['std:timer'],
         apply: (ctx) => {
           iterator = ctx.interval(1000)
         },
@@ -324,7 +324,7 @@ describe('ctx.timer', () => {
       const callback = mock.fn()
       let throttled!: () => void
       const fiber = await ctx.use({
-        inject: ['timer'],
+        inject: ['std:timer'],
         apply: (ctx) => {
           throttled = ctx.throttle(callback, 1000)
         },
@@ -367,7 +367,7 @@ describe('ctx.timer', () => {
       const callback = mock.fn()
       let throttled!: () => void
       const fiber = await ctx.use({
-        inject: ['timer'],
+        inject: ['std:timer'],
         apply: (ctx) => {
           throttled = ctx.throttle(() => {
             callback()
@@ -413,7 +413,7 @@ describe('ctx.timer', () => {
       const callback = mock.fn()
       let debounced!: () => void
       const fiber = await ctx.use({
-        inject: ['timer'],
+        inject: ['std:timer'],
         apply: (ctx) => {
           debounced = ctx.debounce(callback, 1000)
         },

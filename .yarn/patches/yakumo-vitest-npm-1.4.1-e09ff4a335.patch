@@ -1,0 +1,22 @@
+diff --git a/lib/index.js b/lib/index.js
+index 1d45363c5f8990b6340955ed03f82b7b3dccf078..990dda57dfd14b2653136421998ed84f2526e6e4 100644
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -8,7 +8,7 @@ import tsconfigPaths from "vite-tsconfig-paths";
+ import { globby } from "globby";
+ import { existsSync } from "node:fs";
+ import { dirname, resolve } from "node:path";
+-var inject = ["yakumo", "cli"];
++var inject = ["yakumo", "std:cli"];
+ var EXCLUDE = [...defaultExclude, "**/.claude/**"];
+ var CONFIG_NAMES = [
+   "vitest.config.ts",
+@@ -32,7 +32,7 @@ function findConfigRoot(file, floor) {
+ }
+ __name(findConfigRoot, "findConfigRoot");
+ function apply(ctx) {
+-  ctx.cli.command("vitest [...packages]", "Run tests with vitest").option("-w, --watch", "Watch mode").option("-u, --update", "Update snapshots").option("-b, --bail [bail:integer]", "Stop after first N failures").option("-t, --test-timeout [ms:integer]", "Per-test timeout in milliseconds").option("--coverage", "Collect coverage (requires @vitest/coverage-v8)").option("--coverage.reporter [...reporter]", "Coverage reporter(s): text, html, json, lcov, ...").action(async ({ args, options }) => {
++  ctx.std.cli.command("vitest [...packages]", "Run tests with vitest").option("-w, --watch", "Watch mode").option("-u, --update", "Update snapshots").option("-b, --bail [bail:integer]", "Stop after first N failures").option("-t, --test-timeout [ms:integer]", "Per-test timeout in milliseconds").option("--coverage", "Collect coverage (requires @vitest/coverage-v8)").option("--coverage.reporter [...reporter]", "Coverage reporter(s): text, html, json, lcov, ...").action(async ({ args, options }) => {
+     await ctx.yakumo.initialize();
+     function getPatterns(names) {
+       if (!names.length) return ["**/tests/*.spec.ts"];

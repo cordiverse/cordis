@@ -30,7 +30,7 @@
   "cordis": {
     "service": {
       "implements": [
-        "fs"
+        "std:fs"
       ]
     }
   },

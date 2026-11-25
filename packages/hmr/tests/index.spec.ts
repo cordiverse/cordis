@@ -71,7 +71,7 @@ async function createContext(group: string, configFile: string): Promise<{ ctx: 
       path: pathToFileURL(resolve(dir, configFile)).href,
     },
   })
-  await waitFor(() => ctx.get('hmr'), 5000)
+  await waitFor(() => ctx.get('std:hmr'), 5000)
   return { ctx, fiber }
 }
 
@@ -173,7 +173,7 @@ describe('HMR', () => {
 
     afterEach(async () => {
       treeDep.restore()
-      await ctx.hmr.reconcile(() => [treeDep.path])
+      await ctx.std.hmr.reconcile(() => [treeDep.path])
     })
 
     afterAll(async () => {
@@ -188,7 +188,7 @@ describe('HMR', () => {
       // one change, two entries in the batch: the tree host and the entry
       // nested two fiber levels below it
       treeDep.modify(c => c.replace("version = 'tree-v1'", "version = 'tree-v2'"))
-      const result = await ctx.hmr.reconcile(() => [treeDep.path])
+      const result = await ctx.std.hmr.reconcile(() => [treeDep.path])
       expect(result.settled.map(fiber => fiber.state)).to.not.include(FiberState.FAILED)
 
       expect(ctx.bail('hmr-test/get-tree')).to.equal('tree-v2')
@@ -206,7 +206,7 @@ describe('HMR', () => {
       // which defers its own unload and keeps the intermediate fiber active
       stats.stallTreeInit = 3000
       treeDep.modify(c => c.replace("version = 'tree-v1'", "version = 'tree-v2'"))
-      const first = ctx.hmr.reconcile(() => [treeDep.path])
+      const first = ctx.std.hmr.reconcile(() => [treeDep.path])
       await waitFor(() => ctx.bail('hmr-test/get-nested') === 'tree-v2')
 
       // Batch 2 arrives while the host is still stalled. Batch 1 waits for the
@@ -214,7 +214,7 @@ describe('HMR', () => {
       // that the queue keeps the two from overlapping.
       stats.stallTreeInit = 0
       treeDep.write(treeDep.original.replace("version = 'tree-v1'", "version = 'tree-v3'"))
-      const results = await Promise.all([first, ctx.hmr.reconcile(() => [treeDep.path])])
+      const results = await Promise.all([first, ctx.std.hmr.reconcile(() => [treeDep.path])])
       expect(results.flatMap(result => result.settled).map(fiber => fiber.state)).to.not.include(FiberState.FAILED)
 
       expect(ctx.bail('hmr-test/get-tree')).to.equal('tree-v3')
@@ -237,7 +237,7 @@ describe('HMR', () => {
 
     afterEach(async () => {
       drainDep.restore()
-      await ctx.hmr.reconcile(() => [drainDep.path])
+      await ctx.std.hmr.reconcile(() => [drainDep.path])
     })
 
     afterAll(async () => {
@@ -251,7 +251,7 @@ describe('HMR', () => {
       const overlaps = stats.slowOverlaps ?? 0
 
       drainDep.modify(c => c.replace("version = 'drain-v1'", "version = 'drain-v2'"))
-      await ctx.hmr.reconcile(() => [drainDep.path])
+      await ctx.std.hmr.reconcile(() => [drainDep.path])
       expect(ctx.bail('hmr-test/get-slow')).to.equal('drain-v2')
 
       expect((stats.slowOverlaps ?? 0) - overlaps).to.equal(0)
@@ -262,7 +262,7 @@ describe('HMR', () => {
       await waitFor(() => ctx.bail('hmr-test/get-fast') === 'drain-v1')
 
       drainDep.modify(c => c.replace("version = 'drain-v1'", "version = 'drain-v3'"))
-      const reloaded = ctx.hmr.reconcile(() => [drainDep.path])
+      const reloaded = ctx.std.hmr.reconcile(() => [drainDep.path])
       await waitFor(() => ctx.bail('hmr-test/get-fast') === 'drain-v3')
       const fastAppliedAt = stats.fastAppliedAt
       await reloaded
@@ -288,7 +288,7 @@ describe('HMR', () => {
 
     afterEach(async () => {
       componentMulti.restore()
-      await ctx.hmr.reconcile(() => [componentMulti.path])
+      await ctx.std.hmr.reconcile(() => [componentMulti.path])
     })
 
     afterAll(async () => {
@@ -304,7 +304,7 @@ describe('HMR', () => {
 
       stats.multiApplies = []
       componentMulti.modify(c => c.replace("version = 'multi-v1'", "version = 'multi-v2'"))
-      const result = await ctx.hmr.reconcile(() => [componentMulti.path])
+      const result = await ctx.std.hmr.reconcile(() => [componentMulti.path])
 
       expect(result.settled).to.have.length(2)
       // exactly one new instance per entry, each with its own config intact
@@ -344,7 +344,7 @@ describe('HMR', () => {
         entry = undefined
       }
       component.restore()
-      const reloaded = ctx.hmr.reconcile(() => [component.path])
+      const reloaded = ctx.std.hmr.reconcile(() => [component.path])
       await reloaded
       if (!entry) {
         // The reload above does not reimport a component that is no longer an entry.
@@ -367,7 +367,7 @@ describe('HMR', () => {
       const previous = entry.innerFiber!
       const inside = arm(gate)
       component.modify(content => content.replace("value = 'initial'", "value = 'should-not-live'"))
-      const reloaded = ctx.hmr.reconcile(() => [component.path])
+      const reloaded = ctx.std.hmr.reconcile(() => [component.path])
       await inside
 
       await entry.update({ disabled: true })
@@ -387,7 +387,7 @@ describe('HMR', () => {
       const previous = entry.innerFiber!
       const inside = arm(gate)
       component.modify(content => content.replace("value = 'initial'", "value = 'removed-value'"))
-      const reloaded = ctx.hmr.reconcile(() => [component.path])
+      const reloaded = ctx.std.hmr.reconcile(() => [component.path])
       await inside
 
       entry.parent.remove(entry.options.id)
@@ -408,7 +408,7 @@ describe('HMR', () => {
       const previous = entry.innerFiber!
       const inside = arm(gate)
       component.modify(content => content.replace("value = 'initial'", "value = 'second-init'"))
-      const reloaded = ctx.hmr.reconcile(() => [component.path])
+      const reloaded = ctx.std.hmr.reconcile(() => [component.path])
       await inside
 
       let releaseFirst!: () => void
@@ -478,7 +478,7 @@ describe('HMR', () => {
 
       const inside = arm(gate)
       component.modify(content => content.replace("value = 'initial'", "value = 'from-host'"))
-      const reloaded = ctx.hmr.reconcile(() => [component.path])
+      const reloaded = ctx.std.hmr.reconcile(() => [component.path])
       await inside
       await waitFor(() => gate.acquired === 0)
       gate.release?.()
@@ -514,7 +514,7 @@ describe('HMR', () => {
 
         const inside = arm(gate)
         component.modify(content => content.replace("value = 'initial'", "value = 'host-replaced'"))
-        const reloaded = ctx.hmr.reconcile(() => [component.path])
+        const reloaded = ctx.std.hmr.reconcile(() => [component.path])
         await inside
         await waitFor(() => gate.acquired === 0)
 

@@ -55,7 +55,7 @@ describe('Fs', () => {
     it('rejects a prefix that is not a location', async () => {
       const ctx = await setup()
       for (const prefix of ['mem://bucket/%2F', 'mem://bucket/a?x']) {
-        expect(() => ctx.fs.mount(prefix, fakeProvider())).to.throw(FsError).with.property('code', 'InvalidPath')
+        expect(() => ctx.std.fs.mount(prefix, fakeProvider())).to.throw(FsError).with.property('code', 'InvalidPath')
       }
     })
 
@@ -63,12 +63,12 @@ describe('Fs', () => {
       const ctx = await setup()
       const outer = fakeProvider()
       const inner = fakeProvider()
-      ctx.fs.mount('file:///', outer)
-      ctx.fs.mount('file:///data/', inner)
+      ctx.std.fs.mount('file:///', outer)
+      ctx.std.fs.mount('file:///data/', inner)
 
-      ctx.fs.watch('file:///data/a.txt')
-      ctx.fs.watch('file:///data')
-      ctx.fs.watch('file:///database/a.txt')
+      ctx.std.fs.watch('file:///data/a.txt')
+      ctx.std.fs.watch('file:///data')
+      ctx.std.fs.watch('file:///database/a.txt')
       expect(inner.calls.map(call => call.url.href)).to.deep.equal(['file:///data/a.txt', 'file:///data'])
       expect(outer.calls.map(call => call.url.href)).to.deep.equal(['file:///database/a.txt'])
     })
@@ -76,9 +76,9 @@ describe('Fs', () => {
     it('forwards every location of a scheme to the provider mounted at it', async () => {
       const ctx = await setup()
       const provider = fakeProvider()
-      ctx.fs.mount('mem:', provider)
+      ctx.std.fs.mount('mem:', provider)
 
-      ctx.fs.watch('mem://bucket/a.txt')
+      ctx.std.fs.watch('mem://bucket/a.txt')
       expect(provider.calls.map(call => call.url.href)).to.deep.equal(['mem://bucket/a.txt'])
     })
 
@@ -86,28 +86,28 @@ describe('Fs', () => {
       const ctx = await setup()
       const fallback = fakeProvider()
       const provider = fakeProvider()
-      ctx.fs.mount('', fallback)
-      ctx.fs.mount('mem:', provider)
+      ctx.std.fs.mount('', fallback)
+      ctx.std.fs.mount('mem:', provider)
 
-      ctx.fs.watch('mem://bucket/a.txt')
-      ctx.fs.watch('file:///a.txt')
-      ctx.fs.watch('https://example.com/a.txt')
+      ctx.std.fs.watch('mem://bucket/a.txt')
+      ctx.std.fs.watch('file:///a.txt')
+      ctx.std.fs.watch('https://example.com/a.txt')
       expect(provider.calls.map(call => call.url.href)).to.deep.equal(['mem://bucket/a.txt'])
       expect(fallback.calls.map(call => call.url.href)).to.deep.equal(['file:///a.txt', 'https://example.com/a.txt'])
     })
 
     it('rejects a second provider at the same prefix', async () => {
       const ctx = await setup()
-      ctx.fs.mount('file:///data', fakeProvider())
-      expect(() => ctx.fs.mount('file:///data/', fakeProvider())).to.throw(/already mounted/)
+      ctx.std.fs.mount('file:///data', fakeProvider())
+      expect(() => ctx.std.fs.mount('file:///data/', fakeProvider())).to.throw(/already mounted/)
     })
 
     it('throws `NoProvider` for a location without a provider', async () => {
       const ctx = await setup()
-      ctx.fs.mount('file:///data/', fakeProvider())
+      ctx.std.fs.mount('file:///data/', fakeProvider())
       const error = (() => {
         try {
-          ctx.fs.watch('file:///other/a.txt')
+          ctx.std.fs.watch('file:///other/a.txt')
         } catch (error) {
           return error
         }
@@ -118,34 +118,34 @@ describe('Fs', () => {
 
     it('throws `NotSupported` for an operation the provider does not implement', async () => {
       const ctx = await setup()
-      ctx.fs.mount('file:///', {})
-      expect(() => ctx.fs.watch('file:///a.txt')).to.throw(FsError).with.property('code', 'NotSupported')
+      ctx.std.fs.mount('file:///', {})
+      expect(() => ctx.std.fs.watch('file:///a.txt')).to.throw(FsError).with.property('code', 'NotSupported')
     })
 
     it('stops the watches of a mount with the calling fiber, and keeps them', async () => {
       const ctx = await setup()
       const provider = fakeProvider()
       const errors: unknown[] = []
-      const mount = await ctx.inject(['fs'], (ctx) => {
-        ctx.fs.mount('file:///', provider)
+      const mount = await ctx.inject(['std:fs'], (ctx) => {
+        ctx.std.fs.mount('file:///', provider)
       })
-      const watcher = ctx.fs.watch('file:///a.txt')
+      const watcher = ctx.std.fs.watch('file:///a.txt')
       watcher.on('error', (error) => { errors.push(error) })
 
       await mount.dispose()
       expect(provider.calls.map(call => call.stopped)).to.deep.equal([true])
       expect(errors).to.deep.equal([])
-      expect(() => ctx.fs.watch('file:///b.txt')).to.throw(FsError)
+      expect(() => ctx.std.fs.watch('file:///b.txt')).to.throw(FsError)
     })
 
     it('resumes a watch on a provider mounted again, without another `ready`', async () => {
       const ctx = await setup()
       const first = fakeProvider()
       const second = fakeProvider()
-      const mount = await ctx.inject(['fs'], (ctx) => {
-        ctx.fs.mount('mem:', first)
+      const mount = await ctx.inject(['std:fs'], (ctx) => {
+        ctx.std.fs.mount('mem:', first)
       })
-      const watcher = ctx.fs.watch('mem://bucket/a.txt')
+      const watcher = ctx.std.fs.watch('mem://bucket/a.txt')
       const ready = vi.fn()
       const changes: string[] = []
       watcher.on('ready', ready)
@@ -154,7 +154,7 @@ describe('Fs', () => {
       await vi.waitFor(() => expect(ready).toHaveBeenCalledTimes(1))
 
       await mount.dispose()
-      ctx.fs.mount('mem:', second)
+      ctx.std.fs.mount('mem:', second)
       expect(second.calls.map(call => call.url.href)).to.deep.equal(['mem://bucket/a.txt'])
       second.calls[0].watcher.emit('ready')
       second.calls[0].watcher.emit('change', new URL('mem://bucket/a.txt'))
@@ -166,10 +166,10 @@ describe('Fs', () => {
       const ctx = await setup()
       const outer = fakeProvider()
       const inner = fakeProvider()
-      ctx.fs.mount('file:///', outer)
-      ctx.fs.watch('file:///data/a.txt')
-      const mount = await ctx.inject(['fs'], (ctx) => {
-        ctx.fs.mount('file:///data/', inner)
+      ctx.std.fs.mount('file:///', outer)
+      ctx.std.fs.watch('file:///data/a.txt')
+      const mount = await ctx.inject(['std:fs'], (ctx) => {
+        ctx.std.fs.mount('file:///data/', inner)
       })
       expect(outer.calls.map(call => call.stopped)).to.deep.equal([true])
       expect(inner.calls.map(call => call.url.href)).to.deep.equal(['file:///data/a.txt'])
@@ -181,15 +181,15 @@ describe('Fs', () => {
 
     it('reports an error of a provider that takes over a watch', async () => {
       const ctx = await setup()
-      const mount = await ctx.inject(['fs'], (ctx) => {
-        ctx.fs.mount('mem:', fakeProvider())
+      const mount = await ctx.inject(['std:fs'], (ctx) => {
+        ctx.std.fs.mount('mem:', fakeProvider())
       })
-      const watcher = ctx.fs.watch('mem://a.txt')
+      const watcher = ctx.std.fs.watch('mem://a.txt')
       const errors: unknown[] = []
       watcher.on('error', (error) => { errors.push(error) })
       await mount.dispose()
 
-      ctx.fs.mount('mem:', {})
+      ctx.std.fs.mount('mem:', {})
       expect(errors).to.have.length(1)
       expect(errors[0]).to.include({ code: 'NotSupported' })
     })
@@ -197,14 +197,14 @@ describe('Fs', () => {
     it('stops the watch of the provider when the calling fiber ends', async () => {
       const ctx = await setup()
       const provider = fakeProvider()
-      ctx.fs.mount('mem:', provider)
-      const fiber = await ctx.inject(['fs'], (ctx) => {
-        ctx.fs.watch('mem://a.txt')
+      ctx.std.fs.mount('mem:', provider)
+      const fiber = await ctx.inject(['std:fs'], (ctx) => {
+        ctx.std.fs.watch('mem://a.txt')
       })
       await fiber.dispose()
       expect(provider.calls.map(call => call.stopped)).to.deep.equal([true])
 
-      ctx.fs.mount('mem://bucket/', fakeProvider())
+      ctx.std.fs.mount('mem://bucket/', fakeProvider())
       expect(provider.calls).to.have.length(1)
     })
 
@@ -217,8 +217,8 @@ describe('Fs', () => {
       await ctx.use(Provider, { mount: 'file:///' })
       await ctx.use(Provider, { mount: 'mem:' })
 
-      ctx.fs.watch('file:///a.txt')
-      ctx.fs.watch('mem://a.txt')
+      ctx.std.fs.watch('file:///a.txt')
+      ctx.std.fs.watch('mem://a.txt')
       expect(calls.map(call => call.url.href)).to.deep.equal(['file:///a.txt', 'mem://a.txt'])
     })
   })
@@ -226,96 +226,96 @@ describe('Fs', () => {
   describe('resolve', () => {
     it('resolves a path against the base URL', async () => {
       const ctx = await setup('file:///app/')
-      expect(ctx.fs.resolve('data/a.txt').href).to.equal('file:///app/data/a.txt')
-      expect(ctx.fs.resolve('./data/../a.txt').href).to.equal('file:///app/a.txt')
-      expect(ctx.fs.resolve('/a.txt').href).to.equal('file:///a.txt')
-      expect(ctx.fs.resolve('data/').href).to.equal('file:///app/data/')
-      expect(ctx.fs.resolve('').href).to.equal('file:///app/')
+      expect(ctx.std.fs.resolve('data/a.txt').href).to.equal('file:///app/data/a.txt')
+      expect(ctx.std.fs.resolve('./data/../a.txt').href).to.equal('file:///app/a.txt')
+      expect(ctx.std.fs.resolve('/a.txt').href).to.equal('file:///a.txt')
+      expect(ctx.std.fs.resolve('data/').href).to.equal('file:///app/data/')
+      expect(ctx.std.fs.resolve('').href).to.equal('file:///app/')
     })
 
     it('takes every character of a name in a path literally', async () => {
       const ctx = await setup('mem://bucket/')
-      expect(ctx.fs.resolve('a#b?c%41 .txt').href).to.equal('mem://bucket/a%23b%3Fc%2541%20.txt')
-      expect(ctx.fs.resolve(' a\tb\n').href).to.equal('mem://bucket/%20a%09b%0A')
+      expect(ctx.std.fs.resolve('a#b?c%41 .txt').href).to.equal('mem://bucket/a%23b%3Fc%2541%20.txt')
+      expect(ctx.std.fs.resolve(' a\tb\n').href).to.equal('mem://bucket/%20a%09b%0A')
       // a name that looks like a scheme follows `./`
-      expect(ctx.fs.resolve('./ab:c').href).to.equal('mem://bucket/ab:c')
+      expect(ctx.std.fs.resolve('./ab:c').href).to.equal('mem://bucket/ab:c')
     })
 
     it('separates the names of a path with `\\`', async () => {
       const ctx = await setup('mem://bucket/')
-      expect(ctx.fs.resolve('dir\\a.txt').href).to.equal('mem://bucket/dir/a.txt')
-      expect(ctx.fs.resolve('\\a.txt').href).to.equal('mem://bucket/a.txt')
+      expect(ctx.std.fs.resolve('dir\\a.txt').href).to.equal('mem://bucket/dir/a.txt')
+      expect(ctx.std.fs.resolve('\\a.txt').href).to.equal('mem://bucket/a.txt')
     })
 
     it('takes a drive letter as the first name of an absolute path, on the local host of a file URL', async () => {
       const ctx = await setup('file://nas/share/app/')
-      expect(ctx.fs.resolve('D:\\data\\a.txt').href).to.equal('file:///D:/data/a.txt')
-      expect(ctx.fs.resolve('D:/data/').href).to.equal('file:///D:/data/')
-      expect(ctx.fs.resolve('/x').href).to.equal('file://nas/x')
-      expect((await setup('C:\\app')).fs.baseUrl?.href).to.equal('file:///C:/app/')
+      expect(ctx.std.fs.resolve('D:\\data\\a.txt').href).to.equal('file:///D:/data/a.txt')
+      expect(ctx.std.fs.resolve('D:/data/').href).to.equal('file:///D:/data/')
+      expect(ctx.std.fs.resolve('/x').href).to.equal('file://nas/x')
+      expect((await setup('C:\\app')).std.fs.baseUrl?.href).to.equal('file:///C:/app/')
     })
 
     it('takes two leading separators and a host as a path on that host', async () => {
       const ctx = await setup('file:///C:/app/')
-      expect(ctx.fs.resolve('\\\\fileserver\\team\\a.txt').href).to.equal('file://fileserver/team/a.txt')
-      expect(ctx.fs.resolve('//fileserver/team/').href).to.equal('file://fileserver/team/')
+      expect(ctx.std.fs.resolve('\\\\fileserver\\team\\a.txt').href).to.equal('file://fileserver/team/a.txt')
+      expect(ctx.std.fs.resolve('//fileserver/team/').href).to.equal('file://fileserver/team/')
       const memory = await setup('mem://bucket/')
-      expect(memory.fs.resolve('//other/a.txt').href).to.equal('mem://other/a.txt')
+      expect(memory.std.fs.resolve('//other/a.txt').href).to.equal('mem://other/a.txt')
     })
 
     it('takes each element of an array as a literal name', async () => {
       const ctx = await setup('mem://bucket/')
-      expect(ctx.fs.resolve(['dir', 'a\\b#1.txt']).href).to.equal('mem://bucket/dir/a%5Cb%231.txt')
-      expect(ctx.fs.resolve(['a.txt'], new URL('mem://bucket/dir')).href).to.equal('mem://bucket/dir/a.txt')
+      expect(ctx.std.fs.resolve(['dir', 'a\\b#1.txt']).href).to.equal('mem://bucket/dir/a%5Cb%231.txt')
+      expect(ctx.std.fs.resolve(['a.txt'], new URL('mem://bucket/dir')).href).to.equal('mem://bucket/dir/a.txt')
       for (const names of [[''], ['.'], ['..'], ['a/b']]) {
-        expect(() => ctx.fs.resolve(names)).to.throw(FsError).with.property('code', 'InvalidPath')
+        expect(() => ctx.std.fs.resolve(names)).to.throw(FsError).with.property('code', 'InvalidPath')
       }
     })
 
     // a file URL reads a first segment `C|` as the drive `C:`
     it('keeps the name `C|` in every segment', async () => {
       const ctx = await setup('mem://bucket/')
-      expect(decodeURIComponent(ctx.fs.resolve(['C|'], new URL('file:///')).pathname)).to.equal('/C|')
-      expect(ctx.fs.resolve('C|/a', new URL('file:///app/')).href).to.equal('file:///app/C|/a')
-      expect(ctx.fs.resolve('../C|/a', new URL('file:///D:/')).href).to.equal('file:///D:/C|/a')
-      expect(ctx.fs.resolve('C|/a', new URL('mem://bucket/app/')).href).to.equal('mem://bucket/app/C|/a')
+      expect(decodeURIComponent(ctx.std.fs.resolve(['C|'], new URL('file:///')).pathname)).to.equal('/C|')
+      expect(ctx.std.fs.resolve('C|/a', new URL('file:///app/')).href).to.equal('file:///app/C|/a')
+      expect(ctx.std.fs.resolve('../C|/a', new URL('file:///D:/')).href).to.equal('file:///D:/C|/a')
+      expect(ctx.std.fs.resolve('C|/a', new URL('mem://bucket/app/')).href).to.equal('mem://bucket/app/C|/a')
     })
 
     it('rejects a URL that is not a location, and leaves an opaque URL to its provider', async () => {
       const ctx = await setup('mem://bucket/')
       for (const location of ['mem://bucket/a?x', 'mem://bucket/a#x', 'mem://bucket/a%2Fb', 'mem://bucket/100%.txt']) {
-        expect(() => ctx.fs.file(location)).to.throw(FsError).with.property('code', 'InvalidPath')
-        expect(() => ctx.fs.resolve(new URL(location))).to.throw(FsError).with.property('code', 'InvalidPath')
+        expect(() => ctx.std.fs.file(location)).to.throw(FsError).with.property('code', 'InvalidPath')
+        expect(() => ctx.std.fs.resolve(new URL(location))).to.throw(FsError).with.property('code', 'InvalidPath')
       }
-      expect(ctx.fs.resolve('data:,a#b').href).to.equal('data:,a#b')
+      expect(ctx.std.fs.resolve('data:,a#b').href).to.equal('data:,a#b')
     })
 
     it('takes an absolute URL independently of the base URL', async () => {
       const ctx = await setup('file:///app/')
-      expect(ctx.fs.resolve('mem://bucket/a.txt').href).to.equal('mem://bucket/a.txt')
+      expect(ctx.std.fs.resolve('mem://bucket/a.txt').href).to.equal('mem://bucket/a.txt')
       const url = new URL('mem://bucket/b.txt')
-      expect(ctx.fs.resolve(url)).to.equal(url)
+      expect(ctx.std.fs.resolve(url)).to.equal(url)
     })
 
     it('resolves a path against the working directory by default', async () => {
       const ctx = await setup()
-      expect(ctx.fs.resolve('a.txt').href).to.equal(pathToFileURL(join(process.cwd(), 'a.txt')).href)
+      expect(ctx.std.fs.resolve('a.txt').href).to.equal(pathToFileURL(join(process.cwd(), 'a.txt')).href)
     })
 
     it('takes only absolute URLs as locations without a base URL', async () => {
       const { root } = await startWithoutCwd()
-      expect(root.fs.baseUrl).to.be.undefined
-      expect(root.fs.resolve('mem://bucket/a.txt').href).to.equal('mem://bucket/a.txt')
+      expect(root.std.fs.baseUrl).to.be.undefined
+      expect(root.std.fs.resolve('mem://bucket/a.txt').href).to.equal('mem://bucket/a.txt')
       for (const path of ['a.txt', ['a.txt']]) {
-        expect(() => root.fs.resolve(path)).to.throw(FsError).with.property('code', 'InvalidPath')
+        expect(() => root.std.fs.resolve(path)).to.throw(FsError).with.property('code', 'InvalidPath')
       }
-      expect(root.intercept('fs', { baseUrl: 'mem://bucket/' }).fs.resolve('a.txt').href).to.equal('mem://bucket/a.txt')
-      expect(() => root.intercept('fs', { baseUrl: 'data/' }).fs.baseUrl).to.throw(TypeError)
+      expect(root.intercept('std:fs', { baseUrl: 'mem://bucket/' }).std.fs.resolve('a.txt').href).to.equal('mem://bucket/a.txt')
+      expect(() => root.intercept('std:fs', { baseUrl: 'data/' }).std.fs.baseUrl).to.throw(TypeError)
     })
 
     it('fails to start with a path as the base URL on a runtime without a working directory', async () => {
       const { root } = await startWithoutCwd({ baseUrl: 'mem://bucket/' })
-      expect(root.fs.resolve('a.txt').href).to.equal('mem://bucket/a.txt')
+      expect(root.std.fs.resolve('a.txt').href).to.equal('mem://bucket/a.txt')
       const { fiber } = await startWithoutCwd({ baseUrl: 'data/' })
       expect(fiber.state).to.equal(FiberState.FAILED)
     })
@@ -326,7 +326,7 @@ describe('Fs', () => {
       })
       try {
         const ctx = await setup('mem://bucket/')
-        expect(ctx.fs.baseUrl?.href).to.equal('mem://bucket/')
+        expect(ctx.std.fs.baseUrl?.href).to.equal('mem://bucket/')
       } finally {
         vi.restoreAllMocks()
       }
@@ -334,21 +334,21 @@ describe('Fs', () => {
 
     it('resolves a path of the config against the working directory', async () => {
       const ctx = await setup('data')
-      expect(ctx.fs.baseUrl?.href).to.equal(pathToFileURL(join(process.cwd(), 'data')).href + '/')
+      expect(ctx.std.fs.baseUrl?.href).to.equal(pathToFileURL(join(process.cwd(), 'data')).href + '/')
     })
 
     it('takes the base URL of the innermost intercept', async () => {
       const ctx = await setup('file:///app/')
-      const inner = ctx.intercept('fs', { baseUrl: 'mem://bucket/' }).intercept('fs', { baseUrl: 'file:///data/' })
-      expect(inner.fs.resolve('a.txt').href).to.equal('file:///data/a.txt')
-      expect(ctx.fs.resolve('a.txt').href).to.equal('file:///app/a.txt')
+      const inner = ctx.intercept('std:fs', { baseUrl: 'mem://bucket/' }).intercept('std:fs', { baseUrl: 'file:///data/' })
+      expect(inner.std.fs.resolve('a.txt').href).to.equal('file:///data/a.txt')
+      expect(ctx.std.fs.resolve('a.txt').href).to.equal('file:///app/a.txt')
     })
 
     it('resolves a relative base URL against the outer one', async () => {
       const ctx = await setup('file:///app/')
-      const inner = ctx.intercept('fs', { baseUrl: 'data/' }).intercept('fs', { baseUrl: '../logs/' })
-      expect(inner.fs.baseUrl?.href).to.equal('file:///app/logs/')
-      expect(inner.fs.resolve('a.txt').href).to.equal('file:///app/logs/a.txt')
+      const inner = ctx.intercept('std:fs', { baseUrl: 'data/' }).intercept('std:fs', { baseUrl: '../logs/' })
+      expect(inner.std.fs.baseUrl?.href).to.equal('file:///app/logs/')
+      expect(inner.std.fs.resolve('a.txt').href).to.equal('file:///app/logs/a.txt')
     })
 
     it.each(['mem:bucket', 'mem:bucket/'])('rejects a base URL with an opaque path, such as %s', async (baseUrl) => {
@@ -358,14 +358,14 @@ describe('Fs', () => {
       await fiber.await().catch(() => {})
       expect(fiber.state).to.equal(FiberState.FAILED)
       const ctx = await setup('file:///app/')
-      expect(() => ctx.intercept('fs', { baseUrl }).fs.baseUrl).to.throw(TypeError)
+      expect(() => ctx.intercept('std:fs', { baseUrl }).std.fs.baseUrl).to.throw(TypeError)
     })
 
     it('takes a base URL as a directory without a query or fragment', async () => {
       const ctx = await setup('file:///app?x#y')
-      const inner = ctx.intercept('fs', { baseUrl: 'data' })
-      expect(ctx.fs.baseUrl?.href).to.equal('file:///app/')
-      expect(inner.fs.baseUrl?.href).to.equal('file:///app/data/')
+      const inner = ctx.intercept('std:fs', { baseUrl: 'data' })
+      expect(ctx.std.fs.baseUrl?.href).to.equal('file:///app/')
+      expect(inner.std.fs.baseUrl?.href).to.equal('file:///app/data/')
     })
 
     it('rejects a base URL that is not a location', async () => {
@@ -375,19 +375,19 @@ describe('Fs', () => {
       await fiber.await().catch(() => {})
       expect(fiber.state).to.equal(FiberState.FAILED)
       const ctx = await setup('mem://bucket/')
-      expect(() => ctx.intercept('fs', { baseUrl: 'mem://bucket/100%/' }).fs.baseUrl).to.throw(TypeError)
+      expect(() => ctx.intercept('std:fs', { baseUrl: 'mem://bucket/100%/' }).std.fs.baseUrl).to.throw(TypeError)
     })
 
     it('rejects a URL that cannot be parsed with `InvalidPath`', async () => {
       const ctx = await setup('file:///app/')
-      expect(() => ctx.fs.resolve('http://[')).to.throw(FsError).with.property('code', 'InvalidPath')
+      expect(() => ctx.std.fs.resolve('http://[')).to.throw(FsError).with.property('code', 'InvalidPath')
     })
 
         it('watches the resolved location', async () => {
       const ctx = await setup('mem://bucket/dir/')
       const provider = fakeProvider()
-      ctx.fs.mount('mem:', provider)
-      ctx.fs.watch('a.txt')
+      ctx.std.fs.mount('mem:', provider)
+      ctx.std.fs.watch('a.txt')
       expect(provider.calls.map(call => call.url.href)).to.deep.equal(['mem://bucket/dir/a.txt'])
     })
   })
@@ -425,23 +425,23 @@ describe('Fs', () => {
     it('forwards each operation to the provider of its location', async () => {
       const ctx = await setup('mem://bucket/dir/')
       const { calls, provider } = recorder()
-      ctx.fs.mount('mem:', provider)
+      ctx.std.fs.mount('mem:', provider)
 
-      const file = ctx.fs.file('a.txt')
+      const file = ctx.std.fs.file('a.txt')
       expect(file.url.href).to.equal('mem://bucket/dir/a.txt')
       expect(await file.text()).to.equal('foo')
       await file.write('bar')
-      await ctx.fs.access('a.txt', 'write')
-      await ctx.fs.rename('a.txt', 'b.txt')
-      await ctx.fs.remove('b.txt')
-      await ctx.fs.remove('b.txt', { recursive: true })
-      await ctx.fs.stat('a.txt')
-      await ctx.fs.stat('a.txt', { follow: false })
-      for await (const _ of ctx.fs.readdir('.')) {}
-      await ctx.fs.mkdir('sub')
-      await ctx.fs.mkdir('sub', { recursive: true })
-      await ctx.fs.symlink('../a.txt', 'link')
-      expect(await ctx.fs.readlink('link')).to.equal('a.txt')
+      await ctx.std.fs.access('a.txt', 'write')
+      await ctx.std.fs.rename('a.txt', 'b.txt')
+      await ctx.std.fs.remove('b.txt')
+      await ctx.std.fs.remove('b.txt', { recursive: true })
+      await ctx.std.fs.stat('a.txt')
+      await ctx.std.fs.stat('a.txt', { follow: false })
+      for await (const _ of ctx.std.fs.readdir('.')) {}
+      await ctx.std.fs.mkdir('sub')
+      await ctx.std.fs.mkdir('sub', { recursive: true })
+      await ctx.std.fs.symlink('../a.txt', 'link')
+      expect(await ctx.std.fs.readlink('link')).to.equal('a.txt')
       expect(calls).to.deep.equal([
         ['read', 'mem://bucket/dir/a.txt'],
         ['write', 'mem://bucket/dir/a.txt', 'bar'],
@@ -461,12 +461,12 @@ describe('Fs', () => {
 
     it('routes a reference when an operation is performed', async () => {
       const ctx = await setup()
-      const file = ctx.fs.file('mem://bucket/a.txt')
+      const file = ctx.std.fs.file('mem://bucket/a.txt')
       expect(await code(file.text())).to.equal('NoProvider')
-      const entries = ctx.fs.dir('mem://bucket/').list()[Symbol.asyncIterator]()
+      const entries = ctx.std.fs.dir('mem://bucket/').list()[Symbol.asyncIterator]()
 
       const { calls, provider } = recorder()
-      ctx.fs.mount('mem:', provider)
+      ctx.std.fs.mount('mem:', provider)
       await file.text()
       expect((await entries.next()).value?.name).to.equal('a.txt')
       expect(calls).to.deep.equal([['read', 'mem://bucket/a.txt'], ['readdir', 'mem://bucket/']])
@@ -474,49 +474,49 @@ describe('Fs', () => {
 
     it('rejects with `NotSupported` for an operation the provider does not implement', async () => {
       const ctx = await setup()
-      ctx.fs.mount('mem:', {})
-      expect(await code(ctx.fs.file('mem://a.txt').text())).to.equal('NotSupported')
-      expect(await code(ctx.fs.file('mem://a.txt').write(''))).to.equal('NotSupported')
-      expect(await code(ctx.fs.access('mem://a.txt', 'write'))).to.equal('NotSupported')
-      expect(await code(ctx.fs.rename('mem://a.txt', 'mem://b.txt'))).to.equal('NotSupported')
-      expect(await code(ctx.fs.remove('mem://a.txt'))).to.equal('NotSupported')
-      expect(await code(ctx.fs.stat('mem://a.txt'))).to.equal('NotSupported')
-      expect(await code(ctx.fs.exists('mem://a.txt'))).to.equal('NotSupported')
-      expect(await code(ctx.fs.readdir('mem://dir')[Symbol.asyncIterator]().next())).to.equal('NotSupported')
-      expect(await code(ctx.fs.mkdir('mem://dir'))).to.equal('NotSupported')
-      expect(await code(ctx.fs.copy('mem://a.txt', 'mem://b.txt'))).to.equal('NotSupported')
-      expect(await code(ctx.fs.symlink('a.txt', 'mem://link'))).to.equal('NotSupported')
-      expect(await code(ctx.fs.readlink('mem://link'))).to.equal('NotSupported')
+      ctx.std.fs.mount('mem:', {})
+      expect(await code(ctx.std.fs.file('mem://a.txt').text())).to.equal('NotSupported')
+      expect(await code(ctx.std.fs.file('mem://a.txt').write(''))).to.equal('NotSupported')
+      expect(await code(ctx.std.fs.access('mem://a.txt', 'write'))).to.equal('NotSupported')
+      expect(await code(ctx.std.fs.rename('mem://a.txt', 'mem://b.txt'))).to.equal('NotSupported')
+      expect(await code(ctx.std.fs.remove('mem://a.txt'))).to.equal('NotSupported')
+      expect(await code(ctx.std.fs.stat('mem://a.txt'))).to.equal('NotSupported')
+      expect(await code(ctx.std.fs.exists('mem://a.txt'))).to.equal('NotSupported')
+      expect(await code(ctx.std.fs.readdir('mem://dir')[Symbol.asyncIterator]().next())).to.equal('NotSupported')
+      expect(await code(ctx.std.fs.mkdir('mem://dir'))).to.equal('NotSupported')
+      expect(await code(ctx.std.fs.copy('mem://a.txt', 'mem://b.txt'))).to.equal('NotSupported')
+      expect(await code(ctx.std.fs.symlink('a.txt', 'mem://link'))).to.equal('NotSupported')
+      expect(await code(ctx.std.fs.readlink('mem://link'))).to.equal('NotSupported')
     })
 
     it('resolves `exists()` to `false` only for `NotFound` and `NotADirectory`', async () => {
       const ctx = await setup()
-      ctx.fs.mount('mem:', {
+      ctx.std.fs.mount('mem:', {
         async stat(url) {
           const failure = url.pathname.slice(1) as FsError.Code
           if (failure) throw new FsError(failure, url, failure)
           return { type: 'directory', size: 0, mtime: new Date(0) }
         },
       })
-      expect(await ctx.fs.exists('mem:///')).to.be.true
-      expect(await ctx.fs.exists('mem:///NotFound')).to.be.false
-      expect(await ctx.fs.exists('mem:///NotADirectory')).to.be.false
-      expect(await code(ctx.fs.exists('mem:///PermissionDenied'))).to.equal('PermissionDenied')
+      expect(await ctx.std.fs.exists('mem:///')).to.be.true
+      expect(await ctx.std.fs.exists('mem:///NotFound')).to.be.false
+      expect(await ctx.std.fs.exists('mem:///NotADirectory')).to.be.false
+      expect(await code(ctx.std.fs.exists('mem:///PermissionDenied'))).to.equal('PermissionDenied')
     })
 
     it('rejects a link target that is not a string with a `TypeError`', async () => {
       const ctx = await setup()
       const { calls, provider } = recorder()
-      ctx.fs.mount('mem:', provider)
-      const error = await ctx.fs.symlink(new URL('mem://a.txt') as any, 'mem://link').catch(error => error)
+      ctx.std.fs.mount('mem:', provider)
+      const error = await ctx.std.fs.symlink(new URL('mem://a.txt') as any, 'mem://link').catch(error => error)
       expect(error).to.be.instanceOf(TypeError)
       expect(calls).to.deep.equal([])
     })
     it('rejects an unknown access mode before forwarding it', async () => {
       const ctx = await setup()
       const { calls, provider } = recorder()
-      ctx.fs.mount('mem:', provider)
-      const error = await ctx.fs.access('mem://a.txt', 'execute' as any).catch(error => error)
+      ctx.std.fs.mount('mem:', provider)
+      const error = await ctx.std.fs.access('mem://a.txt', 'execute' as any).catch(error => error)
       expect(error).to.be.instanceOf(TypeError)
       expect(calls).to.deep.equal([])
     })
@@ -525,22 +525,22 @@ describe('Fs', () => {
       const ctx = await setup()
       const outer = recorder()
       const inner = recorder()
-      ctx.fs.mount('mem:', outer.provider)
-      ctx.fs.mount('mem://bucket/', inner.provider)
-      expect(await code(ctx.fs.rename('mem://other/a.txt', 'mem://bucket/a.txt'))).to.equal('CrossesDevices')
+      ctx.std.fs.mount('mem:', outer.provider)
+      ctx.std.fs.mount('mem://bucket/', inner.provider)
+      expect(await code(ctx.std.fs.rename('mem://other/a.txt', 'mem://bucket/a.txt'))).to.equal('CrossesDevices')
       expect([...outer.calls, ...inner.calls]).to.deep.equal([])
     })
 
     it('ignores only a missing location in a forced removal', async () => {
       const ctx = await setup()
       let failure: FsError.Code = 'NotFound'
-      ctx.fs.mount('mem:', {
+      ctx.std.fs.mount('mem:', {
         async remove(url) { throw new FsError(failure, url, failure) },
       })
-      expect(await code(ctx.fs.remove('mem://a.txt'))).to.equal('NotFound')
-      await ctx.fs.remove('mem://a.txt', { force: true })
+      expect(await code(ctx.std.fs.remove('mem://a.txt'))).to.equal('NotFound')
+      await ctx.std.fs.remove('mem://a.txt', { force: true })
       failure = 'PermissionDenied'
-      expect(await code(ctx.fs.remove('mem://a.txt', { force: true }))).to.equal('PermissionDenied')
+      expect(await code(ctx.std.fs.remove('mem://a.txt', { force: true }))).to.equal('PermissionDenied')
     })
   })
 
@@ -555,22 +555,22 @@ describe('Fs', () => {
 
     async function list(ctx: Context, path: string) {
       const urls: string[] = []
-      for await (const entry of ctx.fs.dir(path).list()) urls.push(entry.url.href)
+      for await (const entry of ctx.std.fs.dir(path).list()) urls.push(entry.url.href)
       return urls
     }
 
     it('resolves a directory with a trailing separator', async () => {
       const ctx = await setup('file:///app/')
-      const dir = ctx.fs.dir('data')
+      const dir = ctx.std.fs.dir('data')
       expect(dir.url.href).to.equal('file:///app/data/')
       expect(dir.name).to.equal('data')
-      expect(ctx.fs.dir('data/').url.href).to.equal('file:///app/data/')
-      expect(ctx.fs.dir(['data']).url.href).to.equal('file:///app/data/')
+      expect(ctx.std.fs.dir('data/').url.href).to.equal('file:///app/data/')
+      expect(ctx.std.fs.dir(['data']).url.href).to.equal('file:///app/data/')
     })
 
     it('resolves a path against the directory', async () => {
       const ctx = await setup('file:///app/')
-      const dir = ctx.fs.dir('data')
+      const dir = ctx.std.fs.dir('data')
       expect(dir.file('a.txt').url.href).to.equal('file:///app/data/a.txt')
       expect(dir.dir('sub').file('b.txt').url.href).to.equal('file:///app/data/sub/b.txt')
       expect(dir.file('../x').url.href).to.equal('file:///app/x')
@@ -579,21 +579,21 @@ describe('Fs', () => {
 
     it('does not change the URL that it is created from', async () => {
       const ctx = await setup()
-      const file = ctx.fs.file('mem://bucket/a.txt')
-      expect(ctx.fs.dir(file.url).url.href).to.equal('mem://bucket/a.txt/')
+      const file = ctx.std.fs.file('mem://bucket/a.txt')
+      expect(ctx.std.fs.dir(file.url).url.href).to.equal('mem://bucket/a.txt/')
       expect(file.url.href).to.equal('mem://bucket/a.txt')
     })
 
     it('rejects a URL with an opaque path with `InvalidPath`', async () => {
       const ctx = await setup()
-      expect(() => ctx.fs.dir('doc:record')).to.throw(FsError).with.property('code', 'InvalidPath')
-      expect(() => new DirRef(ctx.fs, new URL('doc:record'))).to.throw(FsError).with.property('code', 'InvalidPath')
-      expect(await code(ctx.fs.readdir('doc:record')[Symbol.asyncIterator]().next())).to.equal('InvalidPath')
+      expect(() => ctx.std.fs.dir('doc:record')).to.throw(FsError).with.property('code', 'InvalidPath')
+      expect(() => new DirRef(ctx.std.fs, new URL('doc:record'))).to.throw(FsError).with.property('code', 'InvalidPath')
+      expect(await code(ctx.std.fs.readdir('doc:record')[Symbol.asyncIterator]().next())).to.equal('InvalidPath')
     })
 
     it('gives the location of each entry below the listed directory', async () => {
       const ctx = await setup()
-      ctx.fs.mount('mem:', lister(['a.txt', 'a:b', 'a b', 'a%b', 'a?b', 'a#b', 'a\\b']))
+      ctx.std.fs.mount('mem:', lister(['a.txt', 'a:b', 'a b', 'a%b', 'a?b', 'a#b', 'a\\b']))
       expect(await list(ctx, 'mem://bucket/dir')).to.deep.equal([
         'mem://bucket/dir/a.txt',
         'mem://bucket/dir/a:b',
@@ -608,9 +608,9 @@ describe('Fs', () => {
     it('decodes the location of an entry to its name', async () => {
       const names = ['a:b', 'a b', 'a%b', 'a?b', 'a#b', 'a\\b', 'é']
       const ctx = await setup()
-      ctx.fs.mount('file:', lister(names))
+      ctx.std.fs.mount('file:', lister(names))
       const decoded: string[] = []
-      for await (const { url } of ctx.fs.dir('file:///dir/').list()) {
+      for await (const { url } of ctx.std.fs.dir('file:///dir/').list()) {
         decoded.push(decodeURIComponent(url.pathname.slice('/dir/'.length)))
       }
       expect(decoded).to.deep.equal(names)
@@ -618,7 +618,7 @@ describe('Fs', () => {
 
     it('lists a file and a directory as references to them, and another entry as a reference with its type', async () => {
       const ctx = await setup()
-      ctx.fs.mount('mem:', {
+      ctx.std.fs.mount('mem:', {
         async* readdir() {
           yield { name: 'a #.txt', type: 'file' }
           yield { name: 'dir', type: 'directory' }
@@ -628,7 +628,7 @@ describe('Fs', () => {
         read: async () => ({ stream: new Blob(['foo']).stream() }),
       })
       const entries: Record<string, DirEntryRef> = {}
-      for await (const entry of ctx.fs.dir('mem://bucket/').list()) entries[entry.name] = entry
+      for await (const entry of ctx.std.fs.dir('mem://bucket/').list()) entries[entry.name] = entry
       expect(Object.keys(entries).sort()).to.deep.equal(['a #.txt', 'dir', 'fifo', 'link'])
       const { 'a #.txt': file, dir, link, fifo } = entries
       expect(file.type).to.equal('file')
@@ -649,8 +649,8 @@ describe('Fs', () => {
 
     it('resolves the entries of an iteration against the URL at its start', async () => {
       const ctx = await setup()
-      ctx.fs.mount('mem:', lister(['a.txt', 'b.txt']))
-      const dir = ctx.fs.dir('mem://bucket/one/')
+      ctx.std.fs.mount('mem:', lister(['a.txt', 'b.txt']))
+      const dir = ctx.std.fs.dir('mem://bucket/one/')
       const iterator = dir.list()[Symbol.asyncIterator]()
       await iterator.next()
       dir.url.pathname = '/two/'
@@ -660,12 +660,12 @@ describe('Fs', () => {
 
     it('throws a failure from the iteration', async () => {
       const ctx = await setup()
-      ctx.fs.mount('mem:', {
+      ctx.std.fs.mount('mem:', {
         async* readdir(url) {
           throw new FsError('NotFound', url, 'NotFound')
         },
       })
-      const iterable = ctx.fs.dir('mem://bucket/dir').list()
+      const iterable = ctx.std.fs.dir('mem://bucket/dir').list()
       expect(await code(iterable[Symbol.asyncIterator]().next())).to.equal('NotFound')
     })
   })
@@ -731,32 +731,32 @@ describe('Fs', () => {
     it('copies a file through the provider of the same mount', async () => {
       const ctx = await setup()
       const { calls, provider } = tree({ '/src': null, '/src/a.txt': 'foo' }, { copy: true })
-      ctx.fs.mount('mem:', provider)
-      await ctx.fs.copy('mem:///src', 'mem:///dest', { recursive: true })
+      ctx.std.fs.mount('mem:', provider)
+      await ctx.std.fs.copy('mem:///src', 'mem:///dest', { recursive: true })
       expect(calls).to.deep.equal(['mkdir /dest', 'copy /src/a.txt /dest/a.txt'])
     })
 
     it('copies a location without a hierarchical path to another key that extends it', async () => {
       const ctx = await setup()
       const written: string[] = []
-      ctx.fs.mount('doc:', {
+      ctx.std.fs.mount('doc:', {
         async stat(url) { return { type: 'file', size: 6, mtime: new Date(0) } },
         read: async () => ({ stream: new Blob(['source']).stream() }),
         async write(url) { written.push(url.href); return {} },
       })
-      await ctx.fs.copy('doc:entry', 'doc:entry/')
-      await ctx.fs.copy('doc:entry', 'doc:entry/child')
+      await ctx.std.fs.copy('doc:entry', 'doc:entry/')
+      await ctx.std.fs.copy('doc:entry', 'doc:entry/child')
       expect(written).to.deep.equal(['doc:entry/', 'doc:entry/child'])
-      expect(await code(ctx.fs.copy('doc:entry', 'doc:entry'))).to.equal('InvalidPath')
+      expect(await code(ctx.std.fs.copy('doc:entry', 'doc:entry'))).to.equal('InvalidPath')
     })
 
     it('copies a file between two mounts through a read and a write', async () => {
       const ctx = await setup()
       const source = tree({ '/a.txt': 'foo' }, { copy: true })
       const target = tree({}, { copy: true })
-      ctx.fs.mount('mem:', source.provider)
-      ctx.fs.mount('other:', target.provider)
-      await ctx.fs.copy('mem:///a.txt', 'other:///b.txt')
+      ctx.std.fs.mount('mem:', source.provider)
+      ctx.std.fs.mount('other:', target.provider)
+      await ctx.std.fs.copy('mem:///a.txt', 'other:///b.txt')
       expect(target.entries['/b.txt']).to.equal('foo')
       expect([...source.calls, ...target.calls]).to.deep.equal(['read /a.txt', 'write /b.txt'])
     })
@@ -767,10 +767,10 @@ describe('Fs', () => {
       const target = tree({ '/file': 'old' })
       target.links['/link'] = 'file'
       const write = vi.fn(async (url: URL) => { throw new FsError('AlreadyExists', url, 'occupied') })
-      ctx.fs.mount('src:', source.provider)
+      ctx.std.fs.mount('src:', source.provider)
       const realpath = async (url: URL) => ({ url: new URL(url.href.replace(/\/link$/, '/file')) })
-      ctx.fs.mount('dest:', { ...target.provider, write, realpath })
-      expect(await code(ctx.fs.copy('src:///file', 'dest:///link', { exclusive: true }))).to.equal('AlreadyExists')
+      ctx.std.fs.mount('dest:', { ...target.provider, write, realpath })
+      expect(await code(ctx.std.fs.copy('src:///file', 'dest:///link', { exclusive: true }))).to.equal('AlreadyExists')
       expect(source.calls).to.deep.equal([])
       expect(write).not.toHaveBeenCalled()
     })
@@ -780,7 +780,7 @@ describe('Fs', () => {
       for (const atomic of [false, true]) {
         const scheme = atomic ? 'native:' : 'staged:'
         const target = tree({ '/a': 'new', '/b': 'old' }, { copy: true })
-        ctx.fs.mount(scheme, {
+        ctx.std.fs.mount(scheme, {
           stat: target.provider.stat, capabilities: { atomic, exclusive: true },
           async copy(src, dest, options) {
             if (atomic) expect(options.atomic).to.equal(true)
@@ -793,7 +793,7 @@ describe('Fs', () => {
           },
           async remove(url) { delete target.entries[url.pathname] },
         })
-        await ctx.fs.copy(scheme + '///a', scheme + '///b', { atomic: true })
+        await ctx.std.fs.copy(scheme + '///a', scheme + '///b', { atomic: true })
         expect(target.entries).to.deep.equal({ '/a': 'new', '/b': 'new' })
       }
     })
@@ -801,9 +801,9 @@ describe('Fs', () => {
     it('streams cross-mount copies with the destination write guarantees', async () => {
       const ctx = await setup()
       const source = tree({ '/a': 'data' }, { copy: true })
-      ctx.fs.mount('src:', source.provider)
+      ctx.std.fs.mount('src:', source.provider)
       const received: string[] = []
-      ctx.fs.mount('dest:', {
+      ctx.std.fs.mount('dest:', {
         capabilities: { atomic: true, exclusive: true },
         async write(url, body, options) {
           expect(options).to.include({ atomic: true, exclusive: true })
@@ -811,7 +811,7 @@ describe('Fs', () => {
           return {}
         },
       })
-      await ctx.fs.copy('src:///a', 'dest:///b', { atomic: true, exclusive: true })
+      await ctx.std.fs.copy('src:///a', 'dest:///b', { atomic: true, exclusive: true })
       expect(received).to.deep.equal(['data'])
     })
 
@@ -820,14 +820,14 @@ describe('Fs', () => {
       const [stream, sibling] = new ReadableStream<Uint8Array>({
         start(controller) { controller.enqueue(new Uint8Array([1])) },
       }).tee()
-      ctx.fs.mount('src:', {
+      ctx.std.fs.mount('src:', {
         stat: async () => ({ type: 'file', size: 1, mtime: new Date(0) }),
         read: async () => ({ stream }),
       })
-      ctx.fs.mount('dest:', {
+      ctx.std.fs.mount('dest:', {
         async write(url) { throw new FsError('PermissionDenied', url, 'denied') },
       })
-      const copy = code(ctx.fs.copy('src:///file', 'dest:///file'))
+      const copy = code(ctx.std.fs.copy('src:///file', 'dest:///file'))
       try {
         expect(await copy).to.equal('PermissionDenied')
         expect(stream.locked).to.equal(false)
@@ -839,7 +839,7 @@ describe('Fs', () => {
     it('does not write the destination when the source cannot be read', async () => {
       const ctx = await setup()
       const target = tree({})
-      ctx.fs.mount('mem:', {
+      ctx.std.fs.mount('mem:', {
         async stat() { return { type: 'file', size: 0, mtime: new Date(0) } },
         async read(url) {
           return { stream: new ReadableStream({
@@ -847,8 +847,8 @@ describe('Fs', () => {
           }) }
         },
       })
-      ctx.fs.mount('other:', target.provider)
-      expect(await code(ctx.fs.copy('mem:///a.txt', 'other:///b.txt'))).to.equal('PermissionDenied')
+      ctx.std.fs.mount('other:', target.provider)
+      expect(await code(ctx.std.fs.copy('mem:///a.txt', 'other:///b.txt'))).to.equal('PermissionDenied')
       expect(target.calls).to.deep.equal([])
     })
 
@@ -856,9 +856,9 @@ describe('Fs', () => {
       const ctx = await setup()
       const source = tree({ '/a.txt': 'foo' })
       const { write: _, ...target } = tree({}).provider
-      ctx.fs.mount('mem:', source.provider)
-      ctx.fs.mount('other:', target)
-      expect(await code(ctx.fs.copy('mem:///a.txt', 'other:///b.txt'))).to.equal('NotSupported')
+      ctx.std.fs.mount('mem:', source.provider)
+      ctx.std.fs.mount('other:', target)
+      expect(await code(ctx.std.fs.copy('mem:///a.txt', 'other:///b.txt'))).to.equal('NotSupported')
       expect(source.calls).to.deep.equal([])
     })
 
@@ -868,28 +868,28 @@ describe('Fs', () => {
       source.links['/src/link'] = 'a.txt'
       source.links['/link'] = 'src'
       const target = tree({ '/link': 'bar' })
-      ctx.fs.mount('mem:', source.provider)
-      ctx.fs.mount('other:', target.provider)
-      expect(await code(ctx.fs.copy('mem:///link', 'other:///link'))).to.equal('NotSupported')
+      ctx.std.fs.mount('mem:', source.provider)
+      ctx.std.fs.mount('other:', target.provider)
+      expect(await code(ctx.std.fs.copy('mem:///link', 'other:///link'))).to.equal('NotSupported')
       expect(target.entries['/link']).to.equal('bar')
-      await ctx.fs.copy('mem:///src', 'mem:///dest', { recursive: true })
+      await ctx.std.fs.copy('mem:///src', 'mem:///dest', { recursive: true })
       expect(source.links['/dest/link']).to.equal('a.txt')
     })
 
     it('fails on a destination at or below the source before any I/O', async () => {
       const ctx = await setup()
       const { calls, provider } = recorder()
-      ctx.fs.mount('mem:', provider)
+      ctx.std.fs.mount('mem:', provider)
       for (const [src, dest] of [
         ['mem://bucket/dir', 'mem://bucket/dir/sub'],
         ['mem://bucket/dir/', 'mem://bucket/dir'],
         ['mem://bucket/a.txt', 'mem://bucket/a.txt'],
         ['mem://bucket/', 'mem://bucket/a.txt'],
       ]) {
-        expect(await code(ctx.fs.copy(src, dest, { recursive: true }))).to.equal('InvalidPath')
+        expect(await code(ctx.std.fs.copy(src, dest, { recursive: true }))).to.equal('InvalidPath')
       }
       expect(calls).to.deep.equal([])
-      await ctx.fs.copy('mem://bucket/dir', 'mem://bucket/dir2')
+      await ctx.std.fs.copy('mem://bucket/dir', 'mem://bucket/dir2')
     })
 
   })
@@ -923,8 +923,8 @@ describe('Fs', () => {
       const json = '{"name":"cordis","emoji":"🌸"}'
       const content = new TextEncoder().encode(json)
       // chunks of 3 bytes split the 4 bytes of the emoji
-      ctx.fs.mount('mem:', memory(content, 3).provider)
-      const file = ctx.fs.file('mem://a.json')
+      ctx.std.fs.mount('mem:', memory(content, 3).provider)
+      const file = ctx.std.fs.file('mem://a.json')
 
       expect(await file.text()).to.equal(json)
       expect(await file.json()).to.deep.equal({ name: 'cordis', emoji: '🌸' })
@@ -936,8 +936,8 @@ describe('Fs', () => {
     it('writes each kind of data as a stream', async () => {
       const ctx = await setup()
       const { written, provider } = memory(new Uint8Array(), 1)
-      ctx.fs.mount('mem:', provider)
-      const file = ctx.fs.file('mem://a.txt')
+      ctx.std.fs.mount('mem:', provider)
+      const file = ctx.std.fs.file('mem://a.txt')
       const bytes = new TextEncoder().encode('花')
 
       await file.write('花')
@@ -951,8 +951,8 @@ describe('Fs', () => {
     it('rejects a write of a slice, also of the whole content', async () => {
       const ctx = await setup()
       const { written, provider } = memory(new Uint8Array(), 1)
-      ctx.fs.mount('mem:', provider)
-      const file = ctx.fs.file('mem://a.txt')
+      ctx.std.fs.mount('mem:', provider)
+      const file = ctx.std.fs.file('mem://a.txt')
       for (const slice of [file.slice(), file.slice(0), file.slice(1)]) {
         expect(await slice.write('foo').catch(error => error)).to.be.instanceOf(TypeError)
       }
@@ -962,18 +962,18 @@ describe('Fs', () => {
     it('rejects a read with the error of the stream', async () => {
       const ctx = await setup()
       const error = new FsError('NotFound', new URL('mem://a.txt'), 'missing')
-      ctx.fs.mount('mem:', {
+      ctx.std.fs.mount('mem:', {
         read: async () => ({ stream: new ReadableStream({ start(controller) { controller.error(error) } }) }),
       })
-      expect(await ctx.fs.file('mem://a.txt').text().catch(error => error)).to.equal(error)
+      expect(await ctx.std.fs.file('mem://a.txt').text().catch(error => error)).to.equal(error)
     })
   })
 
   it('does not call a queued ready listener after the watch ends', async () => {
     const ctx = await setup()
     const provider = fakeProvider()
-    ctx.fs.mount('mem:', provider)
-    const watcher = ctx.fs.watch('mem://a.txt')
+    ctx.std.fs.mount('mem:', provider)
+    const watcher = ctx.std.fs.watch('mem://a.txt')
     const ready = vi.fn()
     watcher.emit('ready')
     watcher.on('ready', ready)
@@ -1017,9 +1017,9 @@ describe('Fs', () => {
     it('forwards `atomic` only to a provider that declares `atomic`', async () => {
       const ctx = await setup()
       const { calls, provider } = directory({ capabilities: { atomic: true } })
-      ctx.fs.mount('mem:', provider)
-      await ctx.fs.file('mem://vol/dir/a.txt').write('foo', { atomic: true, mode: 0o600 })
-      await ctx.fs.file('mem://vol/dir/a.txt').write('bar', { atomic: false })
+      ctx.std.fs.mount('mem:', provider)
+      await ctx.std.fs.file('mem://vol/dir/a.txt').write('foo', { atomic: true, mode: 0o600 })
+      await ctx.std.fs.file('mem://vol/dir/a.txt').write('bar', { atomic: false })
       expect(calls).to.deep.equal([
         ['write', 'mem://vol/dir/a.txt', { exclusive: false, atomic: true, mode: 0o600 }],
         ['write', 'mem://vol/dir/a.txt', { exclusive: false, atomic: false }],
@@ -1029,8 +1029,8 @@ describe('Fs', () => {
     it('writes a temporary file in the same directory and renames it over the target', async () => {
       const ctx = await setup()
       const { files, calls, provider } = directory()
-      ctx.fs.mount('mem:', provider)
-      await ctx.fs.file('mem://vol/dir/a.txt').write('foo', { atomic: true })
+      ctx.std.fs.mount('mem:', provider)
+      await ctx.std.fs.file('mem://vol/dir/a.txt').write('foo', { atomic: true })
       expect([...files]).to.deep.equal([['mem://vol/dir/a.txt', 'foo']])
       const [[, temporary, options]] = calls
       expect(options).to.include({ exclusive: true })
@@ -1051,8 +1051,8 @@ describe('Fs', () => {
         files.set(url.href, 'occupied')
         throw new FsError('AlreadyExists', url, 'occupied')
       }
-      ctx.fs.mount('mem:', provider)
-      await ctx.fs.file('mem://vol/dir/a.txt').write('foo', { atomic: true })
+      ctx.std.fs.mount('mem:', provider)
+      await ctx.std.fs.file('mem://vol/dir/a.txt').write('foo', { atomic: true })
       expect(read).to.deep.equal(['foo'])
       expect([...files.values()]).to.deep.equal(['occupied', 'foo'])
       // no empty file precedes the content
@@ -1062,11 +1062,11 @@ describe('Fs', () => {
 
     it('checks the operations of a copy between two mounts before any change of the destination', async () => {
       const ctx = await setup()
-      ctx.fs.mount('src:', { stat: async () => ({ type: 'file', size: 4, mtime: new Date(0) }) })
+      ctx.std.fs.mount('src:', { stat: async () => ({ type: 'file', size: 4, mtime: new Date(0) }) })
       const { calls, provider } = directory({ stat: async url => { throw new FsError('NotFound', url, 'missing') } })
-      ctx.fs.mount('mem:', provider)
+      ctx.std.fs.mount('mem:', provider)
       for (const atomic of [false, true]) {
-        expect(await code(ctx.fs.copy('src:///a', 'mem://vol/dir/b', { atomic }))).to.equal('NotSupported')
+        expect(await code(ctx.std.fs.copy('src:///a', 'mem://vol/dir/b', { atomic }))).to.equal('NotSupported')
       }
       expect(calls).to.deep.equal([])
     })
@@ -1076,8 +1076,8 @@ describe('Fs', () => {
       const failure = new FsError('AlreadyExists', new URL('mem://vol/dir/a'), 'of the source')
       const copy = vi.fn(async () => { throw failure })
       const { calls, provider } = directory({ copy, stat: async () => ({ type: 'file', size: 0, mtime: new Date(0) }) })
-      ctx.fs.mount('mem:', provider)
-      expect(await ctx.fs.copy('mem://vol/dir/a', 'mem://vol/dir/b', { atomic: true }).catch(error => error)).to.equal(failure)
+      ctx.std.fs.mount('mem:', provider)
+      expect(await ctx.std.fs.copy('mem://vol/dir/a', 'mem://vol/dir/b', { atomic: true }).catch(error => error)).to.equal(failure)
       expect(copy).toHaveBeenCalledOnce()
       expect(calls).to.deep.equal([])
     })
@@ -1097,8 +1097,8 @@ describe('Fs', () => {
         if (options.exclusive && ++creations % 2) throw new FsError('AlreadyExists', url, 'occupied')
         return write(url, body, options)
       }
-      ctx.fs.mount('mem:', provider)
-      expect(await code(ctx.fs.file('mem://vol/dir/a').write(new Blob(['data']).stream(), { atomic: true }))).to.equal('AlreadyExists')
+      ctx.std.fs.mount('mem:', provider)
+      expect(await code(ctx.std.fs.file('mem://vol/dir/a').write(new Blob(['data']).stream(), { atomic: true }))).to.equal('AlreadyExists')
       expect(creations).to.equal(3)
     })
 
@@ -1112,7 +1112,7 @@ describe('Fs', () => {
         return result
       })
       const failure = new FsError('Unknown', new URL('mem://vol/dir/a'), 'failed')
-      ctx.fs.mount('mem:', {
+      ctx.std.fs.mount('mem:', {
         async write(url, body) {
           const reader = body.getReader()
           await reader.read()
@@ -1123,7 +1123,7 @@ describe('Fs', () => {
       try {
         // a blob of two parts, which a stream reads as two chunks
         const data = new Blob([new Uint8Array(4), new Uint8Array(4)])
-        expect(await ctx.fs.file('mem://vol/dir/a').write(data).catch(error => error)).to.equal(failure)
+        expect(await ctx.std.fs.file('mem://vol/dir/a').write(data).catch(error => error)).to.equal(failure)
         expect((await streams.at(-1)!.getReader().read()).done).to.equal(true)
       } finally {
         vi.restoreAllMocks()
@@ -1133,19 +1133,19 @@ describe('Fs', () => {
     it('writes the bytes of a blob, also of a subclass with another `stream()`', async () => {
       const ctx = await setup()
       const { files, provider } = directory()
-      ctx.fs.mount('mem:', provider)
+      ctx.std.fs.mount('mem:', provider)
       class Other extends Blob {
         stream() { return new Blob(['other']).stream() }
       }
-      await ctx.fs.file('mem://vol/dir/a').write(new Other(['fixed']), { atomic: true })
+      await ctx.std.fs.file('mem://vol/dir/a').write(new Other(['fixed']), { atomic: true })
       expect([...files.values()]).to.deep.equal(['fixed'])
     })
 
     it('retries a rename that fails with `Busy`', async () => {
       const ctx = await setup()
       const { files, calls, provider } = directory({}, [busy(), busy()])
-      ctx.fs.mount('mem:', provider)
-      await ctx.fs.file('mem://vol/dir/a.txt').write('foo', { atomic: true })
+      ctx.std.fs.mount('mem:', provider)
+      await ctx.std.fs.file('mem://vol/dir/a.txt').write('foo', { atomic: true })
       expect([...files]).to.deep.equal([['mem://vol/dir/a.txt', 'foo']])
       expect(calls.filter(([name]) => name === 'rename')).to.have.length(3)
     })
@@ -1161,8 +1161,8 @@ describe('Fs', () => {
           throw error
         },
       })
-      ctx.fs.mount('mem:', provider)
-      const dest = ctx.fs.file('mem://vol/dir/a.txt')
+      ctx.std.fs.mount('mem:', provider)
+      const dest = ctx.std.fs.file('mem://vol/dir/a.txt')
       files.set(dest.url.href, 'old')
       const pull = vi.fn()
       const body = new ReadableStream<Uint8Array>({ pull }, { highWaterMark: 0 })
@@ -1177,8 +1177,8 @@ describe('Fs', () => {
       const ctx = await setup()
       const failure = new FsError('PermissionDenied', new URL('mem://vol/dir/a.txt'), 'denied')
       const { files, provider } = directory({}, [failure])
-      ctx.fs.mount('mem:', provider)
-      expect(await ctx.fs.file('mem://vol/dir/a.txt').write('foo', { atomic: true }).catch(error => error)).to.equal(failure)
+      ctx.std.fs.mount('mem:', provider)
+      expect(await ctx.std.fs.file('mem://vol/dir/a.txt').write('foo', { atomic: true }).catch(error => error)).to.equal(failure)
       expect([...files]).to.deep.equal([])
     })
 
@@ -1192,9 +1192,9 @@ describe('Fs', () => {
       })
       const failure = busy()
       provider.remove = vi.fn(provider.remove!).mockRejectedValueOnce(failure)
-      ctx.fs.mount('mem:', provider)
+      ctx.std.fs.mount('mem:', provider)
       const body = new Blob(['data']).stream()
-      await expect(ctx.fs.file('mem://vol/dir/a.txt').write(body, { atomic: true })).rejects.toBe(failure)
+      await expect(ctx.std.fs.file('mem://vol/dir/a.txt').write(body, { atomic: true })).rejects.toBe(failure)
       expect(files.size).to.equal(0)
     })
 
@@ -1213,9 +1213,9 @@ describe('Fs', () => {
         ino++
         throw failure
       })
-      ctx.fs.mount('mem:', provider)
+      ctx.std.fs.mount('mem:', provider)
       const body = new Blob(['data']).stream()
-      await expect(ctx.fs.file('mem://vol/dir/a.txt').write(body, { atomic: true })).rejects.toBe(failure)
+      await expect(ctx.std.fs.file('mem://vol/dir/a.txt').write(body, { atomic: true })).rejects.toBe(failure)
       expect([...files.values()]).to.deep.equal(['replacement'])
     })
 
@@ -1224,9 +1224,9 @@ describe('Fs', () => {
       const { calls, provider } = directory({
         stat: async () => ({ type: 'file', size: 0, mtime: new Date(0), mode: 0o600 }),
       })
-      ctx.fs.mount('mem:', provider)
-      await ctx.fs.file('mem://vol/dir/a.txt').write('foo', { atomic: true })
-      await ctx.fs.file('mem://vol/dir/a.txt').write('foo', { atomic: true, mode: 0o644 })
+      ctx.std.fs.mount('mem:', provider)
+      await ctx.std.fs.file('mem://vol/dir/a.txt').write('foo', { atomic: true })
+      await ctx.std.fs.file('mem://vol/dir/a.txt').write('foo', { atomic: true, mode: 0o644 })
       const writes = calls.filter(([name]) => name === 'write').map(call => (call[2] as WriteOptions).mode)
       expect(writes).to.deep.equal([0o600, 0o644])
     })
@@ -1238,8 +1238,8 @@ describe('Fs', () => {
         stat: async () => ({ type: 'file', size: 0, mtime: new Date(0) }),
         access: async () => { throw denied },
       })
-      ctx.fs.mount('mem:', provider)
-      expect(await ctx.fs.file('mem://vol/dir/a.txt').write('foo', { atomic: true }).catch(error => error)).to.equal(denied)
+      ctx.std.fs.mount('mem:', provider)
+      expect(await ctx.std.fs.file('mem://vol/dir/a.txt').write('foo', { atomic: true }).catch(error => error)).to.equal(denied)
       expect(calls).to.deep.equal([])
     })
 
@@ -1247,11 +1247,11 @@ describe('Fs', () => {
       const ctx = await setup()
       const stat = vi.fn(async () => ({ type: 'file' as const, size: 0, mtime: new Date(0) }))
       const { calls, provider } = directory({ capabilities: { exclusive: false }, stat, copy: vi.fn() })
-      ctx.fs.mount('mem:', provider)
+      ctx.std.fs.mount('mem:', provider)
       for (const pending of [
-        ctx.fs.file('mem://vol/dir/a').write('data', { exclusive: true }),
-        ctx.fs.file('mem://vol/dir/a').write('data', { atomic: true }),
-        ctx.fs.copy('mem://vol/dir/a', 'mem://vol/dir/b', { exclusive: true }),
+        ctx.std.fs.file('mem://vol/dir/a').write('data', { exclusive: true }),
+        ctx.std.fs.file('mem://vol/dir/a').write('data', { atomic: true }),
+        ctx.std.fs.copy('mem://vol/dir/a', 'mem://vol/dir/b', { exclusive: true }),
       ]) {
         expect(await code(pending)).to.equal('NotSupported')
       }
@@ -1266,9 +1266,9 @@ describe('Fs', () => {
       const cancel = vi.fn()
       const { calls, provider } = directory()
       delete provider[name]
-      ctx.fs.mount('mem:', provider)
+      ctx.std.fs.mount('mem:', provider)
       const body = new ReadableStream({ cancel })
-      expect(await code(ctx.fs.file('mem://vol/dir/a.txt').write(body, { atomic: true }))).to.equal('NotSupported')
+      expect(await code(ctx.std.fs.file('mem://vol/dir/a.txt').write(body, { atomic: true }))).to.equal('NotSupported')
       expect(calls).to.deep.equal([])
       expect(cancel).toHaveBeenCalled()
     })
@@ -1292,9 +1292,9 @@ describe('Fs', () => {
       const ctx = await setup()
       const readlink = vi.fn()
       const { files, lookups, provider } = links({}, { readlink })
-      ctx.fs.mount('mem:', provider)
-      ctx.fs.mount('mem://vol/overlay/', {})
-      await ctx.fs.file('mem://vol/dir/a.txt').write('foo', { exclusive: true })
+      ctx.std.fs.mount('mem:', provider)
+      ctx.std.fs.mount('mem://vol/overlay/', {})
+      await ctx.std.fs.file('mem://vol/dir/a.txt').write('foo', { exclusive: true })
       expect(lookups).to.deep.equal([])
       expect(readlink).not.toHaveBeenCalled()
       expect([...files]).to.deep.equal([['mem://vol/dir/a.txt', 'foo']])
@@ -1305,10 +1305,10 @@ describe('Fs', () => {
       const stat = vi.fn(async (url: URL): Promise<never> => { throw new FsError('PermissionDenied', url, 'denied') })
       const realpath = resolve ? async () => ({ url: new URL('doc:record') }) : undefined
       // the mount at the empty prefix also serves `doc:record`
-      ctx.fs.mount('', { ...directory().provider, stat, realpath })
-      ctx.fs.mount('other:', {})
+      ctx.std.fs.mount('', { ...directory().provider, stat, realpath })
+      ctx.std.fs.mount('other:', {})
       const url = resolve ? 'mem://vol/dir/a' : 'doc:record'
-      expect(await code(ctx.fs.file(url).write('foo', { atomic: true }))).to.equal('NotSupported')
+      expect(await code(ctx.std.fs.file(url).write('foo', { atomic: true }))).to.equal('NotSupported')
       expect(stat).not.toHaveBeenCalled()
     })
 
@@ -1318,16 +1318,16 @@ describe('Fs', () => {
       const { files, provider } = links({ 'mem://vol/dir/a.txt': '../x/../other/c.txt' }, { realpath })
       if (!operations.includes('readlink')) delete provider.readlink
       if (!operations.includes('stat')) delete provider.stat
-      ctx.fs.mount('mem:', provider)
-      await ctx.fs.file('mem://vol/dir/a.txt').write('foo', { atomic: true })
+      ctx.std.fs.mount('mem:', provider)
+      await ctx.std.fs.file('mem://vol/dir/a.txt').write('foo', { atomic: true })
       expect([...files]).to.deep.equal([['mem://vol/other/c.txt', 'foo']])
     })
 
     it('queries only the last component of the only mount at the empty prefix', async () => {
       const ctx = await setup()
       const { lookups, provider } = links({}, { realpath: vi.fn() })
-      ctx.fs.mount('', provider)
-      await ctx.fs.file('mem://vol/a/b/c/d/file').write('one', { exclusive: true })
+      ctx.std.fs.mount('', provider)
+      await ctx.std.fs.file('mem://vol/a/b/c/d/file').write('one', { exclusive: true })
       expect(lookups).to.deep.equal(['mem://vol/a/b/c/d/file'])
       expect(provider.realpath).not.toHaveBeenCalled()
     })
@@ -1338,10 +1338,10 @@ describe('Fs', () => {
       const { files, provider } = links(targets, {
         async realpath(url) { return { url: new URL(targets[url.href] ?? url.href.replace('mem://vol/app/', 'mem://real/app/')) } },
       })
-      ctx.fs.mount('mem://vol/app/', provider)
-      await ctx.fs.file('mem://vol/app/link').write('data', { atomic: true })
+      ctx.std.fs.mount('mem://vol/app/', provider)
+      await ctx.std.fs.file('mem://vol/app/link').write('data', { atomic: true })
       expect([...files]).to.deep.equal([['mem://vol/app/target', 'data']])
-      expect(await code(ctx.fs.file('mem://vol/app/root').write('data', { exclusive: true }))).to.equal('IsADirectory')
+      expect(await code(ctx.std.fs.file('mem://vol/app/root').write('data', { exclusive: true }))).to.equal('IsADirectory')
     })
 
     it.each([
@@ -1360,10 +1360,10 @@ describe('Fs', () => {
         },
       })
       const other = directory({ capabilities: { atomic: true } })
-      ctx.fs.mount(prefix, provider)
-      for (const key of others) ctx.fs.mount(key, other.provider)
+      ctx.std.fs.mount(prefix, provider)
+      for (const key of others) ctx.std.fs.mount(key, other.provider)
       for (const options of [{ atomic: true }, { exclusive: true }]) {
-        expect(await code(ctx.fs.file(url).write('data', options))).to.equal('CrossesDevices')
+        expect(await code(ctx.std.fs.file(url).write('data', options))).to.equal('CrossesDevices')
       }
       expect(files.size + other.files.size).to.equal(0)
     })
@@ -1372,7 +1372,7 @@ describe('Fs', () => {
       const ctx = await setup()
       const { provider } = directory()
       const url = new URL('mem://vol/dir/.notes.0123456789ab.tmp')
-      ctx.fs.mount('mem:', {
+      ctx.std.fs.mount('mem:', {
         ...provider, ...fakeProvider(),
         async write(dest, body, options) {
           const result = await provider.write!(dest, body, options)
@@ -1384,17 +1384,17 @@ describe('Fs', () => {
           watcher.emit('change', to)
         },
       })
-      const watcher = ctx.fs.watch('mem://vol/dir')
+      const watcher = ctx.std.fs.watch('mem://vol/dir')
       const seen: string[] = []
       watcher.on('change', dest => { seen.push(dest.href) })
-      await ctx.fs.file(url).write('content', { atomic: true })
+      await ctx.std.fs.file(url).write('content', { atomic: true })
       expect(seen).to.deep.equal([url.href])
     })
 
     it('writes and copies to a location without a hierarchical path, whose trailing `/` is a part of its name', async () => {
       const ctx = await setup()
       const written: string[] = []
-      ctx.fs.mount('doc:', {
+      ctx.std.fs.mount('doc:', {
         capabilities: { atomic: true, exclusive: true },
         realpath: async url => ({ url }),
         async stat(url) {
@@ -1404,16 +1404,16 @@ describe('Fs', () => {
         read: async () => ({ stream: new Blob(['source']).stream() }),
         async write(url, body) { written.push(url.href + ' ' + await new Response(body).text()); return {} },
       })
-      await ctx.fs.file('doc:entry/').write('data', { atomic: true, exclusive: true })
-      await ctx.fs.copy('doc:source', 'doc:copy/', { atomic: true, exclusive: true })
+      await ctx.std.fs.file('doc:entry/').write('data', { atomic: true, exclusive: true })
+      await ctx.std.fs.copy('doc:source', 'doc:copy/', { atomic: true, exclusive: true })
       expect(written).to.deep.equal(['doc:entry/ data', 'doc:copy/ source'])
     })
 
     it('reports an unsupported write while the other branch of a tee is still open', async () => {
       const ctx = await setup()
-      ctx.fs.mount('mem:', { async write() { return {} } })
+      ctx.std.fs.mount('mem:', { async write() { return {} } })
       const [body, sibling] = new ReadableStream<Uint8Array>().tee()
-      const pending = code(ctx.fs.file('mem://vol/a').write(body, { atomic: true }))
+      const pending = code(ctx.std.fs.file('mem://vol/a').write(body, { atomic: true }))
       try {
         expect(await pending).to.equal('NotSupported')
       } finally {
@@ -1440,8 +1440,8 @@ describe('Fs', () => {
       const ctx = await setup()
       const { options, provider } = single({ range })
       const stat = vi.fn(async () => ({ type: 'file' as const, size: 10, mtime: new Date(0) }))
-      ctx.fs.mount('mem:', { ...provider, stat })
-      const file = ctx.fs.file('mem://a.txt')
+      ctx.std.fs.mount('mem:', { ...provider, stat })
+      const file = ctx.std.fs.file('mem://a.txt')
       const start = range === 'signed' ? -3 : 3
       await file.text()
       await file.slice(start, 8).text()
@@ -1452,11 +1452,11 @@ describe('Fs', () => {
     it.each(['unsigned', 'signed'] as const)('resolves a slice chain to one range using the file size (%s)', async (range) => {
       const ctx = await setup()
       const { options, provider } = single({ range })
-      ctx.fs.mount('mem:', {
+      ctx.std.fs.mount('mem:', {
         ...provider,
         stat: async () => ({ type: 'file', size: 10, mtime: new Date(0) }),
       })
-      const file = ctx.fs.file('mem://a.txt')
+      const file = ctx.std.fs.file('mem://a.txt')
       expect(await file.slice(1).slice(-1).text()).to.equal('9')
       expect(await file.slice(7, 20).slice(-2, -1).text()).to.equal('8')
       expect(options).to.deep.equal([{ start: 9, end: 10 }, { start: 8, end: 9 }])
@@ -1465,19 +1465,19 @@ describe('Fs', () => {
     it('resolves a single negative bound for an unsigned provider', async () => {
       const ctx = await setup()
       const { options, provider } = single({ range: 'unsigned' })
-      ctx.fs.mount('mem:', {
+      ctx.std.fs.mount('mem:', {
         ...provider,
         stat: async () => ({ type: 'file', size: 10, mtime: new Date(0) }),
       })
-      expect(await ctx.fs.file('mem://a.txt').slice(-3, 9).text()).to.equal('78')
+      expect(await ctx.std.fs.file('mem://a.txt').slice(-3, 9).text()).to.equal('78')
       expect(options).to.deep.equal([{ start: 7, end: 9 }])
     })
 
     it('merges a slice into the preceding one where the two select the range of one slice', async () => {
       const ctx = await setup()
       const { options, provider } = single({ range: 'signed' })
-      ctx.fs.mount('mem:', provider)
-      const file = ctx.fs.file('mem://a.txt')
+      ctx.std.fs.mount('mem:', provider)
+      const file = ctx.std.fs.file('mem://a.txt')
       const pairs: [FileRef, FileRef][] = [
         [file.slice().slice(-1), file.slice(-1)],
         [file.slice(-3).slice(0), file.slice(-3)],
@@ -1498,8 +1498,8 @@ describe('Fs', () => {
       const ctx = await setup()
       const { options, provider } = single({})
       const stat = vi.fn(async () => { throw new Error('unexpected stat') })
-      ctx.fs.mount('mem:', { ...provider, stat })
-      expect(await ctx.fs.file('mem://a.txt').slice(-3, 9).text()).to.equal('78')
+      ctx.std.fs.mount('mem:', { ...provider, stat })
+      expect(await ctx.std.fs.file('mem://a.txt').slice(-3, 9).text()).to.equal('78')
       expect(options).to.deep.equal([{}])
       expect(stat).not.toHaveBeenCalled()
     })
@@ -1507,11 +1507,11 @@ describe('Fs', () => {
     it.each(['unsigned', 'signed'] as const)('uses only supported bounds when stat fails (%s)', async (range) => {
       const ctx = await setup()
       const { options, provider } = single({ range })
-      ctx.fs.mount('mem:', {
+      ctx.std.fs.mount('mem:', {
         ...provider,
         async stat() { throw new Error('metadata unavailable') },
       })
-      const file = ctx.fs.file('mem://a.txt')
+      const file = ctx.std.fs.file('mem://a.txt')
       expect(await file.slice(-3).slice(1, 2).text()).to.equal('8')
       expect(await file.slice(1).slice(-1).text()).to.equal('9')
       expect(options).to.deep.equal([range === 'signed' ? { start: -3 } : {}, { start: 1 }])
@@ -1520,12 +1520,12 @@ describe('Fs', () => {
     it('propagates a read error after an unsuccessful stat', async () => {
       const ctx = await setup()
       const failure = new Error('open failed')
-      ctx.fs.mount('mem:', {
+      ctx.std.fs.mount('mem:', {
         capabilities: { range: 'unsigned' },
         async stat() { throw new Error('metadata unavailable') },
         read: async () => ({ stream: new ReadableStream({ start: controller => controller.error(failure) }) }),
       })
-      const reader = ctx.fs.file('mem://a.txt').slice(1).slice(-1).stream().getReader()
+      const reader = ctx.std.fs.file('mem://a.txt').slice(1).slice(-1).stream().getReader()
       expect(await reader.read().catch(error => error)).to.equal(failure)
     })
 
@@ -1533,14 +1533,14 @@ describe('Fs', () => {
       const ctx = await setup()
       const { options, provider } = single({ range: 'unsigned' })
       const pending = Promise.withResolvers<void>()
-      ctx.fs.mount('mem:', {
+      ctx.std.fs.mount('mem:', {
         ...provider,
         async stat() {
           await pending.promise
           return { type: 'file', size: 10, mtime: new Date(0) }
         },
       })
-      const reader = ctx.fs.file('mem://a.txt').slice(-1).stream().getReader()
+      const reader = ctx.std.fs.file('mem://a.txt').slice(-1).stream().getReader()
       const reading = reader.read()
       await reader.cancel()
       pending.resolve()
@@ -1553,8 +1553,8 @@ describe('Fs', () => {
   describe('range', () => {
     it('cuts a range with a negative bound from the whole content without `stat`', async () => {
       const ctx = await setup()
-      ctx.fs.mount('mem:', { read: async () => ({ stream: new Blob(['0123456789']).stream() }) })
-      const file = ctx.fs.file('mem://a.txt')
+      ctx.std.fs.mount('mem:', { read: async () => ({ stream: new Blob(['0123456789']).stream() }) })
+      const file = ctx.std.fs.file('mem://a.txt')
       expect(await file.slice(-3).text()).to.equal('789')
       expect(await file.slice(2, -2).slice(-3, -1).text()).to.equal('56')
       expect(await file.slice(2, 5).text()).to.equal('234')
@@ -1563,7 +1563,7 @@ describe('Fs', () => {
     it('counts bytes beyond an absolute end when the start is relative to EOF', async () => {
       const ctx = await setup()
       let content = ''
-      ctx.fs.mount('mem:', {
+      ctx.std.fs.mount('mem:', {
         read: async () => ({ stream: new ReadableStream({
           start(controller) {
             const bytes = new TextEncoder().encode(content)
@@ -1572,7 +1572,7 @@ describe('Fs', () => {
           },
         }) }),
       })
-      const file = ctx.fs.file('mem://a.txt')
+      const file = ctx.std.fs.file('mem://a.txt')
       for (const input of ['a', 'abcd', 'abcde', 'abcdef', 'abcdefgh']) {
         content = input
         for (const [start, end] of [[-4, 2], [-2, 5]]) {
@@ -1585,7 +1585,7 @@ describe('Fs', () => {
     it('stops reading the source at the end of a range', async () => {
       const ctx = await setup()
       let pulls = 0
-      ctx.fs.mount('mem:', {
+      ctx.std.fs.mount('mem:', {
         read: async () => ({ stream: new ReadableStream({
           pull(controller) {
             pulls++
@@ -1593,7 +1593,7 @@ describe('Fs', () => {
           },
         }, { highWaterMark: 0 }) }),
       })
-      expect(await ctx.fs.file('mem://a.bin').slice(2, 6).bytes()).to.deep.equal(new Uint8Array([1, 1, 2, 2]))
+      expect(await ctx.std.fs.file('mem://a.bin').slice(2, 6).bytes()).to.deep.equal(new Uint8Array([1, 1, 2, 2]))
       expect(pulls).to.equal(2)
     })
 
@@ -1601,34 +1601,34 @@ describe('Fs', () => {
       const ctx = await setup()
       const cancel = vi.fn()
       const source = new ReadableStream({ cancel })
-      ctx.fs.mount('mem:', { read: async () => ({ stream: source }) })
-      await ctx.fs.file('mem://a.txt').slice(1, 2).stream().cancel('reason')
+      ctx.std.fs.mount('mem:', { read: async () => ({ stream: source }) })
+      await ctx.std.fs.file('mem://a.txt').slice(1, 2).stream().cancel('reason')
       expect(cancel).toHaveBeenCalledWith('reason')
     })
 
     it('applies the remaining slices to the range returned by the provider', async () => {
       const ctx = await setup()
       const options: object[] = []
-      ctx.fs.mount('mem:', {
+      ctx.std.fs.mount('mem:', {
         capabilities: { range: 'signed' },
         async read(url, value) {
           options.push(value)
           return { stream: new Blob(['0123']).slice(value.start, value.end).stream() }
         },
       })
-      expect(await ctx.fs.file('mem://a.txt').slice(0, 4).slice(-1).text()).to.equal('3')
-      expect(await ctx.fs.file('mem://a.txt').slice(-3).slice(0, 2).text()).to.equal('12')
+      expect(await ctx.std.fs.file('mem://a.txt').slice(0, 4).slice(-1).text()).to.equal('3')
+      expect(await ctx.std.fs.file('mem://a.txt').slice(-3).slice(0, 2).text()).to.equal('12')
       expect(options).to.deep.equal([{ end: 4 }, { start: -3 }])
     })
 
     it('keeps only the bytes of a negative slice of a range read by the provider', async () => {
       const ctx = await setup()
       const content = new Uint8Array(1 << 20).fill(1)
-      ctx.fs.mount('mem:', {
+      ctx.std.fs.mount('mem:', {
         capabilities: { range: 'signed' },
         read: async (url, { start, end }) => ({ stream: new Blob([content.subarray(start, end)]).stream() }),
       })
-      const reader = ctx.fs.file('mem://a.bin').slice(0, 1 << 20).slice(-1).stream().getReader()
+      const reader = ctx.std.fs.file('mem://a.bin').slice(0, 1 << 20).slice(-1).stream().getReader()
       const { value } = await reader.read()
       expect(value).to.deep.equal(new Uint8Array([1]))
       expect(value!.buffer.byteLength).to.equal(1)
@@ -1636,19 +1636,19 @@ describe('Fs', () => {
 
     it('ends a slice of a range read by the provider at its end', async () => {
       const ctx = await setup()
-      ctx.fs.mount('mem:', {
+      ctx.std.fs.mount('mem:', {
         capabilities: { range: 'signed' },
         read: async url => ({ stream: new ReadableStream({
           start: controller => controller.enqueue(new TextEncoder().encode('a')),
           pull: controller => controller.error(new FsError('Unknown', url, 'Unknown')),
         }) }),
       })
-      expect(await ctx.fs.file('mem://a.txt').slice(-1000).slice(0, 1).text()).to.equal('a')
+      expect(await ctx.std.fs.file('mem://a.txt').slice(-1000).slice(0, 1).text()).to.equal('a')
     })
 
     it('emits bytes before EOF when only the end is relative to EOF', async () => {
       const ctx = await setup()
-      ctx.fs.mount('mem:', {
+      ctx.std.fs.mount('mem:', {
         async read() {
           const chunks = ['ab', 'cde']
           return { stream: new ReadableStream({
@@ -1660,13 +1660,13 @@ describe('Fs', () => {
           }, { highWaterMark: 0 }) }
         },
       })
-      const file = ctx.fs.file('mem://a.txt')
+      const file = ctx.std.fs.file('mem://a.txt')
       expect(await file.slice(0, -3).slice(0, 2).text()).to.equal('ab')
     })
 
     it('preserves pending bytes when a consumer transfers an emitted chunk', async () => {
       const ctx = await setup()
-      ctx.fs.mount('mem:', {
+      ctx.std.fs.mount('mem:', {
         read: async () => ({ stream: new ReadableStream({
           start(controller) {
             for (const chunk of ['abc', 'de', 'fgh']) controller.enqueue(new TextEncoder().encode(chunk))
@@ -1674,7 +1674,7 @@ describe('Fs', () => {
           },
         }) }),
       })
-      const reader = ctx.fs.file('mem://a.txt').slice(0, -3).stream().getReader()
+      const reader = ctx.std.fs.file('mem://a.txt').slice(0, -3).stream().getReader()
       let text = ''
       while (true) {
         const { done, value } = await reader.read()
@@ -1687,22 +1687,22 @@ describe('Fs', () => {
 
     it('ends a range once it is known to be empty, after the first read', async () => {
       const ctx = await setup()
-      ctx.fs.mount('mem:', {
+      ctx.std.fs.mount('mem:', {
         read: async url => ({ stream: new ReadableStream({
           start: controller => controller.enqueue(new Uint8Array(5)),
           pull: controller => controller.error(new FsError('Unknown', url, 'Unknown')),
         }) }),
       })
       for (const [start, end] of [[4, 4], [6, 2], [-2, -2], [-1, 0], [-2, 3]]) {
-        expect(await ctx.fs.file('mem://a.txt').slice(start, end).text(), `slice(${start}, ${end})`).to.equal('')
+        expect(await ctx.std.fs.file('mem://a.txt').slice(start, end).text(), `slice(${start}, ${end})`).to.equal('')
       }
-      expect(await ctx.fs.file('mem://a.txt').slice(1).slice(-2, -2).text()).to.equal('')
+      expect(await ctx.std.fs.file('mem://a.txt').slice(1).slice(-2, -2).text()).to.equal('')
     })
 
     it('cancels the source of a range with a negative bound without `stat`', async () => {
       const ctx = await setup()
       const cancel = vi.fn()
-      ctx.fs.mount('mem:', {
+      ctx.std.fs.mount('mem:', {
         read: async () => ({ stream: new ReadableStream({
           async pull(controller) {
             await new Promise(resolve => setTimeout(resolve, 1))
@@ -1711,7 +1711,7 @@ describe('Fs', () => {
           cancel,
         }, { highWaterMark: 0 }) }),
       })
-      const reader = ctx.fs.file('mem://a.bin').slice(-4).stream().getReader()
+      const reader = ctx.std.fs.file('mem://a.bin').slice(-4).stream().getReader()
       const reading = reader.read()
       await new Promise(resolve => setTimeout(resolve, 10))
       await reader.cancel('reason')
@@ -1721,25 +1721,25 @@ describe('Fs', () => {
 
     it('reports a failure of the first read of an empty range', async () => {
       const ctx = await setup()
-      ctx.fs.mount('mem:', {
+      ctx.std.fs.mount('mem:', {
         read: async url => ({ stream: new ReadableStream({
           pull: controller => controller.error(new FsError('NotFound', url, 'NotFound')),
         }) }),
       })
-      expect(await code(ctx.fs.file('mem://a.txt').slice(0, 0).text())).to.equal('NotFound')
+      expect(await code(ctx.std.fs.file('mem://a.txt').slice(0, 0).text())).to.equal('NotFound')
     })
 
     it('ends a range without waiting for the cancellation of the source', async () => {
       const ctx = await setup()
       const [branch] = new Blob(['0123456789']).stream().tee()
-      ctx.fs.mount('mem:', { read: async () => ({ stream: branch }) })
-      expect(await ctx.fs.file('mem://a.txt').slice(0, 1).text()).to.equal('0')
+      ctx.std.fs.mount('mem:', { read: async () => ({ stream: branch }) })
+      expect(await ctx.std.fs.file('mem://a.txt').slice(0, 1).text()).to.equal('0')
     })
 
     it('converts the bounds as `[Clamp] long long`', async () => {
       const ctx = await setup()
-      ctx.fs.mount('mem:', { read: async () => ({ stream: new Blob(['0123456789']).stream() }) })
-      const file = ctx.fs.file('mem://a.txt')
+      ctx.std.fs.mount('mem:', { read: async () => ({ stream: new Blob(['0123456789']).stream() }) })
+      const file = ctx.std.fs.file('mem://a.txt')
       const ranges: [number, number?, string?][] = [
         [0, Infinity, '0123456789'], [Infinity, undefined, ''], [-Infinity, undefined, '0123456789'],
         [NaN, 3, '012'], [1.5, undefined, '23456789'], [2.5, undefined, '23456789'],
@@ -1752,7 +1752,7 @@ describe('Fs', () => {
 
     it('rejects a bound that is not a number with a `TypeError`', async () => {
       const ctx = await setup()
-      expect(() => ctx.fs.file('mem://a.txt').slice('1' as any)).to.throw(TypeError)
+      expect(() => ctx.std.fs.file('mem://a.txt').slice('1' as any)).to.throw(TypeError)
     })
   })
 
@@ -1780,8 +1780,8 @@ describe('Fs', () => {
     it('forwards the version to a provider with `conditional.read`, without `stat()`', async () => {
       const ctx = await setup()
       const { calls, provider } = versioned({ range: 'signed', conditional: { stat: true, read: true } })
-      ctx.fs.mount('mem:', provider)
-      const file = ctx.fs.file('mem://a.txt')
+      ctx.std.fs.mount('mem:', provider)
+      const file = ctx.std.fs.file('mem://a.txt')
       expect(await file.slice(2, 8).text({ ifMatch: 'v1' })).to.equal('234567')
       expect(await code(file.text({ ifMatch: 'v2' }))).to.equal('VersionMismatch')
       expect(calls).to.deep.equal([
@@ -1793,8 +1793,8 @@ describe('Fs', () => {
     it('checks the version by `stat()` before a read without the version', async () => {
       const ctx = await setup()
       const { calls, provider } = versioned({ range: 'signed', conditional: { stat: true } })
-      ctx.fs.mount('mem:', provider)
-      const file = ctx.fs.file('mem://a.txt')
+      ctx.std.fs.mount('mem:', provider)
+      const file = ctx.std.fs.file('mem://a.txt')
       expect(await file.slice(2, 8).text({ ifMatch: 'v1' })).to.equal('234567')
       expect(calls).to.deep.equal([['stat', { follow: true }], ['read', { start: 2, end: 8 }]])
       calls.length = 0
@@ -1807,8 +1807,8 @@ describe('Fs', () => {
       for (const capabilities of cases) {
         const ctx = await setup()
         const { calls, provider } = versioned(capabilities)
-        ctx.fs.mount('mem:', provider)
-        const file = ctx.fs.file('mem://a.txt')
+        ctx.std.fs.mount('mem:', provider)
+        const file = ctx.std.fs.file('mem://a.txt')
         for (const ref of [file, file.slice(0, 0), file.slice(-2)]) {
           expect(() => ref.stream({ ifMatch: 'v1' })).to.throw(FsError).with.property('code', 'NotSupported')
         }
@@ -1822,16 +1822,16 @@ describe('Fs', () => {
       const ctx = await setup()
       const { calls, provider } = versioned({ conditional: { stat: true } })
       delete provider.stat
-      ctx.fs.mount('mem:', provider)
-      expect(() => ctx.fs.file('mem://a.txt').stream({ ifMatch: 'v1' })).to.throw(FsError).with.property('code', 'NotSupported')
+      ctx.std.fs.mount('mem:', provider)
+      expect(() => ctx.std.fs.file('mem://a.txt').stream({ ifMatch: 'v1' })).to.throw(FsError).with.property('code', 'NotSupported')
       expect(calls).to.deep.equal([])
     })
 
     it('rejects a version that is not a string with a `TypeError`', async () => {
       const ctx = await setup()
       const { calls, provider } = versioned({ conditional: { stat: true, read: true } })
-      ctx.fs.mount('mem:', provider)
-      const file = ctx.fs.file('mem://a.txt')
+      ctx.std.fs.mount('mem:', provider)
+      const file = ctx.std.fs.file('mem://a.txt')
       expect(() => file.stream({ ifMatch: null as any })).to.throw(TypeError)
       expect(await file.text({ ifMatch: 1 as any }).catch(error => error)).to.be.instanceOf(TypeError)
       expect(calls).to.deep.equal([])
@@ -1840,16 +1840,16 @@ describe('Fs', () => {
     it('fails on an entry other than a file, also with the same version', async () => {
       const ctx = await setup()
       const { calls, provider } = versioned({ conditional: { stat: true } }, { type: 'directory' })
-      ctx.fs.mount('mem:', provider)
-      expect(await code(ctx.fs.file('mem://a.txt').text({ ifMatch: 'v1' }))).to.equal('VersionMismatch')
+      ctx.std.fs.mount('mem:', provider)
+      expect(await code(ctx.std.fs.file('mem://a.txt').text({ ifMatch: 'v1' }))).to.equal('VersionMismatch')
       expect(calls.map(([name]) => name)).to.deep.equal(['stat'])
     })
 
     it('reports a file without a version under `conditional.stat` as a failure of the provider', async () => {
       const ctx = await setup()
       const { calls, provider } = versioned({ conditional: { stat: true } }, { version: undefined })
-      ctx.fs.mount('mem:', provider)
-      expect(await code(ctx.fs.file('mem://a.txt').text({ ifMatch: 'v1' }))).to.equal('Unknown')
+      ctx.std.fs.mount('mem:', provider)
+      expect(await code(ctx.std.fs.file('mem://a.txt').text({ ifMatch: 'v1' }))).to.equal('Unknown')
       expect(calls.map(([name]) => name)).to.deep.equal(['stat'])
     })
 
@@ -1860,16 +1860,16 @@ describe('Fs', () => {
         calls.push(['stat'])
         throw new FsError('PermissionDenied', url, 'denied')
       }
-      ctx.fs.mount('mem:', provider)
-      expect(await code(ctx.fs.file('mem://a.txt').slice(-3).text({ ifMatch: 'v1' }))).to.equal('PermissionDenied')
+      ctx.std.fs.mount('mem:', provider)
+      expect(await code(ctx.std.fs.file('mem://a.txt').slice(-3).text({ ifMatch: 'v1' }))).to.equal('PermissionDenied')
       expect(calls).to.deep.equal([['stat']])
     })
 
     it('resolves a range by the size of a matching version', async () => {
       const ctx = await setup()
       const { calls, provider } = versioned({ range: 'unsigned', conditional: { stat: true, read: true } })
-      ctx.fs.mount('mem:', provider)
-      const file = ctx.fs.file('mem://a.txt')
+      ctx.std.fs.mount('mem:', provider)
+      const file = ctx.std.fs.file('mem://a.txt')
       expect(await file.slice(-3).text({ ifMatch: 'v1' })).to.equal('789')
       expect(calls).to.deep.equal([['stat', { follow: true }], ['read', { start: 7, end: 10, ifMatch: 'v1' }]])
       calls.length = 0
@@ -1880,24 +1880,24 @@ describe('Fs', () => {
     it('slices the stream of a matching version whose size cannot resolve a range', async () => {
       const ctx = await setup()
       const { calls, provider } = versioned({ range: 'unsigned', conditional: { stat: true } }, { size: NaN })
-      ctx.fs.mount('mem:', provider)
-      expect(await ctx.fs.file('mem://a.txt').slice(-3).text({ ifMatch: 'v1' })).to.equal('789')
+      ctx.std.fs.mount('mem:', provider)
+      expect(await ctx.std.fs.file('mem://a.txt').slice(-3).text({ ifMatch: 'v1' })).to.equal('789')
       expect(calls).to.deep.equal([['stat', { follow: true }], ['read', {}]])
     })
 
     it('does not query a size that is not checked against the version', async () => {
       const ctx = await setup()
       const { calls, provider } = versioned({ range: 'unsigned', conditional: { read: true } })
-      ctx.fs.mount('mem:', provider)
-      expect(await ctx.fs.file('mem://a.txt').slice(2, 8).slice(-2).text({ ifMatch: 'v1' })).to.equal('67')
+      ctx.std.fs.mount('mem:', provider)
+      expect(await ctx.std.fs.file('mem://a.txt').slice(2, 8).slice(-2).text({ ifMatch: 'v1' })).to.equal('67')
       expect(calls).to.deep.equal([['read', { start: 2, end: 8, ifMatch: 'v1' }]])
     })
 
     it('reports a rejected read of the provider through the stream', async () => {
       const ctx = await setup()
       const failure = new FsError('NotFound', new URL('mem://a.txt'), 'missing')
-      ctx.fs.mount('mem:', { read() { throw failure } })
-      const stream = ctx.fs.file('mem://a.txt').stream()
+      ctx.std.fs.mount('mem:', { read() { throw failure } })
+      const stream = ctx.std.fs.file('mem://a.txt').stream()
       expect(await stream.getReader().read().catch(error => error)).to.equal(failure)
     })
 
@@ -1910,11 +1910,11 @@ describe('Fs', () => {
           controller.close()
         },
       })
-      ctx.fs.mount('mem:', { read: async url => ({ stream: source(url.pathname ? [url.pathname] : []) }) })
-      const reader = ctx.fs.file('mem:foo').stream().getReader()
+      ctx.std.fs.mount('mem:', { read: async url => ({ stream: source(url.pathname ? [url.pathname] : []) }) })
+      const reader = ctx.std.fs.file('mem:foo').stream().getReader()
       expect(new TextDecoder().decode((await reader.read()).value)).to.equal('foo')
       await reader.closed
-      await ctx.fs.file('mem:').stream().getReader().closed
+      await ctx.std.fs.file('mem:').stream().getReader().closed
     })
 
     it('cancels a source requested before the stream is cancelled once it is obtained, with the result of its cancellation', async () => {
@@ -1922,13 +1922,13 @@ describe('Fs', () => {
       const opened = Promise.withResolvers<void>()
       const failure = new Error('cleanup failed')
       const cancel = vi.fn(() => Promise.reject(failure))
-      ctx.fs.mount('mem:', {
+      ctx.std.fs.mount('mem:', {
         async read() {
           await opened.promise
           return { stream: new ReadableStream({ cancel }) }
         },
       })
-      const cancelled = ctx.fs.file('mem://a.txt').stream().cancel('reason')
+      const cancelled = ctx.std.fs.file('mem://a.txt').stream().cancel('reason')
       opened.resolve()
       expect(await cancelled.catch(error => error)).to.equal(failure)
       expect(cancel).toHaveBeenCalledWith('reason')
@@ -1975,18 +1975,18 @@ describe('Fs', () => {
     it('forwards the version to a provider with `conditional.write`, with `atomic`', async () => {
       const ctx = await setup()
       const { calls, provider } = versioned({ atomic: true, conditional: { stat: true, write: true } }, { [target]: 'old' })
-      ctx.fs.mount('mem:', provider)
-      expect(await ctx.fs.file(target).write('new', { ifMatch: 'old', atomic: true })).to.deep.equal({ version: 'written' })
+      ctx.std.fs.mount('mem:', provider)
+      expect(await ctx.std.fs.file(target).write('new', { ifMatch: 'old', atomic: true })).to.deep.equal({ version: 'written' })
       expect(calls).to.deep.equal([['write', target, { exclusive: false, atomic: true, ifMatch: 'old' }]])
     })
 
     it('checks the version by `stat()` before a direct write without the version', async () => {
       const ctx = await setup()
       const { files, calls, provider } = versioned({ conditional: { stat: true } }, { [target]: 'old' })
-      ctx.fs.mount('mem:', provider)
-      const file = ctx.fs.file(target)
+      ctx.std.fs.mount('mem:', provider)
+      const file = ctx.std.fs.file(target)
       expect(await code(file.write('new', { ifMatch: 'other' }))).to.equal('VersionMismatch')
-      expect(await code(ctx.fs.file('mem://vol/b.txt').write('new', { ifMatch: 'old' }))).to.equal('VersionMismatch')
+      expect(await code(ctx.std.fs.file('mem://vol/b.txt').write('new', { ifMatch: 'old' }))).to.equal('VersionMismatch')
       expect(calls.map(([name]) => name)).to.deep.equal(['stat', 'stat'])
       calls.length = 0
       expect(await file.write('new', { ifMatch: 'old' })).to.deep.equal({ version: 'written' })
@@ -2001,9 +2001,9 @@ describe('Fs', () => {
       const ctx = await setup()
       const { calls, provider } = versioned({ conditional: { stat: true } }, { [target]: 'old' })
       provider.stat = (url) => { throw new FsError('NotFound', url, 'missing') }
-      ctx.fs.mount('mem:', provider)
+      ctx.std.fs.mount('mem:', provider)
       for (const atomic of [false, true]) {
-        expect(await code(ctx.fs.file(target).write('new', { ifMatch: 'old', atomic }))).to.equal('VersionMismatch')
+        expect(await code(ctx.std.fs.file(target).write('new', { ifMatch: 'old', atomic }))).to.equal('VersionMismatch')
       }
       expect(calls).to.deep.equal([])
     })
@@ -2012,9 +2012,9 @@ describe('Fs', () => {
       const ctx = await setup()
       const { calls, provider } = versioned({ conditional: { stat: true } })
       provider.stat = async () => ({ type: 'directory', size: 0, mtime: new Date(0), version: 'old' })
-      ctx.fs.mount('mem:', provider)
-      expect(await code(ctx.fs.file(target).write('new', { ifMatch: 'old' }))).to.equal('VersionMismatch')
-      expect(await code(ctx.fs.file(target).write('new', { ifMatch: 'old', atomic: true }))).to.equal('VersionMismatch')
+      ctx.std.fs.mount('mem:', provider)
+      expect(await code(ctx.std.fs.file(target).write('new', { ifMatch: 'old' }))).to.equal('VersionMismatch')
+      expect(await code(ctx.std.fs.file(target).write('new', { ifMatch: 'old', atomic: true }))).to.equal('VersionMismatch')
       expect(calls).to.deep.equal([])
     })
 
@@ -2023,8 +2023,8 @@ describe('Fs', () => {
       const { files, calls, provider } = versioned({ conditional: { stat: true, write: true } }, { [target]: 'old' }, [
         new FsError('Busy', new URL(target), 'busy'),
       ])
-      ctx.fs.mount('mem:', provider)
-      const file = ctx.fs.file(target)
+      ctx.std.fs.mount('mem:', provider)
+      const file = ctx.std.fs.file(target)
       expect(await code(file.write('new', { ifMatch: 'other', atomic: true }))).to.equal('VersionMismatch')
       expect(calls.map(([name]) => name)).to.deep.equal(['stat'])
       calls.length = 0
@@ -2050,8 +2050,8 @@ describe('Fs', () => {
           files.set(target, null)
         }
       }
-      ctx.fs.mount('mem:', provider)
-      expect(await code(ctx.fs.file(target).write('new', { ifMatch: 'old', atomic: true }))).to.equal('VersionMismatch')
+      ctx.std.fs.mount('mem:', provider)
+      expect(await code(ctx.std.fs.file(target).write('new', { ifMatch: 'old', atomic: true }))).to.equal('VersionMismatch')
       expect([...files]).to.deep.equal([[target, null]])
       expect(calls.at(-1)?.[0]).to.equal('remove')
     })
@@ -2061,11 +2061,11 @@ describe('Fs', () => {
       for (const capabilities of cases) {
         const ctx = await setup()
         const { calls, provider } = versioned(capabilities, { [target]: 'old' })
-        ctx.fs.mount('mem:', provider)
+        ctx.std.fs.mount('mem:', provider)
         // `conditional.write` serves only a direct write
         const atomic = !!capabilities.conditional
         const cancel = vi.fn()
-        const error = await ctx.fs.file(target).write(new ReadableStream({ cancel }), { ifMatch: 'old', atomic }).catch(error => error)
+        const error = await ctx.std.fs.file(target).write(new ReadableStream({ cancel }), { ifMatch: 'old', atomic }).catch(error => error)
         expect(error).to.have.property('code', 'NotSupported')
         expect(cancel).toHaveBeenCalledWith(error)
         expect(calls).to.deep.equal([])
@@ -2076,9 +2076,9 @@ describe('Fs', () => {
       const ctx = await setup()
       const { calls, provider } = versioned({ conditional: { stat: true } }, { [target]: 'old' })
       delete provider.stat
-      ctx.fs.mount('mem:', provider)
+      ctx.std.fs.mount('mem:', provider)
       for (const atomic of [false, true]) {
-        expect(await code(ctx.fs.file(target).write('new', { ifMatch: 'old', atomic }))).to.equal('NotSupported')
+        expect(await code(ctx.std.fs.file(target).write('new', { ifMatch: 'old', atomic }))).to.equal('NotSupported')
       }
       expect(calls).to.deep.equal([])
     })
@@ -2086,10 +2086,10 @@ describe('Fs', () => {
     it('rejects an invalid version, or one with `exclusive`, with a `TypeError` that cancels the stream', async () => {
       const ctx = await setup()
       const { calls, provider } = versioned({ conditional: { stat: true, write: true } }, { [target]: 'old' })
-      ctx.fs.mount('mem:', provider)
+      ctx.std.fs.mount('mem:', provider)
       for (const options of [{ ifMatch: null as any }, { ifMatch: 'old', exclusive: true }]) {
         const cancel = vi.fn()
-        const error = await ctx.fs.file(target).write(new ReadableStream({ cancel }), options).catch(error => error)
+        const error = await ctx.std.fs.file(target).write(new ReadableStream({ cancel }), options).catch(error => error)
         expect(error).to.be.instanceOf(TypeError)
         expect(cancel).toHaveBeenCalledWith(error)
       }
@@ -2099,8 +2099,8 @@ describe('Fs', () => {
     it('rejects a copy with a version with a `TypeError` before any I/O', async () => {
       const ctx = await setup()
       const { calls, provider } = versioned({ conditional: { stat: true, write: true } }, { [target]: 'old' })
-      ctx.fs.mount('mem:', provider)
-      const error = await ctx.fs.copy(target, 'mem://vol/b.txt', { ifMatch: 'old' } as CopyOptions).catch(error => error)
+      ctx.std.fs.mount('mem:', provider)
+      const error = await ctx.std.fs.copy(target, 'mem://vol/b.txt', { ifMatch: 'old' } as CopyOptions).catch(error => error)
       expect(error).to.be.instanceOf(TypeError)
       expect(calls).to.deep.equal([])
     })

@@ -48,6 +48,26 @@ function isSpecialProperty(prop: string | symbol): prop is symbol {
     || prop.startsWith('_')
 }
 
+class NamespaceHandler implements ProxyHandler<object> {
+  constructor(private ctx: Context, private prefix: string) {}
+
+  get(target: object, prop: string | symbol) {
+    if (prop === symbols.original) return target
+    if (isSpecialProperty(prop)) return Reflect.get(target, prop)
+    return Reflect.get(this.ctx, this.prefix + prop)
+  }
+
+  set(target: object, prop: string | symbol, value: any) {
+    if (isSpecialProperty(prop)) return false
+    return Reflect.set(this.ctx, this.prefix + prop, value)
+  }
+
+  has(target: object, prop: string | symbol) {
+    if (isSpecialProperty(prop)) return Reflect.has(target, prop)
+    return Reflect.has(this.ctx, this.prefix + prop)
+  }
+}
+
 export type Property = Property.Service | Property.Accessor
 
 export namespace Property {
@@ -277,6 +297,15 @@ export class ReflectService {
       this.props[name] = { type: 'accessor', ...options }
       return () => delete this.props[name]
     }, `ctx.accessor(${JSON.stringify(name)})`)
+  }
+
+  /** Expose `name:key` as `ctx[name][key]` in the accessing context. */
+  namespace(name: string) {
+    const target = Object.freeze(Object.create(null))
+    const prefix = name + ':'
+    return this.accessor(name, {
+      get() { return new Proxy(target, new NamespaceHandler(this, prefix)) },
+    })
   }
 
   mixin(source: any, mixins: string[] | Dict<string>) {

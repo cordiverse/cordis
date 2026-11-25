@@ -51,7 +51,7 @@ export const Config: z<Config> = z.object({
 
 export const name = 'server:acl'
 
-export const inject = ['server']
+export const inject = ['std:server']
 
 export function apply(ctx: Context, config: Config) {
   ctx.on('server/route-check', (req, route) => {

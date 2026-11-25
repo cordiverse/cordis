@@ -14,7 +14,7 @@ describe('Association', () => {
 
     class FooBar extends Service {
       constructor(ctx: Context) {
-        super(ctx, 'foo.bar')
+        super(ctx, 'foo:bar')
       }
     }
 
@@ -36,8 +36,8 @@ describe('Association', () => {
       }
     }
 
-    root.provide('foo.bar')
-    root.provide('foo.baz')
+    root.provide('foo:bar')
+    root.provide('foo:baz')
     await root.use(Foo)
     expect(root.foo).to.be.instanceof(Foo)
     root.foo.qux = 2
@@ -49,8 +49,8 @@ describe('Association', () => {
     await root.inject(['foo'], (ctx) => {
       expect(ctx.foo.qux).to.equal(2)
       expect(ctx.foo.bar).to.equal(3)
-      expect(() => ctx[`foo.qux`]).to.throw('cannot get property "foo.qux" without inject')
-      expect(ctx[`foo.bar`]).to.equal(3)
+      expect(() => ctx[`foo:qux`]).to.throw('cannot get property "foo:qux" without inject')
+      expect(ctx[`foo:bar`]).to.equal(3)
       expect(ctx.foo.baz()).to.be.instanceof(Foo)
     })
   })
@@ -85,7 +85,7 @@ describe('Association', () => {
       constructor(ctx: Context) {
         super(ctx, 'bar')
         ctx.mixin('bar', {
-          answer: 'session.answer',
+          answer: 'session:answer',
         })
       }
 
@@ -142,7 +142,7 @@ describe('Association', () => {
     class Bar {
       constructor(ctx: Context) {
         ctx.mixin(this, {
-          bar: 'session.bar',
+          bar: 'session:bar',
         })
       }
 
@@ -182,7 +182,7 @@ describe('Association', () => {
 
     class FooBar extends Service {
       constructor(ctx: Context) {
-        super(ctx, 'foo.bar')
+        super(ctx, 'foo:bar')
       }
 
       hello() {
@@ -191,7 +191,7 @@ describe('Association', () => {
     }
 
     class Baz extends Service {
-      static inject = ['foo', 'foo.bar']
+      static inject = ['foo', 'foo:bar']
 
       constructor(ctx: Context) {
         super(ctx, 'baz')
@@ -203,7 +203,7 @@ describe('Association', () => {
     }
 
     class Qux extends Service {
-      // injects `foo` but not `foo.bar`
+      // injects `foo` but not `foo:bar`
       static inject = ['foo']
 
       constructor(ctx: Context) {
@@ -221,13 +221,13 @@ describe('Association', () => {
     await root.use(Baz)
     await root.use(Qux)
 
-    // `ctx.foo.bar` must be governed by the same fiber as `ctx['foo.bar']`,
+    // `ctx.foo.bar` must be governed by the same fiber as `ctx['foo:bar']`,
     // i.e. the service that runs the access, not whoever called it
     expect(root.baz.probe()).to.equal('bar')
-    expect(() => root.qux.probe()).to.throw('cannot get property "foo.bar" without inject')
+    expect(() => root.qux.probe()).to.throw('cannot get property "foo:bar" without inject')
     await root.inject(['baz', 'qux'], (ctx) => {
       expect(ctx.baz.probe()).to.equal('bar')
-      expect(() => ctx.qux.probe()).to.throw('cannot get property "foo.bar" without inject')
+      expect(() => ctx.qux.probe()).to.throw('cannot get property "foo:bar" without inject')
     })
   })
 

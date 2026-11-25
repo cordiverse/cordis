@@ -6,12 +6,12 @@ import z from 'schemastery'
 
 declare module 'cordis' {
   interface Context {
-    env: Readonly<Record<string, string | undefined>>
+    'std:env': Readonly<Record<string, string | undefined>>
   }
 }
 
 export const name = 'env'
-export const inject = ['fs']
+export const inject = ['std:fs']
 
 export interface Config {
   populate?: boolean
@@ -39,7 +39,7 @@ export async function apply(ctx: Context, config: Config = {}) {
   // a missing file is skipped
   const contents = await Promise.all(files.map(async (file) => {
     try {
-      return await ctx.fs.file(file).text()
+      return await ctx.std.fs.file(file).text()
     } catch (error) {
       if (error instanceof FsError && error.code === 'NotFound') return
       throw error
@@ -83,5 +83,5 @@ export async function apply(ctx: Context, config: Config = {}) {
   }
 
   // frozen, so that the values compared at the restoration are the assigned ones
-  ctx.provide('env', Object.freeze(env))
+  ctx.provide('std:env', Object.freeze(env))
 }

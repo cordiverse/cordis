@@ -3,12 +3,12 @@ import { Cli, Command } from './index.ts'
 import kleur from 'kleur'
 
 export const name = 'cli-help'
-export const inject = ['cli']
+export const inject = ['std:cli']
 
 export interface Config {}
 
 export function apply(ctx: Context, config: Config = {}) {
-  const cli = ctx.cli
+  const cli = ctx.std.cli
 
   cli.command('help [command:string]', 'Print help for a command')
     .option('-H, --show-hidden')

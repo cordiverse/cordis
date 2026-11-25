@@ -39,7 +39,7 @@ async function setup(config: Partial<Static.Config> = {}, { files = site, Provid
     root: 'memory:///site/',
     ...config,
   } as Static.Config)
-  return { ctx, url: ctx.server.publicUrl }
+  return { ctx, url: ctx.std.server.publicUrl }
 }
 
 describe('@cordisjs/server-static', () => {
@@ -169,7 +169,7 @@ describe('@cordisjs/server-static', () => {
 
     it('should return 403 for path traversal', async () => {
       // fetch() normalizes URLs, so we use raw http.get to preserve ..
-      const port = ctx.server.port
+      const port = ctx.std.server.port
       const res = await new Promise<http.IncomingMessage>((resolve) => {
         http.get({ host: '127.0.0.1', port, path: '/..%2F..%2F..%2Fetc/passwd' }, resolve)
       })
@@ -186,7 +186,7 @@ describe('@cordisjs/server-static', () => {
 
     it('should fallthrough when enabled', async () => {
       ({ ctx, url } = await setup({ fallthrough: true }))
-      ctx.server.get('{/*path}', async (req, res, next) => {
+      ctx.std.server.get('{/*path}', async (req, res, next) => {
         res.body = 'fallback'
       })
       await sleep()

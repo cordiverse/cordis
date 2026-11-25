@@ -73,7 +73,7 @@ function unlink(parent: Directory, name: string) {
   parent.mtime = new Date()
 }
 
-// the locations that a mount serves, as `ctx.fs.mount()` routes them
+// the locations that a mount serves, as `ctx.std.fs.mount()` routes them
 interface Scope {
   /**
    * The base of the keys of the top level of `files`: the mount, or
@@ -154,7 +154,7 @@ async function collect(body: ReadableStream<Uint8Array>) {
  * A subclass can override the operations, e.g. to inject failures in tests.
  */
 class MemoryFs implements FsProvider {
-  static inject = ['fs']
+  static inject = ['std:fs']
 
   readonly capabilities: FsProvider.Capabilities = {
     range: 'signed',
@@ -171,7 +171,7 @@ class MemoryFs implements FsProvider {
     const mount = config.mount ?? 'memory:'
     const scope = toScope(mount)
     this._populate(config.files ?? {}, scope, scope.base)
-    ctx.fs.mount(mount, this)
+    ctx.std.fs.mount(mount, this)
   }
 
   private _populate(tree: MemoryFs.Tree, scope: Scope, base: URL | undefined) {
@@ -179,7 +179,7 @@ class MemoryFs implements FsProvider {
       let url: URL
       try {
         // a path without a base has nothing to be resolved against
-        url = this.ctx.fs.resolve(key, base ?? new URL('about:blank'))
+        url = this.ctx.std.fs.resolve(key, base ?? new URL('about:blank'))
       } catch (error) {
         const message = base
           ? `invalid key ${JSON.stringify(key)}`
@@ -451,7 +451,7 @@ class MemoryFs implements FsProvider {
           continue
         }
       }
-      watcher.emit('change', url ??= this.ctx.fs.resolve(names, new URL(root + '/')))
+      watcher.emit('change', url ??= this.ctx.std.fs.resolve(names, new URL(root + '/')))
     }
   }
 }

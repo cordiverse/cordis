@@ -67,7 +67,7 @@ export function harness(defaults: Options = {}) {
     await ctx.loader.await()
 
     const include = () => ctx.loader.store[id]!.subtree as Include
-    // what `ctx.fs.watch()` triggers on a change; `refresh` also waits for any write
+    // what `ctx.std.fs.watch()` triggers on a change; `refresh` also waits for any write
     const settle = async () => {
       await include().refresh()
       await ctx.loader.await()
@@ -75,7 +75,7 @@ export function harness(defaults: Options = {}) {
     await settle()
 
     // a file of `fixtures`, the config file of the include by default
-    const file = (path = name) => ctx.fs.file(new URL(path, fixtures))
+    const file = (path = name) => ctx.std.fs.file(new URL(path, fixtures))
     const text = (path?: string) => file(path).text()
 
     return {

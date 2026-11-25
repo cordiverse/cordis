@@ -58,7 +58,7 @@ export class Request {
   private _bodyImpl: globalThis.Response
 
   constructor(public _req: IncomingMessage) {
-    defineProperty(this, Service.tracker, { associate: 'server.request' })
+    defineProperty(this, Service.tracker, { associate: 'std:server:request' })
     this.url = _req.url!
     this.method = _req.method!
     this.path = this.url.split('?')[0]
@@ -135,7 +135,7 @@ export class Response {
   private _formType?: string
 
   constructor(public _res: ServerResponse) {
-    defineProperty(this, Service.tracker, { associate: 'server.response' })
+    defineProperty(this, Service.tracker, { associate: 'std:server:response' })
   }
 
   get status() {

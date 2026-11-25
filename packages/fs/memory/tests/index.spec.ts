@@ -65,7 +65,7 @@ describe('MemoryFs', () => {
     for (const fiber of fibers.splice(0)) await fiber.dispose()
   })
 
-  // a context with `fs` and no provider
+  // a context with `std:fs` and no provider
   async function context() {
     const ctx = new Context()
     fibers.push(await ctx.use(Fs, { baseUrl: 'memory:///' }))
@@ -88,14 +88,14 @@ describe('MemoryFs', () => {
 
   it('checks exclusive atomic creation when the write commits', async () => {
     const ctx = await setup({ 'src': 'winner' })
-    const dest = ctx.fs.file('memory:///dest')
+    const dest = ctx.std.fs.file('memory:///dest')
     let controller!: ReadableStreamDefaultController<Uint8Array>
     const body = new ReadableStream<Uint8Array>({ start(c) { controller = c } })
     const options = { atomic: true, exclusive: true }
     const pending = dest.write(body, options)
     controller.enqueue(new Uint8Array([1]))
-    expect(await ctx.fs.exists(dest.url)).to.equal(false)
-    await ctx.fs.copy('memory:///src', dest.url, options)
+    expect(await ctx.std.fs.exists(dest.url)).to.equal(false)
+    await ctx.std.fs.copy('memory:///src', dest.url, options)
     controller.close()
     await rejects(pending, 'AlreadyExists')
     expect(await dest.text()).to.equal('winner')
@@ -103,8 +103,8 @@ describe('MemoryFs', () => {
 
   it('lets one of two writers of the same version commit', async () => {
     const ctx = await setup({ 'a.txt': 'old' })
-    const file = ctx.fs.file('memory:///a.txt')
-    const { version } = await ctx.fs.stat(file.url)
+    const file = ctx.std.fs.file('memory:///a.txt')
+    const { version } = await ctx.std.fs.stat(file.url)
     let controller!: ReadableStreamDefaultController<Uint8Array>
     const body = new ReadableStream<Uint8Array>({ start(c) { controller = c } })
     const pending = file.write(body, { atomic: true, ifMatch: version })
@@ -120,23 +120,23 @@ describe('MemoryFs', () => {
       const ctx = await setup({ 'a.txt': 'foo' })
       fibers.push(await ctx.use(MemoryFs, { mount: 'other:', files: { 'a.txt': 'bar' } }))
       fibers.push(await ctx.use(MemoryFs, { mount: 'memory://data', files: { 'a.txt': 'baz' } }))
-      expect(await ctx.fs.file('memory:///a.txt').text()).to.equal('foo')
-      expect(await ctx.fs.file('other:///a.txt').text()).to.equal('bar')
-      expect(await ctx.fs.file('memory://data/a.txt').text()).to.equal('baz')
+      expect(await ctx.std.fs.file('memory:///a.txt').text()).to.equal('foo')
+      expect(await ctx.std.fs.file('other:///a.txt').text()).to.equal('bar')
+      expect(await ctx.std.fs.file('memory://data/a.txt').text()).to.equal('baz')
     })
 
     it('takes absolute keys for a mount at a scheme whose URLs require a host', async () => {
       const ctx = await setup()
       expect(await start(ctx, { mount: 'https:' })).to.equal(FiberState.ACTIVE)
       fibers.push(await ctx.use(MemoryFs, { mount: 'wss:', files: { 'wss://app/a.txt': 'foo' } }))
-      expect(await ctx.fs.file('wss://app/a.txt').text()).to.equal('foo')
+      expect(await ctx.std.fs.file('wss://app/a.txt').text()).to.equal('foo')
     })
 
     it('takes absolute keys of any scheme for a mount at the empty string', async () => {
       const ctx = await context()
       fibers.push(await ctx.use(MemoryFs, { mount: '', files: { 'https://app/a.txt': 'foo', 'file:///b.txt': 'bar' } }))
-      expect(await ctx.fs.file('https://app/a.txt').text()).to.equal('foo')
-      expect(await ctx.fs.file('file:///b.txt').text()).to.equal('bar')
+      expect(await ctx.std.fs.file('https://app/a.txt').text()).to.equal('foo')
+      expect(await ctx.std.fs.file('file:///b.txt').text()).to.equal('bar')
     })
 
     it.each([
@@ -161,10 +161,10 @@ describe('MemoryFs', () => {
           'empty': {},
         },
       })
-      expect(await ctx.fs.file('a/b.txt').text()).to.equal('foo')
-      expect(await ctx.fs.file('dir/c.txt').text()).to.equal('bar')
-      expect(await ctx.fs.file('dir/nested/d.bin').bytes()).to.deep.equal(new Uint8Array([1, 2, 3]))
-      await ctx.fs.remove('dir/empty/')
+      expect(await ctx.std.fs.file('a/b.txt').text()).to.equal('foo')
+      expect(await ctx.std.fs.file('dir/c.txt').text()).to.equal('bar')
+      expect(await ctx.std.fs.file('dir/nested/d.bin').bytes()).to.deep.equal(new Uint8Array([1, 2, 3]))
+      await ctx.std.fs.remove('dir/empty/')
     })
 
     it('rejects a file below another file', async () => {
@@ -176,8 +176,8 @@ describe('MemoryFs', () => {
   describe('read', () => {
     it('reads the content of the file when the stream is created', async () => {
       const ctx = await setup({ 'a.txt': 'foo' })
-      const stream = ctx.fs.file('a.txt').stream()
-      await ctx.fs.file('a.txt').write('bar')
+      const stream = ctx.std.fs.file('a.txt').stream()
+      await ctx.std.fs.file('a.txt').write('bar')
       expect(await new Response(stream).text()).to.equal('foo')
     })
 
@@ -185,8 +185,8 @@ describe('MemoryFs', () => {
       const data = Buffer.from('foo')
       const ctx = await setup({ 'a.txt': data })
       data.fill(0)
-      for await (const chunk of ctx.fs.file('a.txt').stream()) chunk.fill(0)
-      expect(await ctx.fs.file('a.txt').text()).to.equal('foo')
+      for await (const chunk of ctx.std.fs.file('a.txt').stream()) chunk.fill(0)
+      expect(await ctx.std.fs.file('a.txt').text()).to.equal('foo')
     })
   })
 
@@ -200,8 +200,8 @@ describe('MemoryFs', () => {
           controller.error(error)
         },
       })
-      expect(await ctx.fs.file('a.txt').write(body).catch(error => error)).to.equal(error)
-      expect(await ctx.fs.file('a.txt').text()).to.equal('foo')
+      expect(await ctx.std.fs.file('a.txt').write(body).catch(error => error)).to.equal(error)
+      expect(await ctx.std.fs.file('a.txt').text()).to.equal('foo')
     })
 
     it('keeps each chunk of the body when the producer reuses its memory', async () => {
@@ -215,8 +215,8 @@ describe('MemoryFs', () => {
           controller.enqueue(chunk)
         },
       }, { highWaterMark: 0 })
-      await ctx.fs.file('a.txt').write(body)
-      expect(await ctx.fs.file('a.txt').text()).to.equal('ABC')
+      await ctx.std.fs.file('a.txt').write(body)
+      expect(await ctx.std.fs.file('a.txt').text()).to.equal('ABC')
     })
 
     it('fails when the parent directory is removed while the body is consumed', async () => {
@@ -229,9 +229,9 @@ describe('MemoryFs', () => {
           controller.close()
         },
       })
-      const write = ctx.fs.file('dir/a.txt').write(body)
+      const write = ctx.std.fs.file('dir/a.txt').write(body)
       await new Promise(resolve => setTimeout(resolve))
-      await ctx.fs.remove('dir')
+      await ctx.std.fs.remove('dir')
       resume()
       await rejects(write, 'NotFound')
     })
@@ -246,24 +246,24 @@ describe('MemoryFs', () => {
       vi.useFakeTimers({ toFake: ['Date'] })
       vi.setSystemTime(1000)
       const ctx = await setup({ 'dir/a.txt': 'foo' })
-      const mtime = async (path: string) => (await ctx.fs.stat(path)).mtime.getTime()
+      const mtime = async (path: string) => (await ctx.std.fs.stat(path)).mtime.getTime()
 
       vi.setSystemTime(2000)
-      await ctx.fs.file('dir/a.txt').write('bar')
+      await ctx.std.fs.file('dir/a.txt').write('bar')
       expect(await mtime('dir/a.txt')).to.equal(2000)
       expect(await mtime('dir')).to.equal(1000)
 
       vi.setSystemTime(3000)
-      await ctx.fs.file('dir/b.txt').write('')
+      await ctx.std.fs.file('dir/b.txt').write('')
       expect(await mtime('dir')).to.equal(3000)
 
       vi.setSystemTime(4000)
-      await ctx.fs.remove('dir/b.txt')
+      await ctx.std.fs.remove('dir/b.txt')
       expect(await mtime('dir')).to.equal(4000)
       expect(await mtime('dir/a.txt')).to.equal(2000)
 
       vi.setSystemTime(5000)
-      await ctx.fs.copy('dir/a.txt', 'dir/c.txt')
+      await ctx.std.fs.copy('dir/a.txt', 'dir/c.txt')
       expect(await mtime('dir/c.txt')).to.equal(5000)
       expect(await mtime('dir')).to.equal(5000)
     })
@@ -273,13 +273,13 @@ describe('MemoryFs', () => {
     it('creates the file once for two concurrent copies with `exclusive: true`', async () => {
       const ctx = await setup({ 'a.txt': 'foo', 'b.txt': 'bar' })
       const results = await Promise.allSettled([
-        ctx.fs.copy('a.txt', 'c.txt', { exclusive: true }),
-        ctx.fs.copy('b.txt', 'c.txt', { exclusive: true }),
+        ctx.std.fs.copy('a.txt', 'c.txt', { exclusive: true }),
+        ctx.std.fs.copy('b.txt', 'c.txt', { exclusive: true }),
       ])
       const created = results.findIndex(result => result.status === 'fulfilled')
       expect(results.filter(result => result.status === 'fulfilled')).to.have.length(1)
       expect((results[1 - created] as PromiseRejectedResult).reason).to.have.property('code', 'AlreadyExists')
-      expect(await ctx.fs.file('c.txt').text()).to.equal(['foo', 'bar'][created])
+      expect(await ctx.std.fs.file('c.txt').text()).to.equal(['foo', 'bar'][created])
     })
 
     it('copies between two mounts through their content', async () => {
@@ -294,9 +294,9 @@ describe('MemoryFs', () => {
       fibers.push(await ctx.use(RecordingFs, { mount: 'memory://one/', files: { 'src/a.txt': 'foo', 'src/sub/b.txt': 'bar' } }))
       fibers.push(await ctx.use(RecordingFs, { mount: 'memory://two/' }))
 
-      await ctx.fs.copy('memory://one/src', 'memory://two/dest', { recursive: true })
-      expect(await ctx.fs.file('memory://two/dest/a.txt').text()).to.equal('foo')
-      expect(await ctx.fs.file('memory://two/dest/sub/b.txt').text()).to.equal('bar')
+      await ctx.std.fs.copy('memory://one/src', 'memory://two/dest', { recursive: true })
+      expect(await ctx.std.fs.file('memory://two/dest/a.txt').text()).to.equal('foo')
+      expect(await ctx.std.fs.file('memory://two/dest/sub/b.txt').text()).to.equal('bar')
       expect(copies).to.deep.equal([])
     })
   })
@@ -304,55 +304,55 @@ describe('MemoryFs', () => {
   describe('location', () => {
     it('keeps the entries of each root apart', async () => {
       const ctx = await setup({ 'a.txt': 'app', 'memory://other/a.txt': 'other' })
-      expect(await ctx.fs.file('memory:///a.txt').text()).to.equal('app')
-      expect(await ctx.fs.file('memory://other/a.txt').text()).to.equal('other')
+      expect(await ctx.std.fs.file('memory:///a.txt').text()).to.equal('app')
+      expect(await ctx.std.fs.file('memory://other/a.txt').text()).to.equal('other')
     })
 
     it('names an entry by its decoded path', async () => {
       const ctx = await setup({ 'a b/c#d.txt': 'foo' })
-      expect(await ctx.fs.file('memory:///a%20b/c%23d.txt').text()).to.equal('foo')
-      expect(await ctx.fs.file('memory:///a%20b//c%23d.txt').text()).to.equal('foo')
-      await ctx.fs.file('memory:///%41.txt').write('bar')
-      expect(await ctx.fs.file('memory:///A.txt').text()).to.equal('bar')
+      expect(await ctx.std.fs.file('memory:///a%20b/c%23d.txt').text()).to.equal('foo')
+      expect(await ctx.std.fs.file('memory:///a%20b//c%23d.txt').text()).to.equal('foo')
+      await ctx.std.fs.file('memory:///%41.txt').write('bar')
+      expect(await ctx.std.fs.file('memory:///A.txt').text()).to.equal('bar')
     })
 
     it('rejects a location without a hierarchical path', async () => {
       const ctx = await setup({ 'a/b': 'foo' })
-      await rejects(ctx.fs.file('memory:a').text(), 'InvalidPath')
-      expect(() => ctx.fs.watch('memory:a')).to.throw(FsError).with.property('code', 'InvalidPath')
+      await rejects(ctx.std.fs.file('memory:a').text(), 'InvalidPath')
+      expect(() => ctx.std.fs.watch('memory:a')).to.throw(FsError).with.property('code', 'InvalidPath')
     })
   })
 
   describe('watch', () => {
     function watch(ctx: Context, path: string, options?: WatchOptions) {
       const seen: string[] = []
-      ctx.fs.watch(path, options).on('change', (url) => { seen.push(url.href) })
+      ctx.std.fs.watch(path, options).on('change', (url) => { seen.push(url.href) })
       return seen
     }
 
     it('reports each write to a watched file when it completes', async () => {
       const ctx = await setup({ 'a.txt': '' })
       const seen = watch(ctx, 'a.txt')
-      await ctx.fs.file('a.txt').write('foo')
-      await ctx.fs.file('b.txt').write('foo')
+      await ctx.std.fs.file('a.txt').write('foo')
+      await ctx.std.fs.file('b.txt').write('foo')
       expect(seen).to.deep.equal(['memory:///a.txt'])
     })
 
     it('reports a file created or replaced through a rename at a watched location', async () => {
       const ctx = await setup()
       const seen = watch(ctx, 'a.txt')
-      await ctx.fs.file('a.txt.tmp').write('foo')
-      await ctx.fs.rename('a.txt.tmp', 'a.txt')
-      await ctx.fs.file('a.txt.tmp').write('bar')
-      await ctx.fs.rename('a.txt.tmp', 'a.txt')
+      await ctx.std.fs.file('a.txt.tmp').write('foo')
+      await ctx.std.fs.rename('a.txt.tmp', 'a.txt')
+      await ctx.std.fs.file('a.txt.tmp').write('bar')
+      await ctx.std.fs.rename('a.txt.tmp', 'a.txt')
       expect(seen).to.deep.equal(['memory:///a.txt', 'memory:///a.txt'])
     })
 
     it('reports the files below a watched directory, also those moved into it', async () => {
       const ctx = await setup({ 'dir/nested/': {}, 'src/x/a.txt': '' })
       const seen = watch(ctx, 'dir/')
-      await ctx.fs.file('dir/nested/b.txt').write('foo')
-      await ctx.fs.rename('src', 'dir/src')
+      await ctx.std.fs.file('dir/nested/b.txt').write('foo')
+      await ctx.std.fs.rename('src', 'dir/src')
       expect(seen).to.deep.equal(['memory:///dir/nested/b.txt', 'memory:///dir/src/x/a.txt'])
     })
 
@@ -360,10 +360,10 @@ describe('MemoryFs', () => {
       const ctx = await setup()
       const seen = watch(ctx, '.')
       const names = ['a#b?c%d.txt', 'a ', ' a', 'a\tb', 'a\nb', 'a\\b']
-      for (const name of names) await ctx.fs.file([name]).write(name)
+      for (const name of names) await ctx.std.fs.file([name]).write(name)
       expect(seen).to.deep.equal(['a%23b%3Fc%25d.txt', 'a%20', '%20a', 'a%09b', 'a%0Ab', 'a%5Cb'].map(name => `memory:///${name}`))
       for (const [index, url] of seen.entries()) {
-        expect(await ctx.fs.file(new URL(url)).text()).to.equal(names[index])
+        expect(await ctx.std.fs.file(new URL(url)).text()).to.equal(names[index])
       }
     })
 
@@ -376,8 +376,8 @@ describe('MemoryFs', () => {
           return path !== 'lib'
         },
       })
-      await ctx.fs.file('dir/lib/a.txt').write('')
-      await ctx.fs.file('dir/src/a.txt').write('')
+      await ctx.std.fs.file('dir/lib/a.txt').write('')
+      await ctx.std.fs.file('dir/src/a.txt').write('')
       expect(seen).to.deep.equal(['memory:///dir/src/a.txt'])
       expect(tested).to.deep.include.members([['lib', true], ['src', true], ['src/a.txt', false]])
     })
@@ -386,7 +386,7 @@ describe('MemoryFs', () => {
       const ctx = await setup({ 'dir/src/': {}, 'dir/lib/': {} })
       const seen = watch(ctx, 'dir', { filter: ['src/**/*.ts', '!src/**/*.spec.ts'] })
       for (const name of ['src/a.ts', 'src/a.spec.ts', 'lib/b.ts']) {
-        await ctx.fs.file(`dir/${name}`).write('')
+        await ctx.std.fs.file(`dir/${name}`).write('')
       }
       expect(seen).to.deep.equal(['memory:///dir/src/a.ts'])
     })
@@ -394,18 +394,18 @@ describe('MemoryFs', () => {
     it('does not apply `filter` to a watched file', async () => {
       const ctx = await setup()
       const seen = watch(ctx, 'a.txt', { filter: () => false })
-      await ctx.fs.file('a.txt').write('')
+      await ctx.std.fs.file('a.txt').write('')
       expect(seen).to.deep.equal(['memory:///a.txt'])
     })
 
     it('reports `ready`, and nothing once disposed', async () => {
       const ctx = await setup()
-      const watcher = ctx.fs.watch('a.txt')
+      const watcher = ctx.std.fs.watch('a.txt')
       const seen: string[] = []
       watcher.on('change', (url) => { seen.push(url.href) })
       await new Promise<void>(resolve => watcher.on('ready', resolve))
       await watcher.dispose()
-      await ctx.fs.file('a.txt').write('')
+      await ctx.std.fs.file('a.txt').write('')
       expect(seen).to.deep.equal([])
     })
   })

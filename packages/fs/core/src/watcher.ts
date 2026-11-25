@@ -57,7 +57,7 @@ export class Watcher {
         this._closed = true
         return disconnect()
       }
-    }, 'ctx.fs.watch()')
+    }, 'ctx.std.fs.watch()')
   }
 
   /** Adds a listener, and returns a function that removes it. */

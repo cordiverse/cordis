@@ -11,7 +11,7 @@ export * from './parser.ts'
 
 declare module 'cordis' {
   interface Context {
-    cli: Cli
+    'std:cli': Cli
   }
 
   interface Events {
@@ -87,7 +87,7 @@ export class Cli extends Service {
   private _aliases: Dict<Command | undefined> = Object.create(null)
 
   constructor(ctx: Context, public config: Cli.Config = {}) {
-    super(ctx, 'cli')
+    super(ctx, 'std:cli')
 
     this.define('string', source => source)
     this.define('text', source => source, { greedy: true })

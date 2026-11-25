@@ -34,7 +34,7 @@
   "cordis": {
     "service": {
       "implements": [
-        "http"
+        "std:http"
       ]
     }
   },
