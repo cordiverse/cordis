@@ -250,14 +250,14 @@ interface StackInfo {
   error: Error
 }
 
-function handleError(info: StackInfo, reason: any, getOuterStack: () => string[]): never {
+function handleError(info: StackInfo, reason: any, getStack: () => string[]): never {
   const innerLines = info.error.stack!.split('\n')
 
   // malformed error
   if (typeof reason?.stack !== 'string') {
     const outerError = new Error(reason)
     const lines = outerError.stack!.split('\n')
-    lines.splice(1, Infinity, ...getOuterStack())
+    lines.splice(1, Infinity, ...getStack())
     outerError.stack = lines.join('\n')
     throw outerError
   }
@@ -272,27 +272,27 @@ function handleError(info: StackInfo, reason: any, getOuterStack: () => string[]
     if (!lines[index - 1].endsWith(' (<anonymous>)')) break
     index -= 1
   }
-  lines.splice(index, Infinity, ...getOuterStack())
+  lines.splice(index, Infinity, ...getStack())
   reason.stack = lines.join('\n')
   throw reason
 }
 
-export function composeError<T>(callback: (info: StackInfo) => T, getOuterStack = buildOuterStack()): T {
+export function composeError<T>(callback: (info: StackInfo) => T, getStack = buildStack()): T {
   const info: StackInfo = { offset: 1, error: new Error() }
 
   try {
     const result: any = callback(info)
     if (isObject(result) && 'then' in result) {
-      return (result as any).then(undefined, (reason) => handleError(info, reason, getOuterStack)) as T
+      return (result as any).then(undefined, (reason) => handleError(info, reason, getStack)) as T
     } else {
       return result
     }
   } catch (reason: any) {
-    handleError(info, reason, getOuterStack)
+    handleError(info, reason, getStack)
   }
 }
 
-export function buildOuterStack(offset = 0) {
+export function buildStack(offset = 0) {
   const outerError = new Error()
   return () => outerError.stack!.split('\n').slice(3 + offset)
 }

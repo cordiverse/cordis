@@ -335,16 +335,16 @@ export class Entry {
     return this.parent.tree.locateExpr(this.options.id, path, expr, offset)
   }
 
-  getOuterStack = () => this.parent.getOuterStack(this.options.id)
+  getStack = () => this.parent.getStack(this.options.id)
 
   trace = (path: PropertyKey[]): ExprTrace => ({
     label: path.map(String).join('.'),
     locate: (expr, offset) => this.locateExpr(path, expr, offset),
-    getOuterStack: this.getOuterStack,
+    getStack: this.getStack,
   })
 
   traceValidation(error: ValidationError) {
-    const frames = this.getOuterStack()
+    const frames = this.getStack()
     // an entry outside any source has nothing to point to
     if (!frames.length) return
     const issues = error.issues.map(({ message, path }) => ({ message, path: ValidationError.normalizePath(path) }))
@@ -358,7 +358,7 @@ export class Entry {
       if (location) {
         // before Node's hints
         const [first, ...hints] = error.message.split('\n')
-        relocate(error, [`${first} (at name, ${formatLocation(location)})`, ...hints].join('\n'), this.getOuterStack())
+        relocate(error, [`${first} (at name, ${formatLocation(location)})`, ...hints].join('\n'), this.getStack())
       }
     }
     this.ctx.logger.error(error)
@@ -385,7 +385,7 @@ export class Entry {
 
   private async _import() {
     try {
-      const exports = await this.parent.tree.import(this.options.name, this.getOuterStack)
+      const exports = await this.parent.tree.import(this.options.name, this.getStack)
       return { component: this.loader.unwrapExports(exports) }
     } catch (error) {
       this._reportImport(error)
@@ -409,7 +409,7 @@ export class Entry {
     if (this._hasOuter()) {
       const entry = this
       this.outerFiber = this.ctx.registry.use({ ...outer, inject: this.inject }, undefined, {
-        getOuterStack: this.getOuterStack,
+        getStack: this.getStack,
         dispose() {
           entry._release(this)
         },
@@ -433,7 +433,7 @@ export class Entry {
     const innerContext = ctx.extend({ [Context.intercept]: this._intercept })
     const entry = this
     this.innerFiber = innerContext.registry.use(component, this.options.config, {
-      getOuterStack: this.getOuterStack,
+      getStack: this.getStack,
       config(config, resolve) {
         try {
           // a group's config is the entry list itself, which the loader mutates

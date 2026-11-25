@@ -15,7 +15,7 @@ let counter = 0
 export interface ExprTrace {
   label: string
   locate: (expr: string, offset: number) => SourceLocation | undefined
-  getOuterStack: () => string[]
+  getStack: () => string[]
 }
 
 export function evaluate(ctx: object, expr: string, trace?: ExprTrace) {
@@ -63,7 +63,7 @@ function toOffset(source: string, line: number, column: number) {
 
 function traceEvaluation(error: any, expr: string, marker: string, trace: ExprTrace) {
   if (typeof error?.stack !== 'string') return
-  const outer = trace.getOuterStack()
+  const outer = trace.getStack()
   const start = trace.locate(expr, 0)
   if (!outer.length && !start) return
 
