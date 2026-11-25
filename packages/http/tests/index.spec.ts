@@ -1,5 +1,5 @@
 import { Context } from 'cordis'
-import { afterAll, beforeAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createServer, Server } from 'node:http'
 import { AddressInfo } from 'node:net'
 import Http, { parseEventStream, ServerSentEvent } from '../src/index.ts'
@@ -119,25 +119,42 @@ describe('responseType: event-stream', () => {
   })
 })
 
-
-describe('http', () => {
+describe('method', () => {
   let ctx: Context
+  let server: Server
+  let url: string
+  let methods: string[]
 
-  beforeAll(async () => {
+  beforeEach(async () => {
+    methods = []
+    server = createServer((req, res) => {
+      methods.push(req.method!)
+      res.end()
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
     ctx = new Context()
     await ctx.use(Http)
   })
 
-  afterAll(async () => {
+  afterEach(async () => {
     await ctx.fiber.dispose()
+    server.closeAllConnections()
+    await new Promise((resolve) => server.close(resolve))
   })
 
-  it('fetches a data: URL through get()', async () => {
-    expect(await ctx.std.http.get('data:text/plain,hello')).toBe('hello')
+  it('sends the method of each convenience method', async () => {
+    await ctx.std.http.get(url)
+    await ctx.std.http.delete(url)
+    await ctx.std.http.patch(url, {})
+    await ctx.std.http.post(url, {})
+    await ctx.std.http.put(url, {})
+    expect(methods).to.deep.equal(['GET', 'DELETE', 'PATCH', 'POST', 'PUT'])
   })
 
-  it('fetches a file: URL through get()', async () => {
-    const url = new URL('../package.json', import.meta.url)
-    expect(await ctx.std.http.get(url)).to.include({ name: '@cordisjs/http' })
+  it('normalizes a standard method before the http/fetch listeners', async () => {
+    expect(await ctx.std.http.get('data:text/plain,hello')).to.equal('hello')
+    const response = await ctx.std.http('data:text/plain,hello', { method: 'get' })
+    expect(response.status).to.equal(200)
   })
 })

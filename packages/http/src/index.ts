@@ -176,6 +176,19 @@ export interface Http {
   put: Http.Request2
 }
 
+const normalizedMethods = new Set(['DELETE', 'GET', 'HEAD', 'OPTIONS', 'POST', 'PUT'])
+
+/**
+ * Normalize a method as `fetch()` does, so that the `http/fetch` listeners
+ * receive the method that is sent.
+ *
+ * @see https://fetch.spec.whatwg.org/#concept-method-normalize
+ */
+function normalizeMethod(method: string) {
+  const upper = method.toUpperCase()
+  return normalizedMethods.has(upper) ? upper : method
+}
+
 // we don't use `raw.ok` because it may be a 3xx redirect
 const validateStatus = (status: number) => status < 400
 
@@ -195,8 +208,6 @@ export class Http extends Service<Http.Intercept> {
       }
     } catch {}
 
-    // a method is written in upper case, as the intercepts read it, e.g. to
-    // reject a non-GET request to a `file:` or `data:` URL
     for (const method of ['get', 'delete'] as const) {
       defineProperty(Http.prototype, method, async function (this: Http, url: string | URL, config?: Http.Config) {
         const response = await this(url, { method: method.toUpperCase(), validateStatus, ...config })
@@ -360,7 +371,7 @@ export class Http extends Service<Http.Intercept> {
     }
     const config = this.resolveConfig(args[1])
     const url = this.resolveURL(args[0], config)
-    method ??= config.method ?? 'GET'
+    method = normalizeMethod(method ?? config.method ?? 'GET')
 
     const controller = new AbortController()
     if (config.signal) {
