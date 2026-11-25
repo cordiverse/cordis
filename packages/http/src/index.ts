@@ -34,6 +34,36 @@ function findOwnValue(source: any, predicate: (value: any, key: PropertyKey) => 
   }
 }
 
+function matchNoProxy(url: URL, noProxy?: string | string[]) {
+  if (!noProxy) return false
+  const patterns = typeof noProxy === 'string' ? noProxy.split(',') : noProxy
+  const host = url.hostname.toLowerCase()
+  for (const entry of patterns) {
+    const pattern = entry.trim().toLowerCase()
+    if (!pattern) continue
+    if (pattern === '*') return true
+    const [patternHost, patternPort] = splitNoProxyPattern(pattern)
+    if (patternPort && patternPort !== url.port) continue
+    const domain = patternHost.replace(/^\*?\./, '')
+    if (host === domain || host.endsWith(`.${domain}`)) return true
+  }
+  return false
+}
+
+function splitNoProxyPattern(pattern: string): [string, string] {
+  if (pattern.startsWith('[')) {
+    const end = pattern.indexOf(']')
+    if (end >= 0) {
+      return [pattern.slice(0, end + 1), pattern.slice(end + 1).replace(/^:/, '')]
+    }
+  }
+  const index = pattern.lastIndexOf(':')
+  if (index > 0 && /^\d+$/.test(pattern.slice(index + 1))) {
+    return [pattern.slice(0, index), pattern.slice(index + 1)]
+  }
+  return [pattern, '']
+}
+
 function setupInternalUndici(undici: typeof import('undici')) {
   const runtime: Partial<typeof import('undici')> = undici
   if (!runtime.getGlobalDispatcher) return
@@ -122,6 +152,7 @@ export namespace Http {
     headers?: Dict
     timeout?: number
     proxyAgent?: string
+    noProxy?: string | string[]
   }
 
   export interface Config extends Intercept {}
@@ -214,6 +245,7 @@ export class Http extends Service<Http.Intercept> {
     timeout: z.natural().role('ms').description('The time to wait for a response before the request is aborted, in milliseconds.'),
     keepAlive: z.boolean().description('Set the `keepalive` option of `fetch()`, which allows the request to outlive the context that sends it.'),
     proxyAgent: z.string().description('The URL of the proxy server, such as `http://127.0.0.1:7890`. Its protocol requires a proxy agent registered through `ctx.std.http.proxy()`.'),
+    noProxy: z.union([z.string(), z.array(z.string())]).description('The hosts that bypass the proxy.'),
   })
 
   Config: z<Http.Config> = z.object({
@@ -221,6 +253,7 @@ export class Http extends Service<Http.Intercept> {
     timeout: z.natural().role('ms').description('The time to wait for a response before the request is aborted, in milliseconds.'),
     keepAlive: z.boolean().description('Set the `keepalive` option of `fetch()`, which allows the request to outlive the context that sends it.'),
     proxyAgent: z.string().description('The URL of the proxy server, such as `http://127.0.0.1:7890`. Its protocol requires a proxy agent registered through `ctx.std.http.proxy()`.'),
+    noProxy: z.union([z.string(), z.array(z.string())]).description('The hosts that bypass the proxy.'),
   })
 
   public isError = HttpError.is
@@ -403,7 +436,7 @@ export class Http extends Service<Http.Intercept> {
         (init as any).duplex = 'half'
       }
 
-      if (config.proxyAgent) {
+      if (config.proxyAgent && !matchNoProxy(url, config.noProxy)) {
         const proxyURL = new URL(config.proxyAgent)
         const factory = this._proxies[proxyURL.protocol.slice(0, -1)]
         if (!factory) throw new Error(`Cannot resolve proxy agent ${proxyURL}`)
@@ -465,7 +498,7 @@ export class Http extends Service<Http.Intercept> {
       headers,
     }
 
-    if (config.proxyAgent) {
+    if (config.proxyAgent && !matchNoProxy(url, config.noProxy)) {
       const proxyURL = new URL(config.proxyAgent)
       const factory = this._proxies[proxyURL.protocol.slice(0, -1)]
       if (!factory) throw new Error(`Cannot resolve proxy agent ${proxyURL}`)
