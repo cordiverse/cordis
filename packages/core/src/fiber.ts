@@ -1,7 +1,7 @@
 import { Awaitable, defineProperty, Dict, isNullable } from 'cosmokit'
 import { Context } from './context.ts'
 import { Component } from './registry.ts'
-import { buildOuterStack, composeError, DisposableList, getTraceable, isConstructor, isObject, symbols } from './utils.ts'
+import { buildStack, composeError, DisposableList, getTraceable, isConstructor, isObject, symbols } from './utils.ts'
 import { Impl } from './reflect.ts'
 import { StandardSchemaV1 } from '@standard-schema/spec'
 
@@ -84,7 +84,7 @@ interface EffectRunner<T> {
   epoch: T
   execute: () => any
   collect: (dispose: Disposable) => void
-  getOuterStack: () => string[]
+  getStack: () => string[]
 }
 
 export const enum FiberState {
@@ -114,7 +114,7 @@ const INACTIVE = '__INACTIVE__'
 
 export namespace Fiber {
   export interface Options {
-    getOuterStack?: (this: void) => string[]
+    getStack?: (this: void) => string[]
     config?: (this: Fiber, config: any, resolve: (config: any) => any) => any
     commit?: (this: Fiber, config: any) => void
     dispose?: (this: Fiber) => void
@@ -150,7 +150,7 @@ export class Fiber {
     public runtime: Component.Runtime | null,
     private readonly options: Fiber.Options = {},
   ) {
-    const getOuterStack = options.getOuterStack ?? (() => [])
+    const getStack = options.getStack ?? (() => [])
     const collect = (dispose: Disposable) => {
       this._disposables.push(dispose)
     }
@@ -161,7 +161,7 @@ export class Fiber {
 
       this._runner = {
         epoch: INACTIVE,
-        getOuterStack,
+        getStack,
         execute: function (this: Fiber) {
           const { callback } = this.runtime!
           const config = this._resolve(this.config)
@@ -222,7 +222,7 @@ export class Fiber {
       this.committed = Object.create(null)
       this._runner = {
         epoch: '0',
-        getOuterStack,
+        getStack,
         execute: () => {},
         collect,
       }
@@ -307,7 +307,7 @@ export class Fiber {
       } else {
         throw new TypeError('Invalid effect')
       }
-    }, runner.getOuterStack)
+    }, runner.getStack)
   }
 
   effect(execute: () => SyncEffect, label?: string): Disposable<Promise<void>>
@@ -342,7 +342,7 @@ export class Fiber {
           meta.children.push(dispose[symbols.effect])
         }
       },
-      getOuterStack: buildOuterStack(),
+      getStack: buildStack(),
     }
 
     let task: void | Promise<void>
@@ -516,7 +516,7 @@ export class Fiber {
           await Promise.resolve()
           info.error = new Error()
           await dispose()
-        }, this._runner.getOuterStack)
+        }, this._runner.getStack)
       } catch (reason) {
         this.ctx.logger.error(reason)
       }

@@ -196,7 +196,7 @@ export abstract class EntryTree {
     return task
   }
 
-  import(name: string, getOuterStack?: () => string[]) {
+  import(name: string, getStack?: () => string[]) {
     // On Windows, a drive-letter path is converted with `pathToFileURL`.
     if (process.platform === 'win32' && driveLetter.test(name)) {
       name = pathToFileURL(name).href
@@ -236,12 +236,12 @@ export abstract class EntryTree {
         parent = import.meta.url
         return await import(/* @vite-ignore */ url)
       }
-    }, getOuterStack).catch((error: unknown) => {
+    }, getStack).catch((error: unknown) => {
       const notFound = parseNotFound(error)
       if (!notFound) throw error
       if (error !== unresolved && (!parent || notFound.parent !== toPath(parent))) throw error
       const result = new ModuleNotFoundError(name, [notFound.description, ...notFound.hints].join('\n'))
-      const frames = getOuterStack?.() ?? []
+      const frames = getStack?.() ?? []
       // Node's frames are those of its resolver
       if (frames.length) result.stack = [`${result.name}: ${result.message}`, ...frames].join('\n')
       throw result

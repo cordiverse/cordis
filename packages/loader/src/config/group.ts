@@ -31,10 +31,10 @@ export class EntryGroup {
     return entry.id
   }
 
-  getOuterStack(id: string): string[] {
+  getStack(id: string): string[] {
     const location = this.tree.getLocation(id, [])
     const frames = location ? [`    at ${id} (${formatLocation(location)})`] : []
-    return [...frames, ...this.ctx[Entry.key]?.getOuterStack() ?? []]
+    return [...frames, ...this.ctx[Entry.key]?.getStack() ?? []]
   }
 
   private _reject(options: EntryOptions, issues: Issue[]) {
@@ -47,7 +47,7 @@ export class EntryGroup {
       delete this.tree.store[id]
       entry.dispose()
     }
-    const frames = this.getOuterStack(id)
+    const frames = this.getStack(id)
     if (!frames.length) return error
     const locate = (path: PropertyKey[]) => this.tree.getLocation(id, path)
     relocate(error, formatIssues('invalid entry options', issues, locate), frames)

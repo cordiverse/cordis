@@ -2,7 +2,7 @@ import { defineProperty, Dict } from 'cosmokit'
 import { StandardSchemaV1 } from '@standard-schema/spec'
 import { Context } from './context.ts'
 import { Fiber } from './fiber.ts'
-import { buildOuterStack, DisposableList, symbols, withProps } from './utils.ts'
+import { buildStack, DisposableList, symbols, withProps } from './utils.ts'
 
 function isApplicable(object: Component) {
   return object && typeof object === 'object' && typeof object.apply === 'function'
@@ -232,12 +232,12 @@ export class RegistryService {
 
   /** @deprecated Use `registry.use()` instead. */
   plugin(component: Component, config?: any, options: Fiber.Options = {}) {
-    const getOuterStack = options.getOuterStack ?? buildOuterStack()
-    return this.use(component, config, { ...options, getOuterStack })
+    const getStack = options.getStack ?? buildStack()
+    return this.use(component, config, { ...options, getStack })
   }
 
   use(component: Component, config?: any, options: Fiber.Options = {}) {
-    const getOuterStack = options.getOuterStack ?? buildOuterStack()
+    const getStack = options.getStack ?? buildStack()
     // check if it's a valid component
     const forwarded = this._forward(component)
     if (!forwarded) throw new Error('invalid component, expect function or object with an "apply" method, received ' + typeof component)
@@ -245,7 +245,7 @@ export class RegistryService {
 
     const [callback, target] = forwarded
     const runtime = this._internal.get(callback) ?? this._create(callback, target)
-    const fiber = new Fiber(this.ctx, config, Inject.resolve(target.inject), runtime, { ...options, getOuterStack })
+    const fiber = new Fiber(this.ctx, config, Inject.resolve(target.inject), runtime, { ...options, getStack })
     const wrapped = Object.create(fiber) as Fiber & PromiseLike<Fiber>
     wrapped.then = (onFulfilled, onRejected) => {
       return fiber.await().then(onFulfilled, onRejected)
