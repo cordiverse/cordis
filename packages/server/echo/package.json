@@ -1,7 +1,7 @@
 {
   "name": "@cordisjs/server-echo",
   "description": "Echo routes for @cordisjs/server",
-  "version": "1.1.1",
+  "version": "2.0.0-rc.0",
   "sideEffects": false,
   "type": "module",
   "main": "lib/index.js",
@@ -30,12 +30,12 @@
     "websocket"
   ],
   "peerDependencies": {
-    "@cordisjs/server": "^1.7.0",
-    "cordis": "^4.0.0-rc.13"
+    "@cordisjs/server": "^2.0.0-rc.0",
+    "cordis": "^4.0.0-rc.14"
   },
   "devDependencies": {
-    "@cordisjs/server": "^1.7.0",
-    "cordis": "^4.0.0-rc.13"
+    "@cordisjs/server": "^2.0.0-rc.0",
+    "cordis": "^4.0.0-rc.14"
   },
   "dependencies": {
     "schemastery": "^3.18.0"

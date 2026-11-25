@@ -1,7 +1,7 @@
 {
   "name": "@cordisjs/server",
   "description": "HTTP and WebSocket server service for Cordis",
-  "version": "1.7.0",
+  "version": "2.0.0-rc.0",
   "sideEffects": false,
   "type": "module",
   "main": "lib/index.js",
@@ -31,12 +31,12 @@
     "component"
   ],
   "peerDependencies": {
-    "cordis": "^4.0.0-rc.13"
+    "cordis": "^4.0.0-rc.14"
   },
   "devDependencies": {
-    "@cordisjs/logger-console": "^1.0.1",
+    "@cordisjs/logger-console": "^1.0.2",
     "@types/accepts": "^1.3.7",
-    "cordis": "^4.0.0-rc.13"
+    "cordis": "^4.0.0-rc.14"
   },
   "dependencies": {
     "@standard-schema/spec": "^1.1.0",

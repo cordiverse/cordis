@@ -1,6 +1,6 @@
 {
   "name": "@cordisjs/cli-cordis",
-  "version": "2.0.0-rc.0",
+  "version": "2.0.0-rc.1",
   "description": "Commands for running Cordis applications",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -38,19 +38,19 @@
   },
   "homepage": "https://github.com/cordiverse/cordis",
   "peerDependencies": {
-    "@cordisjs/cli": "^4.0.0",
-    "@cordisjs/fs": "^2.0.0-rc.0",
-    "@cordisjs/fs-node": "^0.1.0",
-    "@cordisjs/loader": "^1.0.0-rc.10",
-    "cordis": "^4.0.0-rc.13"
+    "@cordisjs/cli": "^5.0.0-rc.0",
+    "@cordisjs/fs": "^2.0.0-rc.1",
+    "@cordisjs/fs-node": "^1.0.0-rc.0",
+    "@cordisjs/loader": "^1.0.0-rc.11",
+    "cordis": "^4.0.0-rc.14"
   },
   "devDependencies": {
-    "@cordisjs/cli": "^4.0.0",
-    "@cordisjs/fs": "^2.0.0-rc.0",
-    "@cordisjs/fs-node": "^0.1.0",
-    "@cordisjs/loader": "^1.0.0-rc.10",
-    "@cordisjs/logger-console": "^1.0.1",
-    "cordis": "^4.0.0-rc.13"
+    "@cordisjs/cli": "^5.0.0-rc.0",
+    "@cordisjs/fs": "^2.0.0-rc.1",
+    "@cordisjs/fs-node": "^1.0.0-rc.0",
+    "@cordisjs/loader": "^1.0.0-rc.11",
+    "@cordisjs/logger-console": "^1.0.2",
+    "cordis": "^4.0.0-rc.14"
   },
   "dependencies": {
     "cosmokit": "^1.8.1",

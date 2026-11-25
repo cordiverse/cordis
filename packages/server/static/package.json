@@ -1,7 +1,7 @@
 {
   "name": "@cordisjs/server-static",
   "description": "Static file server for @cordisjs/server",
-  "version": "1.2.1",
+  "version": "2.0.0-rc.0",
   "sideEffects": false,
   "type": "module",
   "main": "lib/index.js",
@@ -31,17 +31,17 @@
     "component"
   ],
   "peerDependencies": {
-    "@cordisjs/fs": "^2.0.0-rc.0",
-    "@cordisjs/server": "^1.7.0",
-    "cordis": "^4.0.0-rc.13"
+    "@cordisjs/fs": "^2.0.0-rc.1",
+    "@cordisjs/server": "^2.0.0-rc.0",
+    "cordis": "^4.0.0-rc.14"
   },
   "devDependencies": {
-    "@cordisjs/fs": "^2.0.0-rc.0",
-    "@cordisjs/fs-memory": "^0.1.0",
-    "@cordisjs/logger-console": "^1.0.1",
-    "@cordisjs/server": "^1.7.0",
+    "@cordisjs/fs": "^2.0.0-rc.1",
+    "@cordisjs/fs-memory": "^1.0.0-rc.0",
+    "@cordisjs/logger-console": "^1.0.2",
+    "@cordisjs/server": "^2.0.0-rc.0",
     "@types/mime-types": "^2.1.4",
-    "cordis": "^4.0.0-rc.13"
+    "cordis": "^4.0.0-rc.14"
   },
   "dependencies": {
     "file-type": "^20.4.1",

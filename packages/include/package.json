@@ -1,6 +1,6 @@
 {
   "name": "@cordisjs/include",
-  "version": "2.0.0-rc.0",
+  "version": "2.0.0-rc.1",
   "description": "Load plugins from a configuration file",
   "sideEffects": false,
   "type": "module",
@@ -21,15 +21,15 @@
   },
   "homepage": "https://cordis.io/",
   "peerDependencies": {
-    "@cordisjs/fs": "^2.0.0-rc.0",
-    "@cordisjs/loader": "^1.0.0-rc.10",
-    "cordis": "^4.0.0-rc.13"
+    "@cordisjs/fs": "^2.0.0-rc.1",
+    "@cordisjs/loader": "^1.0.0-rc.11",
+    "cordis": "^4.0.0-rc.14"
   },
   "devDependencies": {
-    "@cordisjs/fs": "^2.0.0-rc.0",
-    "@cordisjs/fs-memory": "^0.1.0",
-    "@cordisjs/loader": "^1.0.0-rc.10",
-    "cordis": "^4.0.0-rc.13"
+    "@cordisjs/fs": "^2.0.0-rc.1",
+    "@cordisjs/fs-memory": "^1.0.0-rc.0",
+    "@cordisjs/loader": "^1.0.0-rc.11",
+    "cordis": "^4.0.0-rc.14"
   },
   "dependencies": {
     "cosmokit": "^1.8.1",

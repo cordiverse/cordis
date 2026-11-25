@@ -1,7 +1,7 @@
 {
   "name": "@cordisjs/fs",
   "description": "File system service for Cordis",
-  "version": "2.0.0-rc.0",
+  "version": "2.0.0-rc.1",
   "sideEffects": false,
   "type": "module",
   "main": "lib/index.js",
@@ -35,11 +35,11 @@
     }
   },
   "peerDependencies": {
-    "cordis": "^4.0.0-rc.13"
+    "cordis": "^4.0.0-rc.14"
   },
   "devDependencies": {
     "@types/picomatch": "^3.0.2",
-    "cordis": "^4.0.0-rc.13"
+    "cordis": "^4.0.0-rc.14"
   },
   "dependencies": {
     "cosmokit": "^1.8.1",
