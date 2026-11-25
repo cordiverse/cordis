@@ -1,5 +1,5 @@
 import { Context } from 'cordis'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createServer, Server } from 'node:http'
 import { AddressInfo } from 'node:net'
 import Http, { parseEventStream, ServerSentEvent } from '../src/index.ts'
@@ -116,5 +116,28 @@ describe('responseType: event-stream', () => {
     expect((await reader.read()).value).to.deep.equal({ event: 'message', data: 'first', id: '' })
     await reader.cancel()
     await closed
+  })
+})
+
+
+describe('http', () => {
+  let ctx: Context
+
+  beforeAll(async () => {
+    ctx = new Context()
+    await ctx.use(Http)
+  })
+
+  afterAll(async () => {
+    await ctx.fiber.dispose()
+  })
+
+  it('fetches a data: URL through get()', async () => {
+    expect(await ctx.std.http.get('data:text/plain,hello')).toBe('hello')
+  })
+
+  it('fetches a file: URL through get()', async () => {
+    const url = new URL('../package.json', import.meta.url)
+    expect(await ctx.std.http.get(url)).to.include({ name: '@cordisjs/http' })
   })
 })
