@@ -1,4 +1,5 @@
 import { Context } from 'cordis'
+import http from 'node:http'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import HTTP from '@cordisjs/http'
 import LoggerConsole from '@cordisjs/logger-console'
@@ -33,7 +34,7 @@ describe('@cordisjs/server-proxy', () => {
     })
     await proxy.use(HTTP)
     await proxy.use(Proxy, {
-      target: upstreamUrl,
+      target: upstreamUrl + '/',
     })
     proxyUrl = proxy.std.server.publicUrl
   })
@@ -151,36 +152,7 @@ describe('@cordisjs/server-proxy', () => {
     })
   })
 
-  describe('target with path prefix', () => {
-    it('should correctly join with target path', async () => {
-      upstream.std.server.get('/api/v1/data', async (req, res, next) => {
-        res.body = 'scoped'
-      })
-      await sleep()
-
-      // Create a new proxy with path prefix
-      const scoped = new Context().intercept('logger', { level: 3 })
-      await scoped.use(LoggerConsole)
-      await scoped.use(Server, {
-        host: '127.0.0.1',
-        port: 0,
-      })
-      await scoped.use(HTTP)
-      await scoped.use(Proxy, {
-        target: upstreamUrl + '/api/v1/',
-      })
-      const scopedUrl = scoped.std.server.publicUrl
-
-      const res = await fetch(`${scopedUrl}/data`)
-      expect(res.status).to.equal(200)
-      expect(await res.text()).to.equal('scoped')
-
-      await scoped.fiber.dispose()
-      await sleep()
-    })
-  })
-
-  describe('request paths', () => {
+  describe('target', () => {
     // a proxy of its own, forwarding to `target`
     async function createProxy(target: string) {
       const scoped = new Context().intercept('logger', { level: 3 })
@@ -191,7 +163,52 @@ describe('@cordisjs/server-proxy', () => {
       return scoped
     }
 
-    it('should forward reserved characters as part of the path', async () => {
+    let scoped: Context | undefined
+
+    afterEach(async () => {
+      await scoped?.fiber.dispose()
+      scoped = undefined
+    })
+
+    it.each([
+      '',
+      'http:',
+      'HTTPS:',
+      'https://example.com/',
+      'https://example.com/api/v1/',
+    ])('accepts %j', (target) => {
+      expect(() => Proxy.Config({ target })).not.to.throw()
+    })
+
+    it.each([
+      'https://example.com',
+      'https://example.com/api/v1',
+      'https://example.com/?key=value',
+      'https://example.com/#fragment',
+      'https:///',
+      'file:',
+      'file:///',
+    ])('rejects %j', (target) => {
+      expect(() => Proxy.Config({ target })).to.throw()
+    })
+
+    it('forwards to a URL followed by the path', async () => {
+      upstream.std.server.get('{/*path}', async (req, res) => {
+        res.body = req.url
+      })
+      await sleep()
+
+      scoped = await createProxy(upstreamUrl + '/api/v1/')
+      const res1 = await fetch(`${scoped.std.server.publicUrl}/users?key=value`)
+      expect(res1.status).to.equal(200)
+      expect(await res1.text()).to.equal('/api/v1/users?key=value')
+      // a sibling of the target directory with the same prefix
+      const res2 = await fetch(`${scoped.std.server.publicUrl}/v10/secret`)
+      expect(res2.status).to.equal(200)
+      expect(await res2.text()).to.equal('/api/v1/v10/secret')
+    })
+
+    it('forwards the path without decoding it', async () => {
       upstream.std.server.get('{/*path}', async (req, res) => {
         res.body = req.path
       })
@@ -202,7 +219,7 @@ describe('@cordisjs/server-proxy', () => {
       expect(await res.text()).to.equal('/a%3Fb%23c+d')
     })
 
-    it('should reject a path outside the target', async () => {
+    it.each(['/%2e%2e/secret', '/v1/%2E%2E/%2e%2e/secret'])('rejects %s out of a URL', async (path) => {
       let reached = false
       upstream.std.server.get('{/*path}', async (req, res) => {
         reached = true
@@ -210,33 +227,68 @@ describe('@cordisjs/server-proxy', () => {
       })
       await sleep()
 
-      const scoped = await createProxy(upstreamUrl + '/api/v1/')
-      // fetch() removes a literal `..`, but keeps an encoded separator
-      const res = await fetch(`${scoped.std.server.publicUrl}/..%2Fsecret`)
-      expect(res.status).to.equal(400)
+      // fetch() removes dot segments, so the request is sent through `node:http`
+      scoped = await createProxy(upstreamUrl + '/api/v1/')
+      const status = await new Promise<number>((resolve, reject) => {
+        http.get(scoped!.std.server.publicUrl + '/', { path }, (res) => {
+          res.resume()
+          resolve(res.statusCode!)
+        }).on('error', reject)
+      })
+      expect(status).to.equal(400)
       expect(reached).to.equal(false)
-
-      await scoped.fiber.dispose()
-      await sleep()
     })
 
-    it.each(['?key=value', '#fragment'])('should forward under the path of a target with %s', async (suffix) => {
-      upstream.std.server.get('{/*path}', async (req, res) => {
-        res.body = req.path
+    it('forwards to a scheme followed by the path', async () => {
+      upstream.std.server.get('/hello', async (req, res) => {
+        res.body = req.query.get('key') ?? ''
       })
       await sleep()
 
-      const scoped = await createProxy(upstreamUrl + '/api/v1' + suffix)
-      const res1 = await fetch(`${scoped.std.server.publicUrl}/users`)
-      expect(res1.status).to.equal(200)
-      expect(await res1.text()).to.equal('/api/v1/users')
-      // a sibling of the target directory with the same prefix
-      const res2 = await fetch(`${scoped.std.server.publicUrl}/v10/secret`)
-      expect(res2.status).to.equal(200)
-      expect(await res2.text()).to.equal('/api/v1/v10/secret')
+      scoped = await createProxy('http:')
+      const res = await fetch(`${scoped.std.server.publicUrl}/${upstreamUrl.slice(7)}/hello?key=value`)
+      expect(res.status).to.equal(200)
+      expect(await res.text()).to.equal('value')
+    })
 
-      await scoped.fiber.dispose()
+    it('forwards to the URL in the path for the empty string', async () => {
+      upstream.std.server.get('/hello', async (req, res) => {
+        res.body = req.query.get('key') ?? ''
+      })
       await sleep()
+
+      scoped = await createProxy('')
+      const res = await fetch(`${scoped.std.server.publicUrl}/${upstreamUrl}/hello?key=value`)
+      expect(res.status).to.equal(200)
+      expect(await res.text()).to.equal('value')
+    })
+
+    it.each(['file:///etc/hosts', 'data:,secret', 'not-a-url'])('rejects %s for the empty string', async (url) => {
+      scoped = await createProxy('')
+      const res = await fetch(`${scoped.std.server.publicUrl}/${url}`)
+      expect(res.status).to.equal(400)
+    })
+
+    it.each([
+      ['an HTTP URL', (url: string) => url],
+      ['a WebSocket URL', (url: string) => url.replace(/^http/, 'ws')],
+    ])('forwards a WebSocket to %s in the path for the empty string', async (_, toUrl) => {
+      upstream.std.server.ws('/echo', async (req, accept) => {
+        const socket = await accept()
+        socket.on('message', data => socket.send(data.toString()))
+      })
+      await sleep()
+
+      scoped = await createProxy('')
+      const base = scoped.std.server.publicUrl.replace(/^http/, 'ws')
+      const socket = new WebSocket(`${base}/${toUrl(upstreamUrl)}/echo`)
+      const message = await new Promise<string>((resolve, reject) => {
+        socket.addEventListener('open', () => socket.send('hello'))
+        socket.addEventListener('message', event => resolve(event.data))
+        socket.addEventListener('error', () => reject(new Error('WebSocket error')))
+      })
+      socket.close()
+      expect(message).to.equal('hello')
     })
   })
 })

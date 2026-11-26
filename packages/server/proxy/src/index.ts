@@ -1,64 +1,62 @@
 import { Context } from 'cordis'
 import type {} from '@cordisjs/http'
-import type {} from '@cordisjs/server'
+import type { Request } from '@cordisjs/server'
 import z from 'schemastery'
-
-declare module '@cordisjs/server' {
-  interface Server {
-    proxy: ServerProxy
-  }
-}
-
-export interface ServerProxy {
-  /** The public URL of the proxy. */
-  readonly publicUrl: string
-}
 
 export interface Config {
   target: string
 }
 
 export const Config: z<Config> = z.object({
-  target: z.string().required().description('The URL to forward requests to, under which their paths are resolved.'),
+  target: z.string()
+    .pattern(/^(?:https?:(?:\/\/[^/?#]+(?:\/[^?#]*)?\/)?)?$/i)
+    .required()
+    .description('The prefix of the forwarded URLs: a URL ending with `/`, a scheme such as `https:`, or the empty string for every HTTP URL. A request is forwarded to the prefix followed by its path under the routes, such as `https://example.com/api/` with `/users` to `https://example.com/api/users`.'),
 })
 
 export const name = 'server:proxy'
 
-// The characters that `encodeURIComponent` encodes, but that RFC 3986 allows in
-// a path segment: the sub-delimiters `$&+,;=`, `:` and `@`.
-const segmentChars = /%(?:24|26|2B|2C|3A|3B|3D|40)/g
-
-function encodeSegment(segment: string) {
-  return encodeURIComponent(segment).replace(segmentChars, decodeURIComponent)
-}
-
 export const inject = ['std:http', 'std:server']
 
-export function apply(ctx: Context, config: Config) {
-  // the target as a directory, so that the paths of requests are resolved under it
-  const target = new URL(config.target)
-  target.pathname = target.pathname.replace(/\/*$/, '/')
+const schemeRegExp = /^[a-z][a-z\d+.-]*:$/i
 
-  // The URL under the target for the path of a request, or `undefined` outside of
-  // it. The router decodes the path, so each segment is encoded again, and `..`
-  // remains a dot segment, which the URL parser removes.
-  function locate(path = '') {
-    const url = new URL('./' + path.split('/').map(encodeSegment).join('/'), target)
-    if (url.origin === target.origin && url.pathname.startsWith(target.pathname)) return url
+export function apply(ctx: Context, config: Config) {
+  // whether a URL lies under the target, as `ctx.std.fs.mount()` matches a prefix:
+  // the empty string contains every URL, a scheme the URLs of that scheme,
+  // and a URL the URLs that start with it
+  let contains: (url: URL) => boolean
+  if (config.target === '') {
+    contains = () => true
+  } else if (schemeRegExp.test(config.target)) {
+    const protocol = config.target.toLowerCase()
+    contains = url => url.protocol === protocol
+  } else {
+    const { href } = new URL(config.target)
+    contains = url => url.href.startsWith(href)
+  }
+
+  // The URL of a request under the target with one of `protocols`, or
+  // `undefined` otherwise. The path is taken as the client sent it, without
+  // decoding, and the forwarded URL is the target followed by the path and the
+  // query. The parser removes dot segments, which may lead out of the target.
+  function locate(req: Request & { params: RegExpExecArray }, protocols: string[]) {
+    let url: URL
+    try {
+      url = new URL(config.target + (req.params[1] ?? '') + req.url.slice(req.path.length))
+    } catch {
+      return
+    }
+    if (contains(url) && protocols.includes(url.protocol)) return url
   }
 
   const bodyMethods = new Set(['POST', 'PUT', 'PATCH'])
 
-  ctx.reflect.provide('std:server:proxy', {
-    get publicUrl() {
-      return ctx.std.server.publicUrl
-    },
-  } satisfies ServerProxy)
+  // the path under the routes, without its leading `/`
+  const route = /^(?:\/(.*))?$/s
 
-  ctx.std.server.all('{/*path}', async (req, res, next) => {
-    const url = locate(req.params.path)
+  ctx.std.server.all(route, async (req, res, next) => {
+    const url = locate(req, ['http:', 'https:'])
     if (!url) return new Response(null, { status: 400, statusText: 'Bad Request' })
-    url.search = req.query.toString()
     ctx.logger?.debug('%s %s -> %s', req.method, req.url, url.href)
     const response = await ctx.std.http(url.href, {
       method: req.method as any,
@@ -76,15 +74,13 @@ export function apply(ctx: Context, config: Config) {
     })
   })
 
-  ctx.std.server.ws('{/*path}', async (req, accept) => {
-    const httpUrl = locate(req.params.path)
-    if (!httpUrl) {
+  ctx.std.server.ws(route, async (req, accept) => {
+    const wsUrl = locate(req, ['http:', 'https:', 'ws:', 'wss:'])
+    if (!wsUrl) {
       ctx.logger?.debug('WS %s is outside the target', req.url)
       return
     }
-    const wsUrl = new URL(httpUrl)
-    wsUrl.protocol = httpUrl.protocol === 'https:' ? 'wss:' : 'ws:'
-    wsUrl.search = req.query.toString()
+    wsUrl.protocol = wsUrl.protocol.replace(/^http/, 'ws')
     ctx.logger?.debug('WS %s -> %s', req.url, wsUrl.href)
 
     const headers: Record<string, string> = {}

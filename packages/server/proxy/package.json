@@ -26,7 +26,6 @@
     "http",
     "proxy",
     "server",
-    "service",
     "component"
   ],
   "peerDependencies": {
