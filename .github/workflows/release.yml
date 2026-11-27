@@ -6,9 +6,7 @@ on:
 
 jobs:
   check:
-    if: >-
-      github.event.action != 'closed' &&
-      contains(github.event.pull_request.labels.*.name, 'release')
+    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
 
     steps:
@@ -29,8 +27,7 @@ jobs:
         run: yarn
       - name: Check
         env:
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_RELEASE: ${{ contains(github.event.pull_request.labels.*.name, 'release') }}
           PR_BODY: ${{ github.event.pull_request.body }}
         run: node .github/scripts/check-release.mjs
 
@@ -56,6 +53,9 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@v6
+        with:
+          # the merge commit and its first parent, the base branch
+          fetch-depth: 2
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
@@ -76,12 +76,18 @@ jobs:
           yarn config set npmPublishProvenance true
           yarn config set npmRegistryServer https://registry.npmjs.org/
           yarn yakumo publish
+      # only a release that changes the version of `cordis` gets a tag and release notes
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           NOTES: ${{ github.event.pull_request.body }}
         run: |-
           version=$(node -p "require('./packages/core/package.json').version")
+          previous=$(git show HEAD^1:packages/core/package.json | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")
+          if [ "$version" = "$previous" ]; then
+            echo "cordis remains $version"
+            exit 0
+          fi
           if gh release view "v$version" > /dev/null 2>&1; then
             echo "release v$version already exists"
             exit 0
