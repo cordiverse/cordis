@@ -1,17 +1,23 @@
-import { Context } from 'cordis'
+import { Context, Service } from 'cordis'
 import type {} from '@cordisjs/http'
 import type { Request } from '@cordisjs/server'
 import z from 'schemastery'
 
 export interface Config {
   target: string
+  isolateOrigin?: boolean
+  requestHeaders?: Record<string, string>
 }
+
+const headerName = z.string().pattern(/^[!#$%&'*+.^_`|~\w-]+$/).required()
 
 export const Config: z<Config> = z.object({
   target: z.string()
     .pattern(/^(?:https?:(?:\/\/[^/?#]+(?:\/[^?#]*)?\/)?)?$/i)
     .required()
     .description('The prefix of the forwarded URLs: a URL ending with `/`, a scheme such as `https:`, or the empty string for every HTTP URL. A request is forwarded to the prefix followed by its path under the routes, such as `https://example.com/api/` with `/users` to `https://example.com/api/users`.'),
+  isolateOrigin: z.boolean().default(false).description('Filter the incoming Cookie header, remove Set-Cookie and Clear-Site-Data from upstream responses, and sandbox upstream documents.'),
+  requestHeaders: z.dict(headerName, headerName).description('Maps each upstream request header to its sole incoming source. Source headers are consumed. A missing source omits the upstream header. Names are case-insensitive. Headers reserved by the proxy cannot be mapped.'),
 })
 
 export const name = 'server:proxy'
@@ -20,10 +26,35 @@ export const inject = ['std:http', 'std:server']
 
 const schemeRegExp = /^[a-z][a-z\d+.-]*:$/i
 
+const hopByHopHeaders = [
+  'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'proxy-connection',
+  'te', 'trailer', 'transfer-encoding', 'upgrade',
+]
+// The upstream client supplies its own Host and handles the request body.
+const reservedRequestHeaders = new Set([...hopByHopHeaders, 'host', 'expect'])
+const wsHandshakeHeaders = [
+  ...reservedRequestHeaders,
+  'sec-websocket-key', 'sec-websocket-version', 'sec-websocket-extensions',
+  'sec-websocket-accept', 'content-length',
+]
+// Undici decodes the body, so its upstream encoding and length no longer describe it.
+const reservedResponseHeaders = [...hopByHopHeaders, 'content-encoding', 'content-length']
+
+function blockedHeaders(incoming: Headers, reserved: Iterable<string>) {
+  const blocked = new Set(reserved)
+  for (const field of incoming.get('connection')?.split(',') ?? []) {
+    blocked.add(field.trim().toLowerCase())
+  }
+  return blocked
+}
+
 export function apply(ctx: Context, config: Config) {
-  // whether a URL lies under the target, as `ctx.std.fs.mount()` matches a prefix:
-  // the empty string contains every URL, a scheme the URLs of that scheme,
-  // and a URL the URLs that start with it
+  // Whether a URL lies under the target, as `ctx.std.fs.mount()` matches a prefix:
+  // the empty string contains every URL, a scheme the URLs of that scheme, and
+  // a URL the URLs that start with it. Below a URL, the forwarded URL and the
+  // target are also compared with their encoded separators decoded, as an
+  // upstream that decodes them before it normalizes the path would take
+  // `..%2F` out of the target.
   let contains: (url: URL) => boolean
   if (config.target === '') {
     contains = () => true
@@ -31,18 +62,25 @@ export function apply(ctx: Context, config: Config) {
     const protocol = config.target.toLowerCase()
     contains = url => url.protocol === protocol
   } else {
-    const { href } = new URL(config.target)
-    contains = url => url.href.startsWith(href)
+    const decode = (url: URL) => new URL(url.origin + url.pathname.replace(/%2f|%5c/gi, '/')).href
+    const target = new URL(config.target)
+    const decoded = decode(target)
+    contains = url => url.href.startsWith(target.href) && decode(url).startsWith(decoded)
   }
+
+  // the path prefix of the routes, which the router removes before it matches them
+  const prefix = ctx.std.server[Service.resolveIntercept]().path ?? ''
 
   // The URL of a request under the target with one of `protocols`, or
   // `undefined` otherwise. The path is taken as the client sent it, without
-  // decoding, and the forwarded URL is the target followed by the path and the
-  // query. The parser removes dot segments, which may lead out of the target.
-  function locate(req: Request & { params: RegExpExecArray }, protocols: string[]) {
+  // decoding, and the forwarded URL is the target followed by the path under
+  // the routes, without its leading `/`, and the query. The parser removes dot
+  // segments, which may lead out of the target.
+  function locate(req: Request, protocols: string[]) {
+    const path = req.path.slice(prefix.length).replace(/^\//, '')
     let url: URL
     try {
-      url = new URL(config.target + (req.params[1] ?? '') + req.url.slice(req.path.length))
+      url = new URL(config.target + path + req.url.slice(req.path.length))
     } catch {
       return
     }
@@ -51,22 +89,58 @@ export function apply(ctx: Context, config: Config) {
 
   const bodyMethods = new Set(['POST', 'PUT', 'PATCH'])
 
-  // the path under the routes, without its leading `/`
-  const route = /^(?:\/(.*))?$/s
+  const sources = new Map<string, string>()
+  for (const [name, source] of Object.entries(config.requestHeaders ?? {})) {
+    const output = name.toLowerCase()
+    const input = source.toLowerCase()
+    const reserved = [output, input].find(field => reservedRequestHeaders.has(field))
+    if (reserved) {
+      throw new TypeError(`Invalid requestHeaders mapping "${name}" from "${source}": "${reserved}" is reserved by the proxy.`)
+    }
+    if (input === 'cookie' && config.isolateOrigin) {
+      throw new TypeError(`Invalid requestHeaders mapping "${name}" from "${source}": isolateOrigin filters the incoming Cookie header.`)
+    }
+    sources.set(output, input)
+  }
+  const skipPassthrough = new Set([...sources.keys(), ...sources.values()])
+  if (config.isolateOrigin) skipPassthrough.add('cookie')
 
-  ctx.std.server.all(route, async (req, res, next) => {
+  function forwardRequestHeaders(incoming: Headers, reserved: Iterable<string> = reservedRequestHeaders) {
+    const blocked = blockedHeaders(incoming, reserved)
+    const headers = new Headers()
+    for (const [name, value] of incoming) {
+      if (!blocked.has(name) && !skipPassthrough.has(name)) headers.append(name, value)
+    }
+    // Read all mappings from the original request so their order has no effect.
+    for (const [name, source] of sources) {
+      if (blocked.has(name) || blocked.has(source)) continue
+      const value = incoming.get(source)
+      if (value !== null) headers.set(name, value)
+    }
+    return headers
+  }
+
+  ctx.std.server.all('{/*path}', async (req, res, next) => {
     const url = locate(req, ['http:', 'https:'])
     if (!url) return new Response(null, { status: 400, statusText: 'Bad Request' })
     ctx.logger?.debug('%s %s -> %s', req.method, req.url, url.href)
     const response = await ctx.std.http(url.href, {
       method: req.method as any,
-      headers: req.headers,
+      headers: forwardRequestHeaders(req.headers),
       data: bodyMethods.has(req.method) ? req.body : undefined,
     }) as unknown as Response
-    const headers = new Headers(response.headers)
-    // undici already decoded the body; these headers no longer match the forwarded bytes.
-    headers.delete('content-encoding')
-    headers.delete('content-length')
+    const blocked = blockedHeaders(response.headers, reservedResponseHeaders)
+    const headers = new Headers()
+    for (const [name, value] of response.headers) {
+      if (!blocked.has(name)) headers.append(name, value)
+    }
+    if (config.isolateOrigin) {
+      headers.delete('set-cookie')
+      headers.delete('clear-site-data')
+      // A document of the upstream runs in an opaque origin.
+      headers.append('content-security-policy', 'sandbox')
+      headers.set('x-content-type-options', 'nosniff')
+    }
     return new Response(response.body, {
       status: response.status,
       statusText: response.statusText,
@@ -74,7 +148,7 @@ export function apply(ctx: Context, config: Config) {
     })
   })
 
-  ctx.std.server.ws(route, async (req, accept) => {
+  ctx.std.server.ws('{/*path}', async (req, accept) => {
     const wsUrl = locate(req, ['http:', 'https:', 'ws:', 'wss:'])
     if (!wsUrl) {
       ctx.logger?.debug('WS %s is outside the target', req.url)
@@ -83,15 +157,7 @@ export function apply(ctx: Context, config: Config) {
     wsUrl.protocol = wsUrl.protocol.replace(/^http/, 'ws')
     ctx.logger?.debug('WS %s -> %s', req.url, wsUrl.href)
 
-    const headers: Record<string, string> = {}
-    for (const [k, v] of req.headers) {
-      const key = k.toLowerCase()
-      if (['host', 'connection', 'upgrade', 'sec-websocket-key',
-        'sec-websocket-version', 'sec-websocket-extensions',
-        'sec-websocket-accept', 'content-length'].includes(key)) continue
-      headers[k] = v
-    }
-
+    const headers = forwardRequestHeaders(req.headers, wsHandshakeHeaders)
     const upstream = ctx.std.http.ws(wsUrl.href, { headers })
 
     // WebSocket.close() spec: only 1000 or 3000-4999 are allowed from user code;
