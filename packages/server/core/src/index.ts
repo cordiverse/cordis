@@ -201,11 +201,18 @@ class Server extends Service<Server.Intercept> {
     })
 
     this.ctx.on('server/request', async (req, res, next) => {
+      const method = req.method.toLowerCase()
       const routes = [...this.httpRoutes]
+      // A HEAD request is served by a GET route, but an explicit HEAD route wins.
+      // Move only explicit HEAD routes and keep the original order of the rest,
+      // so GET and HEAD reach the same handler when an `all` route also matches.
+      if (method === 'head') {
+        routes.sort((a, b) => Number(b.method === 'head') - Number(a.method === 'head'))
+      }
       const runRoute = async (index: number): Promise<globalThis.Response | void> => {
         for (let i = index; i < routes.length; i++) {
           const route = routes[i]
-          if (route.method !== 'all' && req.method.toLowerCase() !== route.method) continue
+          if (route.method !== 'all' && method !== route.method && !(method === 'head' && route.method === 'get')) continue
           const params = route.check(req)
           if (!params) continue
           const matched = Object.assign(Object.create(req), { params })
@@ -234,6 +241,7 @@ class Server extends Service<Server.Intercept> {
           break
         }
         methods.add(route.method)
+        if (route.method === 'get') methods.add('head')
       }
       if (!methods.size && !asterisk) {
         res.status = 404
