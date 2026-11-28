@@ -53,6 +53,16 @@ function toIndex(value: unknown, name: string) {
   return (rounded - x === 0.5 && rounded % 2 ? rounded - 1 : rounded) + 0
 }
 
+/** The JSON representation of a reference, as `EntryRef.toJSON()` returns it. */
+export interface EntryJSON {
+  /** the location, as `URL.href` */
+  url: string
+  /** the last name of the location, decoded */
+  name: string
+  /** the type of an entry of a listing, as `DirEntryRef.type` */
+  type?: EntryType
+}
+
 /** A reference to an entry. Creating it performs no I/O. */
 export class EntryRef {
   constructor(protected fs: Fs, public readonly url: URL) {}
@@ -61,6 +71,11 @@ export class EntryRef {
   get name(): string {
     const path = this.url.pathname.replace(/\/+$/, '')
     return decodeURIComponent(path.slice(path.lastIndexOf('/') + 1))
+  }
+
+  /** Returns the location and the name, and the type of an entry of a listing. */
+  toJSON(): EntryJSON {
+    return { url: this.url.href, name: this.name, type: this['type'] as EntryType | undefined }
   }
 }
 
