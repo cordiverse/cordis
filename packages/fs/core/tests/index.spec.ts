@@ -647,6 +647,32 @@ describe('Fs', () => {
       }
     })
 
+    it('serializes a reference as its location and name, and an entry of a listing also with its type', async () => {
+      const ctx = await setup()
+      ctx.std.fs.mount('mem:', {
+        async* readdir() {
+          yield { name: 'a b.txt', type: 'file' }
+          yield { name: 'dir', type: 'directory' }
+          yield { name: 'link', type: 'symlink' }
+        },
+      })
+      expect(JSON.parse(JSON.stringify(ctx.std.fs.dir('mem://bucket/a b')))).to.deep.equal({
+        url: 'mem://bucket/a%20b/',
+        name: 'a b',
+      })
+      expect(JSON.parse(JSON.stringify(ctx.std.fs.file('mem://bucket/a b.txt').slice(1)))).to.deep.equal({
+        url: 'mem://bucket/a%20b.txt',
+        name: 'a b.txt',
+      })
+      const entries: DirEntryRef[] = []
+      for await (const entry of ctx.std.fs.dir('mem://bucket/').list()) entries.push(entry)
+      expect(JSON.parse(JSON.stringify(entries))).to.deep.equal([
+        { url: 'mem://bucket/a%20b.txt', name: 'a b.txt', type: 'file' },
+        { url: 'mem://bucket/dir/', name: 'dir', type: 'directory' },
+        { url: 'mem://bucket/link', name: 'link', type: 'symlink' },
+      ])
+    })
+
     it('resolves the entries of an iteration against the URL at its start', async () => {
       const ctx = await setup()
       ctx.std.fs.mount('mem:', lister(['a.txt', 'b.txt']))
