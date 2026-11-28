@@ -8,6 +8,7 @@ import { pathToFileURL } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import PackageManager from '../src/index.ts'
 import { adapters, AgentKind, AgentLayout } from '../src/agent.ts'
+import { RunError } from '../src/process.ts'
 import { createEnv, run, which } from '../src/process.ts'
 import { Registry } from './registry.ts'
 
@@ -394,6 +395,24 @@ describe.each(fixtures)('$name', (fixture) => {
       await pm.install({ 'local-alias': null })
     }
   })
+})
+
+describe('the configured timeout', () => {
+  // The agent reads the version and the layout through three more `run()` calls
+  // before it installs. They used a 60 s constant of their own, so a `timeout`
+  // set here did not apply to them -- and on a cold Corepack store the version
+  // read is a 3.8 MB download.
+  it('applies to the version probe, not only to the install', async () => {
+    const root = new Context()
+    const dir = createProject({ 'package.json': JSON.stringify({ name: 'project', packageManager: await fixture('npm').packageManager() }) })
+    await root.use(Fs, { baseUrl: pathToFileURL(dir).href })
+    await root.use(PackageManager, { timeout: 1 })
+    let ctx!: Context
+    await root.inject(['packageManager'], (inner) => { ctx = inner })
+    const error = await ctx.packageManager.agent().catch((error) => error)
+    expect(error).to.be.instanceOf(RunError)
+    expect(error.message).to.contain('produced no output')
+  }, 30000)
 })
 
 describe('preconditions', () => {
