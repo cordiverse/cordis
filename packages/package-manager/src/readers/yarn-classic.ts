@@ -1,7 +1,7 @@
 import { Dirent } from 'node:fs'
 import { readdir, readlink } from 'node:fs/promises'
 import { posix, resolve } from 'node:path'
-import { createLocator, readText } from '../files.ts'
+import { createLocator, isMissing, readText } from '../files.ts'
 import { InstallState, nameOf, PackageState, splitName } from '../state.ts'
 
 /**
@@ -79,7 +79,10 @@ export async function readYarnClassicState(root: string): Promise<InstallState> 
   const visit = async (location: string, dirent: Dirent, bundler: Bundler) => {
     const dir = resolve(root, location)
     const manifestText = await readText(resolve(dir, 'package.json'))
-    if (!manifestText) return
+    // No manifest means this folder is not a package. A manifest that is there but empty is a
+    // broken package, and skipping it reports the same as "not installed" — the state files the
+    // other readers open are a different case: an empty one really does describe no install.
+    if (manifestText === undefined) return
     const manifest = JSON.parse(manifestText)
     const key = nameOf(location)
     if (dirent.isSymbolicLink()) {
@@ -116,14 +119,19 @@ export async function readYarnClassicState(root: string): Promise<InstallState> 
     let dirents: Dirent[]
     try {
       dirents = await readdir(resolve(root, folder), { withFileTypes: true })
-    } catch {
-      return
+    } catch (error) {
+      // Not there is empty; unreadable is not. `readText` draws the same line.
+      if (isMissing(error)) return
+      throw error
     }
     await Promise.all(dirents.map(async (dirent) => {
       if (dirent.name.startsWith('.')) return
       const location = posix.join(folder, dirent.name)
       if (!dirent.name.startsWith('@')) return visit(location, dirent, bundler)
-      const scoped = await readdir(resolve(root, location), { withFileTypes: true }).catch(() => [])
+      const scoped = await readdir(resolve(root, location), { withFileTypes: true }).catch((error) => {
+        if (isMissing(error)) return []
+        throw error
+      })
       await Promise.all(scoped.map(dirent => visit(posix.join(location, dirent.name), dirent, bundler)))
     }))
   }

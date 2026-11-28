@@ -1,15 +1,12 @@
 import { chmod, lstat, mkdir, readFile, readlink, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
+import { isMissing } from './files.ts'
 
 interface Snapshot {
   link?: string
   /** absent for a dangling link */
   content?: Buffer
   mode?: number
-}
-
-function isMissing(error: any) {
-  return error?.code === 'ENOENT' || error?.code === 'ENOTDIR'
 }
 
 async function snapshot(path: string): Promise<Snapshot | undefined> {
