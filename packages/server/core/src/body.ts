@@ -224,7 +224,19 @@ export class Response {
 
   private _end() {
     if (this._res.headersSent) return
-    this._res.writeHead(this._res.statusCode, this._res.statusMessage, Object.fromEntries(this.headers))
+    // a header may have several values, such as `set-cookie`, which `writeHead` takes as an array
+    const headers: Record<string, string | string[]> = Object.create(null)
+    for (const [key, value] of this.headers) {
+      const previous = headers[key]
+      if (previous === undefined) {
+        headers[key] = value
+      } else if (Array.isArray(previous)) {
+        previous.push(value)
+      } else {
+        headers[key] = [previous, value]
+      }
+    }
+    this._res.writeHead(this._res.statusCode, this._res.statusMessage, headers)
     if (isNullable(this._bodyInit)) {
       return this._res.end()
     }

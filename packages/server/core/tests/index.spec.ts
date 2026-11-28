@@ -634,6 +634,67 @@ describe('@cordisjs/server', () => {
       const res = await fetch(`${url}/overwrite`)
       expect(await res.text()).to.equal('second')
     })
+
+    it('should keep every value of a repeated response header', async () => {
+      ctx.server.get('/cookies', async (req, res, next) => {
+        res.headers.append('set-cookie', 'a=1; Path=/')
+        res.headers.append('set-cookie', 'b=2; Path=/')
+        res.text('ok')
+      })
+      await sleep()
+
+      const res = await fetch(`${url}/cookies`)
+      expect(res.headers.getSetCookie()).to.deep.equal(['a=1; Path=/', 'b=2; Path=/'])
+    })
+
+    it('should keep every set-cookie value of a returned response', async () => {
+      ctx.server.get('/headers', async () => {
+        const headers = new Headers()
+        headers.append('set-cookie', 'a=1')
+        headers.append('set-cookie', 'b=2')
+        return new Response('ok', { headers })
+      })
+      await sleep()
+
+      const res = await fetch(`${url}/headers`)
+      expect(res.headers.getSetCookie()).to.deep.equal(['a=1', 'b=2'])
+    })
+
+    it('should keep the values of a list-type header of a returned response', async () => {
+      // `Headers` already joins list-type fields with `, ` before the copy loop sees them,
+      // so the joined value alone also passed on `main`; the middleware header below checks
+      // that the loop still replaces it instead of appending another value.
+      ctx.server.use(async (req, res, next) => {
+        res.headers.set('link', '</middleware>; rel=preload')
+        await next()
+      })
+      ctx.server.get('/link', async () => {
+        const headers = new Headers()
+        headers.append('link', '</a>; rel=preload')
+        headers.append('link', '</b>; rel=preload')
+        return new Response('ok', { headers })
+      })
+      await sleep()
+
+      const res = await fetch(`${url}/link`)
+      expect(res.headers.get('link')).to.equal('</a>; rel=preload, </b>; rel=preload')
+    })
+
+    it('should let a returned response replace singleton headers set by middleware', async () => {
+      ctx.server.use(async (req, res, next) => {
+        res.headers.set('cache-control', 'no-store')
+        res.headers.set('content-type', 'text/html')
+        await next()
+      })
+      ctx.server.get('/singleton', async () => {
+        return new Response('x', { headers: { 'cache-control': 'max-age=60' } })
+      })
+      await sleep()
+
+      const res = await fetch(`${url}/singleton`)
+      expect(res.headers.get('cache-control')).to.equal('max-age=60')
+      expect(res.headers.get('content-type')).to.equal('text/plain;charset=UTF-8')
+    })
   })
 
   describe('stream body concurrent reads', () => {
