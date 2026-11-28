@@ -220,14 +220,18 @@ export class Http extends Service<Http.Intercept> {
 
   static {
     const require = createRequire(import.meta.url)
+    // The bundled copy answers with what this Node actually runs; the package is the
+    // fallback, because Node accepts `_` for `-` in every flag and a prediction from
+    // `argv` misses the spelling that works. Neither may throw out of the block:
+    // `undici` is an optional peer, so a miss leaves `Http.undici` unset.
     try {
-      if (process.execArgv.includes('--expose-internals')) {
-        this.undici = require('internal/deps/undici/undici')
-        setupInternalUndici(this.undici)
-      } else {
+      this.undici = require('internal/deps/undici/undici')
+      setupInternalUndici(this.undici)
+    } catch {
+      try {
         this.undici = require('undici')
-      }
-    } catch {}
+      } catch {}
+    }
 
     for (const method of ['get', 'delete'] as const) {
       defineProperty(Http.prototype, method, async function (this: Http, url: string | URL, config?: Http.Config) {
