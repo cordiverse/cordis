@@ -1,6 +1,6 @@
 import { setImmediate } from 'node:timers/promises'
 import { describe, expect, it, vi } from 'vitest'
-import { Context, Fiber, Service } from '../src/index.ts'
+import { Context, Fiber, FiberState, Service } from '../src/index.ts'
 
 function fixture() {
   const root = new Context()
@@ -439,6 +439,38 @@ describe('Service disposal', () => {
     expect(withdrawnAfterSetup).toBe(true)
     expect(currentVersion).toBe(2)
     expect(versions).toEqual([1, -1, 2, -2])
+    await root.fiber.dispose()
+  })
+
+  it('admits a replacement provider while the previous instance is still unloading', async () => {
+    const root = new Context()
+    let generation = 0
+
+    const Provider = {
+      name: 'provider',
+      apply(ctx: Context) {
+        ctx.provide('svc', { generation: ++generation })
+      },
+    }
+    const Consumer = { name: 'consumer', inject: ['svc'], apply() {} }
+
+    const previous = root.use(Provider)
+    const consumer = root.use(Consumer)
+    await setImmediate()
+    expect(root.reflect.get('svc', true)).to.have.property('generation', 1)
+
+    // Replug without waiting for the previous instance to finish unloading.
+    const disposing = previous.dispose()
+    const replacement = root.use(Provider)
+    for (let i = 0; i < 10; i++) await setImmediate()
+
+    expect(replacement.state).to.equal(FiberState.ACTIVE)
+    expect(consumer.state).to.equal(FiberState.ACTIVE)
+    expect(root.reflect.get('svc', true)).to.have.property('generation', 2)
+
+    await disposing
+    // the retired provider must not remove the binding of its replacement
+    expect(root.reflect.get('svc', true)).to.have.property('generation', 2)
     await root.fiber.dispose()
   })
 })
