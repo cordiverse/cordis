@@ -229,6 +229,11 @@ export class Response {
       return this._res.end()
     }
     const body = new globalThis.Response(this._bodyInit).body! as any
-    Readable.fromWeb(body).pipe(this._res, { end: true })
+    const stream = Readable.fromWeb(body)
+    // A body stream may fail after the status line is sent. Closing the
+    // connection reports the truncated response instead of leaving the client
+    // waiting and throwing the error out of the request.
+    stream.on('error', () => this._res.destroy())
+    stream.pipe(this._res, { end: true })
   }
 }
