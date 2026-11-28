@@ -128,6 +128,8 @@ export function apply(ctx: Context, config: Config) {
       method: req.method as any,
       headers: forwardRequestHeaders(req.headers),
       data: bodyMethods.has(req.method) ? req.body : undefined,
+      // a redirect is the upstream's answer, which the caller follows by itself
+      redirect: 'manual',
     }) as unknown as Response
     const blocked = blockedHeaders(response.headers, reservedResponseHeaders)
     const headers = new Headers()

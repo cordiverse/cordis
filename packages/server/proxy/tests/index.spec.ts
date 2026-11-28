@@ -139,6 +139,46 @@ describe('@cordisjs/server-proxy', () => {
     })
   })
 
+  describe('redirects', () => {
+    it('should pass an upstream redirect through to the caller', async () => {
+      upstream.server.get('/old', async () => new Response(null, {
+        status: 302,
+        statusText: 'Found',
+        headers: { location: '/new' },
+      }))
+      upstream.server.get('/new', async (req, res, next) => {
+        res.body = 'new content'
+      })
+      await sleep()
+
+      const res = await fetch(`${proxyUrl}/old`, { redirect: 'manual' })
+      expect(res.status).to.equal(302)
+      expect(res.headers.get('location')).to.equal('/new')
+      expect(await res.text()).to.equal('')
+    })
+
+    it('should pass a redirect of a request with a body through to the caller', async () => {
+      upstream.server.post('/old', async () => new Response(null, {
+        status: 307,
+        statusText: 'Temporary Redirect',
+        headers: { location: '/new' },
+      }))
+      upstream.server.post('/new', async (req, res, next) => {
+        res.body = 'new content'
+      })
+      await sleep()
+
+      const res = await fetch(`${proxyUrl}/old`, {
+        method: 'POST',
+        body: 'payload',
+        redirect: 'manual',
+      })
+      expect(res.status).to.equal(307)
+      expect(res.headers.get('location')).to.equal('/new')
+      expect(await res.text()).to.equal('')
+    })
+  })
+
   describe('response headers', () => {
     it('forwards end-to-end response headers and consumes upstream connection options', async () => {
       upstream.std.server.get('/headers', async (req, res, next) => {
