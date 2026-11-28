@@ -353,27 +353,54 @@ export class Fiber {
       throw reason
     }
 
-    // prevent unhandled rejection — both from `task` itself and from the
-    // disposer chain if it fails to settle cleanly.
-    task?.catch(dispose).catch((error) => this.ctx.logger.error(error))
+    // The teardown starts on the first call. Every later call returns the
+    // same teardown, so that each caller can wait for it to settle. The effect
+    // stays in the fiber's disposables until the teardown settles, so that an
+    // unloading fiber also waits for a teardown started before the unload.
+    let remove = () => {}
+    let teardown: void | Promise<void>
+    const settle = (start: () => void | Promise<void>) => {
+      if (!runner.epoch) return teardown
+      runner.epoch = false
+      try {
+        teardown = start()
+      } catch (reason) {
+        remove()
+        throw reason
+      }
+      if (teardown) {
+        teardown = Promise.resolve(teardown).finally(remove)
+      } else {
+        remove()
+      }
+      return teardown
+    }
+
+    // A failed setup rolls back the collected disposers as the teardown of
+    // the effect. If a teardown has already started, it performs the rollback
+    // and then rejects with the setup error, while a failed rollback is logged.
+    task?.catch(() => {
+      if (runner.epoch) return settle(dispose)
+    }).catch((error) => this.ctx.logger.error(error))
 
     const wrapper = defineProperty(() => {
-      if (!runner.epoch) return
-      runner.epoch = false
-      return task ? task.then(dispose) : dispose()
+      return settle(() => task ? task.then(dispose, async (reason) => {
+        try {
+          await dispose()
+        } catch (error) {
+          this.ctx.logger.error(error)
+        }
+        throw reason
+      }) : dispose())
     }, symbols.effect, meta) as AsyncDisposable
 
-    const disposeAsync = () => {
-      if (!runner.epoch) return
-      runner.epoch = false
-      return dispose()
-    }
+    const disposeAsync = () => settle(dispose)
     wrapper.then = async (onFulfilled, onRejected) => {
       return Promise.resolve(task)
         .then(() => disposeAsync)
         .then(onFulfilled, onRejected)
     }
-    disposables.push(this._disposables.push(wrapper))
+    remove = this._disposables.push(wrapper)
     return wrapper
   }
 
