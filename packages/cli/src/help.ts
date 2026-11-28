@@ -10,7 +10,7 @@ export interface Config {}
 export function apply(ctx: Context, config: Config = {}) {
   const cli = ctx.std.cli
 
-  cli.command('help [command:string]', 'Print help for a command')
+  cli.command('help [...command:string]', 'Print help for a command')
     .option('-H, --show-hidden')
     .action(({ args, options }) => {
       const showHidden = !!(options as any).showHidden
